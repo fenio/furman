@@ -7,7 +7,7 @@
 </p>
 
 <p align="center">
-  A dual-panel file manager for macOS inspired by Norton Commander and Midnight Commander.
+  A dual-pane file manager for macOS inspired by Norton Commander and Midnight Commander.
 </p>
 
 <p align="center">
@@ -19,7 +19,7 @@
 
 ## Features
 
-- **Dual-panel navigation** with Tab to switch between panels
+- **Dual-pane navigation** with Tab to switch between panes
 - **S3 support** — browse and transfer files to/from any S3-compatible storage (AWS, MinIO, Backblaze B2, etc.)
 - **Integrated terminal** — bottom panel (Cmd+T), Quake-style drop-down (Cmd+\`), or in-pane mode (Cmd+Shift+T)
 - **File viewer** (F3) — text with line numbers, image preview, hex dump
