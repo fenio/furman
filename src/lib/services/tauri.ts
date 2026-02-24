@@ -8,6 +8,17 @@ export async function listArchive(
   return await invoke<DirListing>('list_archive', { archivePath, internalPath });
 }
 
+export async function extractArchive(
+  archivePath: string,
+  internalPaths: string[],
+  destination: string,
+  onProgress: (e: ProgressEvent) => void
+): Promise<void> {
+  const channel = new Channel<ProgressEvent>();
+  channel.onmessage = onProgress;
+  await invoke('extract_archive', { archivePath, internalPaths, destination, channel });
+}
+
 export async function listDirectory(
   path: string,
   showHidden: boolean

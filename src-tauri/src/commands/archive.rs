@@ -1,7 +1,8 @@
-use crate::models::{DirListing, FileEntry, FmError};
+use crate::models::{DirListing, FileEntry, FmError, ProgressEvent};
 use std::collections::HashSet;
 use std::path::Path;
 use std::process::Command;
+use tauri::ipc::Channel;
 
 /// Represents a raw entry parsed from 7z output.
 struct RawEntry {
@@ -303,4 +304,73 @@ fn build_listing(
         total_size,
         free_space: 0,
     })
+}
+
+/// Extract specific files/directories from an archive to a destination directory.
+///
+/// `archive_path` — filesystem path to the archive.
+/// `internal_paths` — list of paths inside the archive (the part after `#` in `archive://...#path`).
+/// `destination` — filesystem directory to extract into.
+#[tauri::command]
+pub fn extract_archive(
+    archive_path: String,
+    internal_paths: Vec<String>,
+    destination: String,
+    channel: Channel<ProgressEvent>,
+) -> Result<(), FmError> {
+    let fs_path = Path::new(&archive_path);
+    if !fs_path.exists() {
+        return Err(FmError::NotFound(archive_path.clone()));
+    }
+
+    let dest = Path::new(&destination);
+    if !dest.exists() {
+        return Err(FmError::NotFound(destination.clone()));
+    }
+
+    let id = format!("extract-{}", std::process::id());
+    let files_total = internal_paths.len() as u32;
+
+    // Use `7z x` to extract with full paths, targeting specific files.
+    // -o sets output directory, -y auto-confirms overwrites.
+    let mut args = vec![
+        "x".to_string(),
+        archive_path.clone(),
+        format!("-o{destination}"),
+        "-y".to_string(),
+    ];
+    for p in &internal_paths {
+        args.push(p.clone());
+    }
+
+    let output = Command::new("7z")
+        .args(&args)
+        .output()
+        .map_err(|e| {
+            if e.kind() == std::io::ErrorKind::NotFound {
+                FmError::Other("7z not found. Install with: brew install 7zip".to_string())
+            } else {
+                FmError::Other(format!("Failed to run 7z: {e}"))
+            }
+        })?;
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        return Err(FmError::Other(format!(
+            "7z extract failed: {stderr}\n{stdout}"
+        )));
+    }
+
+    // Report completion
+    let _ = channel.send(ProgressEvent {
+        id,
+        bytes_done: 0,
+        bytes_total: 0,
+        current_file: String::new(),
+        files_done: files_total,
+        files_total,
+    });
+
+    Ok(())
 }

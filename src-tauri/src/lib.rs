@@ -82,6 +82,7 @@ pub fn run() {
             commands::s3::s3_delete_objects,
             // archive commands
             commands::archive::list_archive,
+            commands::archive::extract_archive,
             // search commands
             commands::search::search_files,
             commands::search::cancel_search,

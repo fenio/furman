@@ -6,7 +6,7 @@
   import { terminalState } from '$lib/state/terminal.svelte';
   import { sidebarState } from '$lib/state/sidebar.svelte';
   import { workspacesState } from '$lib/state/workspaces.svelte';
-  import { copyFiles, moveFiles, deleteFiles, renameFile, createDirectory, openFileDefault, openInEditor, checkConflicts } from '$lib/services/tauri';
+  import { copyFiles, moveFiles, deleteFiles, renameFile, createDirectory, openFileDefault, openInEditor, checkConflicts, extractArchive } from '$lib/services/tauri';
   import { statusState } from '$lib/state/status.svelte';
   import { s3Download, s3Upload, s3CopyObjects, s3DeleteObjects } from '$lib/services/s3';
   import { s3PathToPrefix } from '$lib/state/panels.svelte';
@@ -15,7 +15,7 @@
   let { children } = $props();
 
   const imageExtensions = new Set(['png', 'jpg', 'jpeg', 'gif', 'bmp', 'svg', 'webp', 'ico']);
-  const archiveExtensions = new Set(['zip', 'rar', '7z']);
+  const archiveExtensions = new Set(['zip', 'rar', '7z', 'tar', 'gz', 'tgz', 'bz2', 'xz']);
   const systemOpenExtensions = new Set([
     'pdf', 'doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx',
     'odt', 'ods', 'odp', 'rtf',
@@ -127,7 +127,15 @@
         const pct = e.bytes_total > 0 ? (e.bytes_done / e.bytes_total) * 100 : 0;
         statusState.setProgress(e.current_file?.split('/').pop() ?? 'Copying...', pct);
       };
-      if (srcBackend === 'local' && destBackend === 'local') {
+      if (srcBackend === 'archive' && destBackend === 'local') {
+        const archivePath = active.archiveInfo!.archivePath;
+        // Sources are archive://path#internal — extract internal paths
+        const internalPaths = sources.map((s) => {
+          const hashIdx = s.indexOf('#');
+          return hashIdx >= 0 ? s.substring(hashIdx + 1) : s;
+        });
+        await extractArchive(archivePath, internalPaths, dest, onProgress);
+      } else if (srcBackend === 'local' && destBackend === 'local') {
         await copyFiles(sources, dest, onProgress);
       } else if (srcBackend === 's3' && destBackend === 'local') {
         const conn = active.s3Connection!;
@@ -148,7 +156,10 @@
     } finally {
       appState.closeModal();
       statusState.setMessage(`Copied ${fileCount} file(s)`);
-      await Promise.all([active.loadDirectory(active.path), inactive.loadDirectory(inactive.path)]);
+      const reloads: Promise<void>[] = [];
+      if (active.backend !== 'archive') reloads.push(active.loadDirectory(active.path));
+      if (inactive.backend !== 'archive') reloads.push(inactive.loadDirectory(inactive.path));
+      await Promise.all(reloads);
     }
   }
 
@@ -192,7 +203,10 @@
     } finally {
       appState.closeModal();
       statusState.setMessage(`Moved ${fileCount} file(s)`);
-      await Promise.all([active.loadDirectory(active.path), inactive.loadDirectory(inactive.path)]);
+      const reloads: Promise<void>[] = [];
+      if (active.backend !== 'archive') reloads.push(active.loadDirectory(active.path));
+      if (inactive.backend !== 'archive') reloads.push(inactive.loadDirectory(inactive.path));
+      await Promise.all(reloads);
     }
   }
 
