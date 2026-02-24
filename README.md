@@ -113,4 +113,4 @@ The `.dmg` will be in `src-tauri/target/release/bundle/dmg/`.
 
 Furman is licensed under the [GNU General Public License v3.0](LICENSE).
 
-Copyright (c) 2025 Bartosz Fenski
+Copyright (c) 2026 Bartosz Fenski
