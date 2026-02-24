@@ -1,6 +1,6 @@
 <script lang="ts">
   import type { ProgressEvent } from '$lib/types';
-  import { formatSize } from '$lib/utils/format.ts';
+  import { formatSize } from '$lib/utils/format';
 
   interface Props {
     progress: ProgressEvent | null;

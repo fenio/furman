@@ -1,7 +1,7 @@
 <script lang="ts">
-  import type { PanelData } from '$lib/state/panels.svelte.ts';
-  import { appState } from '$lib/state/app.svelte.ts';
-  import { formatSize } from '$lib/utils/format.ts';
+  import type { PanelData } from '$lib/state/panels.svelte';
+  import { appState } from '$lib/state/app.svelte';
+  import { formatSize } from '$lib/utils/format';
   import { onMount, tick } from 'svelte';
   import FileRow from './FileRow.svelte';
   import FileIcon from './FileIcon.svelte';

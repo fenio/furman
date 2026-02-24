@@ -1,7 +1,7 @@
 <script lang="ts">
-  import { panels } from '$lib/state/panels.svelte.ts';
-  import { appState } from '$lib/state/app.svelte.ts';
-  import { sidebarState } from '$lib/state/sidebar.svelte.ts';
+  import { panels } from '$lib/state/panels.svelte';
+  import { appState } from '$lib/state/app.svelte';
+  import { sidebarState } from '$lib/state/sidebar.svelte';
   import type { S3ConnectionInfo } from '$lib/types';
 
   function handleS3Click() {

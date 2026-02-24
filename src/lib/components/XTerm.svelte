@@ -4,9 +4,9 @@
   import { FitAddon } from '@xterm/addon-fit';
   import { WebLinksAddon } from '@xterm/addon-web-links';
   import '@xterm/xterm/css/xterm.css';
-  import { terminalSpawn, terminalWrite, terminalResize, terminalClose } from '$lib/services/tauri.ts';
+  import { terminalSpawn, terminalWrite, terminalResize, terminalClose } from '$lib/services/tauri';
   import { listen } from '@tauri-apps/api/event';
-  import { appState } from '$lib/state/app.svelte.ts';
+  import { appState } from '$lib/state/app.svelte';
   import type { TerminalOutput, TerminalExit } from '$lib/types';
 
   const darkTheme = {

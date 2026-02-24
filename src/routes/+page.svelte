@@ -1,11 +1,12 @@
 <script lang="ts">
   import { onMount } from 'svelte';
-  import { panels } from '$lib/state/panels.svelte.ts';
-  import { appState } from '$lib/state/app.svelte.ts';
-  import { terminalState } from '$lib/state/terminal.svelte.ts';
-  import { sidebarState } from '$lib/state/sidebar.svelte.ts';
-  import { workspacesState } from '$lib/state/workspaces.svelte.ts';
-  import { loadConfig } from '$lib/services/config.ts';
+  import { listen } from '@tauri-apps/api/event';
+  import { panels } from '$lib/state/panels.svelte';
+  import { appState } from '$lib/state/app.svelte';
+  import { terminalState } from '$lib/state/terminal.svelte';
+  import { sidebarState } from '$lib/state/sidebar.svelte';
+  import { workspacesState } from '$lib/state/workspaces.svelte';
+  import { loadConfig } from '$lib/services/config';
   import MenuBar from '$lib/components/MenuBar.svelte';
   import DualPanel from '$lib/components/DualPanel.svelte';
   import Sidebar from '$lib/components/Sidebar.svelte';
@@ -25,27 +26,68 @@
   let bottomResizing = $state(false);
   let quakeResizing = $state(false);
 
-  onMount(async () => {
-    const config = await loadConfig();
-    appState.initSettings(config);
-    if (appState.startupSound) {
-      new Audio('/whip.mp3').play().catch(() => {});
-    }
+  onMount(() => {
+    let unlisten: (() => void) | undefined;
+    let reloadLeftTimer: ReturnType<typeof setTimeout> | null = null;
+    let reloadRightTimer: ReturnType<typeof setTimeout> | null = null;
 
-    let homePath = '';
-    try {
-      const { homeDir } = await import('@tauri-apps/api/path');
-      homePath = await homeDir();
-    } catch {
-      homePath = '';
-    }
+    (async () => {
+      const config = await loadConfig();
+      appState.initSettings(config);
+      if (appState.startupSound) {
+        new Audio('/whip.mp3').play().catch(() => {});
+      }
 
-    sidebarState.loadFavorites(homePath, config.favorites);
-    workspacesState.load(config.workspaces);
-    await Promise.all([
-      panels.left.loadDirectory(homePath),
-      panels.right.loadDirectory(homePath)
-    ]);
+      let homePath = '';
+      try {
+        const { homeDir } = await import('@tauri-apps/api/path');
+        homePath = await homeDir();
+      } catch {
+        homePath = '';
+      }
+
+      sidebarState.loadFavorites(homePath, config.favorites);
+      workspacesState.load(config.workspaces);
+      await Promise.all([
+        panels.left.loadDirectory(homePath),
+        panels.right.loadDirectory(homePath)
+      ]);
+
+      // Listen for filesystem changes and debounce-reload affected panels
+      unlisten = await listen<{ kind: string; paths: string[] }>('fs-change', (event) => {
+        const { paths } = event.payload;
+        let needLeft = false;
+        let needRight = false;
+
+        for (const p of paths) {
+          const lastSlash = p.lastIndexOf('/');
+          const parent = lastSlash <= 0 ? '/' : p.substring(0, lastSlash);
+          if (parent === panels.left.path) needLeft = true;
+          if (parent === panels.right.path) needRight = true;
+        }
+
+        if (needLeft && !reloadLeftTimer) {
+          reloadLeftTimer = setTimeout(() => {
+            reloadLeftTimer = null;
+            panels.left.loadDirectory(panels.left.path);
+          }, 300);
+        }
+        if (needRight && !reloadRightTimer) {
+          reloadRightTimer = setTimeout(() => {
+            reloadRightTimer = null;
+            panels.right.loadDirectory(panels.right.path);
+          }, 300);
+        }
+      });
+    })();
+
+    return () => {
+      unlisten?.();
+      panels.left.stopWatching();
+      panels.right.stopWatching();
+      if (reloadLeftTimer) clearTimeout(reloadLeftTimer);
+      if (reloadRightTimer) clearTimeout(reloadRightTimer);
+    };
   });
 
   const archiveExtensions = new Set(['zip', 'rar', '7z']);

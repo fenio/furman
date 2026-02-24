@@ -1,6 +1,6 @@
 <script lang="ts">
   import type { ViewerMode } from '$lib/types';
-  import { readFileText, readFileBinary } from '$lib/services/tauri.ts';
+  import { readFileText, readFileBinary } from '$lib/services/tauri';
   import { convertFileSrc } from '@tauri-apps/api/core';
   import { onMount } from 'svelte';
 

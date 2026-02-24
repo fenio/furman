@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { appState } from '$lib/state/app.svelte.ts';
+  import { appState } from '$lib/state/app.svelte';
   import logoLight from '$lib/assets/furman-logo-light.svg';
   import logoDark from '$lib/assets/furman-logo-dark.svg';
 

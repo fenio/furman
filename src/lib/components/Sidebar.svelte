@@ -1,8 +1,8 @@
 <script lang="ts">
-  import { sidebarState } from '$lib/state/sidebar.svelte.ts';
-  import { panels } from '$lib/state/panels.svelte.ts';
-  import { appState } from '$lib/state/app.svelte.ts';
-  import { workspacesState } from '$lib/state/workspaces.svelte.ts';
+  import { sidebarState } from '$lib/state/sidebar.svelte';
+  import { panels } from '$lib/state/panels.svelte';
+  import { appState } from '$lib/state/app.svelte';
+  import { workspacesState } from '$lib/state/workspaces.svelte';
 
   // Compute base offsets for each section so we can derive flat indices in the template
   const favCount = $derived(sidebarState.favorites.length);

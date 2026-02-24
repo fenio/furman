@@ -1,6 +1,6 @@
 <script lang="ts">
   import type { FileEntry } from '$lib/types';
-  import { formatSize, formatDate, formatPermissions } from '$lib/utils/format.ts';
+  import { formatSize, formatDate, formatPermissions } from '$lib/utils/format';
   import { convertFileSrc } from '@tauri-apps/api/core';
   import ImageTooltip from './ImageTooltip.svelte';
 

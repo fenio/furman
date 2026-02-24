@@ -1,6 +1,6 @@
 <script lang="ts">
   import { onMount, onDestroy } from 'svelte';
-  import { searchFiles, cancelSearch } from '$lib/services/tauri.ts';
+  import { searchFiles, cancelSearch } from '$lib/services/tauri';
   import type { SearchResult, SearchEvent, SearchMode } from '$lib/types';
 
   interface Props {

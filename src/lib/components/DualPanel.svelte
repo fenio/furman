@@ -1,6 +1,6 @@
 <script lang="ts">
-  import { panels } from '$lib/state/panels.svelte.ts';
-  import { terminalState } from '$lib/state/terminal.svelte.ts';
+  import { panels } from '$lib/state/panels.svelte';
+  import { terminalState } from '$lib/state/terminal.svelte';
   import FilePanel from './FilePanel.svelte';
   import TerminalPanel from './TerminalPanel.svelte';
 

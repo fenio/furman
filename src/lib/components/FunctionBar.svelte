@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { terminalState } from '$lib/state/terminal.svelte.ts';
+  import { terminalState } from '$lib/state/terminal.svelte';
 
   interface FnKey {
     key: string;

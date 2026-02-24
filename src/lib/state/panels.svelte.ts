@@ -1,12 +1,13 @@
 import type { FileEntry, SortField, SortDirection, ViewMode, PanelBackend, S3ConnectionInfo, ArchiveInfo } from '$lib/types';
-import { sortEntries } from '$lib/utils/sort.ts';
-import { listDirectory, listArchive } from '$lib/services/tauri.ts';
-import { s3Connect, s3Disconnect, s3ListObjects } from '$lib/services/s3.ts';
-import { appState } from '$lib/state/app.svelte.ts';
+import { sortEntries } from '$lib/utils/sort';
+import { listDirectory, listArchive, watchDirectory, unwatchDirectory } from '$lib/services/tauri';
+import { s3Connect, s3Disconnect, s3ListObjects } from '$lib/services/s3';
+import { appState } from '$lib/state/app.svelte';
 
 export class PanelData {
   path = $state('');
   entries = $state<FileEntry[]>([]);
+  watchId: string;
   cursorIndex = $state(0);
   selectedPaths = $state<Set<string>>(new Set());
   sortField = $state<SortField>('name');
@@ -45,8 +46,22 @@ export class PanelData {
     return total;
   });
 
+  constructor(side: string) {
+    this.watchId = `watch-${side}`;
+  }
+
   clearFilter() {
     this.filterText = '';
+  }
+
+  async startWatching() {
+    if (this.backend !== 'local' || !this.path) return;
+    try { await unwatchDirectory(this.watchId); } catch { /* ignore */ }
+    try { await watchDirectory(this.path, this.watchId); } catch { /* ignore */ }
+  }
+
+  async stopWatching() {
+    try { await unwatchDirectory(this.watchId); } catch { /* ignore */ }
   }
 
   async loadDirectory(path: string, focusName?: string) {
@@ -93,6 +108,7 @@ export class PanelData {
     } finally {
       this.loading = false;
     }
+    this.startWatching();
   }
 
   async enterArchive(archivePath: string) {
@@ -240,8 +256,8 @@ export function s3PathToPrefix(path: string, bucket: string): string {
 }
 
 class PanelsState {
-  left = $state(new PanelData());
-  right = $state(new PanelData());
+  left = $state(new PanelData('left'));
+  right = $state(new PanelData('right'));
   activePanel = $state<'left' | 'right'>('left');
 
   active = $derived(this.activePanel === 'left' ? this.left : this.right);

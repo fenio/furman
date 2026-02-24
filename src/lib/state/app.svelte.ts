@@ -1,8 +1,8 @@
 import type { ModalType, ViewerMode, ProgressEvent } from '$lib/types';
 import type { Theme } from '@tauri-apps/api/window';
-import { saveConfig, type Config } from '$lib/services/config.ts';
-import { sidebarState } from '$lib/state/sidebar.svelte.ts';
-import { workspacesState } from '$lib/state/workspaces.svelte.ts';
+import { saveConfig, type Config } from '$lib/services/config';
+import { sidebarState } from '$lib/state/sidebar.svelte';
+import { workspacesState } from '$lib/state/workspaces.svelte';
 
 class AppState {
   theme = $state<'dark' | 'light'>('dark');

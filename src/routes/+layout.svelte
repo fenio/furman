@@ -1,15 +1,15 @@
 <script lang="ts">
   import favicon from '$lib/assets/favicon.svg';
   import '../app.css';
-  import { panels } from '$lib/state/panels.svelte.ts';
-  import { appState } from '$lib/state/app.svelte.ts';
-  import { terminalState } from '$lib/state/terminal.svelte.ts';
-  import { sidebarState } from '$lib/state/sidebar.svelte.ts';
-  import { workspacesState } from '$lib/state/workspaces.svelte.ts';
-  import { copyFiles, moveFiles, deleteFiles, renameFile, createDirectory, openFileDefault, openInEditor } from '$lib/services/tauri.ts';
-  import { statusState } from '$lib/state/status.svelte.ts';
-  import { s3Download, s3Upload, s3CopyObjects, s3DeleteObjects } from '$lib/services/s3.ts';
-  import { s3PathToPrefix } from '$lib/state/panels.svelte.ts';
+  import { panels } from '$lib/state/panels.svelte';
+  import { appState } from '$lib/state/app.svelte';
+  import { terminalState } from '$lib/state/terminal.svelte';
+  import { sidebarState } from '$lib/state/sidebar.svelte';
+  import { workspacesState } from '$lib/state/workspaces.svelte';
+  import { copyFiles, moveFiles, deleteFiles, renameFile, createDirectory, openFileDefault, openInEditor } from '$lib/services/tauri';
+  import { statusState } from '$lib/state/status.svelte';
+  import { s3Download, s3Upload, s3CopyObjects, s3DeleteObjects } from '$lib/services/s3';
+  import { s3PathToPrefix } from '$lib/state/panels.svelte';
   import type { ProgressEvent, S3ConnectionInfo } from '$lib/types';
 
   let { children } = $props();

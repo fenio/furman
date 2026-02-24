@@ -1,6 +1,6 @@
 import type { VolumeInfo } from '$lib/types';
-import { listVolumes } from '$lib/services/tauri.ts';
-import { appState } from '$lib/state/app.svelte.ts';
+import { listVolumes } from '$lib/services/tauri';
+import { appState } from '$lib/state/app.svelte';
 
 export interface FavoriteItem {
   name: string;

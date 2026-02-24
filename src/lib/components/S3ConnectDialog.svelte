@@ -1,6 +1,6 @@
 <script lang="ts">
   import { onMount } from 'svelte';
-  import { s3CheckCredentials } from '$lib/services/s3.ts';
+  import { s3CheckCredentials } from '$lib/services/s3';
 
   interface Props {
     onConnect: (bucket: string, region: string, endpoint?: string, profile?: string, accessKey?: string, secretKey?: string) => void;

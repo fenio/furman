@@ -1,6 +1,6 @@
 <script lang="ts">
-  import { statusState } from '$lib/state/status.svelte.ts';
-  import { panels } from '$lib/state/panels.svelte.ts';
+  import { statusState } from '$lib/state/status.svelte';
+  import { panels } from '$lib/state/panels.svelte';
 
   const isLoading = $derived(panels.left.loading || panels.right.loading);
 

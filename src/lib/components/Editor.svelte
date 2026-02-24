@@ -1,6 +1,6 @@
 <script lang="ts">
-  import { readFileText, writeFileText } from '$lib/services/tauri.ts';
-  import { appState } from '$lib/state/app.svelte.ts';
+  import { readFileText, writeFileText } from '$lib/services/tauri';
+  import { appState } from '$lib/state/app.svelte';
   import { onMount } from 'svelte';
 
   interface Props {

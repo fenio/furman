@@ -1,6 +1,6 @@
 <script lang="ts">
-  import { appState } from '$lib/state/app.svelte.ts';
-  import { panels } from '$lib/state/panels.svelte.ts';
+  import { appState } from '$lib/state/app.svelte';
+  import { panels } from '$lib/state/panels.svelte';
 
   interface Props {
     onClose: () => void;

@@ -26,12 +26,12 @@
 - **File editor** (F4) — built-in text editor with dirty-state tracking
 - **Search** (Cmd+F) — search by file name or file content with streaming results
 - **Archive browsing** — navigate inside zip, rar, and 7z archives as if they were directories
+- **File watcher** — panels auto-refresh when files change on disk
 - **Quick filter** — type to filter the file list in real time
 - **Drag and drop** — drag files between panels to copy (or Shift+drag to move)
-- **Sidebar** — favorites, mounted devices, S3 connections, theme toggle
+- **Sidebar** — favorites, workspaces, mounted devices, S3 connections, theme toggle
 - **Dark / Light theme** — auto-detects OS preference, toggle with Cmd+Shift+L
 - **Icon and list views** — switch between list and grid layouts with configurable icon sizes
-- **File watcher** — panels auto-refresh when files change on disk
 
 ## Installation
 
