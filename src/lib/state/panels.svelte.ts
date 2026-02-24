@@ -1,6 +1,6 @@
-import type { FileEntry, SortField, SortDirection, ViewMode, PanelBackend, S3ConnectionInfo, ArchiveInfo } from '$lib/types';
+import type { FileEntry, SortField, SortDirection, ViewMode, PanelBackend, S3ConnectionInfo, ArchiveInfo, GitRepoInfo } from '$lib/types';
 import { sortEntries } from '$lib/utils/sort';
-import { listDirectory, listArchive, watchDirectory, unwatchDirectory } from '$lib/services/tauri';
+import { listDirectory, listArchive, watchDirectory, unwatchDirectory, getGitRepoInfo } from '$lib/services/tauri';
 import { s3Connect, s3Disconnect, s3ListObjects } from '$lib/services/s3';
 import { appState } from '$lib/state/app.svelte';
 
@@ -22,6 +22,7 @@ export class PanelData {
   backend = $state<PanelBackend>('local');
   s3Connection = $state<S3ConnectionInfo | null>(null);
   archiveInfo = $state<ArchiveInfo | null>(null);
+  gitInfo = $state<GitRepoInfo | null>(null);
 
   sortedEntries = $derived(sortEntries(this.entries, this.sortField, this.sortDirection));
 
@@ -130,6 +131,16 @@ export class PanelData {
       // Rust backend already provides ".." entry — use entries as-is
       this.entries = listing.entries;
       this.selectedPaths = new Set();
+      // Fetch git info non-blocking for local backends
+      if (this.backend === 'local') {
+        getGitRepoInfo(listing.path).then((info) => {
+          this.gitInfo = info;
+        }).catch(() => {
+          this.gitInfo = null;
+        });
+      } else {
+        this.gitInfo = null;
+      }
       // Position cursor on focusName if provided (e.g. directory we just left)
       if (focusName) {
         const sorted = sortEntries(this.entries, this.sortField, this.sortDirection);

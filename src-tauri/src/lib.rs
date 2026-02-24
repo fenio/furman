@@ -8,8 +8,30 @@ use commands::watcher::WatcherState;
 use std::collections::HashMap;
 use std::sync::Mutex;
 
+/// Ensure common tool directories are on PATH.
+///
+/// macOS GUI apps launched from Finder/Spotlight get a minimal PATH
+/// that excludes Homebrew and MacPorts. Prepend the usual locations
+/// so child processes (`git`, `7z`, editors, etc.) can be found.
+fn ensure_path() {
+    let extra_dirs = ["/opt/homebrew/bin", "/usr/local/bin", "/opt/homebrew/sbin"];
+    let current = std::env::var("PATH").unwrap_or_default();
+    let mut parts: Vec<&str> = Vec::new();
+    for dir in &extra_dirs {
+        if !current.split(':').any(|p| p == *dir) {
+            parts.push(dir);
+        }
+    }
+    if !parts.is_empty() {
+        parts.push(&current);
+        std::env::set_var("PATH", parts.join(":"));
+    }
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    ensure_path();
+
     tauri::Builder::default()
         .manage(WatcherState(Mutex::new(HashMap::new())))
         .manage(TerminalState(Mutex::new(HashMap::new())))
@@ -90,6 +112,11 @@ pub fn run() {
             commands::keychain::keychain_set,
             commands::keychain::keychain_get,
             commands::keychain::keychain_delete,
+            // git commands
+            commands::git::git_repo_info,
+            commands::git::git_pull,
+            commands::git::git_list_branches,
+            commands::git::git_checkout,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

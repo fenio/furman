@@ -88,6 +88,13 @@ export interface SearchDone {
 
 export type SearchEvent = SearchResult | SearchDone;
 
+export interface GitRepoInfo {
+  branch: string;
+  ahead: number;
+  behind: number;
+  dirty: boolean;
+}
+
 export type PanelBackend = 'local' | 's3' | 'archive';
 
 export interface ArchiveInfo {

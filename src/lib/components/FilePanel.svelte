@@ -1,7 +1,9 @@
 <script lang="ts">
   import type { PanelData } from '$lib/state/panels.svelte';
   import { appState } from '$lib/state/app.svelte';
+  import { statusState } from '$lib/state/status.svelte';
   import { formatSize } from '$lib/utils/format';
+  import { gitPull, getGitRepoInfo, gitListBranches, gitCheckout } from '$lib/services/tauri';
   import { onMount, tick } from 'svelte';
   import FileRow from './FileRow.svelte';
   import FileIcon from './FileIcon.svelte';
@@ -208,6 +210,65 @@
     }
   });
 
+  let pulling = $state(false);
+  let branchPickerOpen = $state(false);
+  let branchList = $state<string[]>([]);
+  let branchPickerEl: HTMLDivElement | undefined = $state(undefined);
+
+  async function handleBranchClick(e: MouseEvent) {
+    e.stopPropagation();
+    if (branchPickerOpen) {
+      branchPickerOpen = false;
+      return;
+    }
+    try {
+      branchList = await gitListBranches(panel.path);
+      branchPickerOpen = true;
+      // Close on outside click
+      const onClickOutside = (ev: MouseEvent) => {
+        if (branchPickerEl && !branchPickerEl.contains(ev.target as Node)) {
+          branchPickerOpen = false;
+          window.removeEventListener('mousedown', onClickOutside);
+        }
+      };
+      // Delay to avoid catching the current click
+      setTimeout(() => window.addEventListener('mousedown', onClickOutside), 0);
+    } catch {
+      // ignore
+    }
+  }
+
+  async function handleBranchSelect(branch: string) {
+    branchPickerOpen = false;
+    if (branch === panel.gitInfo?.branch) return;
+    try {
+      const result = await gitCheckout(panel.path, branch);
+      statusState.setMessage(result || `Switched to ${branch}`);
+      const info = await getGitRepoInfo(panel.path);
+      panel.gitInfo = info;
+      await panel.loadDirectory(panel.path);
+    } catch (err: unknown) {
+      statusState.setMessage(`Checkout failed: ${err instanceof Error ? err.message : String(err)}`);
+    }
+  }
+
+  async function handleGitPull() {
+    if (pulling) return;
+    pulling = true;
+    try {
+      const result = await gitPull(panel.path);
+      statusState.setMessage(result.trim() || 'Pull complete');
+      // Refresh git info and panel entries
+      const info = await getGitRepoInfo(panel.path);
+      panel.gitInfo = info;
+      await panel.loadDirectory(panel.path);
+    } catch (err: unknown) {
+      statusState.setMessage(`Pull failed: ${err instanceof Error ? err.message : String(err)}`);
+    } finally {
+      pulling = false;
+    }
+  }
+
   const isS3 = $derived(panel.backend === 's3');
 </script>
 
@@ -259,6 +320,55 @@
       {homePath}
       onNavigate={(p) => panel.loadDirectory(p)}
     />
+    {#if panel.gitInfo}
+      <span class="backend-indicator">
+        <svg class="backend-logo" viewBox="0 0 92 92" xmlns="http://www.w3.org/2000/svg">
+          <path d="M90.156 41.965 50.036 1.848a5.918 5.918 0 0 0-8.372 0l-8.328 8.332 10.566 10.566a7.03 7.03 0 0 1 7.23 1.684 7.034 7.034 0 0 1 1.669 7.277l10.187 10.184a7.028 7.028 0 0 1 7.278 1.672 7.04 7.04 0 0 1 0 9.957 7.05 7.05 0 0 1-9.965 0 7.044 7.044 0 0 1-1.528-7.66l-9.5-9.497V52.68a7.072 7.072 0 0 1 1.926 1.528 7.04 7.04 0 0 1 0 9.957 7.048 7.048 0 0 1-9.965 0 7.04 7.04 0 0 1 0-9.957 7.06 7.06 0 0 1 2.307-1.681V34.8a7.06 7.06 0 0 1-2.307-1.681 7.048 7.048 0 0 1-1.516-7.608L29.242 14.961 1.73 42.471a5.918 5.918 0 0 0 0 8.372l40.121 40.12a5.916 5.916 0 0 0 8.369 0l39.937-39.934a5.92 5.92 0 0 0 0-8.373Z" fill="#F05032"/>
+        </svg>
+        <button class="git-branch-btn" onclick={handleBranchClick} title="Switch branch">
+          {panel.gitInfo.branch.length > 20 ? panel.gitInfo.branch.slice(0, 20) + '\u2026' : panel.gitInfo.branch}
+          <span class="git-branch-caret">{'\u25BE'}</span>
+        </button>
+        {#if panel.gitInfo.ahead > 0}<span class="git-ahead">{'\u2191'}{panel.gitInfo.ahead}</span>{/if}
+        {#if panel.gitInfo.behind > 0}<span class="git-behind">{'\u2193'}{panel.gitInfo.behind}</span>{/if}
+        {#if panel.gitInfo.dirty}<span class="git-dirty">{'\u25CF'}</span>{/if}
+        <button class="git-pull-btn" onclick={(e) => { e.stopPropagation(); handleGitPull(); }} disabled={pulling} title="Git pull">
+          {pulling ? '\u21BB' : '\u2913'}
+        </button>
+        {#if branchPickerOpen}
+          <div class="branch-picker" bind:this={branchPickerEl}>
+            {#each branchList as branch}
+              <button
+                class="branch-option"
+                class:current={branch === panel.gitInfo?.branch}
+                onclick={() => handleBranchSelect(branch)}
+              >
+                {branch}
+                {#if branch === panel.gitInfo?.branch}<span class="branch-check">{'\u2713'}</span>{/if}
+              </button>
+            {/each}
+          </div>
+        {/if}
+      </span>
+    {:else if panel.backend === 's3'}
+      <span class="backend-indicator">
+        <svg class="backend-logo" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+          <path d="M22 12c0-1.1-.5-2.1-1.3-2.8.3-.7.4-1.4.3-2.2-.3-1.6-1.5-2.8-3.1-3.1-.8-.1-1.5 0-2.2.3C15.1 3.5 14.1 3 13 3h-2c-1.1 0-2.1.5-2.8 1.3-.7-.3-1.4-.4-2.2-.3-1.6.3-2.8 1.5-3.1 3.1-.1.8 0 1.5.3 2.2C2.5 9.9 2 10.9 2 12s.5 2.1 1.3 2.8c-.3.7-.4 1.4-.3 2.2.3 1.6 1.5 2.8 3.1 3.1.8.1 1.5 0 2.2-.3.6.7 1.6 1.2 2.7 1.2h2c1.1 0 2.1-.5 2.8-1.3.7.3 1.4.4 2.2.3 1.6-.3 2.8-1.5 3.1-3.1.1-.8 0-1.5-.3-2.2.7-.6 1.2-1.6 1.2-2.7Z" fill="none" stroke="#FF9900" stroke-width="1.5"/>
+          <path d="M8 12h8M8 9h8M8 15h8" stroke="#FF9900" stroke-width="1.5" stroke-linecap="round"/>
+        </svg>
+        <span class="backend-label">S3</span>
+      </span>
+    {:else if panel.backend === 'archive'}
+      <span class="backend-indicator">
+        <svg class="backend-logo" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+          <path d="M4 4h16v2H4zm2 4h12v12H6zm4 3v2h4v-2z" fill="#8B8BCD"/>
+          <rect x="11" y="4" width="2" height="2" fill="#8B8BCD"/>
+          <rect x="11" y="8" width="2" height="2" fill="#8B8BCD"/>
+          <rect x="11" y="12" width="2" height="2" fill="#8B8BCD"/>
+        </svg>
+        <span class="backend-label">Archive</span>
+      </span>
+    {/if}
     <button class="view-toggle" onclick={() => panel.toggleViewMode()} title={panel.viewMode === 'list' ? 'Switch to icon view' : 'Switch to list view'}>
       {panel.viewMode === 'list' ? '\u229E' : '\u2630'}
     </button>
@@ -355,7 +465,7 @@
     {/if}
   </div>
 
-  <!-- Footer: selection info or current file info -->
+  <!-- Footer: selection info, git status, free space -->
   <div class="panel-footer">
     {#if panel.selectedCount > 0}
       <span>{panel.selectedCount} selected ({formatSize(panel.selectedSize)})</span>
@@ -402,9 +512,10 @@
     padding: 6px 12px;
     border-bottom: 1px solid var(--border-subtle);
     white-space: nowrap;
-    overflow: hidden;
+    overflow: visible;
     flex: 0 0 auto;
     opacity: 0.7;
+    z-index: 10;
   }
 
   .panel-header.has-s3-disconnect {
@@ -451,6 +562,141 @@
   .view-toggle:hover {
     opacity: 1;
   }
+
+  .backend-indicator {
+    position: absolute;
+    right: 30px;
+    top: 50%;
+    transform: translateY(-50%);
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    font-size: 11px;
+    color: var(--header-text);
+    opacity: 0.6;
+    white-space: nowrap;
+  }
+
+  .backend-logo {
+    width: 14px;
+    height: 14px;
+    flex-shrink: 0;
+  }
+
+  .backend-label {
+    font-weight: 500;
+    font-size: 11px;
+  }
+
+  .git-branch-btn {
+    background: none;
+    border: none;
+    color: var(--header-text);
+    font-size: 11px;
+    font-family: inherit;
+    cursor: pointer;
+    padding: 1px 4px;
+    border-radius: 3px;
+    transition: background var(--transition-fast);
+    display: flex;
+    align-items: center;
+    gap: 2px;
+  }
+
+  .git-branch-btn:hover {
+    background: color-mix(in srgb, var(--header-text) 15%, transparent);
+  }
+
+  .git-branch-caret {
+    font-size: 9px;
+    opacity: 0.6;
+  }
+
+  .git-ahead {
+    color: var(--success-color, #4ec990);
+    font-weight: 600;
+    font-size: 10px;
+  }
+
+  .git-behind {
+    color: var(--warning-color, #e8a838);
+    font-weight: 600;
+    font-size: 10px;
+  }
+
+  .git-dirty {
+    color: var(--warning-color, #e8a838);
+    font-size: 8px;
+    line-height: 1;
+  }
+
+  .git-pull-btn {
+    background: none;
+    border: none;
+    color: var(--header-text);
+    font-size: 11px;
+    cursor: pointer;
+    padding: 0 2px;
+    line-height: 1;
+    opacity: 0.5;
+    transition: opacity var(--transition-fast);
+  }
+
+  .git-pull-btn:hover {
+    opacity: 1;
+    color: var(--success-color, #4ec990);
+  }
+
+  .git-pull-btn:disabled {
+    opacity: 0.3;
+    cursor: default;
+  }
+
+  .branch-picker {
+    position: absolute;
+    top: calc(100% + 4px);
+    right: 0;
+    background: var(--bg-panel);
+    border: 1px solid var(--border-active);
+    border-radius: var(--radius-md, 4px);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+    max-height: 240px;
+    overflow-y: auto;
+    min-width: 160px;
+    z-index: 100;
+    padding: 4px 0;
+  }
+
+  .branch-option {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    width: 100%;
+    background: none;
+    border: none;
+    color: var(--text-primary);
+    font-size: 12px;
+    font-family: inherit;
+    padding: 5px 12px;
+    cursor: pointer;
+    text-align: left;
+    transition: background var(--transition-fast);
+  }
+
+  .branch-option:hover {
+    background: color-mix(in srgb, var(--border-active) 20%, transparent);
+  }
+
+  .branch-option.current {
+    color: var(--border-active);
+    font-weight: 600;
+  }
+
+  .branch-check {
+    margin-left: 8px;
+    font-size: 11px;
+  }
+
 
   .active .panel-header {
     opacity: 1;

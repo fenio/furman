@@ -64,9 +64,6 @@ pub enum FmError {
     #[error("Not found: {0}")]
     NotFound(String),
 
-    #[error("Permission denied: {0}")]
-    PermissionDenied(String),
-
     #[error("Already exists: {0}")]
     AlreadyExists(String),
 
