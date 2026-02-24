@@ -194,6 +194,7 @@
         <input
           type="text"
           class="dialog-input search-input"
+          autocomplete="off"
           bind:value={query}
           bind:this={inputEl}
           oninput={handleInput}

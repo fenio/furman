@@ -63,6 +63,7 @@ export type ModalType =
   | 'menu'
   | 'volume-selector'
   | 's3-connect'
+  | 's3-manager'
   | 'search'
   | 'preferences';
 
@@ -99,4 +100,15 @@ export interface S3ConnectionInfo {
   endpoint?: string;
   profile?: string;
   connectionId: string;
+}
+
+export interface S3Profile {
+  id: string;
+  name: string;
+  bucket: string;
+  region: string;
+  endpoint?: string;
+  profile?: string;
+  credentialType: 'keychain' | 'aws-profile' | 'default';
+  accessKeyId?: string;
 }

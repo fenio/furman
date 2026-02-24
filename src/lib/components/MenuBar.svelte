@@ -2,21 +2,9 @@
   import { panels } from '$lib/state/panels.svelte';
   import { appState } from '$lib/state/app.svelte';
   import { sidebarState } from '$lib/state/sidebar.svelte';
-  import type { S3ConnectionInfo } from '$lib/types';
 
   function handleS3Click() {
-    const panel = panels.active;
-    appState.showS3Connect(async (bucket, region, endpoint, profile, accessKey, secretKey) => {
-      const connectionId = `s3-${Date.now()}`;
-      const info: S3ConnectionInfo = { bucket, region, connectionId };
-      if (endpoint) info.endpoint = endpoint;
-      if (profile) info.profile = profile;
-      try {
-        await panel.connectS3(info, endpoint, profile, accessKey, secretKey);
-      } catch (err: unknown) {
-        console.error('S3 connect failed:', err);
-      }
-    });
+    appState.showS3Manager();
   }
 
   function switchToLeft() {

@@ -1,6 +1,7 @@
 pub mod archive;
 pub mod directory;
 pub mod file;
+pub mod keychain;
 pub mod metadata;
 pub mod s3;
 pub mod search;
@@ -10,6 +11,7 @@ pub mod watcher;
 
 pub use directory::*;
 pub use file::*;
+pub use keychain::*;
 pub use metadata::*;
 pub use s3::*;
 pub use search::*;

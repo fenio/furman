@@ -84,6 +84,10 @@ pub fn run() {
             // search commands
             commands::search::search_files,
             commands::search::cancel_search,
+            // keychain commands
+            commands::keychain::keychain_set,
+            commands::keychain::keychain_get,
+            commands::keychain::keychain_delete,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

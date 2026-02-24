@@ -47,6 +47,7 @@
       <input
         type="text"
         class="dialog-input"
+        autocomplete="off"
         bind:value={inputValue}
         bind:this={inputEl}
         onkeydown={handleKeydown}

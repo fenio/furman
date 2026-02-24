@@ -1,43 +1,70 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import { s3CheckCredentials } from '$lib/services/s3';
+  import type { S3Profile } from '$lib/types';
 
   interface Props {
     onConnect: (bucket: string, region: string, endpoint?: string, profile?: string, accessKey?: string, secretKey?: string) => void;
     onCancel: () => void;
+    saveMode?: boolean;
+    initialData?: S3Profile;
+    onSave?: (profile: Omit<S3Profile, 'id'> & { id?: string }, secretKey?: string) => void;
   }
 
-  let { onConnect, onCancel }: Props = $props();
+  let { onConnect, onCancel, saveMode = false, initialData, onSave }: Props = $props();
 
-  let bucket = $state('');
-  let region = $state('us-east-1');
-  let endpoint = $state('');
-  let profile = $state('');
-  let accessKey = $state('');
+  // Capture initial values once to avoid Svelte state_referenced_locally warnings
+  const init = initialData;
+
+  let name = $state(init?.name ?? '');
+  let bucket = $state(init?.bucket ?? '');
+  let region = $state(init?.region ?? 'us-east-1');
+  let endpoint = $state(init?.endpoint ?? '');
+  let profile = $state(init?.profile ?? '');
+  let accessKey = $state(init?.accessKeyId ?? '');
   let secretKey = $state('');
-  let showManualCreds = $state(false);
+  let showManualCreds = $state(init?.credentialType === 'keychain' || false);
   let hasDefaultCreds = $state(true);
   let checking = $state(true);
   let bucketEl: HTMLInputElement | undefined = $state(undefined);
+  let nameEl: HTMLInputElement | undefined = $state(undefined);
+
+  const isEditing = !!init;
 
   onMount(async () => {
     try {
       hasDefaultCreds = await s3CheckCredentials();
-      if (!hasDefaultCreds) {
+      if (!hasDefaultCreds && !init) {
         showManualCreds = true;
       }
     } catch {
       hasDefaultCreds = false;
-      showManualCreds = true;
+      if (!init) showManualCreds = true;
     } finally {
       checking = false;
     }
-    if (bucketEl) {
+    if (saveMode && nameEl) {
+      nameEl.focus();
+    } else if (bucketEl) {
       bucketEl.focus();
     }
   });
 
-  function handleSubmit() {
+  function buildProfile(): Omit<S3Profile, 'id'> & { id?: string } {
+    const credentialType = showManualCreds && accessKey.trim() ? 'keychain' as const : profile.trim() ? 'aws-profile' as const : 'default' as const;
+    return {
+      ...(initialData ? { id: initialData.id } : {}),
+      name: name.trim(),
+      bucket: bucket.trim(),
+      region: region.trim() || 'us-east-1',
+      ...(endpoint.trim() ? { endpoint: endpoint.trim() } : {}),
+      ...(profile.trim() ? { profile: profile.trim() } : {}),
+      credentialType,
+      ...(credentialType === 'keychain' && accessKey.trim() ? { accessKeyId: accessKey.trim() } : {}),
+    };
+  }
+
+  function handleConnect() {
     if (!bucket.trim()) return;
     onConnect(
       bucket.trim(),
@@ -49,11 +76,38 @@
     );
   }
 
+  function handleSaveAndConnect() {
+    if (!bucket.trim() || !name.trim()) return;
+    const p = buildProfile();
+    const sk = showManualCreds && secretKey.trim() ? secretKey.trim() : undefined;
+    onSave?.(p, sk);
+    onConnect(
+      bucket.trim(),
+      region.trim() || 'us-east-1',
+      endpoint.trim() || undefined,
+      profile.trim() || undefined,
+      showManualCreds && accessKey.trim() ? accessKey.trim() : undefined,
+      showManualCreds && secretKey.trim() ? secretKey.trim() : undefined,
+    );
+  }
+
+  function handleSave() {
+    if (!bucket.trim() || !name.trim()) return;
+    const p = buildProfile();
+    const sk = showManualCreds && secretKey.trim() ? secretKey.trim() : undefined;
+    onSave?.(p, sk);
+    onCancel();
+  }
+
   function handleKeydown(e: KeyboardEvent) {
     if (e.key === 'Enter') {
       e.preventDefault();
       e.stopPropagation();
-      handleSubmit();
+      if (saveMode) {
+        handleSaveAndConnect();
+      } else {
+        handleConnect();
+      }
     } else if (e.key === 'Escape') {
       e.preventDefault();
       e.stopPropagation();
@@ -70,13 +124,28 @@
   onkeydown={handleKeydown}
 >
   <div class="dialog-box">
-    <div class="dialog-title">Connect to S3-Compatible Storage</div>
+    <div class="dialog-title">{isEditing ? 'Edit S3 Connection' : 'Connect to S3-Compatible Storage'}</div>
     <div class="dialog-body">
+      {#if saveMode}
+        <label class="field-label">
+          Connection Name
+          <input
+            type="text"
+            class="dialog-input"
+            autocomplete="off"
+            bind:value={name}
+            bind:this={nameEl}
+            placeholder="My S3 Bucket"
+          />
+        </label>
+      {/if}
+
       <label class="field-label">
         Bucket
         <input
           type="text"
           class="dialog-input"
+          autocomplete="off"
           bind:value={bucket}
           bind:this={bucketEl}
           placeholder="my-bucket-name"
@@ -88,6 +157,7 @@
         <input
           type="text"
           class="dialog-input"
+          autocomplete="off"
           bind:value={region}
           placeholder="us-east-1"
         />
@@ -98,6 +168,7 @@
         <input
           type="text"
           class="dialog-input"
+          autocomplete="off"
           bind:value={endpoint}
           placeholder="https://us-east-1.linodeobjects.com"
         />
@@ -109,6 +180,7 @@
         <input
           type="text"
           class="dialog-input"
+          autocomplete="off"
           bind:value={profile}
           placeholder="default"
         />
@@ -134,6 +206,7 @@
           <input
             type="text"
             class="dialog-input"
+            autocomplete="off"
             bind:value={accessKey}
             placeholder="AKIA..."
           />
@@ -144,14 +217,24 @@
           <input
             type="password"
             class="dialog-input"
+            autocomplete="off"
             bind:value={secretKey}
-            placeholder="secret"
+            placeholder={isEditing ? 'Leave empty to keep current' : 'secret'}
           />
         </label>
       {/if}
 
       <div class="dialog-buttons">
-        <button class="dialog-btn primary" onclick={handleSubmit} disabled={!bucket.trim()}>Connect</button>
+        {#if saveMode}
+          <button class="dialog-btn primary" onclick={handleSaveAndConnect} disabled={!bucket.trim() || !name.trim()}>Save & Connect</button>
+          {#if !isEditing}
+            <button class="dialog-btn" onclick={handleConnect} disabled={!bucket.trim()}>Connect Without Saving</button>
+          {:else}
+            <button class="dialog-btn" onclick={handleSave} disabled={!bucket.trim() || !name.trim()}>Save</button>
+          {/if}
+        {:else}
+          <button class="dialog-btn primary" onclick={handleConnect} disabled={!bucket.trim()}>Connect</button>
+        {/if}
         <button class="dialog-btn" onclick={onCancel}>Cancel</button>
       </div>
     </div>

@@ -3,6 +3,7 @@ import type { Theme } from '@tauri-apps/api/window';
 import { saveConfig, type Config } from '$lib/services/config';
 import { sidebarState } from '$lib/state/sidebar.svelte';
 import { workspacesState } from '$lib/state/workspaces.svelte';
+import { s3ProfilesState } from '$lib/state/s3profiles.svelte';
 
 class AppState {
   theme = $state<'dark' | 'light'>('dark');
@@ -74,6 +75,10 @@ class AppState {
     this.modal = 's3-connect';
   }
 
+  showS3Manager() {
+    this.modal = 's3-manager';
+  }
+
   setIconSize(size: number) {
     this.iconSize = size;
     this.persistConfig();
@@ -110,6 +115,7 @@ class AppState {
       externalEditor: this.externalEditor,
       favorites: sidebarState.favorites,
       workspaces: workspacesState.workspaces,
+      s3Profiles: s3ProfilesState.profiles,
     });
   }
 

@@ -26,7 +26,15 @@ export class PanelData {
 
   filteredSortedEntries = $derived.by(() => {
     if (!this.filterText) return this.sortedEntries;
-    const lower = this.filterText.toLowerCase();
+    const pattern = this.filterText;
+    const hasGlob = pattern.includes('*') || pattern.includes('?');
+    if (hasGlob) {
+      const re = globToRegex(pattern);
+      return this.sortedEntries.filter(
+        (e) => e.name === '..' || re.test(e.name)
+      );
+    }
+    const lower = pattern.toLowerCase();
     return this.sortedEntries.filter(
       (e) => e.name === '..' || e.name.toLowerCase().includes(lower)
     );
@@ -52,6 +60,32 @@ export class PanelData {
 
   clearFilter() {
     this.filterText = '';
+  }
+
+  /** Lightweight refresh for file-watcher events: only updates entries if they actually changed. */
+  async refresh() {
+    if (this.backend !== 'local' || !this.path) return;
+    try {
+      const listing = await listDirectory(this.path, appState.showHidden);
+      if (entriesEqual(this.entries, listing.entries)) return;
+      this.freeSpace = listing.free_space;
+      this.entries = listing.entries;
+      // Preserve cursor position — clamp if entries shrank
+      if (this.cursorIndex >= this.filteredSortedEntries.length) {
+        this.cursorIndex = Math.max(0, this.filteredSortedEntries.length - 1);
+      }
+      // Prune selections that no longer exist
+      const validPaths = new Set(listing.entries.map(e => e.path));
+      let pruned = false;
+      for (const p of this.selectedPaths) {
+        if (!validPaths.has(p)) { pruned = true; break; }
+      }
+      if (pruned) {
+        this.selectedPaths = new Set([...this.selectedPaths].filter(p => validPaths.has(p)));
+      }
+    } catch {
+      // Ignore — the directory may have been removed; a full loadDirectory will handle errors
+    }
   }
 
   async startWatching() {
@@ -253,6 +287,31 @@ export function s3PathToPrefix(path: string, bucket: string): string {
     return path.substring(prefix.length);
   }
   return path;
+}
+
+/** Convert a glob pattern (with * and ?) to a case-insensitive RegExp. */
+function globToRegex(pattern: string): RegExp {
+  const escaped = pattern.replace(/([.+^${}()|[\]\\])/g, '\\$1');
+  const re = escaped.replace(/\*/g, '.*').replace(/\?/g, '.');
+  return new RegExp(`^${re}$`, 'i');
+}
+
+/** Fast shallow comparison of two FileEntry arrays. */
+function entriesEqual(a: FileEntry[], b: FileEntry[]): boolean {
+  if (a.length !== b.length) return false;
+  for (let i = 0; i < a.length; i++) {
+    const x = a[i], y = b[i];
+    if (
+      x.name !== y.name ||
+      x.path !== y.path ||
+      x.size !== y.size ||
+      x.is_dir !== y.is_dir ||
+      x.modified !== y.modified ||
+      x.permissions !== y.permissions ||
+      x.git_status !== y.git_status
+    ) return false;
+  }
+  return true;
 }
 
 class PanelsState {

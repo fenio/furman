@@ -188,6 +188,7 @@
       bind:this={filterInput}
       bind:value={panel.filterText}
       class="filter-input"
+      autocomplete="off"
       placeholder="Filter..."
       onkeydown={(e) => {
         if (e.key === 'Escape') {

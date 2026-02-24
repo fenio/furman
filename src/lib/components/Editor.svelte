@@ -145,8 +145,8 @@
         onscroll={handleScroll}
         spellcheck="false"
         autocomplete="off"
-        autocorrect="off"
         autocapitalize="off"
+        {...{ autocorrect: 'off' }}
       ></textarea>
     </div>
   {/if}

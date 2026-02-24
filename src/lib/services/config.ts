@@ -1,6 +1,7 @@
 import { readFileText, writeFileText } from '$lib/services/tauri';
 import type { FavoriteItem } from '$lib/state/sidebar.svelte';
 import type { Workspace } from '$lib/state/workspaces.svelte';
+import type { S3Profile } from '$lib/types';
 
 export interface Config {
   theme: 'dark' | 'light';
@@ -10,6 +11,7 @@ export interface Config {
   externalEditor: string;
   favorites: FavoriteItem[];
   workspaces: Workspace[];
+  s3Profiles: S3Profile[];
 }
 
 export const DEFAULT_CONFIG: Config = {
@@ -20,6 +22,7 @@ export const DEFAULT_CONFIG: Config = {
   externalEditor: '',
   favorites: [],
   workspaces: [],
+  s3Profiles: [],
 };
 
 let configPath = '';

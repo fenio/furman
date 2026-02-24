@@ -94,6 +94,7 @@
         <input
           class="pref-input"
           type="text"
+          autocomplete="off"
           placeholder="e.g. code, vim, subl"
           value={appState.externalEditor}
           oninput={(e) => appState.setExternalEditor((e.target as HTMLInputElement).value)}

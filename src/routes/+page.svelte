@@ -19,9 +19,11 @@
   import Viewer from '$lib/components/Viewer.svelte';
   import Editor from '$lib/components/Editor.svelte';
   import S3ConnectDialog from '$lib/components/S3ConnectDialog.svelte';
+  import S3ConnectionManager from '$lib/components/S3ConnectionManager.svelte';
   import SearchDialog from '$lib/components/SearchDialog.svelte';
   import MenuDropdown from '$lib/components/MenuDropdown.svelte';
   import PreferencesDialog from '$lib/components/PreferencesDialog.svelte';
+  import { s3ProfilesState } from '$lib/state/s3profiles.svelte';
 
   let bottomResizing = $state(false);
   let quakeResizing = $state(false);
@@ -48,6 +50,7 @@
 
       sidebarState.loadFavorites(homePath, config.favorites);
       workspacesState.load(config.workspaces);
+      s3ProfilesState.load(config.s3Profiles);
       await Promise.all([
         panels.left.loadDirectory(homePath),
         panels.right.loadDirectory(homePath)
@@ -69,13 +72,13 @@
         if (needLeft && !reloadLeftTimer) {
           reloadLeftTimer = setTimeout(() => {
             reloadLeftTimer = null;
-            panels.left.loadDirectory(panels.left.path);
+            panels.left.refresh();
           }, 300);
         }
         if (needRight && !reloadRightTimer) {
           reloadRightTimer = setTimeout(() => {
             reloadRightTimer = null;
-            panels.right.loadDirectory(panels.right.path);
+            panels.right.refresh();
           }, 300);
         }
       });
@@ -274,6 +277,10 @@
       }}
       onCancel={() => appState.closeModal()}
     />
+  {/if}
+
+  {#if appState.modal === 's3-manager'}
+    <S3ConnectionManager onClose={() => appState.closeModal()} />
   {/if}
 
   {#if appState.modal === 'preferences'}
