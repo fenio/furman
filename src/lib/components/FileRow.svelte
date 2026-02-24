@@ -11,11 +11,12 @@
     isActive: boolean;
     rowIndex: number;
     panelSide?: 'left' | 'right';
+    dirSize?: number;
     onclick?: (e: MouseEvent) => void;
     ondblclick?: () => void;
   }
 
-  let { entry, isSelected, isCursor, isActive, rowIndex, panelSide, onclick, ondblclick }: Props = $props();
+  let { entry, isSelected, isCursor, isActive, rowIndex, panelSide, dirSize, onclick, ondblclick }: Props = $props();
 
   const archiveExtensions = new Set(['zip', 'rar', '7z', 'tar', 'gz', 'tgz', 'bz2', 'xz']);
   const imageExtensions = new Set(['png', 'jpg', 'jpeg', 'gif', 'bmp', 'svg', 'webp', 'ico']);
@@ -46,7 +47,10 @@
 
   const sizeDisplay = $derived.by(() => {
     if (entry.name === '..') return '  UP--DIR';
-    if (entry.is_dir) return '   <DIR>';
+    if (entry.is_dir) {
+      if (dirSize != null) return formatSize(dirSize).padStart(8);
+      return '   <DIR>';
+    }
     return formatSize(entry.size).padStart(8);
   });
 
@@ -157,7 +161,6 @@
 
   .file-row.selected {
     color: var(--selected-text);
-    font-weight: 600;
   }
 
   .file-row.cursor-active {
@@ -216,6 +219,7 @@
     text-align: right;
     padding-right: 1ch;
   }
+
 
   .col-date {
     flex: 0 0 16ch;

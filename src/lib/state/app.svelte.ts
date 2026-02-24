@@ -24,6 +24,7 @@ class AppState {
   iconSize = $state(48);
   startupSound = $state(true);
   showHidden = $state(false);
+  calculateDirSizes = $state(true);
   s3ConnectCallback = $state<((bucket: string, region: string, endpoint?: string, profile?: string, accessKey?: string, secretKey?: string) => void) | null>(null);
   searchRoot = $state('');
   externalEditor = $state('');
@@ -46,6 +47,11 @@ class AppState {
 
   setShowHidden(val: boolean) {
     this.showHidden = val;
+    this.persistConfig();
+  }
+
+  setCalculateDirSizes(val: boolean) {
+    this.calculateDirSizes = val;
     this.persistConfig();
   }
 
@@ -106,6 +112,7 @@ class AppState {
     this.startupSound = config.startupSound;
     this.showHidden = config.showHidden;
     this.externalEditor = config.externalEditor;
+    this.calculateDirSizes = config.calculateDirSizes;
   }
 
   toggleTheme() {
@@ -120,6 +127,7 @@ class AppState {
       iconSize: this.iconSize,
       startupSound: this.startupSound,
       showHidden: this.showHidden,
+      calculateDirSizes: this.calculateDirSizes,
       externalEditor: this.externalEditor,
       favorites: sidebarState.favorites,
       workspaces: workspacesState.workspaces,

@@ -83,6 +83,15 @@
       <label class="pref-row checkbox">
         <input
           type="checkbox"
+          checked={appState.calculateDirSizes}
+          onchange={() => appState.setCalculateDirSizes(!appState.calculateDirSizes)}
+        />
+        Calculate Directory Sizes on Selection
+      </label>
+
+      <label class="pref-row checkbox">
+        <input
+          type="checkbox"
           checked={appState.startupSound}
           onchange={() => appState.setStartupSound(!appState.startupSound)}
         />

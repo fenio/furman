@@ -1,8 +1,9 @@
 import type { FileEntry, SortField, SortDirection, ViewMode, PanelBackend, S3ConnectionInfo, ArchiveInfo, GitRepoInfo } from '$lib/types';
 import { sortEntries } from '$lib/utils/sort';
-import { listDirectory, listArchive, watchDirectory, unwatchDirectory, getGitRepoInfo } from '$lib/services/tauri';
+import { listDirectory, listArchive, watchDirectory, unwatchDirectory, getGitRepoInfo, getDirectorySize } from '$lib/services/tauri';
 import { s3Connect, s3Disconnect, s3ListObjects } from '$lib/services/s3';
 import { appState } from '$lib/state/app.svelte';
+
 
 export class PanelData {
   path = $state('');
@@ -50,14 +51,44 @@ export class PanelData {
     let total = 0;
     for (const entry of this.entries) {
       if (this.selectedPaths.has(entry.path)) {
-        total += entry.size;
+        if (entry.is_dir) {
+          total += this.dirSizeCache[entry.path] ?? 0;
+        } else {
+          total += entry.size;
+        }
       }
     }
     return total;
   });
 
+  /** Cache of computed recursive directory sizes (path → bytes). */
+  dirSizeCache = $state<Record<string, number>>({});
+  private dirSizePending = new Set<string>();
+
   constructor(side: string) {
     this.watchId = `watch-${side}`;
+  }
+
+  /** Compute recursive sizes for any selected directories not yet cached. */
+  computeSelectedDirSizes() {
+    if (this.backend !== 'local' || !appState.calculateDirSizes) return;
+    for (const entry of this.entries) {
+      if (
+        entry.is_dir &&
+        entry.name !== '..' &&
+        this.selectedPaths.has(entry.path) &&
+        !(entry.path in this.dirSizeCache) &&
+        !this.dirSizePending.has(entry.path)
+      ) {
+        this.dirSizePending.add(entry.path);
+        getDirectorySize(entry.path).then((size) => {
+          this.dirSizeCache = { ...this.dirSizeCache, [entry.path]: size };
+          this.dirSizePending.delete(entry.path);
+        }).catch(() => {
+          this.dirSizePending.delete(entry.path);
+        });
+      }
+    }
   }
 
   clearFilter() {
@@ -102,6 +133,8 @@ export class PanelData {
 
   async loadDirectory(path: string, focusName?: string) {
     this.clearFilter();
+    this.dirSizeCache = {};
+    this.dirSizePending.clear();
 
     // If we're in archive mode and the ".." path is a real filesystem path (not archive://),
     // that means we're exiting the archive

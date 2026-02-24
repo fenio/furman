@@ -29,6 +29,7 @@
 - **Archive browsing** — navigate inside zip, rar, and 7z archives as if they were directories (requires `brew install 7zip`)
 - **File watcher** — panels auto-refresh when files change on disk
 - **Quick filter** — type to filter the file list in real time
+- **Directory sizes** — selecting a directory calculates its recursive size (configurable in Preferences)
 - **Selection** — click, Cmd+click to toggle, Shift+click for range, or rubber-band (marquee) drag in empty space
 - **Drag and drop** — drag files between panels to copy (or Shift+drag to move)
 - **Sidebar** — favorites, workspaces, mounted devices, S3 connections, theme toggle (Cmd+B to open, press again to focus for keyboard navigation)

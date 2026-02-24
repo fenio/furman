@@ -8,6 +8,7 @@ export interface Config {
   iconSize: number;
   startupSound: boolean;
   showHidden: boolean;
+  calculateDirSizes: boolean;
   externalEditor: string;
   favorites: FavoriteItem[];
   workspaces: Workspace[];
@@ -19,6 +20,7 @@ export const DEFAULT_CONFIG: Config = {
   iconSize: 48,
   startupSound: true,
   showHidden: false,
+  calculateDirSizes: true,
   externalEditor: '',
   favorites: [],
   workspaces: [],

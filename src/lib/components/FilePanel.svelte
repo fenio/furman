@@ -77,6 +77,13 @@
     }
   });
 
+  // Compute directory sizes when selection changes
+  $effect(() => {
+    // Access selectedPaths to create a reactive dependency
+    panel.selectedPaths;
+    panel.computeSelectedDirSizes();
+  });
+
   // Auto-focus filter input when it appears
   $effect(() => {
     if (panel.filterText && filterInput) {
@@ -446,6 +453,8 @@
             {isActive}
             rowIndex={i}
             panelSide={side}
+            dirSize={entry.is_dir ? panel.dirSizeCache[entry.path] : undefined}
+
             onclick={(e) => handleRowClick(i, e)}
             ondblclick={() => handleRowDblClick(i)}
           />
