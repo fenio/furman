@@ -9,6 +9,7 @@ export class PanelData {
   entries = $state<FileEntry[]>([]);
   watchId: string;
   cursorIndex = $state(0);
+  selectionAnchor = $state(0);
   selectedPaths = $state<Set<string>>(new Set());
   sortField = $state<SortField>('name');
   sortDirection = $state<SortDirection>('asc');
@@ -204,6 +205,7 @@ export class PanelData {
     if (index < 0) index = 0;
     if (index >= len) index = len - 1;
     this.cursorIndex = index;
+    this.selectionAnchor = index;
   }
 
   toggleSelection(path: string) {
@@ -234,6 +236,19 @@ export class PanelData {
     const next = new Set<string>();
     for (const entry of this.entries) {
       if (entry.name !== '..' && !this.selectedPaths.has(entry.path)) {
+        next.add(entry.path);
+      }
+    }
+    this.selectedPaths = next;
+  }
+
+  selectRange(from: number, to: number) {
+    const next = new Set<string>();
+    const start = Math.min(from, to);
+    const end = Math.max(from, to);
+    for (let i = start; i <= end; i++) {
+      const entry = this.filteredSortedEntries[i];
+      if (entry && entry.name !== '..') {
         next.add(entry.path);
       }
     }

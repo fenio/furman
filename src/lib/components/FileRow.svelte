@@ -11,7 +11,7 @@
     isActive: boolean;
     rowIndex: number;
     panelSide?: 'left' | 'right';
-    onclick?: () => void;
+    onclick?: (e: MouseEvent) => void;
     ondblclick?: () => void;
   }
 

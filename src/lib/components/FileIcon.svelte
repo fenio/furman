@@ -8,7 +8,7 @@
     isCursor: boolean;
     isActive: boolean;
     panelSide?: 'left' | 'right';
-    onclick?: () => void;
+    onclick?: (e: MouseEvent) => void;
     ondblclick?: () => void;
   }
 

@@ -581,39 +581,88 @@
         break;
       case 'ArrowUp':
         e.preventDefault();
-        active.moveCursor(isIconMode ? -cols : -1);
+        if (e.shiftKey) {
+          active.moveCursor(isIconMode ? -cols : -1);
+          active.selectRange(active.selectionAnchor, active.cursorIndex);
+        } else {
+          active.moveCursor(isIconMode ? -cols : -1);
+          active.selectionAnchor = active.cursorIndex;
+        }
         break;
       case 'ArrowDown':
         e.preventDefault();
-        active.moveCursor(isIconMode ? cols : 1);
+        if (e.shiftKey) {
+          active.moveCursor(isIconMode ? cols : 1);
+          active.selectRange(active.selectionAnchor, active.cursorIndex);
+        } else {
+          active.moveCursor(isIconMode ? cols : 1);
+          active.selectionAnchor = active.cursorIndex;
+        }
         break;
       case 'ArrowLeft':
         if (isIconMode) {
           e.preventDefault();
-          active.moveCursor(-1);
+          if (e.shiftKey) {
+            active.moveCursor(-1);
+            active.selectRange(active.selectionAnchor, active.cursorIndex);
+          } else {
+            active.moveCursor(-1);
+            active.selectionAnchor = active.cursorIndex;
+          }
         }
         break;
       case 'ArrowRight':
         if (isIconMode) {
           e.preventDefault();
-          active.moveCursor(1);
+          if (e.shiftKey) {
+            active.moveCursor(1);
+            active.selectRange(active.selectionAnchor, active.cursorIndex);
+          } else {
+            active.moveCursor(1);
+            active.selectionAnchor = active.cursorIndex;
+          }
         }
         break;
       case 'Home':
         e.preventDefault();
-        active.moveCursorTo(0);
+        if (e.shiftKey) {
+          active.cursorIndex = 0;
+          active.selectRange(active.selectionAnchor, 0);
+        } else {
+          active.moveCursorTo(0);
+        }
         break;
       case 'End':
         e.preventDefault();
-        active.moveCursorTo(active.filteredSortedEntries.length - 1);
+        {
+          const lastIdx = active.filteredSortedEntries.length - 1;
+          if (e.shiftKey) {
+            active.cursorIndex = lastIdx;
+            active.selectRange(active.selectionAnchor, lastIdx);
+          } else {
+            active.moveCursorTo(lastIdx);
+          }
+        }
         break;
       case 'PageUp':
         e.preventDefault();
-        active.moveCursor(isIconMode ? -cols * 4 : -20);
+        if (e.shiftKey) {
+          active.moveCursor(isIconMode ? -cols * 4 : -20);
+          active.selectRange(active.selectionAnchor, active.cursorIndex);
+        } else {
+          active.moveCursor(isIconMode ? -cols * 4 : -20);
+          active.selectionAnchor = active.cursorIndex;
+        }
         break;
       case 'PageDown':
         e.preventDefault();
-        active.moveCursor(isIconMode ? cols * 4 : 20);
+        if (e.shiftKey) {
+          active.moveCursor(isIconMode ? cols * 4 : 20);
+          active.selectRange(active.selectionAnchor, active.cursorIndex);
+        } else {
+          active.moveCursor(isIconMode ? cols * 4 : 20);
+          active.selectionAnchor = active.cursorIndex;
+        }
         break;
       case 'Enter':
         e.preventDefault();

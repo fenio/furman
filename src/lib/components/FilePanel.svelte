@@ -23,6 +23,11 @@
   let homePath = $state('');
   let isDragOver = $state(false);
 
+  // Rubber-band (marquee) selection state
+  let rubberBanding = $state(false);
+  let rubberStart = $state({ x: 0, y: 0 });
+  let rubberCurrent = $state({ x: 0, y: 0 });
+
   // Scroll to keep cursor visible
   $effect(() => {
     const idx = panel.cursorIndex;
@@ -81,15 +86,112 @@
     panel.toggleSort(field);
   }
 
-  function handleRowClick(index: number) {
+  function handleRowClick(index: number, e: MouseEvent) {
     onActivate?.();
-    panel.moveCursorTo(index);
+    if (e.shiftKey) {
+      // Range select from anchor to clicked index
+      panel.cursorIndex = index;
+      panel.selectRange(panel.selectionAnchor, index);
+    } else if (e.metaKey || e.ctrlKey) {
+      // Toggle selection of clicked item
+      panel.cursorIndex = index;
+      panel.selectionAnchor = index;
+      const entry = panel.filteredSortedEntries[index];
+      if (entry && entry.name !== '..') {
+        panel.toggleSelection(entry.path);
+      }
+    } else {
+      // Plain click — select only this item
+      panel.moveCursorTo(index);
+      const entry = panel.filteredSortedEntries[index];
+      if (entry && entry.name !== '..') {
+        panel.selectedPaths = new Set([entry.path]);
+      } else {
+        panel.deselectAll();
+      }
+    }
   }
 
   function handleRowDblClick(index: number) {
     onActivate?.();
     panel.moveCursorTo(index);
     onEntryActivate?.(index);
+  }
+
+  function getContentCoords(e: MouseEvent) {
+    if (!listContainer) return { x: 0, y: 0 };
+    const rect = listContainer.getBoundingClientRect();
+    return {
+      x: e.clientX - rect.left,
+      y: e.clientY - rect.top + listContainer.scrollTop,
+    };
+  }
+
+  function updateRubberBandSelection(prevSelected: Set<string>) {
+    if (!listContainer) return;
+
+    const minX = Math.min(rubberStart.x, rubberCurrent.x);
+    const maxX = Math.max(rubberStart.x, rubberCurrent.x);
+    const minY = Math.min(rubberStart.y, rubberCurrent.y);
+    const maxY = Math.max(rubberStart.y, rubberCurrent.y);
+
+    const selector = panel.viewMode === 'icon' ? '.file-tile' : '.file-row';
+    const elements = listContainer.querySelectorAll(selector);
+    const next = new Set(prevSelected);
+
+    elements.forEach((el, i) => {
+      const htmlEl = el as HTMLElement;
+      const top = htmlEl.offsetTop;
+      const left = htmlEl.offsetLeft;
+      const bottom = top + htmlEl.offsetHeight;
+      const right = left + htmlEl.offsetWidth;
+
+      const intersects = !(right < minX || left > maxX || bottom < minY || top > maxY);
+
+      const entry = panel.filteredSortedEntries[i];
+      if (!entry || entry.name === '..') return;
+      if (intersects) {
+        next.add(entry.path);
+      } else if (!prevSelected.has(entry.path)) {
+        next.delete(entry.path);
+      }
+    });
+
+    panel.selectedPaths = next;
+  }
+
+  function handleListMouseDown(e: MouseEvent) {
+    // Only start rubber band if clicking on empty space
+    const target = e.target as HTMLElement;
+    if (target.closest('.file-row') || target.closest('.file-tile')) return;
+    if (e.button !== 0) return;
+
+    e.preventDefault();
+    onActivate?.();
+
+    const coords = getContentCoords(e);
+    rubberStart = coords;
+    rubberCurrent = coords;
+    rubberBanding = true;
+
+    const prevSelected = (e.metaKey || e.ctrlKey) ? new Set(panel.selectedPaths) : new Set<string>();
+    if (!(e.metaKey || e.ctrlKey)) {
+      panel.deselectAll();
+    }
+
+    function onMove(ev: MouseEvent) {
+      rubberCurrent = getContentCoords(ev);
+      updateRubberBandSelection(prevSelected);
+    }
+
+    function onUp() {
+      rubberBanding = false;
+      window.removeEventListener('mousemove', onMove);
+      window.removeEventListener('mouseup', onUp);
+    }
+
+    window.addEventListener('mousemove', onMove);
+    window.addEventListener('mouseup', onUp);
   }
 
   function sortIndicator(field: string): string {
@@ -201,11 +303,14 @@
   {/if}
 
   <!-- File list -->
+  <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
   <div
     class="file-list"
     class:icon-grid={panel.viewMode === 'icon'}
     bind:this={listContainer}
+    role="list"
     style={panel.viewMode === 'icon' ? `--icon-size: ${appState.iconSize}px; --grid-min: ${appState.iconSize + 32}px` : ''}
+    onmousedown={handleListMouseDown}
   >
     {#if panel.loading}
       <div class="loading-msg">Loading...</div>
@@ -220,7 +325,7 @@
             isCursor={i === panel.cursorIndex}
             {isActive}
             panelSide={side}
-            onclick={() => handleRowClick(i)}
+            onclick={(e) => handleRowClick(i, e)}
             ondblclick={() => handleRowDblClick(i)}
           />
         {:else}
@@ -231,11 +336,22 @@
             {isActive}
             rowIndex={i}
             panelSide={side}
-            onclick={() => handleRowClick(i)}
+            onclick={(e) => handleRowClick(i, e)}
             ondblclick={() => handleRowDblClick(i)}
           />
         {/if}
       {/each}
+    {/if}
+    {#if rubberBanding}
+      <div
+        class="rubber-band"
+        style="
+          left: {Math.min(rubberStart.x, rubberCurrent.x)}px;
+          top: {Math.min(rubberStart.y, rubberCurrent.y)}px;
+          width: {Math.abs(rubberCurrent.x - rubberStart.x)}px;
+          height: {Math.abs(rubberCurrent.y - rubberStart.y)}px;
+        "
+      ></div>
     {/if}
   </div>
 
@@ -418,11 +534,21 @@
   }
 
   .file-list {
+    position: relative;
     flex: 1 1 0;
     overflow-y: auto;
     overflow-x: hidden;
     min-height: 0;
     padding: 4px 0;
+  }
+
+  .rubber-band {
+    position: absolute;
+    border: 1px solid var(--border-active);
+    background: color-mix(in srgb, var(--border-active) 15%, transparent);
+    pointer-events: none;
+    z-index: 10;
+    border-radius: 2px;
   }
 
   .file-list.icon-grid {
