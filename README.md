@@ -22,14 +22,17 @@
 - **Dual-pane navigation** with Tab to switch between panes
 - **S3 support** — browse and transfer files to/from any S3-compatible storage (AWS, MinIO, Backblaze B2, etc.)
 - **Integrated terminal** — bottom panel (Cmd+T), Quake-style drop-down (Cmd+\`), or in-pane mode (Cmd+Shift+T)
+- **Git integration** — panel header shows repo indicator with branch name, ahead/behind status, dirty flag, pull button, and branch switcher
 - **File viewer** (F3) — text with line numbers, image preview, hex dump
 - **File editor** (F4) — built-in text editor with dirty-state tracking
 - **Search** (Cmd+F) — search by file name or file content with streaming results
-- **Archive browsing** — navigate inside zip, rar, and 7z archives as if they were directories
+- **Archive browsing** — navigate inside zip, rar, and 7z archives as if they were directories (requires `brew install 7zip`)
 - **File watcher** — panels auto-refresh when files change on disk
 - **Quick filter** — type to filter the file list in real time
+- **Selection** — click, Cmd+click to toggle, Shift+click for range, or rubber-band (marquee) drag in empty space
 - **Drag and drop** — drag files between panels to copy (or Shift+drag to move)
-- **Sidebar** — favorites, workspaces, mounted devices, S3 connections, theme toggle
+- **Sidebar** — favorites, workspaces, mounted devices, S3 connections, theme toggle (Cmd+B to open, press again to focus for keyboard navigation)
+- **Preferences** — icon size, hidden files, external editor, startup sound (accessible via F9 menu)
 - **Dark / Light theme** — auto-detects OS preference, toggle with Cmd+Shift+L
 - **Icon and list views** — switch between list and grid layouts with configurable icon sizes
 
@@ -103,7 +106,8 @@ The `.dmg` will be in `src-tauri/target/release/bundle/dmg/`.
 | Cmd+T | Toggle bottom terminal |
 | Cmd+\` | Toggle Quake terminal |
 | Cmd+Shift+T | Toggle in-pane terminal |
-| Cmd+B | Toggle sidebar |
+| Cmd+B | Toggle sidebar (press twice to focus for keyboard navigation) |
+| F9 | Toggle menu |
 | Cmd+F | Search |
 | Cmd+S | Connect to S3 |
 | Cmd+Shift+L | Toggle dark/light theme |
