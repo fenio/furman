@@ -4,6 +4,8 @@
   import { appState } from '$lib/state/app.svelte.ts';
   import { terminalState } from '$lib/state/terminal.svelte.ts';
   import { sidebarState } from '$lib/state/sidebar.svelte.ts';
+  import { workspacesState } from '$lib/state/workspaces.svelte.ts';
+  import { loadConfig } from '$lib/services/config.ts';
   import MenuBar from '$lib/components/MenuBar.svelte';
   import DualPanel from '$lib/components/DualPanel.svelte';
   import Sidebar from '$lib/components/Sidebar.svelte';
@@ -24,6 +26,12 @@
   let quakeResizing = $state(false);
 
   onMount(async () => {
+    const config = await loadConfig();
+    appState.initSettings(config);
+    if (appState.startupSound) {
+      new Audio('/whip.mp3').play().catch(() => {});
+    }
+
     let homePath = '';
     try {
       const { homeDir } = await import('@tauri-apps/api/path');
@@ -31,8 +39,9 @@
     } catch {
       homePath = '';
     }
-    // Pass empty string — Rust will default to home directory
-    sidebarState.loadFavorites(homePath);
+
+    sidebarState.loadFavorites(homePath, config.favorites);
+    workspacesState.load(config.workspaces);
     await Promise.all([
       panels.left.loadDirectory(homePath),
       panels.right.loadDirectory(homePath)

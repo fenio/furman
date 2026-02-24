@@ -69,8 +69,8 @@
     background: var(--dialog-bg);
     border: 1px solid var(--dialog-border);
     border-radius: var(--radius-lg);
-    min-width: 30ch;
-    max-width: 60ch;
+    min-width: 50ch;
+    max-width: 80ch;
     box-shadow: var(--shadow-dialog);
     overflow: hidden;
   }

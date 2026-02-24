@@ -1,21 +1,39 @@
 import type { VolumeInfo } from '$lib/types';
 import { listVolumes } from '$lib/services/tauri.ts';
+import { appState } from '$lib/state/app.svelte.ts';
 
 export interface FavoriteItem {
   name: string;
   path: string;
 }
 
-const STORAGE_KEY = 'furman-sidebar-favorites';
-
 class SidebarState {
   visible = $state(false);
+  focused = $state(false);
+  focusIndex = $state(0);
   favorites = $state<FavoriteItem[]>([]);
   volumes = $state<VolumeInfo[]>([]);
   volumesLoading = $state(false);
 
   toggle() {
-    this.visible = !this.visible;
+    if (this.visible) {
+      this.visible = false;
+      this.focused = false;
+    } else {
+      this.visible = true;
+    }
+  }
+
+  focus() {
+    if (!this.visible) {
+      this.visible = true;
+    }
+    this.focused = true;
+    this.focusIndex = 0;
+  }
+
+  blur() {
+    this.focused = false;
   }
 
   async loadVolumes() {
@@ -29,15 +47,10 @@ class SidebarState {
     }
   }
 
-  loadFavorites(homePath: string) {
-    const stored = localStorage.getItem(STORAGE_KEY);
-    if (stored) {
-      try {
-        this.favorites = JSON.parse(stored);
-        return;
-      } catch {
-        // Fall through to defaults
-      }
+  loadFavorites(homePath: string, favorites?: FavoriteItem[]) {
+    if (favorites && favorites.length > 0) {
+      this.favorites = favorites;
+      return;
     }
     // Seed defaults
     const home = homePath.replace(/\/+$/, '');
@@ -47,7 +60,6 @@ class SidebarState {
       { name: 'Documents', path: `${home}/Documents` },
       { name: 'Downloads', path: `${home}/Downloads` },
     ];
-    this.persistFavorites();
   }
 
   addFavorite(name: string, path: string) {
@@ -62,7 +74,7 @@ class SidebarState {
   }
 
   persistFavorites() {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(this.favorites));
+    appState.persistConfig();
   }
 }
 

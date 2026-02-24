@@ -84,6 +84,6 @@
   .fn-shortcut {
     color: var(--text-secondary);
     font-size: 10px;
-    opacity: 0.5;
+    opacity: 0.9;
   }
 </style>

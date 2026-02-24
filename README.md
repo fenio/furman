@@ -1,8 +1,8 @@
 <p align="center">
   <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="src/lib/assets/furman-logo-light.svg">
-    <source media="(prefers-color-scheme: light)" srcset="src/lib/assets/furman-logo-dark.svg">
-    <img alt="Furman" src="src/lib/assets/furman-logo-dark.svg" width="400">
+    <source media="(prefers-color-scheme: dark)" srcset="src/lib/assets/furman-logotype-dark.svg">
+    <source media="(prefers-color-scheme: light)" srcset="src/lib/assets/furman-logotype-light.svg">
+    <img alt="Furman" src="src/lib/assets/furman-logotype-light.svg" width="400">
   </picture>
 </p>
 

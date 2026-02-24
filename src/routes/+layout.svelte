@@ -1,11 +1,11 @@
 <script lang="ts">
-  import { onMount } from 'svelte';
   import favicon from '$lib/assets/favicon.svg';
   import '../app.css';
   import { panels } from '$lib/state/panels.svelte.ts';
   import { appState } from '$lib/state/app.svelte.ts';
   import { terminalState } from '$lib/state/terminal.svelte.ts';
   import { sidebarState } from '$lib/state/sidebar.svelte.ts';
+  import { workspacesState } from '$lib/state/workspaces.svelte.ts';
   import { copyFiles, moveFiles, deleteFiles, renameFile, createDirectory, openFileDefault, openInEditor } from '$lib/services/tauri.ts';
   import { statusState } from '$lib/state/status.svelte.ts';
   import { s3Download, s3Upload, s3CopyObjects, s3DeleteObjects } from '$lib/services/s3.ts';
@@ -13,13 +13,6 @@
   import type { ProgressEvent, S3ConnectionInfo } from '$lib/types';
 
   let { children } = $props();
-
-  onMount(() => {
-    appState.initSettings();
-    if (appState.startupSound) {
-      new Audio('/whip.mp3').play().catch(() => {});
-    }
-  });
 
   const imageExtensions = new Set(['png', 'jpg', 'jpeg', 'gif', 'bmp', 'svg', 'webp', 'ico']);
   const archiveExtensions = new Set(['zip', 'rar', '7z']);
@@ -269,6 +262,87 @@
     });
   }
 
+  type SidebarAction =
+    | { type: 'favorite'; path: string }
+    | { type: 'add-favorite' }
+    | { type: 'workspace'; name: string; leftPath: string; rightPath: string; activePanel: 'left' | 'right' }
+    | { type: 'save-workspace' }
+    | { type: 'volume'; mountPoint: string }
+    | { type: 's3'; panel: 'left' | 'right'; bucket: string }
+    | { type: 'theme' };
+
+  function buildSidebarItems(): SidebarAction[] {
+    const list: SidebarAction[] = [];
+    for (const fav of sidebarState.favorites) {
+      list.push({ type: 'favorite', path: fav.path });
+    }
+    list.push({ type: 'add-favorite' });
+    for (const ws of workspacesState.workspaces) {
+      list.push({ type: 'workspace', name: ws.name, leftPath: ws.leftPath, rightPath: ws.rightPath, activePanel: ws.activePanel });
+    }
+    list.push({ type: 'save-workspace' });
+    for (const vol of sidebarState.volumes) {
+      list.push({ type: 'volume', mountPoint: vol.mount_point });
+    }
+    if (panels.left.s3Connection) {
+      list.push({ type: 's3', panel: 'left', bucket: panels.left.s3Connection.bucket });
+    }
+    if (panels.right.s3Connection) {
+      list.push({ type: 's3', panel: 'right', bucket: panels.right.s3Connection.bucket });
+    }
+    list.push({ type: 'theme' });
+    return list;
+  }
+
+  function activateSidebarItem(action: SidebarAction) {
+    if (!action) return;
+    switch (action.type) {
+      case 'favorite':
+        sidebarState.blur();
+        panels.active.loadDirectory(action.path);
+        break;
+      case 'add-favorite': {
+        const path = panels.active.path;
+        const name = path.replace(/\/+$/, '').split('/').pop() || path;
+        sidebarState.addFavorite(name, path);
+        break;
+      }
+      case 'workspace':
+        sidebarState.blur();
+        panels.activePanel = action.activePanel;
+        Promise.all([
+          panels.left.loadDirectory(action.leftPath),
+          panels.right.loadDirectory(action.rightPath),
+        ]);
+        break;
+      case 'save-workspace':
+        sidebarState.blur();
+        appState.showInput('Workspace name:', '', (name) => {
+          appState.closeModal();
+          if (!name) return;
+          workspacesState.save({
+            name,
+            leftPath: panels.left.path,
+            rightPath: panels.right.path,
+            activePanel: panels.activePanel,
+          });
+        });
+        break;
+      case 'volume':
+        sidebarState.blur();
+        panels.active.loadDirectory(action.mountPoint);
+        break;
+      case 's3':
+        sidebarState.blur();
+        panels.activePanel = action.panel;
+        panels.active.loadDirectory(`s3://${action.bucket}/`);
+        break;
+      case 'theme':
+        appState.toggleTheme();
+        break;
+    }
+  }
+
   function isXtermFocused(): boolean {
     const el = document.activeElement;
     return !!el?.closest('.xterm');
@@ -328,6 +402,44 @@
 
     if (appState.modal === 'progress') {
       return;
+    }
+
+    // Sidebar keyboard navigation
+    if (sidebarState.focused && sidebarState.visible) {
+      const sidebarItems = buildSidebarItems();
+      const count = sidebarItems.length;
+      switch (e.key) {
+        case 'ArrowUp':
+          e.preventDefault();
+          sidebarState.focusIndex = sidebarState.focusIndex > 0 ? sidebarState.focusIndex - 1 : count - 1;
+          return;
+        case 'ArrowDown':
+          e.preventDefault();
+          sidebarState.focusIndex = sidebarState.focusIndex < count - 1 ? sidebarState.focusIndex + 1 : 0;
+          return;
+        case 'Enter':
+          e.preventDefault();
+          activateSidebarItem(sidebarItems[sidebarState.focusIndex]);
+          return;
+        case 'Escape':
+          e.preventDefault();
+          sidebarState.blur();
+          return;
+        case 'Delete':
+        case 'Backspace': {
+          const item = sidebarItems[sidebarState.focusIndex];
+          if (item && item.type === 'favorite') {
+            e.preventDefault();
+            sidebarState.removeFavorite(item.path);
+          } else if (item && item.type === 'workspace') {
+            e.preventDefault();
+            workspacesState.remove(item.name);
+          }
+          return;
+        }
+      }
+      // Don't let other keys fall through to panel navigation while sidebar is focused
+      if (!cmd) return;
     }
 
     const active = panels.active;
@@ -390,7 +502,13 @@
           return;
         case 'b':
           e.preventDefault();
-          sidebarState.toggle();                 // Cmd+B = Toggle Sidebar
+          if (sidebarState.focused) {
+            sidebarState.toggle();               // Focused → close sidebar
+          } else if (sidebarState.visible) {
+            sidebarState.focus();                // Visible → focus it
+          } else {
+            sidebarState.toggle();               // Hidden → open sidebar
+          }
           return;
         case 'q':
           e.preventDefault();

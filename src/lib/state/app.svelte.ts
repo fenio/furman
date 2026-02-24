@@ -1,5 +1,8 @@
 import type { ModalType, ViewerMode, ProgressEvent } from '$lib/types';
 import type { Theme } from '@tauri-apps/api/window';
+import { saveConfig, type Config } from '$lib/services/config.ts';
+import { sidebarState } from '$lib/state/sidebar.svelte.ts';
+import { workspacesState } from '$lib/state/workspaces.svelte.ts';
 
 class AppState {
   theme = $state<'dark' | 'light'>('dark');
@@ -35,17 +38,17 @@ class AppState {
 
   setExternalEditor(val: string) {
     this.externalEditor = val;
-    localStorage.setItem('externalEditor', val);
+    this.persistConfig();
   }
 
   setShowHidden(val: boolean) {
     this.showHidden = val;
-    localStorage.setItem('showHidden', String(val));
+    this.persistConfig();
   }
 
   setStartupSound(val: boolean) {
     this.startupSound = val;
-    localStorage.setItem('startupSound', String(val));
+    this.persistConfig();
   }
 
   showConfirm(message: string, callback: () => void) {
@@ -73,7 +76,7 @@ class AppState {
 
   setIconSize(size: number) {
     this.iconSize = size;
-    localStorage.setItem('iconSize', String(size));
+    this.persistConfig();
   }
 
   private applyTheme() {
@@ -83,34 +86,31 @@ class AppState {
     }).catch(() => {});
   }
 
-  initSettings() {
-    const saved = localStorage.getItem('theme');
-    if (saved === 'dark' || saved === 'light') {
-      this.theme = saved;
-    } else if (window.matchMedia('(prefers-color-scheme: light)').matches) {
-      this.theme = 'light';
-    } else {
-      this.theme = 'dark';
-    }
+  initSettings(config: Config) {
+    this.theme = config.theme;
     this.applyTheme();
-
-    const savedSize = localStorage.getItem('iconSize');
-    if (savedSize) this.iconSize = parseInt(savedSize, 10) || 48;
-
-    const savedSound = localStorage.getItem('startupSound');
-    if (savedSound === 'false') this.startupSound = false;
-
-    const savedHidden = localStorage.getItem('showHidden');
-    if (savedHidden === 'true') this.showHidden = true;
-
-    const savedEditor = localStorage.getItem('externalEditor');
-    if (savedEditor) this.externalEditor = savedEditor;
+    this.iconSize = config.iconSize;
+    this.startupSound = config.startupSound;
+    this.showHidden = config.showHidden;
+    this.externalEditor = config.externalEditor;
   }
 
   toggleTheme() {
     this.theme = this.theme === 'dark' ? 'light' : 'dark';
     this.applyTheme();
-    localStorage.setItem('theme', this.theme);
+    this.persistConfig();
+  }
+
+  persistConfig() {
+    saveConfig({
+      theme: this.theme,
+      iconSize: this.iconSize,
+      startupSound: this.startupSound,
+      showHidden: this.showHidden,
+      externalEditor: this.externalEditor,
+      favorites: sidebarState.favorites,
+      workspaces: workspacesState.workspaces,
+    });
   }
 
   closeModal() {

@@ -2,22 +2,18 @@
   import { sidebarState } from '$lib/state/sidebar.svelte.ts';
   import { panels } from '$lib/state/panels.svelte.ts';
   import { appState } from '$lib/state/app.svelte.ts';
+  import { workspacesState } from '$lib/state/workspaces.svelte.ts';
 
-  function formatSize(bytes: number): string {
-    if (bytes < 1024) return `${bytes} B`;
-    if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(0)} KB`;
-    if (bytes < 1024 * 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
-    return `${(bytes / (1024 * 1024 * 1024)).toFixed(1)} GB`;
-  }
+  // Compute base offsets for each section so we can derive flat indices in the template
+  const favCount = $derived(sidebarState.favorites.length);
+  // favorites: 0..favCount-1, then "add current" at favCount
+  const wsBase = $derived(favCount + 1);
+  const wsCount = $derived(workspacesState.workspaces.length);
+  // workspaces: wsBase..wsBase+wsCount-1, then "save current" at wsBase+wsCount
+  const volBase = $derived(wsBase + wsCount + 1);
+  const volCount = $derived(sidebarState.volumes.length);
 
-  // Load volumes when sidebar becomes visible
-  $effect(() => {
-    if (sidebarState.visible) {
-      sidebarState.loadVolumes();
-    }
-  });
-
-  // Derive S3 connections from panels
+  const s3Base = $derived(volBase + volCount);
   const s3Connections = $derived.by(() => {
     const conns: { panel: 'left' | 'right'; bucket: string; connectionId: string }[] = [];
     if (panels.left.s3Connection) {
@@ -36,16 +32,34 @@
     }
     return conns;
   });
+  const themeIdx = $derived(s3Base + s3Connections.length);
+
+  function formatSize(bytes: number): string {
+    if (bytes < 1024) return `${bytes} B`;
+    if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(0)} KB`;
+    if (bytes < 1024 * 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+    return `${(bytes / (1024 * 1024 * 1024)).toFixed(1)} GB`;
+  }
+
+  // Load volumes when sidebar becomes visible
+  $effect(() => {
+    if (sidebarState.visible) {
+      sidebarState.loadVolumes();
+    }
+  });
 
   function navigateFavorite(path: string) {
+    sidebarState.blur();
     panels.active.loadDirectory(path);
   }
 
   function navigateVolume(mountPoint: string) {
+    sidebarState.blur();
     panels.active.loadDirectory(mountPoint);
   }
 
   function navigateS3(panelSide: 'left' | 'right', bucket: string) {
+    sidebarState.blur();
     panels.activePanel = panelSide;
     panels.active.loadDirectory(`s3://${bucket}/`);
   }
@@ -55,16 +69,43 @@
     const name = path.replace(/\/+$/, '').split('/').pop() || path;
     sidebarState.addFavorite(name, path);
   }
+
+  async function navigateWorkspace(ws: { name: string; leftPath: string; rightPath: string; activePanel: 'left' | 'right' }) {
+    sidebarState.blur();
+    panels.activePanel = ws.activePanel;
+    await Promise.all([
+      panels.left.loadDirectory(ws.leftPath),
+      panels.right.loadDirectory(ws.rightPath),
+    ]);
+  }
+
+  function saveCurrentWorkspace() {
+    sidebarState.blur();
+    appState.showInput('Workspace name:', '', (name) => {
+      appState.closeModal();
+      if (!name) return;
+      workspacesState.save({
+        name,
+        leftPath: panels.left.path,
+        rightPath: panels.right.path,
+        activePanel: panels.activePanel,
+      });
+    });
+  }
+
+  function isFocused(idx: number): boolean {
+    return sidebarState.focused && sidebarState.focusIndex === idx;
+  }
 </script>
 
 {#if sidebarState.visible}
-  <div class="sidebar no-select">
+  <div class="sidebar no-select" class:kb-active={sidebarState.focused}>
     <!-- Favorites -->
     <div class="section">
       <div class="section-header">FAVORITES</div>
-      {#each sidebarState.favorites as fav (fav.path)}
+      {#each sidebarState.favorites as fav, i (fav.path)}
         <!-- svelte-ignore a11y_click_events_have_key_events -->
-        <div class="sidebar-item" onclick={() => navigateFavorite(fav.path)} role="button" tabindex="-1">
+        <div class="sidebar-item" class:focused={isFocused(i)} onclick={() => navigateFavorite(fav.path)} role="button" tabindex="-1">
           <span class="item-name">{fav.name}</span>
           <button
             class="remove-btn"
@@ -73,8 +114,27 @@
           >&times;</button>
         </div>
       {/each}
-      <button class="sidebar-item add-btn" onclick={addCurrentAsFavorite}>
+      <button class="sidebar-item add-btn" class:focused={isFocused(favCount)} onclick={addCurrentAsFavorite}>
         + Add Current
+      </button>
+    </div>
+
+    <!-- Workspaces -->
+    <div class="section">
+      <div class="section-header">WORKSPACES</div>
+      {#each workspacesState.workspaces as ws, i (ws.name)}
+        <!-- svelte-ignore a11y_click_events_have_key_events -->
+        <div class="sidebar-item" class:focused={isFocused(wsBase + i)} onclick={() => navigateWorkspace(ws)} role="button" tabindex="-1">
+          <span class="item-name">{ws.name}</span>
+          <button
+            class="remove-btn"
+            onclick={(e) => { e.stopPropagation(); workspacesState.remove(ws.name); }}
+            title="Remove workspace"
+          >&times;</button>
+        </div>
+      {/each}
+      <button class="sidebar-item add-btn" class:focused={isFocused(wsBase + wsCount)} onclick={saveCurrentWorkspace}>
+        + Save Current
       </button>
     </div>
 
@@ -84,8 +144,8 @@
       {#if sidebarState.volumesLoading}
         <div class="sidebar-item loading">Loading...</div>
       {:else}
-        {#each sidebarState.volumes as vol (vol.mount_point)}
-          <button class="sidebar-item" onclick={() => navigateVolume(vol.mount_point)}>
+        {#each sidebarState.volumes as vol, i (vol.mount_point)}
+          <button class="sidebar-item" class:focused={isFocused(volBase + i)} onclick={() => navigateVolume(vol.mount_point)}>
             <span class="item-name">{vol.name || vol.mount_point}</span>
             <span class="item-detail">{formatSize(vol.free_space)} free</span>
           </button>
@@ -97,8 +157,8 @@
     {#if s3Connections.length > 0}
       <div class="section">
         <div class="section-header">S3</div>
-        {#each s3Connections as conn (conn.connectionId)}
-          <button class="sidebar-item" onclick={() => navigateS3(conn.panel, conn.bucket)}>
+        {#each s3Connections as conn, i (conn.connectionId)}
+          <button class="sidebar-item" class:focused={isFocused(s3Base + i)} onclick={() => navigateS3(conn.panel, conn.bucket)}>
             <span class="item-name">{conn.bucket}</span>
             <span class="item-detail">{conn.panel} panel</span>
           </button>
@@ -108,7 +168,7 @@
 
     <!-- Theme toggle -->
     <div class="section theme-section">
-      <button class="sidebar-item theme-toggle" onclick={() => appState.toggleTheme()}>
+      <button class="sidebar-item theme-toggle" class:focused={isFocused(themeIdx)} onclick={() => appState.toggleTheme()}>
         {#if appState.theme === 'dark'}
           <span class="theme-icon">☀</span>
           <span class="item-name">Light Mode</span>
@@ -132,6 +192,10 @@
     flex-direction: column;
   }
 
+  .sidebar.kb-active {
+    border-right: 1px solid var(--border-active);
+  }
+
   .section {
     padding: 8px 0;
   }
@@ -147,7 +211,7 @@
     padding: 4px 12px;
     letter-spacing: 0.8px;
     text-transform: uppercase;
-    opacity: 0.4;
+    opacity: 0.9;
   }
 
   .sidebar-item {
@@ -167,6 +231,10 @@
 
   .sidebar-item:hover {
     background: var(--bg-hover);
+  }
+
+  .sidebar-item.focused {
+    background: var(--cursor-bg);
   }
 
   .sidebar-item.loading {
@@ -200,20 +268,21 @@
     color: var(--text-primary);
   }
 
-  .sidebar-item:hover .remove-btn {
+  .sidebar-item:hover .remove-btn,
+  .sidebar-item.focused .remove-btn {
     display: block;
   }
 
   .add-btn {
     color: var(--text-secondary);
     font-size: 12px;
-    opacity: 0.5;
+    opacity: 0.9;
     transition: opacity var(--transition-fast);
   }
 
   .add-btn:hover {
     color: var(--text-primary);
-    opacity: 0.8;
+    opacity: 1;
   }
 
   .theme-section {
@@ -228,6 +297,10 @@
   }
 
   .theme-toggle:hover {
+    opacity: 1;
+  }
+
+  .theme-toggle.focused {
     opacity: 1;
   }
 
