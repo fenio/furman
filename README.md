@@ -7,7 +7,7 @@
 </p>
 
 <p align="center">
-  A dual-pane file manager for macOS inspired by Norton Commander and Midnight Commander.
+  A dual-pane file manager for macOS inspired by times when Dos Navigator was the king.
 </p>
 
 <p align="center">

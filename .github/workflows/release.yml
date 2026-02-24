@@ -23,6 +23,14 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Generate changelog
+        id: changelog
+        uses: orhun/git-cliff-action@v4
+        with:
+          args: --latest --strip header
 
       - name: Install Rust stable
         uses: dtolnay/rust-toolchain@stable
@@ -65,8 +73,8 @@ jobs:
         with:
           tagName: ${{ github.ref_name }}
           releaseName: "Furman ${{ github.ref_name }}"
-          releaseBody: "See the assets below to download the installer for your platform."
-          releaseDraft: true
+          releaseBody: ${{ steps.changelog.outputs.content }}
+          releaseDraft: false
           prerelease: false
           args: --target ${{ matrix.target }}
 
@@ -121,7 +129,7 @@ jobs:
             end
 
             name "Furman"
-            desc "Dual-panel file manager for macOS"
+            desc "Dual-pane file manager for macOS"
             homepage "https://github.com/fenio/furman"
 
             app "Furman.app"
