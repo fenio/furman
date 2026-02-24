@@ -22,6 +22,7 @@ class AppState {
   showHidden = $state(false);
   s3ConnectCallback = $state<((bucket: string, region: string, endpoint?: string, profile?: string, accessKey?: string, secretKey?: string) => void) | null>(null);
   searchRoot = $state('');
+  externalEditor = $state('');
 
   showSearch(root: string) {
     this.searchRoot = root;
@@ -30,6 +31,11 @@ class AppState {
 
   showPreferences() {
     this.modal = 'preferences';
+  }
+
+  setExternalEditor(val: string) {
+    this.externalEditor = val;
+    localStorage.setItem('externalEditor', val);
   }
 
   setShowHidden(val: boolean) {
@@ -96,6 +102,9 @@ class AppState {
 
     const savedHidden = localStorage.getItem('showHidden');
     if (savedHidden === 'true') this.showHidden = true;
+
+    const savedEditor = localStorage.getItem('externalEditor');
+    if (savedEditor) this.externalEditor = savedEditor;
   }
 
   toggleTheme() {

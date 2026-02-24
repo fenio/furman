@@ -6,7 +6,7 @@
   import { appState } from '$lib/state/app.svelte.ts';
   import { terminalState } from '$lib/state/terminal.svelte.ts';
   import { sidebarState } from '$lib/state/sidebar.svelte.ts';
-  import { copyFiles, moveFiles, deleteFiles, renameFile, createDirectory, openFileDefault } from '$lib/services/tauri.ts';
+  import { copyFiles, moveFiles, deleteFiles, renameFile, createDirectory, openFileDefault, openInEditor } from '$lib/services/tauri.ts';
   import { statusState } from '$lib/state/status.svelte.ts';
   import { s3Download, s3Upload, s3CopyObjects, s3DeleteObjects } from '$lib/services/s3.ts';
   import { s3PathToPrefix } from '$lib/state/panels.svelte.ts';
@@ -73,6 +73,12 @@
   }
 
   function openEditor(filePath: string) {
+    if (appState.externalEditor.trim()) {
+      openInEditor(filePath, appState.externalEditor.trim()).catch((err) => {
+        console.error('External editor failed:', err);
+      });
+      return;
+    }
     appState.editorPath = filePath;
     appState.editorDirty = false;
     appState.modal = 'editor';

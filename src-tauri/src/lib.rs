@@ -59,6 +59,7 @@ pub fn run() {
             commands::metadata::read_file_binary,
             commands::metadata::set_permissions,
             commands::metadata::open_file_default,
+            commands::metadata::open_in_editor,
             // volume commands
             commands::volumes::list_volumes,
             // watcher commands

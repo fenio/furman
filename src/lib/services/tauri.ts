@@ -76,6 +76,10 @@ export async function openFileDefault(path: string): Promise<void> {
   await invoke('open_file_default', { path });
 }
 
+export async function openInEditor(path: string, editor: string): Promise<void> {
+  await invoke('open_in_editor', { path, editor });
+}
+
 export async function getDirectorySize(path: string): Promise<number> {
   return await invoke<number>('get_directory_size', { path });
 }

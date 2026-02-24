@@ -70,12 +70,17 @@
   let unlistenOutput: (() => void) | null = null;
   let unlistenExit: (() => void) | null = null;
   let resizeObserver: ResizeObserver | null = null;
+  let ready = $state(false);
+  let revealTimer: ReturnType<typeof setTimeout> | null = null;
 
   onMount(() => {
+    // Explicitly load the Nerd Font first
+    document.fonts.load("13px 'Symbols Nerd Font Mono'").catch(() => {});
+
     terminal = new Terminal({
       cursorBlink: true,
       fontSize: 13,
-      fontFamily: "'SF Mono', 'Menlo', 'Monaco', 'Courier New', monospace",
+      fontFamily: "'SF Mono', 'Menlo', 'Monaco', 'Courier New', 'Symbols Nerd Font Mono', monospace",
       theme: appState.theme === 'light' ? lightTheme : darkTheme,
     });
 
@@ -96,6 +101,10 @@
       return true;
     });
 
+    // Reveal once shell has sent output (prompt is drawn).
+    // Fallback timeout in case output arrives before listener is set up.
+    revealTimer = setTimeout(() => { ready = true; }, 500);
+
     // Initial fit + focus
     requestAnimationFrame(() => {
       fitAddon.fit();
@@ -114,11 +123,12 @@
 
     return () => {
       // Cleanup
+      if (revealTimer) clearTimeout(revealTimer);
       resizeObserver?.disconnect();
       unlistenOutput?.();
       unlistenExit?.();
       terminalClose(terminalId).catch(() => {});
-      terminal.dispose();
+      terminal?.dispose();
     };
   });
 
@@ -129,10 +139,16 @@
   });
 
   async function init() {
-    // Listen for PTY output
+    // Listen for PTY output — reveal terminal on first output
     unlistenOutput = await listen<TerminalOutput>('terminal-output', (event) => {
       if (event.payload.id === terminalId) {
         terminal.write(event.payload.data);
+        if (!ready) {
+          // Shell has produced output; reveal after a short delay so
+          // p10k instant-prompt can settle before we show anything.
+          if (revealTimer) clearTimeout(revealTimer);
+          revealTimer = setTimeout(() => { ready = true; }, 150);
+        }
       }
     });
 
@@ -162,13 +178,18 @@
   }
 </script>
 
-<div class="xterm-container" bind:this={containerEl}></div>
+<div class="xterm-container" class:visible={ready} bind:this={containerEl}></div>
 
 <style>
   .xterm-container {
     width: 100%;
     height: 100%;
     overflow: hidden;
+    opacity: 0;
+  }
+
+  .xterm-container.visible {
+    opacity: 1;
   }
 
   .xterm-container :global(.xterm) {

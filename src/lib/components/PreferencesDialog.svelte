@@ -89,6 +89,18 @@
         Startup Sound
       </label>
 
+      <div class="pref-row column">
+        <span class="pref-label">External Editor</span>
+        <input
+          class="pref-input"
+          type="text"
+          placeholder="e.g. code, vim, subl"
+          value={appState.externalEditor}
+          oninput={(e) => appState.setExternalEditor((e.target as HTMLInputElement).value)}
+        />
+        <span class="pref-hint">Leave empty to use built-in editor</span>
+      </div>
+
       <div class="dialog-buttons">
         <button class="dialog-btn primary" onclick={onClose}>Close</button>
       </div>
@@ -227,6 +239,30 @@
 
   .size-hint {
     font-size: 10px;
+    color: var(--text-secondary);
+    opacity: 0.6;
+  }
+
+  .pref-input {
+    width: 100%;
+    padding: 6px 10px;
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--radius-sm);
+    background: var(--bg-surface);
+    color: var(--text-primary);
+    font-size: 12px;
+    font-family: inherit;
+    box-sizing: border-box;
+    transition: border-color var(--transition-fast);
+  }
+
+  .pref-input:focus {
+    outline: none;
+    border-color: var(--border-active);
+  }
+
+  .pref-hint {
+    font-size: 11px;
     color: var(--text-secondary);
     opacity: 0.6;
   }

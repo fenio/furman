@@ -40,7 +40,10 @@
     if (cwdTimer) clearTimeout(cwdTimer);
     cwdTimer = setTimeout(() => {
       // Navigate the active file panel to match the terminal's cwd
-      panels.active.loadDirectory(cwd);
+      // Skip if already showing this directory to avoid unnecessary re-render
+      if (panels.active.path !== cwd) {
+        panels.active.loadDirectory(cwd);
+      }
     }, 150);
   }
 </script>
