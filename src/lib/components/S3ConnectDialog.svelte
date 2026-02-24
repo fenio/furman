@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { onMount } from 'svelte';
+  import { onMount, untrack } from 'svelte';
   import { s3CheckCredentials } from '$lib/services/s3';
   import type { S3Profile } from '$lib/types';
 
@@ -13,8 +13,7 @@
 
   let { onConnect, onCancel, saveMode = false, initialData, onSave }: Props = $props();
 
-  // Capture initial values once to avoid Svelte state_referenced_locally warnings
-  const init = initialData;
+  const init = untrack(() => initialData);
 
   let name = $state(init?.name ?? '');
   let bucket = $state(init?.bucket ?? '');
@@ -34,12 +33,12 @@
   onMount(async () => {
     try {
       hasDefaultCreds = await s3CheckCredentials();
-      if (!hasDefaultCreds && !init) {
+      if (!hasDefaultCreds && !isEditing) {
         showManualCreds = true;
       }
     } catch {
       hasDefaultCreds = false;
-      if (!init) showManualCreds = true;
+      if (!isEditing) showManualCreds = true;
     } finally {
       checking = false;
     }
@@ -53,7 +52,7 @@
   function buildProfile(): Omit<S3Profile, 'id'> & { id?: string } {
     const credentialType = showManualCreds && accessKey.trim() ? 'keychain' as const : profile.trim() ? 'aws-profile' as const : 'default' as const;
     return {
-      ...(initialData ? { id: initialData.id } : {}),
+      ...(init ? { id: init.id } : {}),
       name: name.trim(),
       bucket: bucket.trim(),
       region: region.trim() || 'us-east-1',

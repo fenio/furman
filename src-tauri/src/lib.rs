@@ -53,6 +53,7 @@ pub fn run() {
             commands::file::move_files,
             commands::file::delete_files,
             commands::file::rename_file,
+            commands::file::check_conflicts,
             // metadata / content commands
             commands::metadata::read_file_text,
             commands::metadata::write_file_text,

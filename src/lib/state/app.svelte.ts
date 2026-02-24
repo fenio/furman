@@ -27,6 +27,8 @@ class AppState {
   s3ConnectCallback = $state<((bucket: string, region: string, endpoint?: string, profile?: string, accessKey?: string, secretKey?: string) => void) | null>(null);
   searchRoot = $state('');
   externalEditor = $state('');
+  overwriteFiles = $state<string[]>([]);
+  overwriteCallback = $state<((action: 'overwrite' | 'skip') => void) | null>(null);
 
   showSearch(root: string) {
     this.searchRoot = root;
@@ -77,6 +79,12 @@ class AppState {
 
   showS3Manager() {
     this.modal = 's3-manager';
+  }
+
+  showOverwrite(files: string[], callback: (action: 'overwrite' | 'skip') => void) {
+    this.overwriteFiles = files;
+    this.overwriteCallback = callback;
+    this.modal = 'overwrite';
   }
 
   setIconSize(size: number) {
@@ -130,6 +138,8 @@ class AppState {
     this.menuActive = false;
     this.s3ConnectCallback = null;
     this.searchRoot = '';
+    this.overwriteFiles = [];
+    this.overwriteCallback = null;
   }
 }
 

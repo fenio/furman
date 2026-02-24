@@ -23,6 +23,7 @@
   import SearchDialog from '$lib/components/SearchDialog.svelte';
   import MenuDropdown from '$lib/components/MenuDropdown.svelte';
   import PreferencesDialog from '$lib/components/PreferencesDialog.svelte';
+  import OverwriteDialog from '$lib/components/OverwriteDialog.svelte';
   import { s3ProfilesState } from '$lib/state/s3profiles.svelte';
 
   let bottomResizing = $state(false);
@@ -281,6 +282,23 @@
 
   {#if appState.modal === 's3-manager'}
     <S3ConnectionManager onClose={() => appState.closeModal()} />
+  {/if}
+
+  {#if appState.modal === 'overwrite'}
+    <OverwriteDialog
+      files={appState.overwriteFiles}
+      onOverwrite={() => {
+        const cb = appState.overwriteCallback;
+        appState.closeModal();
+        if (cb) cb('overwrite');
+      }}
+      onSkip={() => {
+        const cb = appState.overwriteCallback;
+        appState.closeModal();
+        if (cb) cb('skip');
+      }}
+      onCancel={() => appState.closeModal()}
+    />
   {/if}
 
   {#if appState.modal === 'preferences'}

@@ -46,6 +46,13 @@ export async function deleteFiles(
   await invoke('delete_files', { paths, useTrash });
 }
 
+export async function checkConflicts(
+  sources: string[],
+  destination: string
+): Promise<string[]> {
+  return await invoke<string[]>('check_conflicts', { sources, destination });
+}
+
 export async function renameFile(
   path: string,
   newName: string

@@ -64,6 +64,7 @@ export type ModalType =
   | 'volume-selector'
   | 's3-connect'
   | 's3-manager'
+  | 'overwrite'
   | 'search'
   | 'preferences';
 

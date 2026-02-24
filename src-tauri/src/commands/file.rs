@@ -234,6 +234,24 @@ pub fn delete_files(paths: Vec<String>, use_trash: bool) -> Result<(), FmError> 
     Ok(())
 }
 
+/// Check which source items would collide with existing files at the destination.
+///
+/// Returns the list of source paths whose filename already exists in `destination`.
+#[tauri::command]
+pub fn check_conflicts(sources: Vec<String>, destination: String) -> Vec<String> {
+    let dest = PathBuf::from(&destination);
+    sources
+        .into_iter()
+        .filter(|src| {
+            if let Some(name) = PathBuf::from(src).file_name() {
+                dest.join(name).exists()
+            } else {
+                false
+            }
+        })
+        .collect()
+}
+
 /// Rename a file or directory.
 ///
 /// `new_name` is just the file/directory name, not a full path.  The item
