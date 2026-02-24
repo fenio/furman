@@ -1,0 +1,179 @@
+:root {
+  --bg-primary: #161618;
+  --bg-panel: #1c1c1f;
+  --bg-header: #222225;
+  --bg-surface: #2a2a2e;
+  --text-primary: #e8e8ec;
+  --text-secondary: #7a7a85;
+  --text-accent: #6ea8fe;
+  --text-dirs: #e8e8ec;
+  --border-subtle: rgba(255,255,255,0.08);
+  --border-active: #6ea8fe;
+  --cursor-bg: rgba(110,168,254,0.18);
+  --cursor-text: #e8e8ec;
+  --selected-text: #f0c040;
+  --fn-bar-bg: #1c1c1f;
+  --fn-bar-text: #e8e8ec;
+  --fn-bar-key: #6ea8fe;
+  --menu-bg: #1c1c1f;
+  --menu-text: #e8e8ec;
+  --dialog-bg: #222225;
+  --dialog-border: rgba(255,255,255,0.08);
+  --dialog-title-bg: #222225;
+  --dialog-title-text: #e8e8ec;
+  --header-bg: #222225;
+  --header-text: #e8e8ec;
+  --footer-bg: #222225;
+  --footer-text: #7a7a85;
+  --scrollbar-bg: #161618;
+  --scrollbar-thumb: rgba(255,255,255,0.10);
+  --scrollbar-thumb-hover: rgba(255,255,255,0.18);
+  --progress-bar-bg: #2a2a2e;
+  --progress-bar-fill: #6ea8fe;
+  --row-alt-bg: transparent;
+
+  --error-color: #f44747;
+  --error-bg: #3c1818;
+  --success-color: #4ec9b0;
+  --warning-color: #f4b547;
+  --fn-btn-bg: rgba(255,255,255,0.04);
+  --fn-btn-border: rgba(255,255,255,0.06);
+
+  --git-modified: #e2b93d;
+  --git-added: #73c991;
+  --git-deleted: #f44747;
+  --git-untracked: #8a8a8a;
+  --git-ignored: #555555;
+  --git-renamed: #6ea8fe;
+  --git-conflict: #f97583;
+
+  --radius-sm: 6px;
+  --radius-md: 10px;
+  --radius-lg: 14px;
+  --transition-fast: 0.15s ease;
+  --shadow-dialog: 0 16px 48px rgba(0,0,0,0.5), 0 0 0 1px rgba(255,255,255,0.06);
+  --bg-hover: rgba(255,255,255,0.06);
+}
+
+[data-theme="light"] {
+  --bg-primary: #f5f5f7;
+  --bg-panel: #eaeaed;
+  --bg-header: #dddde0;
+  --bg-surface: #d5d5d9;
+  --text-primary: #1d1d1f;
+  --text-secondary: #6e6e73;
+  --text-accent: #0066cc;
+  --text-dirs: #1d1d1f;
+  --border-subtle: rgba(0,0,0,0.10);
+  --border-active: #0066cc;
+  --cursor-bg: rgba(0,102,204,0.15);
+  --cursor-text: #1d1d1f;
+  --selected-text: #b8860b;
+  --fn-bar-bg: #eaeaed;
+  --fn-bar-text: #1d1d1f;
+  --fn-bar-key: #0066cc;
+  --menu-bg: #eaeaed;
+  --menu-text: #1d1d1f;
+  --dialog-bg: #eaeaed;
+  --dialog-border: rgba(0,0,0,0.10);
+  --dialog-title-bg: #dddde0;
+  --dialog-title-text: #1d1d1f;
+  --header-bg: #dddde0;
+  --header-text: #1d1d1f;
+  --footer-bg: #dddde0;
+  --footer-text: #6e6e73;
+  --scrollbar-bg: #f5f5f7;
+  --scrollbar-thumb: rgba(0,0,0,0.15);
+  --scrollbar-thumb-hover: rgba(0,0,0,0.25);
+  --progress-bar-bg: #d5d5d9;
+  --progress-bar-fill: #0066cc;
+  --row-alt-bg: transparent;
+
+  --error-color: #d32f2f;
+  --error-bg: #fce4e4;
+  --success-color: #2e7d32;
+  --warning-color: #e65100;
+  --fn-btn-bg: rgba(0,0,0,0.04);
+  --fn-btn-border: rgba(0,0,0,0.08);
+
+  --git-modified: #b8860b;
+  --git-added: #2e7d32;
+  --git-deleted: #d32f2f;
+  --git-untracked: #6e6e73;
+  --git-ignored: #999999;
+  --git-renamed: #0066cc;
+  --git-conflict: #d32f2f;
+
+  --shadow-dialog: 0 16px 48px rgba(0,0,0,0.15), 0 0 0 1px rgba(0,0,0,0.08);
+  --bg-hover: rgba(0,0,0,0.06);
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+  width: 100vw;
+  height: 100vh;
+  overflow: hidden;
+  background: var(--bg-primary);
+  color: var(--text-primary);
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  font-size: 14px;
+  line-height: 1.4;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* Thin dark scrollbars */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--scrollbar-thumb);
+  border-radius: 3px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--scrollbar-thumb-hover);
+}
+
+/* Prevent text selection globally for the file manager UI */
+.no-select {
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+/* Input/textarea should allow selection */
+input,
+textarea {
+  user-select: text;
+  -webkit-user-select: text;
+}
+
+/* Focus styles */
+*:focus {
+  outline: none;
+}
+
+/* Remove default button styles */
+button {
+  background: none;
+  border: none;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+  padding: 0;
+  margin: 0;
+}
