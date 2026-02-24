@@ -1,7 +1,10 @@
+use crate::commands::file::FileOpState;
 use crate::models::{DirListing, FileEntry, FmError, ProgressEvent};
 use std::collections::HashSet;
 use std::path::Path;
 use std::process::Command;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Arc;
 use tauri::ipc::Channel;
 
 /// Represents a raw entry parsed from 7z output.
@@ -313,10 +316,12 @@ fn build_listing(
 /// `destination` — filesystem directory to extract into.
 #[tauri::command]
 pub fn extract_archive(
+    id: String,
     archive_path: String,
     internal_paths: Vec<String>,
     destination: String,
     channel: Channel<ProgressEvent>,
+    state: tauri::State<'_, FileOpState>,
 ) -> Result<(), FmError> {
     let fs_path = Path::new(&archive_path);
     if !fs_path.exists() {
@@ -328,8 +333,13 @@ pub fn extract_archive(
         return Err(FmError::NotFound(destination.clone()));
     }
 
-    let id = format!("extract-{}", std::process::id());
     let files_total = internal_paths.len() as u32;
+
+    let cancel_flag = Arc::new(AtomicBool::new(false));
+    {
+        let mut map = state.0.lock().map_err(|e| FmError::Other(e.to_string()))?;
+        map.insert(id.clone(), cancel_flag.clone());
+    }
 
     // Use `7z x` to extract with full paths, targeting specific files.
     // -o sets output directory, -y auto-confirms overwrites.
@@ -343,9 +353,9 @@ pub fn extract_archive(
         args.push(p.clone());
     }
 
-    let output = Command::new("7z")
+    let mut child = Command::new("7z")
         .args(&args)
-        .output()
+        .spawn()
         .map_err(|e| {
             if e.kind() == std::io::ErrorKind::NotFound {
                 FmError::Other("7z not found. Install with: brew install 7zip".to_string())
@@ -354,13 +364,40 @@ pub fn extract_archive(
             }
         })?;
 
-    if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        let stdout = String::from_utf8_lossy(&output.stdout);
-        return Err(FmError::Other(format!(
-            "7z extract failed: {stderr}\n{stdout}"
-        )));
+    // Poll the child process, checking cancel flag between polls.
+    let result = loop {
+        match child.try_wait() {
+            Ok(Some(status)) => {
+                if status.success() {
+                    break Ok(());
+                } else {
+                    break Err(FmError::Other(format!(
+                        "7z extract failed with exit code: {}",
+                        status.code().unwrap_or(-1)
+                    )));
+                }
+            }
+            Ok(None) => {
+                // Still running — check cancel flag.
+                if cancel_flag.load(Ordering::Relaxed) {
+                    let _ = child.kill();
+                    let _ = child.wait();
+                    break Err(FmError::Other("Operation cancelled".into()));
+                }
+                std::thread::sleep(std::time::Duration::from_millis(100));
+            }
+            Err(e) => {
+                break Err(FmError::Other(format!("Failed to wait on 7z: {e}")));
+            }
+        }
+    };
+
+    // Clean up the cancel flag from state.
+    if let Ok(mut map) = state.0.lock() {
+        map.remove(&id);
     }
+
+    result?;
 
     // Report completion
     let _ = channel.send(ProgressEvent {

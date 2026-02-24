@@ -384,6 +384,15 @@ class PanelsState {
   switchPanel() {
     this.activePanel = this.activePanel === 'left' ? 'right' : 'left';
   }
+
+  swapPanels() {
+    const tmp = this.left;
+    this.left = this.right;
+    this.right = tmp;
+    // Fix watch IDs so file-watcher events still route correctly
+    this.left.watchId = 'watch-left';
+    this.right.watchId = 'watch-right';
+  }
 }
 
 export const panels = new PanelsState();

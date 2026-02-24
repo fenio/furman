@@ -1,7 +1,12 @@
 use crate::models::{FmError, ProgressEvent};
+use std::collections::HashMap;
 use std::fs;
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Arc, Mutex};
 use tauri::ipc::Channel;
+
+pub struct FileOpState(pub Mutex<HashMap<String, Arc<AtomicBool>>>);
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -53,7 +58,11 @@ fn copy_recursive(
     files_done: &mut u32,
     files_total: u32,
     channel: &Channel<ProgressEvent>,
+    cancel_flag: &AtomicBool,
 ) -> Result<(), FmError> {
+    if cancel_flag.load(Ordering::Relaxed) {
+        return Err(FmError::Other("Operation cancelled".into()));
+    }
     if src.is_dir() {
         fs::create_dir_all(dst)?;
         for entry in fs::read_dir(src)? {
@@ -69,6 +78,7 @@ fn copy_recursive(
                 files_done,
                 files_total,
                 channel,
+                cancel_flag,
             )?;
         }
     } else {
@@ -99,9 +109,11 @@ fn copy_recursive(
 /// Copy one or more files/directories to `destination` with progress reporting.
 #[tauri::command]
 pub fn copy_files(
+    id: String,
     sources: Vec<String>,
     destination: String,
     channel: Channel<ProgressEvent>,
+    state: tauri::State<'_, FileOpState>,
 ) -> Result<(), FmError> {
     let dest = PathBuf::from(&destination);
 
@@ -114,30 +126,44 @@ pub fn copy_files(
         files_total += count_files(&p);
     }
 
-    let id = format!("copy-{}", std::process::id());
+    let cancel_flag = Arc::new(AtomicBool::new(false));
+    {
+        let mut map = state.0.lock().map_err(|e| FmError::Other(e.to_string()))?;
+        map.insert(id.clone(), cancel_flag.clone());
+    }
+
     let mut bytes_done: u64 = 0;
     let mut files_done: u32 = 0;
 
-    for src in &sources {
-        let src_path = PathBuf::from(src);
-        let file_name = src_path
-            .file_name()
-            .ok_or_else(|| FmError::Other(format!("invalid source path: {src}")))?;
-        let dst_path = dest.join(file_name);
+    let result = (|| {
+        for src in &sources {
+            let src_path = PathBuf::from(src);
+            let file_name = src_path
+                .file_name()
+                .ok_or_else(|| FmError::Other(format!("invalid source path: {src}")))?;
+            let dst_path = dest.join(file_name);
 
-        copy_recursive(
-            &src_path,
-            &dst_path,
-            &id,
-            &mut bytes_done,
-            bytes_total,
-            &mut files_done,
-            files_total,
-            &channel,
-        )?;
+            copy_recursive(
+                &src_path,
+                &dst_path,
+                &id,
+                &mut bytes_done,
+                bytes_total,
+                &mut files_done,
+                files_total,
+                &channel,
+                &cancel_flag,
+            )?;
+        }
+        Ok(())
+    })();
+
+    // Clean up the cancel flag from state.
+    if let Ok(mut map) = state.0.lock() {
+        map.remove(&id);
     }
 
-    Ok(())
+    result
 }
 
 /// Move one or more files/directories to `destination` with progress reporting.
@@ -146,9 +172,11 @@ pub fn copy_files(
 /// fails (e.g. cross-device move).
 #[tauri::command]
 pub fn move_files(
+    id: String,
     sources: Vec<String>,
     destination: String,
     channel: Channel<ProgressEvent>,
+    state: tauri::State<'_, FileOpState>,
 ) -> Result<(), FmError> {
     let dest = PathBuf::from(&destination);
 
@@ -161,54 +189,72 @@ pub fn move_files(
         files_total += count_files(&p);
     }
 
-    let id = format!("move-{}", std::process::id());
+    let cancel_flag = Arc::new(AtomicBool::new(false));
+    {
+        let mut map = state.0.lock().map_err(|e| FmError::Other(e.to_string()))?;
+        map.insert(id.clone(), cancel_flag.clone());
+    }
+
     let mut bytes_done: u64 = 0;
     let mut files_done: u32 = 0;
 
-    for src in &sources {
-        let src_path = PathBuf::from(src);
-        let file_name = src_path
-            .file_name()
-            .ok_or_else(|| FmError::Other(format!("invalid source path: {src}")))?;
-        let dst_path = dest.join(file_name);
+    let result = (|| {
+        for src in &sources {
+            if cancel_flag.load(Ordering::Relaxed) {
+                return Err(FmError::Other("Operation cancelled".into()));
+            }
 
-        // Try fast rename first.
-        if fs::rename(&src_path, &dst_path).is_ok() {
-            let size = total_bytes(&dst_path);
-            let count = count_files(&dst_path);
-            bytes_done += size;
-            files_done += count;
+            let src_path = PathBuf::from(src);
+            let file_name = src_path
+                .file_name()
+                .ok_or_else(|| FmError::Other(format!("invalid source path: {src}")))?;
+            let dst_path = dest.join(file_name);
 
-            let _ = channel.send(ProgressEvent {
-                id: id.clone(),
-                bytes_done,
-                bytes_total,
-                current_file: src_path.to_string_lossy().into_owned(),
-                files_done,
-                files_total,
-            });
-        } else {
-            // Cross-device: copy then delete source.
-            copy_recursive(
-                &src_path,
-                &dst_path,
-                &id,
-                &mut bytes_done,
-                bytes_total,
-                &mut files_done,
-                files_total,
-                &channel,
-            )?;
+            // Try fast rename first.
+            if fs::rename(&src_path, &dst_path).is_ok() {
+                let size = total_bytes(&dst_path);
+                let count = count_files(&dst_path);
+                bytes_done += size;
+                files_done += count;
 
-            if src_path.is_dir() {
-                fs::remove_dir_all(&src_path)?;
+                let _ = channel.send(ProgressEvent {
+                    id: id.clone(),
+                    bytes_done,
+                    bytes_total,
+                    current_file: src_path.to_string_lossy().into_owned(),
+                    files_done,
+                    files_total,
+                });
             } else {
-                fs::remove_file(&src_path)?;
+                // Cross-device: copy then delete source.
+                copy_recursive(
+                    &src_path,
+                    &dst_path,
+                    &id,
+                    &mut bytes_done,
+                    bytes_total,
+                    &mut files_done,
+                    files_total,
+                    &channel,
+                    &cancel_flag,
+                )?;
+
+                if src_path.is_dir() {
+                    fs::remove_dir_all(&src_path)?;
+                } else {
+                    fs::remove_file(&src_path)?;
+                }
             }
         }
+        Ok(())
+    })();
+
+    // Clean up the cancel flag from state.
+    if let Ok(mut map) = state.0.lock() {
+        map.remove(&id);
     }
 
-    Ok(())
+    result
 }
 
 /// Delete one or more files/directories.
@@ -280,5 +326,18 @@ pub fn rename_file(path: String, new_name: String) -> Result<(), FmError> {
     }
 
     fs::rename(&src, &dst)?;
+    Ok(())
+}
+
+/// Cancel a running file operation (copy, move, or extract) by its ID.
+#[tauri::command]
+pub fn cancel_file_operation(
+    id: String,
+    state: tauri::State<'_, FileOpState>,
+) -> Result<(), FmError> {
+    let map = state.0.lock().map_err(|e| FmError::Other(e.to_string()))?;
+    if let Some(flag) = map.get(&id) {
+        flag.store(true, Ordering::Relaxed);
+    }
     Ok(())
 }

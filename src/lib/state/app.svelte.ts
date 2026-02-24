@@ -20,6 +20,7 @@ class AppState {
   inputValue = $state('');
   inputCallback = $state<((value: string) => void) | null>(null);
   progressData = $state<ProgressEvent | null>(null);
+  fileOpId = $state('');
   menuActive = $state(false);
   iconSize = $state(48);
   startupSound = $state(true);
@@ -73,8 +74,9 @@ class AppState {
     this.modal = 'input';
   }
 
-  showProgress() {
+  showProgress(opId: string = '') {
     this.progressData = null;
+    this.fileOpId = opId;
     this.modal = 'progress';
   }
 
@@ -143,6 +145,7 @@ class AppState {
     this.inputValue = '';
     this.inputCallback = null;
     this.progressData = null;
+    this.fileOpId = '';
     this.menuActive = false;
     this.s3ConnectCallback = null;
     this.searchRoot = '';

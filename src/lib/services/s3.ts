@@ -38,28 +38,31 @@ export async function s3ListObjects(
 
 export async function s3Download(
   id: string,
+  opId: string,
   keys: string[],
   destination: string,
   onProgress: (e: ProgressEvent) => void
 ): Promise<void> {
   const channel = new Channel<ProgressEvent>();
   channel.onmessage = onProgress;
-  await invoke('s3_download', { id, keys, destination, channel });
+  await invoke('s3_download', { id, opId, keys, destination, channel });
 }
 
 export async function s3Upload(
   id: string,
+  opId: string,
   sources: string[],
   destPrefix: string,
   onProgress: (e: ProgressEvent) => void
 ): Promise<void> {
   const channel = new Channel<ProgressEvent>();
   channel.onmessage = onProgress;
-  await invoke('s3_upload', { id, sources, destPrefix, channel });
+  await invoke('s3_upload', { id, opId, sources, destPrefix, channel });
 }
 
 export async function s3CopyObjects(
   srcId: string,
+  opId: string,
   srcKeys: string[],
   destId: string,
   destPrefix: string,
@@ -67,7 +70,7 @@ export async function s3CopyObjects(
 ): Promise<void> {
   const channel = new Channel<ProgressEvent>();
   channel.onmessage = onProgress;
-  await invoke('s3_copy_objects', { srcId, srcKeys, destId, destPrefix, channel });
+  await invoke('s3_copy_objects', { srcId, opId, srcKeys, destId, destPrefix, channel });
 }
 
 export async function s3DeleteObjects(

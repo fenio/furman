@@ -6,7 +6,7 @@
   import { terminalState } from '$lib/state/terminal.svelte';
   import { sidebarState } from '$lib/state/sidebar.svelte';
   import { workspacesState } from '$lib/state/workspaces.svelte';
-  import { copyFiles, moveFiles, deleteFiles, renameFile, createDirectory, openFileDefault, openInEditor, checkConflicts, extractArchive } from '$lib/services/tauri';
+  import { copyFiles, moveFiles, deleteFiles, renameFile, createDirectory, openFileDefault, openInEditor, checkConflicts, extractArchive, cancelFileOperation } from '$lib/services/tauri';
   import { statusState } from '$lib/state/status.svelte';
   import { s3Download, s3Upload, s3CopyObjects, s3DeleteObjects } from '$lib/services/s3';
   import { s3PathToPrefix } from '$lib/state/panels.svelte';
@@ -119,8 +119,10 @@
   ) {
     const active = panels.active;
     const inactive = panels.inactive;
-    appState.showProgress();
+    const opId = 'file-op-' + Date.now();
+    appState.showProgress(opId);
     const fileCount = sources.length;
+    let cancelled = false;
     try {
       const onProgress = (e: ProgressEvent) => {
         appState.progressData = e;
@@ -134,28 +136,32 @@
           const hashIdx = s.indexOf('#');
           return hashIdx >= 0 ? s.substring(hashIdx + 1) : s;
         });
-        await extractArchive(archivePath, internalPaths, dest, onProgress);
+        await extractArchive(opId, archivePath, internalPaths, dest, onProgress);
       } else if (srcBackend === 'local' && destBackend === 'local') {
-        await copyFiles(sources, dest, onProgress);
+        await copyFiles(opId, sources, dest, onProgress);
       } else if (srcBackend === 's3' && destBackend === 'local') {
         const conn = active.s3Connection!;
-        await s3Download(conn.connectionId, sources, dest, onProgress);
+        await s3Download(conn.connectionId, opId, sources, dest, onProgress);
       } else if (srcBackend === 'local' && destBackend === 's3') {
         const conn = inactive.s3Connection!;
         const prefix = s3PathToPrefix(dest, conn.bucket);
-        await s3Upload(conn.connectionId, sources, prefix, onProgress);
+        await s3Upload(conn.connectionId, opId, sources, prefix, onProgress);
       } else if (srcBackend === 's3' && destBackend === 's3') {
         const srcConn = active.s3Connection!;
         const destConn = inactive.s3Connection!;
         const destPrefix = s3PathToPrefix(dest, destConn.bucket);
-        await s3CopyObjects(srcConn.connectionId, sources, destConn.connectionId, destPrefix, onProgress);
+        await s3CopyObjects(srcConn.connectionId, opId, sources, destConn.connectionId, destPrefix, onProgress);
       }
     } catch (err: unknown) {
-      console.error('Copy failed:', err);
-      statusState.setMessage('Copy failed');
+      const msg = String(err);
+      if (msg.includes('cancelled')) {
+        cancelled = true;
+      } else {
+        console.error('Copy failed:', err);
+      }
     } finally {
       appState.closeModal();
-      statusState.setMessage(`Copied ${fileCount} file(s)`);
+      statusState.setMessage(cancelled ? 'Copy cancelled' : `Copied ${fileCount} file(s)`);
       const reloads: Promise<void>[] = [];
       if (active.backend !== 'archive') reloads.push(active.loadDirectory(active.path));
       if (inactive.backend !== 'archive') reloads.push(inactive.loadDirectory(inactive.path));
@@ -171,8 +177,10 @@
   ) {
     const active = panels.active;
     const inactive = panels.inactive;
-    appState.showProgress();
+    const opId = 'file-op-' + Date.now();
+    appState.showProgress(opId);
     const fileCount = sources.length;
+    let cancelled = false;
     try {
       const onProgress = (e: ProgressEvent) => {
         appState.progressData = e;
@@ -180,29 +188,33 @@
         statusState.setProgress(e.current_file?.split('/').pop() ?? 'Moving...', pct);
       };
       if (srcBackend === 'local' && destBackend === 'local') {
-        await moveFiles(sources, dest, onProgress);
+        await moveFiles(opId, sources, dest, onProgress);
       } else if (srcBackend === 's3' && destBackend === 'local') {
         const conn = active.s3Connection!;
-        await s3Download(conn.connectionId, sources, dest, onProgress);
+        await s3Download(conn.connectionId, opId, sources, dest, onProgress);
         await s3DeleteObjects(conn.connectionId, sources);
       } else if (srcBackend === 'local' && destBackend === 's3') {
         const conn = inactive.s3Connection!;
         const prefix = s3PathToPrefix(dest, conn.bucket);
-        await s3Upload(conn.connectionId, sources, prefix, onProgress);
+        await s3Upload(conn.connectionId, opId, sources, prefix, onProgress);
         await deleteFiles(sources, false);
       } else if (srcBackend === 's3' && destBackend === 's3') {
         const srcConn = active.s3Connection!;
         const destConn = inactive.s3Connection!;
         const destPrefix = s3PathToPrefix(dest, destConn.bucket);
-        await s3CopyObjects(srcConn.connectionId, sources, destConn.connectionId, destPrefix, onProgress);
+        await s3CopyObjects(srcConn.connectionId, opId, sources, destConn.connectionId, destPrefix, onProgress);
         await s3DeleteObjects(srcConn.connectionId, sources);
       }
     } catch (err: unknown) {
-      console.error('Move failed:', err);
-      statusState.setMessage('Move failed');
+      const msg = String(err);
+      if (msg.includes('cancelled')) {
+        cancelled = true;
+      } else {
+        console.error('Move failed:', err);
+      }
     } finally {
       appState.closeModal();
-      statusState.setMessage(`Moved ${fileCount} file(s)`);
+      statusState.setMessage(cancelled ? 'Move cancelled' : `Moved ${fileCount} file(s)`);
       const reloads: Promise<void>[] = [];
       if (active.backend !== 'archive') reloads.push(active.loadDirectory(active.path));
       if (inactive.backend !== 'archive') reloads.push(inactive.loadDirectory(inactive.path));

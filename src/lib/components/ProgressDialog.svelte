@@ -4,9 +4,18 @@
 
   interface Props {
     progress: ProgressEvent | null;
+    onCancel?: () => void;
   }
 
-  let { progress }: Props = $props();
+  let { progress, onCancel }: Props = $props();
+
+  let dialogEl: HTMLDivElement | undefined = $state(undefined);
+
+  $effect(() => {
+    if (dialogEl) {
+      dialogEl.focus();
+    }
+  });
 
   const percentage = $derived.by(() => {
     if (!progress || progress.bytes_total === 0) return 0;
@@ -22,9 +31,25 @@
     if (!progress) return '';
     return `File ${progress.files_done} of ${progress.files_total}`;
   });
+
+  function handleKeydown(e: KeyboardEvent) {
+    if (e.key === 'Escape' && onCancel) {
+      e.preventDefault();
+      e.stopPropagation();
+      onCancel();
+    }
+  }
 </script>
 
-<div class="dialog-overlay no-select" role="dialog" aria-modal="true">
+<!-- svelte-ignore a11y_no_noninteractive_tabindex -->
+<div
+  class="dialog-overlay no-select"
+  role="dialog"
+  aria-modal="true"
+  tabindex="0"
+  bind:this={dialogEl}
+  onkeydown={handleKeydown}
+>
   <div class="dialog-box">
     <div class="dialog-title">Progress</div>
     <div class="dialog-body">
@@ -48,6 +73,11 @@
           <div class="progress-bar-container">
             <div class="progress-bar-fill" style="width: 0%"></div>
           </div>
+        </div>
+      {/if}
+      {#if onCancel}
+        <div class="dialog-buttons">
+          <button class="dialog-btn" onclick={onCancel}>Cancel</button>
         </div>
       {/if}
     </div>
@@ -128,5 +158,27 @@
     justify-content: space-between;
     color: var(--text-secondary);
     font-size: 12px;
+  }
+
+  .dialog-buttons {
+    display: flex;
+    justify-content: center;
+    margin-top: 16px;
+  }
+
+  .dialog-btn {
+    padding: 8px 24px;
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--radius-sm);
+    background: var(--bg-surface);
+    color: var(--text-primary);
+    cursor: pointer;
+    font-size: 13px;
+    transition: background var(--transition-fast), border-color var(--transition-fast);
+  }
+
+  .dialog-btn:hover {
+    background: var(--bg-hover);
+    border-color: var(--text-accent);
   }
 </style>

@@ -16,6 +16,7 @@
   import ConfirmDialog from '$lib/components/ConfirmDialog.svelte';
   import InputDialog from '$lib/components/InputDialog.svelte';
   import ProgressDialog from '$lib/components/ProgressDialog.svelte';
+  import { cancelFileOperation } from '$lib/services/tauri';
   import Viewer from '$lib/components/Viewer.svelte';
   import Editor from '$lib/components/Editor.svelte';
   import S3ConnectDialog from '$lib/components/S3ConnectDialog.svelte';
@@ -243,7 +244,10 @@
   {/if}
 
   {#if appState.modal === 'progress'}
-    <ProgressDialog progress={appState.progressData} />
+    <ProgressDialog
+      progress={appState.progressData}
+      onCancel={appState.fileOpId ? () => cancelFileOperation(appState.fileOpId) : undefined}
+    />
   {/if}
 
   {#if appState.modal === 'viewer'}

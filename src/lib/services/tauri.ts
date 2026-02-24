@@ -9,6 +9,7 @@ export async function listArchive(
 }
 
 export async function extractArchive(
+  id: string,
   archivePath: string,
   internalPaths: string[],
   destination: string,
@@ -16,7 +17,7 @@ export async function extractArchive(
 ): Promise<void> {
   const channel = new Channel<ProgressEvent>();
   channel.onmessage = onProgress;
-  await invoke('extract_archive', { archivePath, internalPaths, destination, channel });
+  await invoke('extract_archive', { id, archivePath, internalPaths, destination, channel });
 }
 
 export async function listDirectory(
@@ -31,23 +32,29 @@ export async function createDirectory(path: string): Promise<void> {
 }
 
 export async function copyFiles(
+  id: string,
   sources: string[],
   destination: string,
   onProgress: (e: ProgressEvent) => void
 ): Promise<void> {
   const channel = new Channel<ProgressEvent>();
   channel.onmessage = onProgress;
-  await invoke('copy_files', { sources, destination, channel });
+  await invoke('copy_files', { id, sources, destination, channel });
 }
 
 export async function moveFiles(
+  id: string,
   sources: string[],
   destination: string,
   onProgress: (e: ProgressEvent) => void
 ): Promise<void> {
   const channel = new Channel<ProgressEvent>();
   channel.onmessage = onProgress;
-  await invoke('move_files', { sources, destination, channel });
+  await invoke('move_files', { id, sources, destination, channel });
+}
+
+export async function cancelFileOperation(id: string): Promise<void> {
+  await invoke('cancel_file_operation', { id });
 }
 
 export async function deleteFiles(

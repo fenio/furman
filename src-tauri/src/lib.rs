@@ -1,6 +1,7 @@
 mod commands;
 mod models;
 
+use commands::file::FileOpState;
 use commands::s3::S3State;
 use commands::search::SearchState;
 use commands::terminal::TerminalState;
@@ -37,6 +38,7 @@ pub fn run() {
         .manage(TerminalState(Mutex::new(HashMap::new())))
         .manage(S3State(Mutex::new(HashMap::new())))
         .manage(SearchState(Mutex::new(HashMap::new())))
+        .manage(FileOpState(Mutex::new(HashMap::new())))
         .setup(|app| {
             if cfg!(debug_assertions) {
                 app.handle().plugin(
@@ -76,6 +78,7 @@ pub fn run() {
             commands::file::delete_files,
             commands::file::rename_file,
             commands::file::check_conflicts,
+            commands::file::cancel_file_operation,
             // metadata / content commands
             commands::metadata::read_file_text,
             commands::metadata::write_file_text,

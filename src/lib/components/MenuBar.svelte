@@ -21,10 +21,7 @@
   }
 
   function swapPanels() {
-    const leftPath = panels.left.path;
-    const rightPath = panels.right.path;
-    panels.left.loadDirectory(rightPath);
-    panels.right.loadDirectory(leftPath);
+    panels.swapPanels();
   }
 
   function equalPanels() {

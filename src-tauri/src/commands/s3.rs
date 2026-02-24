@@ -1,9 +1,11 @@
+use crate::commands::file::FileOpState;
 use crate::models::{DirListing, FileEntry, FmError, ProgressEvent};
 use aws_config::BehaviorVersion;
 use aws_credential_types::provider::ProvideCredentials;
 use aws_sdk_s3::Client as S3Client;
 use std::collections::HashMap;
-use std::sync::Mutex;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Arc, Mutex};
 use tauri::ipc::Channel;
 use tauri::State;
 
@@ -326,7 +328,9 @@ pub async fn s3_list_objects(
 #[tauri::command]
 pub async fn s3_download(
     state: State<'_, S3State>,
+    file_op_state: State<'_, FileOpState>,
     id: String,
+    op_id: String,
     keys: Vec<String>,
     destination: String,
     channel: Channel<ProgressEvent>,
@@ -336,6 +340,12 @@ pub async fn s3_download(
         let conn = map.get(&id).ok_or_else(|| s3err("S3 connection not found"))?;
         (conn.client.clone(), conn.bucket.clone())
     };
+
+    let cancel_flag = Arc::new(AtomicBool::new(false));
+    {
+        let mut map = file_op_state.0.lock().map_err(|e| FmError::Other(e.to_string()))?;
+        map.insert(op_id.clone(), cancel_flag.clone());
+    }
 
     let dest = std::path::PathBuf::from(&destination);
 
@@ -363,64 +373,76 @@ pub async fn s3_download(
 
     let files_total = resolved.len() as u32;
     let bytes_total: u64 = resolved.iter().map(|(_, s)| *s).sum();
-    let op_id = format!("s3-download-{}", std::process::id());
     let mut bytes_done: u64 = 0;
     let mut files_done: u32 = 0;
 
-    for (key, _size) in &resolved {
-        let filename = key.rsplit('/').next().unwrap_or(key);
-        let base_prefix = if keys.len() == 1 && keys[0].ends_with('/') {
-            strip_s3_prefix(&keys[0], &bucket)
-        } else {
-            match key.rfind('/') {
-                Some(pos) => key[..pos + 1].to_string(),
-                None => String::new(),
+    let result = async {
+        for (key, _size) in &resolved {
+            if cancel_flag.load(Ordering::Relaxed) {
+                return Err(FmError::Other("Operation cancelled".into()));
             }
-        };
-        let relative = key.strip_prefix(&base_prefix).unwrap_or(key);
-        let local_path = dest.join(relative);
 
-        if let Some(parent) = local_path.parent() {
-            std::fs::create_dir_all(parent)?;
+            let filename = key.rsplit('/').next().unwrap_or(key);
+            let base_prefix = if keys.len() == 1 && keys[0].ends_with('/') {
+                strip_s3_prefix(&keys[0], &bucket)
+            } else {
+                match key.rfind('/') {
+                    Some(pos) => key[..pos + 1].to_string(),
+                    None => String::new(),
+                }
+            };
+            let relative = key.strip_prefix(&base_prefix).unwrap_or(key);
+            let local_path = dest.join(relative);
+
+            if let Some(parent) = local_path.parent() {
+                std::fs::create_dir_all(parent)?;
+            }
+
+            let resp = client
+                .get_object()
+                .bucket(&bucket)
+                .key(key)
+                .send()
+                .await
+                .map_err(|e| s3err(e.to_string()))?;
+
+            let body = resp
+                .body
+                .collect()
+                .await
+                .map_err(|e| s3err(e.to_string()))?;
+            std::fs::write(&local_path, body.into_bytes())?;
+
+            let file_size = std::fs::metadata(&local_path).map(|m| m.len()).unwrap_or(0);
+            bytes_done += file_size;
+            files_done += 1;
+
+            let _ = channel.send(ProgressEvent {
+                id: op_id.clone(),
+                bytes_done,
+                bytes_total,
+                current_file: filename.to_string(),
+                files_done,
+                files_total,
+            });
         }
+        Ok(())
+    }.await;
 
-        let resp = client
-            .get_object()
-            .bucket(&bucket)
-            .key(key)
-            .send()
-            .await
-            .map_err(|e| s3err(e.to_string()))?;
-
-        let body = resp
-            .body
-            .collect()
-            .await
-            .map_err(|e| s3err(e.to_string()))?;
-        std::fs::write(&local_path, body.into_bytes())?;
-
-        let file_size = std::fs::metadata(&local_path).map(|m| m.len()).unwrap_or(0);
-        bytes_done += file_size;
-        files_done += 1;
-
-        let _ = channel.send(ProgressEvent {
-            id: op_id.clone(),
-            bytes_done,
-            bytes_total,
-            current_file: filename.to_string(),
-            files_done,
-            files_total,
-        });
+    if let Ok(mut map) = file_op_state.0.lock() {
+        map.remove(&op_id);
     }
 
-    Ok(())
+    result
 }
 
 /// Upload local files to an S3 prefix with progress.
 #[tauri::command]
 pub async fn s3_upload(
     state: State<'_, S3State>,
+    file_op_state: State<'_, FileOpState>,
     id: String,
+    op_id: String,
     sources: Vec<String>,
     dest_prefix: String,
     channel: Channel<ProgressEvent>,
@@ -430,6 +452,12 @@ pub async fn s3_upload(
         let conn = map.get(&id).ok_or_else(|| s3err("S3 connection not found"))?;
         (conn.client.clone(), conn.bucket.clone())
     };
+
+    let cancel_flag = Arc::new(AtomicBool::new(false));
+    {
+        let mut map = file_op_state.0.lock().map_err(|e| FmError::Other(e.to_string()))?;
+        map.insert(op_id.clone(), cancel_flag.clone());
+    }
 
     // Collect all files to upload (expand directories)
     let mut file_list: Vec<(std::path::PathBuf, String)> = Vec::new();
@@ -453,42 +481,52 @@ pub async fn s3_upload(
         .iter()
         .map(|(p, _)| std::fs::metadata(p).map(|m| m.len()).unwrap_or(0))
         .sum();
-    let op_id = format!("s3-upload-{}", std::process::id());
     let mut bytes_done: u64 = 0;
     let mut files_done: u32 = 0;
 
-    for (local_path, key) in &file_list {
-        let data = std::fs::read(local_path)?;
-        let size = data.len() as u64;
+    let result = async {
+        for (local_path, key) in &file_list {
+            if cancel_flag.load(Ordering::Relaxed) {
+                return Err(FmError::Other("Operation cancelled".into()));
+            }
 
-        client
-            .put_object()
-            .bucket(&bucket)
-            .key(key)
-            .body(data.into())
-            .send()
-            .await
-            .map_err(|e| s3err(e.to_string()))?;
+            let data = std::fs::read(local_path)?;
+            let size = data.len() as u64;
 
-        bytes_done += size;
-        files_done += 1;
+            client
+                .put_object()
+                .bucket(&bucket)
+                .key(key)
+                .body(data.into())
+                .send()
+                .await
+                .map_err(|e| s3err(e.to_string()))?;
 
-        let filename = local_path
-            .file_name()
-            .map(|n| n.to_string_lossy().to_string())
-            .unwrap_or_default();
+            bytes_done += size;
+            files_done += 1;
 
-        let _ = channel.send(ProgressEvent {
-            id: op_id.clone(),
-            bytes_done,
-            bytes_total,
-            current_file: filename,
-            files_done,
-            files_total,
-        });
+            let filename = local_path
+                .file_name()
+                .map(|n| n.to_string_lossy().to_string())
+                .unwrap_or_default();
+
+            let _ = channel.send(ProgressEvent {
+                id: op_id.clone(),
+                bytes_done,
+                bytes_total,
+                current_file: filename,
+                files_done,
+                files_total,
+            });
+        }
+        Ok(())
+    }.await;
+
+    if let Ok(mut map) = file_op_state.0.lock() {
+        map.remove(&op_id);
     }
 
-    Ok(())
+    result
 }
 
 /// Recursively collect local files for upload.
@@ -516,7 +554,9 @@ fn collect_local_files(
 #[tauri::command]
 pub async fn s3_copy_objects(
     state: State<'_, S3State>,
+    file_op_state: State<'_, FileOpState>,
     src_id: String,
+    op_id: String,
     src_keys: Vec<String>,
     dest_id: String,
     dest_prefix: String,
@@ -533,6 +573,12 @@ pub async fn s3_copy_objects(
             dest_conn.bucket.clone(),
         )
     };
+
+    let cancel_flag = Arc::new(AtomicBool::new(false));
+    {
+        let mut map = file_op_state.0.lock().map_err(|e| FmError::Other(e.to_string()))?;
+        map.insert(op_id.clone(), cancel_flag.clone());
+    }
 
     let mut resolved: Vec<(String, u64)> = Vec::new();
     for raw_key in &src_keys {
@@ -557,38 +603,48 @@ pub async fn s3_copy_objects(
 
     let files_total = resolved.len() as u32;
     let bytes_total: u64 = resolved.iter().map(|(_, s)| *s).sum();
-    let op_id = format!("s3-copy-{}", std::process::id());
     let mut bytes_done: u64 = 0;
     let mut files_done: u32 = 0;
 
-    for (key, size) in &resolved {
-        let filename = key.rsplit('/').next().unwrap_or(key);
-        let dest_key = format!("{}{}", dest_prefix, filename);
-        let copy_source = format!("{}/{}", src_bucket, key);
+    let result = async {
+        for (key, size) in &resolved {
+            if cancel_flag.load(Ordering::Relaxed) {
+                return Err(FmError::Other("Operation cancelled".into()));
+            }
 
-        dest_client
-            .copy_object()
-            .bucket(&dest_bucket)
-            .key(&dest_key)
-            .copy_source(&copy_source)
-            .send()
-            .await
-            .map_err(|e| s3err(e.to_string()))?;
+            let filename = key.rsplit('/').next().unwrap_or(key);
+            let dest_key = format!("{}{}", dest_prefix, filename);
+            let copy_source = format!("{}/{}", src_bucket, key);
 
-        bytes_done += size;
-        files_done += 1;
+            dest_client
+                .copy_object()
+                .bucket(&dest_bucket)
+                .key(&dest_key)
+                .copy_source(&copy_source)
+                .send()
+                .await
+                .map_err(|e| s3err(e.to_string()))?;
 
-        let _ = channel.send(ProgressEvent {
-            id: op_id.clone(),
-            bytes_done,
-            bytes_total,
-            current_file: filename.to_string(),
-            files_done,
-            files_total,
-        });
+            bytes_done += size;
+            files_done += 1;
+
+            let _ = channel.send(ProgressEvent {
+                id: op_id.clone(),
+                bytes_done,
+                bytes_total,
+                current_file: filename.to_string(),
+                files_done,
+                files_total,
+            });
+        }
+        Ok(())
+    }.await;
+
+    if let Ok(mut map) = file_op_state.0.lock() {
+        map.remove(&op_id);
     }
 
-    Ok(())
+    result
 }
 
 /// Delete S3 objects. For prefix keys, lists and deletes all children.
