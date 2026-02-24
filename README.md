@@ -35,6 +35,12 @@
 
 ## Installation
 
+### Homebrew
+
+```sh
+brew install fenio/tap/furman
+```
+
 ### Download
 
 Grab the latest `.dmg` from the [Releases](https://github.com/fenio/furman/releases/latest) page. Both Apple Silicon (ARM) and Intel builds are available.

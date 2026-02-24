@@ -66,3 +66,79 @@ jobs:
           releaseDraft: true
           prerelease: false
           args: --target ${{ matrix.target }}
+
+  update-homebrew:
+    needs: build
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Get version from tag
+        id: version
+        run: echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+
+      - name: Download release assets
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release download "$GITHUB_REF_NAME" \
+            --repo fenio/furman \
+            --pattern "*.dmg"
+
+      - name: Compute SHA256 checksums
+        id: sha
+        run: |
+          VERSION=${{ steps.version.outputs.version }}
+          echo "arm=$(sha256sum Furman_${VERSION}_aarch64.dmg | cut -d ' ' -f 1)" >> "$GITHUB_OUTPUT"
+          echo "intel=$(sha256sum Furman_${VERSION}_x64.dmg | cut -d ' ' -f 1)" >> "$GITHUB_OUTPUT"
+
+      - name: Checkout homebrew-tap
+        uses: actions/checkout@v4
+        with:
+          repository: fenio/homebrew-tap
+          token: ${{ secrets.TAP_GITHUB_TOKEN }}
+
+      - name: Update Furman cask
+        run: |
+          VERSION=${{ steps.version.outputs.version }}
+          ARM_SHA=${{ steps.sha.outputs.arm }}
+          INTEL_SHA=${{ steps.sha.outputs.intel }}
+          mkdir -p Casks
+          cat > Casks/furman.rb << CASK
+          cask "furman" do
+            version "${VERSION}"
+
+            on_arm do
+              sha256 "${ARM_SHA}"
+              url "https://github.com/fenio/furman/releases/download/v#{version}/Furman_#{version}_aarch64.dmg"
+            end
+
+            on_intel do
+              sha256 "${INTEL_SHA}"
+              url "https://github.com/fenio/furman/releases/download/v#{version}/Furman_#{version}_x64.dmg"
+            end
+
+            name "Furman"
+            desc "Dual-panel file manager for macOS"
+            homepage "https://github.com/fenio/furman"
+
+            app "Furman.app"
+
+            postflight do
+              system_command "/usr/bin/xattr",
+                   args: ["-cr", "#{appdir}/Furman.app"]
+            end
+
+            zap trash: [
+              "~/Library/Caches/com.furman.app",
+              "~/Library/Preferences/com.furman.app.plist",
+            ]
+          end
+          CASK
+
+      - name: Commit and push
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add Casks/furman.rb
+          git commit -m "Update furman to ${{ steps.version.outputs.version }}"
+          git push
