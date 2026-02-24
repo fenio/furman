@@ -70,19 +70,19 @@ The `.dmg` will be in `src-tauri/target/release/bundle/dmg/`.
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="https://github.com/user-attachments/assets/0fc576cf-b13d-4db2-955d-0e42f2b52864">
   <source media="(prefers-color-scheme: light)" srcset="https://github.com/user-attachments/assets/de277ee1-edb9-41b1-8fd8-bf2b3c3c0dc5">
-  <img width="1312" height="912" alt="Furman dual-pane file manager" src="https://github.com/user-attachments/assets/0fc576cf-b13d-4db2-955d-0e42f2b52864">
+  <img alt="Furman dual-pane file manager" src="https://github.com/user-attachments/assets/0fc576cf-b13d-4db2-955d-0e42f2b52864">
 </picture>
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="https://github.com/user-attachments/assets/45465cb2-04c8-4dcd-9ab5-d529e0ef323d">
   <source media="(prefers-color-scheme: light)" srcset="https://github.com/user-attachments/assets/40f77b47-833a-4580-be66-160eb60c91bd">
-  <img width="1312" height="912" alt="Furman with terminal and S3" src="https://github.com/user-attachments/assets/45465cb2-04c8-4dcd-9ab5-d529e0ef323d">
+  <img alt="Furman with terminal and S3" src="https://github.com/user-attachments/assets/45465cb2-04c8-4dcd-9ab5-d529e0ef323d">
 </picture>
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="https://github.com/user-attachments/assets/ad218d5c-3285-4a8d-95e3-ca534d8ba5ad">
   <source media="(prefers-color-scheme: light)" srcset="https://github.com/user-attachments/assets/b395210c-cd5a-4726-9ade-6079e61b7916">
-  <img width="1312" height="912" alt="Furman icon view" src="https://github.com/user-attachments/assets/ad218d5c-3285-4a8d-95e3-ca534d8ba5ad">
+  <img alt="Furman icon view" src="https://github.com/user-attachments/assets/ad218d5c-3285-4a8d-95e3-ca534d8ba5ad">
 </picture>
 
 
