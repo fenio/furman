@@ -48,6 +48,7 @@
   let s3IsPrefix = $state(false);
   let s3IsBucketRoot = $state(false);
   let bucketTab = $state<'general' | 'security' | 'lifecycle'>('general');
+  let objectTab = $state<'general' | 'metadata' | 'versions'>('general');
   let loading = $state(true);
   let error = $state('');
   let dirSize = $state<number | null>(null);
@@ -232,6 +233,7 @@
 
   // Object-level: Tags
   let objTagsExpanded = $state(false);
+  let objTagsLoaded = $state(false);
   let objectTags = $state<S3Tag[]>([]);
   let objTagsOriginal = $state<string>('');
   let objTagsLoading = $state(false);
@@ -276,8 +278,8 @@
 
   async function loadVersions() {
     if (versionsLoading) return;
-    versionsExpanded = !versionsExpanded;
-    if (!versionsExpanded || versions.length > 0) return;
+    versionsExpanded = true;
+    if (versions.length > 0) return;
     versionsLoading = true;
     versionsError = '';
     try {
@@ -724,8 +726,8 @@
 
   async function loadMetadata() {
     if (metadataLoading) return;
-    metadataExpanded = !metadataExpanded;
-    if (!metadataExpanded || objectMetadata) return;
+    metadataExpanded = true;
+    if (objectMetadata) return;
     metadataLoading = true;
     metadataMessage = '';
     try {
@@ -780,13 +782,14 @@
 
   async function loadObjectTags() {
     if (objTagsLoading) return;
-    objTagsExpanded = !objTagsExpanded;
-    if (!objTagsExpanded || objectTags.length > 0) return;
+    objTagsExpanded = true;
+    if (objTagsLoaded) return;
     objTagsLoading = true;
     objTagsMessage = '';
     try {
       objectTags = await s3GetObjectTags(s3ConnectionId, path);
       objTagsOriginal = JSON.stringify(objectTags);
+      objTagsLoaded = true;
     } catch (err: unknown) {
       objTagsMessage = 'Error: ' + String(err);
     } finally {
@@ -966,7 +969,7 @@
   bind:this={overlayEl}
   onkeydown={handleKeydown}
 >
-  <div class="dialog-box" class:bucket-dialog={s3IsBucketRoot}>
+  <div class="dialog-box">
     <div class="dialog-title">Properties</div>
     <div class="dialog-body">
       {#if loading}
@@ -1058,219 +1061,218 @@
           </tbody>
         </table>
 
-        <!-- Storage Class editor -->
-        {#if storageClasses.length > 1}
-        <div class="section-title">Storage Class</div>
-        <div class="storage-class-section">
-          <div class="sc-row">
-            <select class="sc-select" bind:value={selectedStorageClass}>
-              {#each storageClasses as sc}
-                <option value={sc}>{sc}</option>
-              {/each}
-            </select>
-            <button
-              class="dialog-btn apply-btn"
-              onclick={applyStorageClass}
-              disabled={applyingClass || selectedStorageClass === s3Props.storage_class}
-            >
-              {applyingClass ? 'Applying...' : 'Apply'}
-            </button>
-          </div>
-          {#if classMessage}
-            <div class="sc-message" class:sc-error={classMessage.startsWith('Error')}>{classMessage}</div>
+        <div class="tab-bar">
+          <button class="tab-btn" class:active={objectTab === 'general'} onclick={() => { objectTab = 'general'; }}>General</button>
+          {#if caps.objectMetadata || caps.objectTags}
+            <button class="tab-btn" class:active={objectTab === 'metadata'} onclick={() => { objectTab = 'metadata'; loadMetadata(); loadObjectTags(); }}>Metadata</button>
+          {/if}
+          {#if caps.versioning}
+            <button class="tab-btn" class:active={objectTab === 'versions'} onclick={() => { objectTab = 'versions'; loadVersions(); }}>Versions</button>
           {/if}
         </div>
-        {/if}
 
-        <!-- Glacier restore (only for glacier classes) -->
-        {#if caps.glacierRestore && isGlacier}
-          <div class="section-title">Glacier Restore</div>
-          <div class="glacier-section">
-            {#if s3Props.restore_status}
-              <div class="restore-status">Restore status: {s3Props.restore_status}</div>
-            {/if}
-            <div class="glacier-row">
-              <label class="glacier-label">
-                Days:
-                <input class="glacier-input" type="number" min="1" max="365" bind:value={restoreDays} />
-              </label>
-              <label class="glacier-label">
-                Tier:
-                <select class="glacier-select" bind:value={restoreTier}>
-                  <option value="Standard">Standard</option>
-                  <option value="Bulk">Bulk</option>
-                  <option value="Expedited">Expedited</option>
-                </select>
-              </label>
-              <button class="dialog-btn apply-btn" onclick={restoreFromGlacier} disabled={restoringGlacier}>
-                {restoringGlacier ? 'Restoring...' : 'Restore'}
+        {#if objectTab === 'general'}
+          <!-- Storage Class editor -->
+          {#if storageClasses.length > 1}
+          <div class="section-title">Storage Class</div>
+          <div class="storage-class-section">
+            <div class="sc-row">
+              <select class="sc-select" bind:value={selectedStorageClass}>
+                {#each storageClasses as sc}
+                  <option value={sc}>{sc}</option>
+                {/each}
+              </select>
+              <button
+                class="dialog-btn apply-btn"
+                onclick={applyStorageClass}
+                disabled={applyingClass || selectedStorageClass === s3Props.storage_class}
+              >
+                {applyingClass ? 'Applying...' : 'Apply'}
               </button>
             </div>
-            {#if restoreMessage}
-              <div class="sc-message" class:sc-error={restoreMessage.startsWith('Error')}>{restoreMessage}</div>
+            {#if classMessage}
+              <div class="sc-message" class:sc-error={classMessage.startsWith('Error')}>{classMessage}</div>
             {/if}
           </div>
+          {/if}
+
+          <!-- Glacier restore (only for glacier classes) -->
+          {#if caps.glacierRestore && isGlacier}
+            <div class="section-title">Glacier Restore</div>
+            <div class="glacier-section">
+              {#if s3Props.restore_status}
+                <div class="restore-status">Restore status: {s3Props.restore_status}</div>
+              {/if}
+              <div class="glacier-row">
+                <label class="glacier-label">
+                  Days:
+                  <input class="glacier-input" type="number" min="1" max="365" bind:value={restoreDays} />
+                </label>
+                <label class="glacier-label">
+                  Tier:
+                  <select class="glacier-select" bind:value={restoreTier}>
+                    <option value="Standard">Standard</option>
+                    <option value="Bulk">Bulk</option>
+                    <option value="Expedited">Expedited</option>
+                  </select>
+                </label>
+                <button class="dialog-btn apply-btn" onclick={restoreFromGlacier} disabled={restoringGlacier}>
+                  {restoringGlacier ? 'Restoring...' : 'Restore'}
+                </button>
+              </div>
+              {#if restoreMessage}
+                <div class="sc-message" class:sc-error={restoreMessage.startsWith('Error')}>{restoreMessage}</div>
+              {/if}
+            </div>
+          {/if}
         {/if}
 
-        <!-- Versions section -->
-        {#if caps.versioning}
-        <button class="section-title versions-toggle" onclick={loadVersions}>
-          Versions {versionsExpanded ? '\u25B4' : '\u25BE'}
-        </button>
-        {#if versionsExpanded}
-          <div class="versions-section">
-            {#if versionsLoading}
-              <div class="loading">Loading versions...</div>
-            {:else if versionsError}
-              <div class="error">{versionsError}</div>
-            {:else if versions.length === 0}
-              <div class="versions-empty">No version history (versioning may not be enabled on this bucket)</div>
-            {:else}
-              <div class="versions-list">
-                {#each versions as ver}
-                  <div class="version-row" class:version-latest={ver.is_latest} class:version-delete-marker={ver.is_delete_marker}>
-                    <div class="version-info">
-                      <span class="version-id mono" title={ver.version_id}>{truncateVid(ver.version_id)}</span>
-                      <span class="version-date">{formatDate(ver.modified)}</span>
-                      {#if !ver.is_delete_marker}
-                        <span class="version-size">{formatSize(ver.size)}</span>
-                      {/if}
-                      {#if ver.is_latest}
-                        <span class="version-badge latest">Latest</span>
-                      {/if}
-                      {#if ver.is_delete_marker}
-                        <span class="version-badge delete-marker">Delete Marker</span>
-                      {/if}
+        {#if objectTab === 'metadata'}
+          <!-- Object Metadata section -->
+          {#if caps.objectMetadata}
+            <div class="versions-section">
+              {#if metadataLoading}
+                <div class="loading">Loading metadata...</div>
+              {:else if metadataMessage && !objectMetadata}
+                <div class="error">{metadataMessage}</div>
+              {:else}
+                <div class="tag-editor">
+                  <label class="meta-field">
+                    <span class="meta-label">Content-Type</span>
+                    <input class="meta-input" type="text" bind:value={metaContentType} placeholder="application/octet-stream" />
+                  </label>
+                  <label class="meta-field">
+                    <span class="meta-label">Content-Disposition</span>
+                    <input class="meta-input" type="text" bind:value={metaContentDisposition} placeholder="inline" />
+                  </label>
+                  <label class="meta-field">
+                    <span class="meta-label">Cache-Control</span>
+                    <input class="meta-input" type="text" bind:value={metaCacheControl} placeholder="max-age=3600" />
+                  </label>
+                  <label class="meta-field">
+                    <span class="meta-label">Content-Encoding</span>
+                    <input class="meta-input" type="text" bind:value={metaContentEncoding} placeholder="gzip" />
+                  </label>
+                  <div class="tag-header">
+                    <span class="meta-label">Custom Metadata</span>
+                    <button class="version-action-btn" onclick={addCustomMeta}>+ Add</button>
+                  </div>
+                  {#each metaCustom as meta, i}
+                    <div class="tag-row">
+                      <input class="tag-input" type="text" bind:value={meta.key} placeholder="key" />
+                      <input class="tag-input" type="text" bind:value={meta.value} placeholder="value" />
+                      <button class="version-action-btn danger" onclick={() => removeCustomMeta(i)} title="Remove">&times;</button>
                     </div>
-                    <div class="version-actions">
-                      {#if !ver.is_delete_marker}
-                        <button
-                          class="version-action-btn"
-                          onclick={() => handleDownloadVersion(ver.version_id)}
-                          disabled={versionActionLoading === ver.version_id}
-                          title="Download this version"
-                        >DL</button>
-                        {#if !ver.is_latest}
+                  {/each}
+                  <div class="tag-actions">
+                    {#if metadataDirty}
+                      <button class="dialog-btn apply-btn" onclick={saveMetadata} disabled={savingMetadata}>
+                        {savingMetadata ? 'Saving...' : 'Save'}
+                      </button>
+                    {/if}
+                    {#if metadataMessage}
+                      <span class="sc-message" class:sc-error={metadataMessage.startsWith('Error')}>{metadataMessage}</span>
+                    {/if}
+                  </div>
+                </div>
+              {/if}
+            </div>
+          {/if}
+
+          <!-- Object Tags section -->
+          {#if caps.objectTags}
+            <div class="section-title">Tags</div>
+            <div class="versions-section">
+              {#if objTagsLoading}
+                <div class="loading">Loading tags...</div>
+              {:else}
+                <div class="tag-editor">
+                  {#each objectTags as tag, i}
+                    <div class="tag-row">
+                      <input class="tag-input" type="text" bind:value={tag.key} placeholder="key" />
+                      <input class="tag-input" type="text" bind:value={tag.value} placeholder="value" />
+                      <button class="version-action-btn danger" onclick={() => removeObjectTag(i)} title="Remove">&times;</button>
+                    </div>
+                  {/each}
+                  {#if objectTags.length === 0}
+                    <div class="versions-empty">No tags</div>
+                  {/if}
+                  <div class="tag-actions">
+                    <button class="version-action-btn" onclick={addObjectTag} disabled={objectTags.length >= 10}>+ Add Tag</button>
+                    {#if objTagsDirty}
+                      <button class="dialog-btn apply-btn" onclick={saveObjectTags} disabled={savingObjTags}>
+                        {savingObjTags ? 'Saving...' : 'Save'}
+                      </button>
+                    {/if}
+                    {#if objTagsMessage}
+                      <span class="sc-message" class:sc-error={objTagsMessage.startsWith('Error')}>{objTagsMessage}</span>
+                    {/if}
+                  </div>
+                  {#if objectTags.length >= 10}
+                    <div class="versions-empty">Maximum 10 tags reached</div>
+                  {/if}
+                </div>
+              {/if}
+            </div>
+          {/if}
+        {/if}
+
+        {#if objectTab === 'versions'}
+          {#if caps.versioning}
+            <div class="versions-section">
+              {#if versionsLoading}
+                <div class="loading">Loading versions...</div>
+              {:else if versionsError}
+                <div class="error">{versionsError}</div>
+              {:else if versions.length === 0}
+                <div class="versions-empty">No version history (versioning may not be enabled on this bucket)</div>
+              {:else}
+                <div class="versions-list">
+                  {#each versions as ver}
+                    <div class="version-row" class:version-latest={ver.is_latest} class:version-delete-marker={ver.is_delete_marker}>
+                      <div class="version-info">
+                        <span class="version-id mono" title={ver.version_id}>{truncateVid(ver.version_id)}</span>
+                        <span class="version-date">{formatDate(ver.modified)}</span>
+                        {#if !ver.is_delete_marker}
+                          <span class="version-size">{formatSize(ver.size)}</span>
+                        {/if}
+                        {#if ver.is_latest}
+                          <span class="version-badge latest">Latest</span>
+                        {/if}
+                        {#if ver.is_delete_marker}
+                          <span class="version-badge delete-marker">Delete Marker</span>
+                        {/if}
+                      </div>
+                      <div class="version-actions">
+                        {#if !ver.is_delete_marker}
                           <button
                             class="version-action-btn"
-                            onclick={() => handleRestoreVersion(ver.version_id)}
+                            onclick={() => handleDownloadVersion(ver.version_id)}
                             disabled={versionActionLoading === ver.version_id}
-                            title="Restore as current"
-                          >Restore</button>
+                            title="Download this version"
+                          >DL</button>
+                          {#if !ver.is_latest}
+                            <button
+                              class="version-action-btn"
+                              onclick={() => handleRestoreVersion(ver.version_id)}
+                              disabled={versionActionLoading === ver.version_id}
+                              title="Restore as current"
+                            >Restore</button>
+                          {/if}
                         {/if}
-                      {/if}
-                      <button
-                        class="version-action-btn danger"
-                        onclick={() => handleDeleteVersion(ver.version_id)}
-                        disabled={versionActionLoading === ver.version_id}
-                        title="Delete this version"
-                      >Del</button>
+                        <button
+                          class="version-action-btn danger"
+                          onclick={() => handleDeleteVersion(ver.version_id)}
+                          disabled={versionActionLoading === ver.version_id}
+                          title="Delete this version"
+                        >Del</button>
+                      </div>
                     </div>
-                  </div>
-                {/each}
-              </div>
-            {/if}
-          </div>
-        {/if}
-
-        {/if}
-
-        <!-- Object Metadata section -->
-        {#if caps.objectMetadata}
-        <button class="section-title versions-toggle" onclick={loadMetadata}>
-          Metadata {metadataExpanded ? '\u25B4' : '\u25BE'}
-        </button>
-        {#if metadataExpanded}
-          <div class="versions-section">
-            {#if metadataLoading}
-              <div class="loading">Loading metadata...</div>
-            {:else if metadataMessage && !objectMetadata}
-              <div class="error">{metadataMessage}</div>
-            {:else}
-              <div class="tag-editor">
-                <label class="meta-field">
-                  <span class="meta-label">Content-Type</span>
-                  <input class="meta-input" type="text" bind:value={metaContentType} placeholder="application/octet-stream" />
-                </label>
-                <label class="meta-field">
-                  <span class="meta-label">Content-Disposition</span>
-                  <input class="meta-input" type="text" bind:value={metaContentDisposition} placeholder="inline" />
-                </label>
-                <label class="meta-field">
-                  <span class="meta-label">Cache-Control</span>
-                  <input class="meta-input" type="text" bind:value={metaCacheControl} placeholder="max-age=3600" />
-                </label>
-                <label class="meta-field">
-                  <span class="meta-label">Content-Encoding</span>
-                  <input class="meta-input" type="text" bind:value={metaContentEncoding} placeholder="gzip" />
-                </label>
-                <div class="tag-header">
-                  <span class="meta-label">Custom Metadata</span>
-                  <button class="version-action-btn" onclick={addCustomMeta}>+ Add</button>
+                  {/each}
                 </div>
-                {#each metaCustom as meta, i}
-                  <div class="tag-row">
-                    <input class="tag-input" type="text" bind:value={meta.key} placeholder="key" />
-                    <input class="tag-input" type="text" bind:value={meta.value} placeholder="value" />
-                    <button class="version-action-btn danger" onclick={() => removeCustomMeta(i)} title="Remove">&times;</button>
-                  </div>
-                {/each}
-                <div class="tag-actions">
-                  {#if metadataDirty}
-                    <button class="dialog-btn apply-btn" onclick={saveMetadata} disabled={savingMetadata}>
-                      {savingMetadata ? 'Saving...' : 'Save'}
-                    </button>
-                  {/if}
-                  {#if metadataMessage}
-                    <span class="sc-message" class:sc-error={metadataMessage.startsWith('Error')}>{metadataMessage}</span>
-                  {/if}
-                </div>
-              </div>
-            {/if}
-          </div>
-        {/if}
-
-        {/if}
-
-        <!-- Object Tags section -->
-        {#if caps.objectTags}
-        <button class="section-title versions-toggle" onclick={loadObjectTags}>
-          Tags {objTagsExpanded ? '\u25B4' : '\u25BE'}
-        </button>
-        {#if objTagsExpanded}
-          <div class="versions-section">
-            {#if objTagsLoading}
-              <div class="loading">Loading tags...</div>
-            {:else}
-              <div class="tag-editor">
-                {#each objectTags as tag, i}
-                  <div class="tag-row">
-                    <input class="tag-input" type="text" bind:value={tag.key} placeholder="key" />
-                    <input class="tag-input" type="text" bind:value={tag.value} placeholder="value" />
-                    <button class="version-action-btn danger" onclick={() => removeObjectTag(i)} title="Remove">&times;</button>
-                  </div>
-                {/each}
-                {#if objectTags.length === 0}
-                  <div class="versions-empty">No tags</div>
-                {/if}
-                <div class="tag-actions">
-                  <button class="version-action-btn" onclick={addObjectTag} disabled={objectTags.length >= 10}>+ Add Tag</button>
-                  {#if objTagsDirty}
-                    <button class="dialog-btn apply-btn" onclick={saveObjectTags} disabled={savingObjTags}>
-                      {savingObjTags ? 'Saving...' : 'Save'}
-                    </button>
-                  {/if}
-                  {#if objTagsMessage}
-                    <span class="sc-message" class:sc-error={objTagsMessage.startsWith('Error')}>{objTagsMessage}</span>
-                  {/if}
-                </div>
-                {#if objectTags.length >= 10}
-                  <div class="versions-empty">Maximum 10 tags reached</div>
-                {/if}
-              </div>
-            {/if}
-          </div>
-        {/if}
+              {/if}
+            </div>
+          {/if}
         {/if}
       {:else if s3IsPrefix}
         <!-- S3 prefix (virtual directory) -->
@@ -1797,7 +1799,7 @@
       {/if}
 
     </div>
-    <div class="dialog-buttons">
+    <div class="dialog-footer">
       <button class="dialog-btn primary" onclick={onClose}>Close</button>
     </div>
   </div>
@@ -1823,9 +1825,10 @@
     background: var(--dialog-bg);
     border: 1px solid var(--dialog-border);
     border-radius: var(--radius-lg);
-    min-width: 70ch;
-    max-width: 100ch;
-    max-height: 90vh;
+    width: 72ch;
+    height: 85vh;
+    max-width: 90vw;
+    max-height: 900px;
     box-shadow: var(--shadow-dialog);
     overflow: hidden;
     display: flex;
@@ -1848,18 +1851,11 @@
     display: flex;
     flex-direction: column;
     gap: 12px;
+    flex: 1;
+    min-height: 0;
     overflow-y: auto;
     user-select: text;
     -webkit-user-select: text;
-  }
-
-  .bucket-dialog {
-    height: 90vh;
-  }
-
-  .bucket-dialog .dialog-body {
-    flex: 1;
-    min-height: 0;
   }
 
   .loading, .error {
@@ -2020,10 +2016,10 @@
     cursor: default;
   }
 
-  .dialog-buttons {
+  .dialog-footer {
     display: flex;
     justify-content: center;
-    padding: 12px 24px;
+    padding: 16px 24px;
     border-top: 1px solid var(--dialog-border);
     flex-shrink: 0;
   }
@@ -2149,19 +2145,6 @@
   }
 
   /* Versions section */
-  .versions-toggle {
-    cursor: pointer;
-    background: none;
-    border: none;
-    text-align: left;
-    padding: 4px 0;
-    width: 100%;
-  }
-
-  .versions-toggle:hover {
-    opacity: 1;
-  }
-
   .versions-section {
     max-height: 300px;
     overflow-y: auto;

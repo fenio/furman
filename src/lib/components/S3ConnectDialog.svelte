@@ -482,8 +482,9 @@
     border: 1px solid var(--dialog-border);
     border-radius: var(--radius-lg);
     width: 72ch;
+    height: 85vh;
     max-width: 90vw;
-    max-height: 90vh;
+    max-height: 900px;
     box-shadow: var(--shadow-dialog);
     overflow: hidden;
     display: flex;

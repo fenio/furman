@@ -265,10 +265,10 @@
         {/if}
       </div>
 
-      <div class="search-footer">
-        <span class="status-text">{statusText()}</span>
-        <button class="dialog-btn" onclick={onClose}>Close</button>
-      </div>
+    </div>
+    <div class="dialog-footer">
+      <span class="status-text">{statusText()}</span>
+      <button class="dialog-btn" onclick={onClose}>Close</button>
     </div>
   </div>
 </div>
@@ -293,13 +293,14 @@
     background: var(--dialog-bg);
     border: 1px solid var(--dialog-border);
     border-radius: var(--radius-lg);
-    width: 60ch;
+    width: 72ch;
+    height: 85vh;
     max-width: 90vw;
+    max-height: 900px;
     box-shadow: var(--shadow-dialog);
     overflow: hidden;
     display: flex;
     flex-direction: column;
-    max-height: 80vh;
   }
 
   .dialog-title {
@@ -320,7 +321,9 @@
     display: flex;
     flex-direction: column;
     gap: 10px;
+    flex: 1;
     min-height: 0;
+    overflow-y: auto;
   }
 
   .search-row {
@@ -466,12 +469,14 @@
     font-size: 13px;
   }
 
-  .search-footer {
+  .dialog-footer {
     display: flex;
     align-items: center;
     justify-content: space-between;
     gap: 10px;
-    margin-top: 2px;
+    padding: 12px 20px;
+    border-top: 1px solid var(--dialog-border);
+    flex-shrink: 0;
   }
 
   .status-text {

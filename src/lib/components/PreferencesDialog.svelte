@@ -125,9 +125,9 @@
       </div>
       <span class="pref-hint">Share log files when reporting issues</span>
 
-      <div class="dialog-buttons">
-        <button class="dialog-btn primary" onclick={onClose}>Close</button>
-      </div>
+    </div>
+    <div class="dialog-footer">
+      <button class="dialog-btn primary" onclick={onClose}>Close</button>
     </div>
   </div>
 </div>
@@ -152,10 +152,14 @@
     background: var(--dialog-bg);
     border: 1px solid var(--dialog-border);
     border-radius: var(--radius-lg);
-    min-width: 50ch;
-    max-width: 70ch;
+    width: 72ch;
+    height: 85vh;
+    max-width: 90vw;
+    max-height: 900px;
     box-shadow: var(--shadow-dialog);
     overflow: hidden;
+    display: flex;
+    flex-direction: column;
   }
 
   .dialog-title {
@@ -173,6 +177,8 @@
     display: flex;
     flex-direction: column;
     gap: 10px;
+    flex: 1;
+    overflow-y: auto;
   }
 
   .section-title {
@@ -291,10 +297,12 @@
     opacity: 0.6;
   }
 
-  .dialog-buttons {
+  .dialog-footer {
     display: flex;
     justify-content: center;
-    margin-top: 8px;
+    padding: 16px 24px;
+    border-top: 1px solid var(--dialog-border);
+    flex-shrink: 0;
   }
 
   .dialog-btn {

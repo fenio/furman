@@ -312,23 +312,23 @@
         {/if}
       </div>
 
-      <!-- Footer -->
-      <div class="sync-footer">
-        <span class="status-text">
-          {#if scanning}
-            Scanning... ({allEntries.length} files)
-          {:else if scanComplete}
-            {filterCount('new')} new, {filterCount('modified')} modified, {filterCount('deleted')} deleted &mdash; {selectedPaths.size} selected
-          {/if}
-        </span>
-        <div class="footer-buttons">
-          <button class="dialog-btn" onclick={onClose}>Cancel</button>
-          <button
-            class="dialog-btn sync-btn"
-            disabled={selectedPaths.size === 0 || scanning}
-            onclick={handleSync}
-          >Sync ({selectedPaths.size})</button>
-        </div>
+    </div>
+    <!-- Footer -->
+    <div class="dialog-footer">
+      <span class="status-text">
+        {#if scanning}
+          Scanning... ({allEntries.length} files)
+        {:else if scanComplete}
+          {filterCount('new')} new, {filterCount('modified')} modified, {filterCount('deleted')} deleted &mdash; {selectedPaths.size} selected
+        {/if}
+      </span>
+      <div class="footer-buttons">
+        <button class="dialog-btn" onclick={onClose}>Cancel</button>
+        <button
+          class="dialog-btn sync-btn"
+          disabled={selectedPaths.size === 0 || scanning}
+          onclick={handleSync}
+        >Sync ({selectedPaths.size})</button>
       </div>
     </div>
   </div>
@@ -355,12 +355,13 @@
     border: 1px solid var(--dialog-border);
     border-radius: var(--radius-lg);
     width: 72ch;
-    max-width: 92vw;
+    height: 85vh;
+    max-width: 90vw;
+    max-height: 900px;
     box-shadow: var(--shadow-dialog);
     overflow: hidden;
     display: flex;
     flex-direction: column;
-    max-height: 80vh;
   }
 
   .dialog-title {
@@ -381,7 +382,9 @@
     display: flex;
     flex-direction: column;
     gap: 10px;
+    flex: 1;
     min-height: 0;
+    overflow-y: auto;
   }
 
   /* Filter row */
@@ -540,12 +543,14 @@
   }
 
   /* Footer */
-  .sync-footer {
+  .dialog-footer {
     display: flex;
     align-items: center;
     justify-content: space-between;
     gap: 10px;
-    margin-top: 2px;
+    padding: 12px 20px;
+    border-top: 1px solid var(--dialog-border);
+    flex-shrink: 0;
   }
 
   .status-text {
