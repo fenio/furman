@@ -8,7 +8,7 @@
   import { workspacesState } from '$lib/state/workspaces.svelte';
   import { copyFiles, moveFiles, deleteFiles, renameFile, createDirectory, openFileDefault, openInEditor, checkConflicts, extractArchive, cancelFileOperation } from '$lib/services/tauri';
   import { statusState } from '$lib/state/status.svelte';
-  import { s3Download, s3Upload, s3CopyObjects, s3DeleteObjects } from '$lib/services/s3';
+  import { s3Download, s3Upload, s3CopyObjects, s3DeleteObjects, s3RenameObject, s3CreateFolder } from '$lib/services/s3';
   import { s3PathToPrefix } from '$lib/state/panels.svelte';
   import { error } from '$lib/services/log';
   import type { ProgressEvent, S3ConnectionInfo } from '$lib/types';
@@ -311,7 +311,11 @@
       appState.closeModal();
       if (!newName || newName === entry.name) return;
       try {
-        await renameFile(entry.path, newName);
+        if (active.backend === 's3' && active.s3Connection) {
+          await s3RenameObject(active.s3Connection.connectionId, entry.path, newName);
+        } else {
+          await renameFile(entry.path, newName);
+        }
       } catch (err: unknown) {
         error(String(err));
       } finally {
@@ -326,9 +330,15 @@
     appState.showInput('Create directory:', '', async (name: string) => {
       appState.closeModal();
       if (!name) return;
-      const newPath = active.path.replace(/\/+$/, '') + '/' + name;
       try {
-        await createDirectory(newPath);
+        if (active.backend === 's3' && active.s3Connection) {
+          const prefix = s3PathToPrefix(active.path, active.s3Connection.bucket);
+          const folderKey = prefix + name + '/';
+          await s3CreateFolder(active.s3Connection.connectionId, folderKey);
+        } else {
+          const newPath = active.path.replace(/\/+$/, '') + '/' + name;
+          await createDirectory(newPath);
+        }
       } catch (err: unknown) {
         error(String(err));
       } finally {
@@ -586,8 +596,12 @@
           return;
         case 'f':
           e.preventDefault();
-          if (active.backend === 'local') {
-            appState.showSearch(active.path);     // Cmd+F = Search
+          if (active.backend === 'local' || active.backend === 's3') {
+            appState.showSearch(
+              active.path,
+              active.backend,
+              active.s3Connection?.connectionId ?? '',
+            );
           }
           return;
         case 'b':

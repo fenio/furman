@@ -271,6 +271,8 @@
   {#if appState.modal === 'search'}
     <SearchDialog
       root={appState.searchRoot}
+      backend={appState.searchBackend}
+      s3ConnectionId={appState.searchS3ConnectionId}
       onNavigate={handleSearchNavigate}
       onClose={() => appState.closeModal()}
     />

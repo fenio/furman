@@ -117,6 +117,9 @@ pub fn run() {
             commands::s3::s3_copy_objects,
             commands::s3::s3_delete_objects,
             commands::s3::s3_head_object,
+            commands::s3::s3_create_folder,
+            commands::s3::s3_rename_object,
+            commands::s3::s3_search_objects,
             // archive commands
             commands::archive::list_archive,
             commands::archive::extract_archive,

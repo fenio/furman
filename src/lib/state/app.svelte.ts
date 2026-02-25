@@ -28,6 +28,8 @@ class AppState {
   calculateDirSizes = $state(true);
   s3ConnectCallback = $state<((bucket: string, region: string, endpoint?: string, profile?: string, accessKey?: string, secretKey?: string) => void) | null>(null);
   searchRoot = $state('');
+  searchBackend = $state<PanelBackend>('local');
+  searchS3ConnectionId = $state('');
   externalEditor = $state('');
   overwriteFiles = $state<string[]>([]);
   overwriteCallback = $state<((action: 'overwrite' | 'skip') => void) | null>(null);
@@ -35,8 +37,10 @@ class AppState {
   propertiesBackend = $state<PanelBackend>('local');
   propertiesS3ConnectionId = $state('');
 
-  showSearch(root: string) {
+  showSearch(root: string, backend: PanelBackend = 'local', s3ConnectionId: string = '') {
     this.searchRoot = root;
+    this.searchBackend = backend;
+    this.searchS3ConnectionId = s3ConnectionId;
     this.modal = 'search';
   }
 
@@ -159,6 +163,8 @@ class AppState {
     this.menuActive = false;
     this.s3ConnectCallback = null;
     this.searchRoot = '';
+    this.searchBackend = 'local';
+    this.searchS3ConnectionId = '';
     this.overwriteFiles = [];
     this.overwriteCallback = null;
     this.propertiesPath = '';

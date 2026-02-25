@@ -1,5 +1,8 @@
 use crate::commands::file::FileOpState;
-use crate::models::{DirListing, FileEntry, FmError, ProgressEvent, S3ObjectProperties};
+use crate::models::{
+    DirListing, FileEntry, FmError, ProgressEvent, S3ObjectProperties, SearchDone, SearchEvent,
+    SearchResult,
+};
 use aws_config::BehaviorVersion;
 use aws_credential_types::provider::ProvideCredentials;
 use aws_sdk_s3::Client as S3Client;
@@ -1055,6 +1058,319 @@ pub async fn s3_delete_objects(
             .await
             .map_err(|e| s3err(e.to_string()))?;
     }
+
+    Ok(())
+}
+
+/// Create a "folder" in S3 by putting a zero-byte object with a trailing-slash key.
+#[tauri::command]
+pub async fn s3_create_folder(
+    state: State<'_, S3State>,
+    id: String,
+    key: String,
+) -> Result<(), FmError> {
+    let (client, bucket) = {
+        let map = state.0.lock().map_err(|e| s3err(e.to_string()))?;
+        let conn = map.get(&id).ok_or_else(|| s3err("S3 connection not found"))?;
+        (conn.client.clone(), conn.bucket.clone())
+    };
+
+    // Ensure key ends with /
+    let folder_key = if key.ends_with('/') {
+        key
+    } else {
+        format!("{}/", key)
+    };
+
+    // Check if anything already exists under this prefix
+    let check = client
+        .list_objects_v2()
+        .bucket(&bucket)
+        .prefix(&folder_key)
+        .max_keys(1)
+        .send()
+        .await
+        .map_err(|e| s3err(e.to_string()))?;
+
+    if !check.contents().is_empty() || !check.common_prefixes().is_empty() {
+        return Err(FmError::AlreadyExists(folder_key));
+    }
+
+    // Put zero-byte object
+    client
+        .put_object()
+        .bucket(&bucket)
+        .key(&folder_key)
+        .body(aws_sdk_s3::primitives::ByteStream::from_static(b""))
+        .send()
+        .await
+        .map_err(|e| s3err(e.to_string()))?;
+
+    Ok(())
+}
+
+/// Rename an S3 object or prefix (copy to new key, then delete original).
+#[tauri::command]
+pub async fn s3_rename_object(
+    state: State<'_, S3State>,
+    id: String,
+    key: String,
+    new_name: String,
+) -> Result<(), FmError> {
+    // Validate new_name
+    if new_name.contains('/') || new_name.contains('\0') {
+        return Err(s3err("Invalid name: must not contain '/' or null bytes"));
+    }
+    if new_name.is_empty() {
+        return Err(s3err("Name cannot be empty"));
+    }
+
+    let (client, bucket) = {
+        let map = state.0.lock().map_err(|e| s3err(e.to_string()))?;
+        let conn = map.get(&id).ok_or_else(|| s3err("S3 connection not found"))?;
+        (conn.client.clone(), conn.bucket.clone())
+    };
+
+    let actual_key = strip_s3_prefix(&key, &bucket);
+
+    if actual_key.ends_with('/') {
+        // Prefix (folder) rename
+        rename_prefix(&client, &bucket, &actual_key, &new_name).await
+    } else {
+        // Single file rename
+        rename_file(&client, &bucket, &actual_key, &new_name).await
+    }
+}
+
+/// Rename a single S3 object by replacing the last path component.
+async fn rename_file(
+    client: &S3Client,
+    bucket: &str,
+    key: &str,
+    new_name: &str,
+) -> Result<(), FmError> {
+    // Compute dest key by replacing last path component
+    let dest_key = match key.rfind('/') {
+        Some(pos) => format!("{}/{}", &key[..pos], new_name),
+        None => new_name.to_string(),
+    };
+
+    // Check destination doesn't already exist
+    let head = client
+        .head_object()
+        .bucket(bucket)
+        .key(&dest_key)
+        .send()
+        .await;
+    if head.is_ok() {
+        return Err(FmError::AlreadyExists(dest_key));
+    }
+
+    // Copy to new key
+    let copy_source = format!("{}/{}", bucket, key);
+    client
+        .copy_object()
+        .bucket(bucket)
+        .key(&dest_key)
+        .copy_source(&copy_source)
+        .send()
+        .await
+        .map_err(|e| s3err(e.to_string()))?;
+
+    // Delete original
+    client
+        .delete_object()
+        .bucket(bucket)
+        .key(key)
+        .send()
+        .await
+        .map_err(|e| s3err(e.to_string()))?;
+
+    Ok(())
+}
+
+/// Rename an S3 prefix (folder) by copying all children to the new prefix, then deleting originals.
+async fn rename_prefix(
+    client: &S3Client,
+    bucket: &str,
+    old_prefix: &str,
+    new_name: &str,
+) -> Result<(), FmError> {
+    // old_prefix is like "photos/vacation/" — compute new prefix
+    let trimmed = old_prefix.trim_end_matches('/');
+    let new_prefix = match trimmed.rfind('/') {
+        Some(pos) => format!("{}/{}/", &trimmed[..pos], new_name),
+        None => format!("{}/", new_name),
+    };
+
+    // Check target prefix is empty
+    let check = client
+        .list_objects_v2()
+        .bucket(bucket)
+        .prefix(&new_prefix)
+        .max_keys(1)
+        .send()
+        .await
+        .map_err(|e| s3err(e.to_string()))?;
+
+    if !check.contents().is_empty() {
+        return Err(FmError::AlreadyExists(new_prefix));
+    }
+
+    // List all objects under old prefix
+    let children = list_all_objects(client, bucket, old_prefix).await?;
+    if children.is_empty() {
+        return Ok(());
+    }
+
+    // Copy each object to new prefix
+    for (child_key, _, _) in &children {
+        let relative = child_key
+            .strip_prefix(old_prefix)
+            .unwrap_or(child_key);
+        let dest_key = format!("{}{}", new_prefix, relative);
+        let copy_source = format!("{}/{}", bucket, child_key);
+
+        client
+            .copy_object()
+            .bucket(bucket)
+            .key(&dest_key)
+            .copy_source(&copy_source)
+            .send()
+            .await
+            .map_err(|e| s3err(e.to_string()))?;
+    }
+
+    // Batch delete originals (max 1000 per request)
+    let keys_to_delete: Vec<String> = children.into_iter().map(|(k, _, _)| k).collect();
+    for chunk in keys_to_delete.chunks(1000) {
+        let objects: Vec<_> = chunk
+            .iter()
+            .map(|k| {
+                aws_sdk_s3::types::ObjectIdentifier::builder()
+                    .key(k)
+                    .build()
+                    .expect("valid object identifier")
+            })
+            .collect();
+
+        let delete = aws_sdk_s3::types::Delete::builder()
+            .set_objects(Some(objects))
+            .build()
+            .map_err(|e| s3err(e.to_string()))?;
+
+        client
+            .delete_objects()
+            .bucket(bucket)
+            .delete(delete)
+            .send()
+            .await
+            .map_err(|e| s3err(e.to_string()))?;
+    }
+
+    Ok(())
+}
+
+/// Search S3 objects by name under a prefix, streaming results via channel.
+#[tauri::command]
+pub async fn s3_search_objects(
+    state: State<'_, S3State>,
+    search_state: State<'_, crate::commands::search::SearchState>,
+    id: String,
+    search_id: String,
+    prefix: String,
+    query: String,
+    channel: Channel<SearchEvent>,
+) -> Result<(), FmError> {
+    let (client, bucket) = {
+        let map = state.0.lock().map_err(|e| s3err(e.to_string()))?;
+        let conn = map.get(&id).ok_or_else(|| s3err("S3 connection not found"))?;
+        (conn.client.clone(), conn.bucket.clone())
+    };
+
+    let cancel_flag = Arc::new(AtomicBool::new(false));
+    {
+        let mut map = search_state.0.lock().map_err(|e| FmError::Other(e.to_string()))?;
+        map.insert(search_id.clone(), cancel_flag.clone());
+    }
+
+    let query_lower = query.to_lowercase();
+    let mut continuation_token: Option<String> = None;
+    let mut total_found: u32 = 0;
+    let mut streamed: u32 = 0;
+    const MAX_STREAMED: u32 = 1000;
+
+    loop {
+        if cancel_flag.load(Ordering::Relaxed) {
+            let _ = channel.send(SearchEvent::Done(SearchDone {
+                total_found,
+                cancelled: true,
+            }));
+            return Ok(());
+        }
+
+        let mut req = client
+            .list_objects_v2()
+            .bucket(&bucket)
+            .prefix(&prefix);
+        // No delimiter = recursive listing
+
+        if let Some(token) = &continuation_token {
+            req = req.continuation_token(token);
+        }
+
+        let resp = req.send().await.map_err(|e| s3err(e.to_string()))?;
+
+        for obj in resp.contents() {
+            if cancel_flag.load(Ordering::Relaxed) {
+                let _ = channel.send(SearchEvent::Done(SearchDone {
+                    total_found,
+                    cancelled: true,
+                }));
+                return Ok(());
+            }
+
+            let key = match obj.key() {
+                Some(k) => k,
+                None => continue,
+            };
+
+            // Extract filename (last component)
+            let filename = key.rsplit('/').next().unwrap_or(key);
+            if filename.is_empty() {
+                continue;
+            }
+
+            // Case-insensitive substring match
+            if filename.to_lowercase().contains(&query_lower) {
+                total_found += 1;
+                if streamed < MAX_STREAMED {
+                    let size = obj.size().unwrap_or(0) as u64;
+                    let is_dir = key.ends_with('/');
+                    let _ = channel.send(SearchEvent::Result(SearchResult {
+                        path: s3_path(&bucket, key),
+                        name: filename.to_string(),
+                        size,
+                        is_dir,
+                        line_number: None,
+                        snippet: None,
+                    }));
+                    streamed += 1;
+                }
+            }
+        }
+
+        if resp.is_truncated() == Some(true) {
+            continuation_token = resp.next_continuation_token().map(|s| s.to_string());
+        } else {
+            break;
+        }
+    }
+
+    let _ = channel.send(SearchEvent::Done(SearchDone {
+        total_found,
+        cancelled: false,
+    }));
 
     Ok(())
 }

@@ -1,5 +1,5 @@
 import { invoke, Channel } from '@tauri-apps/api/core';
-import type { DirListing, ProgressEvent, S3Bucket, S3ObjectProperties } from '$lib/types';
+import type { DirListing, ProgressEvent, S3Bucket, S3ObjectProperties, SearchEvent } from '$lib/types';
 
 export async function s3CheckCredentials(): Promise<boolean> {
   return await invoke<boolean>('s3_check_credentials');
@@ -101,4 +101,24 @@ export async function s3DeleteObjects(
   keys: string[]
 ): Promise<void> {
   await invoke('s3_delete_objects', { id, keys });
+}
+
+export async function s3CreateFolder(id: string, key: string): Promise<void> {
+  await invoke('s3_create_folder', { id, key });
+}
+
+export async function s3RenameObject(id: string, key: string, newName: string): Promise<void> {
+  await invoke('s3_rename_object', { id, key, newName });
+}
+
+export async function s3SearchObjects(
+  id: string,
+  searchId: string,
+  prefix: string,
+  query: string,
+  onEvent: (e: SearchEvent) => void,
+): Promise<void> {
+  const channel = new Channel<SearchEvent>();
+  channel.onmessage = onEvent;
+  await invoke('s3_search_objects', { id, searchId, prefix, query, channel });
 }

@@ -1,15 +1,18 @@
 <script lang="ts">
   import { onMount, onDestroy } from 'svelte';
   import { searchFiles, cancelSearch } from '$lib/services/tauri';
-  import type { SearchResult, SearchEvent, SearchMode } from '$lib/types';
+  import { s3SearchObjects } from '$lib/services/s3';
+  import type { SearchResult, SearchEvent, SearchMode, PanelBackend } from '$lib/types';
 
   interface Props {
     root: string;
+    backend?: PanelBackend;
+    s3ConnectionId?: string;
     onNavigate: (dirPath: string, fileName: string) => void;
     onClose: () => void;
   }
 
-  let { root, onNavigate, onClose }: Props = $props();
+  let { root, backend = 'local', s3ConnectionId = '', onNavigate, onClose }: Props = $props();
 
   let query = $state('');
   let mode = $state<SearchMode>('name');
@@ -44,7 +47,11 @@
 
   function dirOfPath(fullPath: string): string {
     const idx = fullPath.lastIndexOf('/');
-    return idx > 0 ? fullPath.slice(0, idx) : '/';
+    if (idx <= 0) return '/';
+    const dir = fullPath.slice(0, idx);
+    // S3 paths need a trailing slash for loadDirectory
+    if (dir.startsWith('s3://')) return dir + '/';
+    return dir;
   }
 
   function fileOfPath(fullPath: string): string {
@@ -75,7 +82,7 @@
     searchComplete = false;
     searching = true;
 
-    searchFiles(id, root, query, mode, (event: SearchEvent) => {
+    const handleEvent = (event: SearchEvent) => {
       // Ignore events from stale searches.
       if (id !== currentSearchId) return;
 
@@ -87,7 +94,18 @@
         searchComplete = true;
         searching = false;
       }
-    }).catch(() => {
+    };
+
+    const searchPromise = backend === 's3'
+      ? (() => {
+          // Extract prefix from s3://bucket/prefix path
+          const m = root.match(/^s3:\/\/[^/]+\/(.*)$/);
+          const prefix = m ? m[1] : '';
+          return s3SearchObjects(s3ConnectionId, id, prefix, query, handleEvent);
+        })()
+      : searchFiles(id, root, query, mode, handleEvent);
+
+    searchPromise.catch(() => {
       if (id === currentSearchId) {
         searching = false;
         searchComplete = true;
@@ -202,18 +220,20 @@
         />
       </div>
 
-      <div class="mode-toggle">
-        <button
-          class="mode-btn"
-          class:active={mode === 'name'}
-          onclick={() => handleModeChange('name')}
-        >Name</button>
-        <button
-          class="mode-btn"
-          class:active={mode === 'content'}
-          onclick={() => handleModeChange('content')}
-        >Content</button>
-      </div>
+      {#if backend !== 's3'}
+        <div class="mode-toggle">
+          <button
+            class="mode-btn"
+            class:active={mode === 'name'}
+            onclick={() => handleModeChange('name')}
+          >Name</button>
+          <button
+            class="mode-btn"
+            class:active={mode === 'content'}
+            onclick={() => handleModeChange('content')}
+          >Content</button>
+        </div>
+      {/if}
 
       <div class="results-list" bind:this={resultsEl}>
         {#each results as r, i}
