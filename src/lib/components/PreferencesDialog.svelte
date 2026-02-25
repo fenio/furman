@@ -1,6 +1,7 @@
 <script lang="ts">
   import { appState } from '$lib/state/app.svelte';
   import { panels } from '$lib/state/panels.svelte';
+  import { getLogPath, openFileDefault } from '$lib/services/tauri';
 
   interface Props {
     onClose: () => void;
@@ -21,6 +22,11 @@
       e.stopPropagation();
       onClose();
     }
+  }
+
+  async function openLogFolder() {
+    const logPath = await getLogPath();
+    await openFileDefault(logPath);
   }
 
   function toggleShowHidden() {
@@ -110,6 +116,14 @@
         />
         <span class="pref-hint">Leave empty to use built-in editor</span>
       </div>
+
+      <div class="section-title">Diagnostics</div>
+
+      <div class="pref-row">
+        <span class="pref-label">Log Files</span>
+        <button class="toggle-btn" onclick={openLogFolder}>Open Log Folder</button>
+      </div>
+      <span class="pref-hint">Share log files when reporting issues</span>
 
       <div class="dialog-buttons">
         <button class="dialog-btn primary" onclick={onClose}>Close</button>

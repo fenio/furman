@@ -40,13 +40,21 @@ pub fn run() {
         .manage(SearchState(Mutex::new(HashMap::new())))
         .manage(FileOpState(Mutex::new(HashMap::new())))
         .setup(|app| {
+            let mut targets = vec![
+                tauri_plugin_log::Target::new(tauri_plugin_log::TargetKind::LogDir { file_name: None }),
+            ];
             if cfg!(debug_assertions) {
-                app.handle().plugin(
-                    tauri_plugin_log::Builder::default()
-                        .level(log::LevelFilter::Info)
-                        .build(),
-                )?;
+                targets.push(tauri_plugin_log::Target::new(tauri_plugin_log::TargetKind::Stdout));
+                targets.push(tauri_plugin_log::Target::new(tauri_plugin_log::TargetKind::Webview));
             }
+            app.handle().plugin(
+                tauri_plugin_log::Builder::default()
+                    .targets(targets)
+                    .level(log::LevelFilter::Info)
+                    .rotation_strategy(tauri_plugin_log::RotationStrategy::KeepSome(3))
+                    .max_file_size(5_000_000)
+                    .build(),
+            )?;
 
             // Set dock icon programmatically (needed for dev mode on macOS)
             #[cfg(target_os = "macos")]
@@ -86,6 +94,8 @@ pub fn run() {
             commands::metadata::set_permissions,
             commands::metadata::open_file_default,
             commands::metadata::open_in_editor,
+            commands::metadata::get_file_properties,
+            commands::metadata::get_log_path,
             // volume commands
             commands::volumes::list_volumes,
             // watcher commands
@@ -105,6 +115,7 @@ pub fn run() {
             commands::s3::s3_upload,
             commands::s3::s3_copy_objects,
             commands::s3::s3_delete_objects,
+            commands::s3::s3_head_object,
             // archive commands
             commands::archive::list_archive,
             commands::archive::extract_archive,

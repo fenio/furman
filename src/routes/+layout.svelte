@@ -10,6 +10,7 @@
   import { statusState } from '$lib/state/status.svelte';
   import { s3Download, s3Upload, s3CopyObjects, s3DeleteObjects } from '$lib/services/s3';
   import { s3PathToPrefix } from '$lib/state/panels.svelte';
+  import { error } from '$lib/services/log';
   import type { ProgressEvent, S3ConnectionInfo } from '$lib/types';
 
   let { children } = $props();
@@ -45,7 +46,7 @@
         try {
           await openFileDefault(entry.path);
         } catch (err: unknown) {
-          console.error('System open failed:', err);
+          error(String(err));
         }
       } else {
         // Open file in viewer
@@ -68,7 +69,7 @@
   function openEditor(filePath: string) {
     if (appState.externalEditor.trim()) {
       openInEditor(filePath, appState.externalEditor.trim()).catch((err) => {
-        console.error('External editor failed:', err);
+        error(String(err));
       });
       return;
     }
@@ -157,7 +158,7 @@
       if (msg.includes('cancelled')) {
         cancelled = true;
       } else {
-        console.error('Copy failed:', err);
+        error(String(err));
       }
     } finally {
       appState.closeModal();
@@ -210,7 +211,7 @@
       if (msg.includes('cancelled')) {
         cancelled = true;
       } else {
-        console.error('Move failed:', err);
+        error(String(err));
       }
     } finally {
       appState.closeModal();
@@ -277,7 +278,7 @@
           await deleteFiles(sources, true);
         }
       } catch (err: unknown) {
-        console.error('Delete failed:', err);
+        error(String(err));
         statusState.setMessage('Delete failed');
       } finally {
         statusState.setMessage(`Deleted ${fileCount} file(s)`);
@@ -296,7 +297,7 @@
       try {
         await panel.connectS3(info, endpoint, profile, accessKey, secretKey);
       } catch (err: unknown) {
-        console.error('S3 connect failed:', err);
+        error(String(err));
       }
     });
   }
@@ -312,7 +313,7 @@
       try {
         await renameFile(entry.path, newName);
       } catch (err: unknown) {
-        console.error('Rename failed:', err);
+        error(String(err));
       } finally {
         await active.loadDirectory(active.path);
       }
@@ -329,7 +330,7 @@
       try {
         await createDirectory(newPath);
       } catch (err: unknown) {
-        console.error('MkDir failed:', err);
+        error(String(err));
       } finally {
         await active.loadDirectory(active.path);
       }

@@ -17,6 +17,7 @@
   import InputDialog from '$lib/components/InputDialog.svelte';
   import ProgressDialog from '$lib/components/ProgressDialog.svelte';
   import { cancelFileOperation } from '$lib/services/tauri';
+  import { initLogging } from '$lib/services/log';
   import Viewer from '$lib/components/Viewer.svelte';
   import Editor from '$lib/components/Editor.svelte';
   import S3ConnectDialog from '$lib/components/S3ConnectDialog.svelte';
@@ -36,6 +37,7 @@
     let reloadRightTimer: ReturnType<typeof setTimeout> | null = null;
 
     (async () => {
+      await initLogging();
       const config = await loadConfig();
       appState.initSettings(config);
       if (appState.startupSound) {

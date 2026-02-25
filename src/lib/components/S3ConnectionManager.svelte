@@ -3,6 +3,7 @@
   import { appState } from '$lib/state/app.svelte';
   import { s3ProfilesState } from '$lib/state/s3profiles.svelte';
   import S3ConnectDialog from '$lib/components/S3ConnectDialog.svelte';
+  import { error } from '$lib/services/log';
   import type { S3Profile, S3ConnectionInfo } from '$lib/types';
 
   interface Props {
@@ -53,7 +54,7 @@
       onClose();
     } catch (err: unknown) {
       connectError = err instanceof Error ? err.message : String(err);
-      console.error('S3 connect failed:', err);
+      error(String(err));
     }
   }
 
@@ -70,7 +71,7 @@
         }
       } catch (err: unknown) {
         connectError = 'Failed to retrieve credentials from keychain';
-        console.error('Keychain get failed:', err);
+        error(String(err));
         return;
       }
     }

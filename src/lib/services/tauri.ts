@@ -171,3 +171,7 @@ export async function gitListBranches(path: string): Promise<string[]> {
 export async function gitCheckout(path: string, branch: string): Promise<string> {
   return await invoke<string>('git_checkout', { path, branch });
 }
+
+export async function getLogPath(): Promise<string> {
+  return await invoke<string>('get_log_path');
+}

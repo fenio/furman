@@ -1,5 +1,6 @@
 import type { VolumeInfo } from '$lib/types';
 import { listVolumes } from '$lib/services/tauri';
+import { error } from '$lib/services/log';
 import { appState } from '$lib/state/app.svelte';
 
 export interface FavoriteItem {
@@ -41,7 +42,7 @@ class SidebarState {
     try {
       this.volumes = await listVolumes();
     } catch (err: unknown) {
-      console.error('Failed to load volumes:', err);
+      error(String(err));
     } finally {
       this.volumesLoading = false;
     }

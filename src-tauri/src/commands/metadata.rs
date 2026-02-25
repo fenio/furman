@@ -1,8 +1,10 @@
-use crate::models::FmError;
+use crate::models::{FileProperties, FmError};
+use nix::unistd::{Gid, Group, Uid, User};
 use std::fs;
 use std::io::{Read, Seek, SeekFrom};
-use std::os::unix::fs::PermissionsExt;
+use std::os::unix::fs::{MetadataExt, PermissionsExt};
 use std::path::PathBuf;
+use std::time::UNIX_EPOCH;
 
 /// Read an entire file as UTF-8 text.
 #[tauri::command]
@@ -160,4 +162,106 @@ pub fn set_permissions(path: String, mode: u32) -> Result<(), FmError> {
     fs::set_permissions(&p, perms)?;
 
     Ok(())
+}
+
+/// Return the path to the application log directory.
+#[tauri::command]
+pub fn get_log_path() -> Result<String, FmError> {
+    let dir = dirs::home_dir()
+        .unwrap_or_default()
+        .join("Library/Logs/com.furman.app");
+    Ok(dir.to_string_lossy().into_owned())
+}
+
+/// Get rich file/directory properties including birth time, access time, etc.
+#[tauri::command]
+pub fn get_file_properties(path: String) -> Result<FileProperties, FmError> {
+    let p = PathBuf::from(&path);
+    if !p.exists() {
+        return Err(FmError::NotFound(path));
+    }
+
+    let sym_meta = fs::symlink_metadata(&p)?;
+    let is_symlink = sym_meta.file_type().is_symlink();
+
+    let meta = if is_symlink {
+        fs::metadata(&p).unwrap_or_else(|_| sym_meta.clone())
+    } else {
+        sym_meta.clone()
+    };
+
+    let symlink_target = if is_symlink {
+        fs::read_link(&p)
+            .ok()
+            .map(|t| t.to_string_lossy().into_owned())
+    } else {
+        None
+    };
+
+    let kind = if is_symlink {
+        "Symlink".to_string()
+    } else if meta.is_dir() {
+        "Directory".to_string()
+    } else {
+        "File".to_string()
+    };
+
+    let modified = meta
+        .modified()
+        .ok()
+        .and_then(|t| t.duration_since(UNIX_EPOCH).ok())
+        .map(|d| d.as_millis() as i64)
+        .unwrap_or(0);
+
+    let accessed = meta
+        .accessed()
+        .ok()
+        .and_then(|t| t.duration_since(UNIX_EPOCH).ok())
+        .map(|d| d.as_millis() as i64)
+        .unwrap_or(0);
+
+    let created = meta
+        .created()
+        .ok()
+        .and_then(|t| t.duration_since(UNIX_EPOCH).ok())
+        .map(|d| d.as_millis() as i64)
+        .unwrap_or(0);
+
+    let permissions = sym_meta.permissions().mode();
+
+    let uid = sym_meta.uid();
+    let gid = sym_meta.gid();
+
+    let owner = User::from_uid(Uid::from_raw(uid))
+        .ok()
+        .flatten()
+        .map(|u| u.name)
+        .unwrap_or_else(|| uid.to_string());
+
+    let group = Group::from_gid(Gid::from_raw(gid))
+        .ok()
+        .flatten()
+        .map(|g| g.name)
+        .unwrap_or_else(|| gid.to_string());
+
+    let name = p
+        .file_name()
+        .map(|n| n.to_string_lossy().into_owned())
+        .unwrap_or_default();
+
+    Ok(FileProperties {
+        name,
+        path: p.to_string_lossy().into_owned(),
+        size: meta.len(),
+        is_dir: meta.is_dir(),
+        is_symlink,
+        symlink_target,
+        created,
+        modified,
+        accessed,
+        permissions,
+        owner,
+        group,
+        kind,
+    })
 }

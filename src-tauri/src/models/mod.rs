@@ -105,6 +105,43 @@ impl From<nix::Error> for FmError {
     }
 }
 
+// ── FileProperties ──────────────────────────────────────────────────────────
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct FileProperties {
+    pub name: String,
+    pub path: String,
+    pub size: u64,
+    pub is_dir: bool,
+    pub is_symlink: bool,
+    pub symlink_target: Option<String>,
+    /// Birth time (created) as milliseconds since Unix epoch.
+    pub created: i64,
+    /// Last modified time as milliseconds since Unix epoch.
+    pub modified: i64,
+    /// Last accessed time as milliseconds since Unix epoch.
+    pub accessed: i64,
+    /// Unix permission mode bits (e.g. 0o755).
+    pub permissions: u32,
+    pub owner: String,
+    pub group: String,
+    /// "File", "Directory", or "Symlink"
+    pub kind: String,
+}
+
+// ── S3ObjectProperties ──────────────────────────────────────────────────────
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct S3ObjectProperties {
+    pub key: String,
+    pub size: u64,
+    /// Last modified time as milliseconds since Unix epoch.
+    pub modified: i64,
+    pub content_type: Option<String>,
+    pub etag: Option<String>,
+    pub storage_class: Option<String>,
+}
+
 // ── SearchEvent ─────────────────────────────────────────────────────────────
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
