@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { onMount } from 'svelte';
+  import { onMount, untrack } from 'svelte';
   import { appState } from '$lib/state/app.svelte';
   import { getFileProperties, getDirectorySize } from '$lib/services/tauri';
   import {
@@ -35,7 +35,7 @@
 
   // Default capabilities: all true if not provided (backward compat)
   const ALL_CLASSES = ['STANDARD', 'STANDARD_IA', 'ONEZONE_IA', 'INTELLIGENT_TIERING', 'GLACIER', 'DEEP_ARCHIVE', 'GLACIER_IR'];
-  const caps: S3ProviderCapabilities = capabilities ?? {
+  const caps: S3ProviderCapabilities = untrack(() => capabilities) ?? {
     versioning: true, lifecycleRules: true, cors: true, bucketPolicy: true,
     acl: true, publicAccessBlock: true, encryption: true,
     storageClasses: ALL_CLASSES,
