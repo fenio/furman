@@ -1,8 +1,8 @@
 use crate::commands::file::FileOpState;
 use crate::models::{
     DirListing, FileEntry, FmError, ProgressEvent, S3BucketEncryption, S3BucketVersioning,
-    S3EncryptionRule, S3MultipartUpload, S3ObjectMetadata, S3ObjectProperties, S3ObjectVersion,
-    S3Tag, SearchDone, SearchEvent, SearchResult,
+    S3EncryptionRule, S3LifecycleRule, S3LifecycleTransition, S3MultipartUpload, S3ObjectMetadata,
+    S3ObjectProperties, S3ObjectVersion, S3Tag, SearchDone, SearchEvent, SearchResult,
 };
 use aws_config::BehaviorVersion;
 use aws_credential_types::provider::ProvideCredentials;
@@ -750,6 +750,7 @@ pub async fn s3_list_objects(
 }
 
 /// Download S3 objects to a local destination directory with progress.
+/// Returns None on success, Some(checkpoint) on pause.
 #[tauri::command]
 pub async fn s3_download(
     state: State<'_, S3State>,
@@ -759,17 +760,20 @@ pub async fn s3_download(
     keys: Vec<String>,
     destination: String,
     channel: Channel<ProgressEvent>,
-) -> Result<(), FmError> {
+) -> Result<Option<crate::models::TransferCheckpoint>, FmError> {
     let (client, bucket) = {
         let map = state.0.lock().map_err(|e| s3err(e.to_string()))?;
         let conn = map.get(&id).ok_or_else(|| s3err("S3 connection not found"))?;
         (conn.client.clone(), conn.bucket.clone())
     };
 
-    let cancel_flag = Arc::new(AtomicBool::new(false));
+    let flags = Arc::new(crate::commands::file::OpFlags {
+        cancel: AtomicBool::new(false),
+        pause: AtomicBool::new(false),
+    });
     {
         let mut map = file_op_state.0.lock().map_err(|e| FmError::Other(e.to_string()))?;
-        map.insert(op_id.clone(), cancel_flag.clone());
+        map.insert(op_id.clone(), flags.clone());
     }
 
     let dest = std::path::PathBuf::from(&destination);
@@ -800,11 +804,21 @@ pub async fn s3_download(
     let bytes_total: u64 = resolved.iter().map(|(_, s)| *s).sum();
     let mut bytes_done: u64 = 0;
     let mut files_done: u32 = 0;
+    let mut completed_files: Vec<String> = Vec::new();
 
     let result = async {
         for (key, _size) in &resolved {
-            if cancel_flag.load(Ordering::Relaxed) {
+            if flags.cancel.load(Ordering::Relaxed) {
                 return Err(FmError::Other("Operation cancelled".into()));
+            }
+            if flags.pause.load(Ordering::Relaxed) {
+                return Ok(Some(crate::models::TransferCheckpoint {
+                    files_completed: completed_files,
+                    bytes_done,
+                    bytes_total,
+                    files_done,
+                    files_total,
+                }));
             }
 
             let filename = key.rsplit('/').next().unwrap_or(key);
@@ -841,6 +855,7 @@ pub async fn s3_download(
             let file_size = std::fs::metadata(&local_path).map(|m| m.len()).unwrap_or(0);
             bytes_done += file_size;
             files_done += 1;
+            completed_files.push(key.clone());
 
             let _ = channel.send(ProgressEvent {
                 id: op_id.clone(),
@@ -851,7 +866,7 @@ pub async fn s3_download(
                 files_total,
             });
         }
-        Ok(())
+        Ok(None)
     }.await;
 
     if let Ok(mut map) = file_op_state.0.lock() {
@@ -862,6 +877,7 @@ pub async fn s3_download(
 }
 
 /// Upload local files to an S3 prefix with progress.
+/// Returns None on success, Some(checkpoint) on pause.
 #[tauri::command]
 pub async fn s3_upload(
     state: State<'_, S3State>,
@@ -871,17 +887,20 @@ pub async fn s3_upload(
     sources: Vec<String>,
     dest_prefix: String,
     channel: Channel<ProgressEvent>,
-) -> Result<(), FmError> {
+) -> Result<Option<crate::models::TransferCheckpoint>, FmError> {
     let (client, bucket) = {
         let map = state.0.lock().map_err(|e| s3err(e.to_string()))?;
         let conn = map.get(&id).ok_or_else(|| s3err("S3 connection not found"))?;
         (conn.client.clone(), conn.bucket.clone())
     };
 
-    let cancel_flag = Arc::new(AtomicBool::new(false));
+    let flags = Arc::new(crate::commands::file::OpFlags {
+        cancel: AtomicBool::new(false),
+        pause: AtomicBool::new(false),
+    });
     {
         let mut map = file_op_state.0.lock().map_err(|e| FmError::Other(e.to_string()))?;
-        map.insert(op_id.clone(), cancel_flag.clone());
+        map.insert(op_id.clone(), flags.clone());
     }
 
     // Collect all files to upload (expand directories)
@@ -908,11 +927,21 @@ pub async fn s3_upload(
         .sum();
     let mut bytes_done: u64 = 0;
     let mut files_done: u32 = 0;
+    let mut completed_files: Vec<String> = Vec::new();
 
     let result = async {
         for (local_path, key) in &file_list {
-            if cancel_flag.load(Ordering::Relaxed) {
+            if flags.cancel.load(Ordering::Relaxed) {
                 return Err(FmError::Other("Operation cancelled".into()));
+            }
+            if flags.pause.load(Ordering::Relaxed) {
+                return Ok(Some(crate::models::TransferCheckpoint {
+                    files_completed: completed_files,
+                    bytes_done,
+                    bytes_total,
+                    files_done,
+                    files_total,
+                }));
             }
 
             let file_size = std::fs::metadata(local_path)
@@ -932,7 +961,7 @@ pub async fn s3_upload(
                     key,
                     local_path,
                     file_size,
-                    &cancel_flag,
+                    &Arc::new(AtomicBool::new(false)), // multipart uses own cancel (via flags check above)
                     &atomic_bytes_done,
                     &op_id,
                     bytes_total,
@@ -961,6 +990,7 @@ pub async fn s3_upload(
             }
 
             files_done += 1;
+            completed_files.push(key.clone());
 
             let _ = channel.send(ProgressEvent {
                 id: op_id.clone(),
@@ -971,7 +1001,7 @@ pub async fn s3_upload(
                 files_total,
             });
         }
-        Ok(())
+        Ok(None)
     }.await;
 
     if let Ok(mut map) = file_op_state.0.lock() {
@@ -1003,6 +1033,7 @@ fn collect_local_files(
 }
 
 /// Server-side copy between S3 locations.
+/// Returns None on success, Some(checkpoint) on pause.
 #[tauri::command]
 pub async fn s3_copy_objects(
     state: State<'_, S3State>,
@@ -1013,7 +1044,7 @@ pub async fn s3_copy_objects(
     dest_id: String,
     dest_prefix: String,
     channel: Channel<ProgressEvent>,
-) -> Result<(), FmError> {
+) -> Result<Option<crate::models::TransferCheckpoint>, FmError> {
     let (src_client, src_bucket, dest_client, dest_bucket) = {
         let map = state.0.lock().map_err(|e| s3err(e.to_string()))?;
         let src_conn = map.get(&src_id).ok_or_else(|| s3err("Source S3 connection not found"))?;
@@ -1026,10 +1057,13 @@ pub async fn s3_copy_objects(
         )
     };
 
-    let cancel_flag = Arc::new(AtomicBool::new(false));
+    let flags = Arc::new(crate::commands::file::OpFlags {
+        cancel: AtomicBool::new(false),
+        pause: AtomicBool::new(false),
+    });
     {
         let mut map = file_op_state.0.lock().map_err(|e| FmError::Other(e.to_string()))?;
-        map.insert(op_id.clone(), cancel_flag.clone());
+        map.insert(op_id.clone(), flags.clone());
     }
 
     let mut resolved: Vec<(String, u64)> = Vec::new();
@@ -1057,11 +1091,21 @@ pub async fn s3_copy_objects(
     let bytes_total: u64 = resolved.iter().map(|(_, s)| *s).sum();
     let mut bytes_done: u64 = 0;
     let mut files_done: u32 = 0;
+    let mut completed_files: Vec<String> = Vec::new();
 
     let result = async {
         for (key, size) in &resolved {
-            if cancel_flag.load(Ordering::Relaxed) {
+            if flags.cancel.load(Ordering::Relaxed) {
                 return Err(FmError::Other("Operation cancelled".into()));
+            }
+            if flags.pause.load(Ordering::Relaxed) {
+                return Ok(Some(crate::models::TransferCheckpoint {
+                    files_completed: completed_files,
+                    bytes_done,
+                    bytes_total,
+                    files_done,
+                    files_total,
+                }));
             }
 
             let filename = key.rsplit('/').next().unwrap_or(key);
@@ -1074,6 +1118,7 @@ pub async fn s3_copy_objects(
 
             bytes_done += size;
             files_done += 1;
+            completed_files.push(key.clone());
 
             let _ = channel.send(ProgressEvent {
                 id: op_id.clone(),
@@ -1084,7 +1129,7 @@ pub async fn s3_copy_objects(
                 files_total,
             });
         }
-        Ok(())
+        Ok(None)
     }.await;
 
     if let Ok(mut map) = file_op_state.0.lock() {
@@ -2479,6 +2524,222 @@ pub async fn s3_abort_multipart_upload(
         .bucket(&bucket)
         .key(&key)
         .upload_id(&upload_id)
+        .send()
+        .await
+        .map_err(|e| s3err(e.to_string()))?;
+
+    Ok(())
+}
+
+// ── Lifecycle Rules ─────────────────────────────────────────────────────────
+
+/// Get bucket lifecycle configuration rules.
+#[tauri::command]
+pub async fn s3_get_bucket_lifecycle(
+    state: State<'_, S3State>,
+    id: String,
+) -> Result<Vec<S3LifecycleRule>, FmError> {
+    let (client, bucket) = {
+        let map = state.0.lock().map_err(|e| s3err(e.to_string()))?;
+        let conn = map.get(&id).ok_or_else(|| s3err("S3 connection not found"))?;
+        (conn.client.clone(), conn.bucket.clone())
+    };
+
+    let resp = client
+        .get_bucket_lifecycle_configuration()
+        .bucket(&bucket)
+        .send()
+        .await;
+
+    match resp {
+        Ok(r) => {
+            let rules = r
+                .rules()
+                .iter()
+                .map(|rule| {
+                    let id_str = rule.id().unwrap_or_default().to_string();
+
+                    // Extract prefix from filter
+                    let prefix = rule
+                        .filter()
+                        .and_then(|f| f.prefix().map(|s| s.to_string()))
+                        .unwrap_or_default();
+
+                    let enabled = rule.status()
+                        == &aws_sdk_s3::types::ExpirationStatus::Enabled;
+
+                    let transitions: Vec<S3LifecycleTransition> = rule
+                        .transitions()
+                        .iter()
+                        .filter_map(|t| {
+                            Some(S3LifecycleTransition {
+                                days: t.days().unwrap_or(0),
+                                storage_class: t
+                                    .storage_class()
+                                    .map(|sc| sc.as_str().to_string())
+                                    .unwrap_or_default(),
+                            })
+                        })
+                        .collect();
+
+                    let expiration_days = rule
+                        .expiration()
+                        .and_then(|e| e.days())
+                        .map(|d| d);
+
+                    let noncurrent_transitions: Vec<S3LifecycleTransition> = rule
+                        .noncurrent_version_transitions()
+                        .iter()
+                        .filter_map(|t| {
+                            Some(S3LifecycleTransition {
+                                days: t.noncurrent_days().unwrap_or(0),
+                                storage_class: t
+                                    .storage_class()
+                                    .map(|sc| sc.as_str().to_string())
+                                    .unwrap_or_default(),
+                            })
+                        })
+                        .collect();
+
+                    let noncurrent_expiration_days = rule
+                        .noncurrent_version_expiration()
+                        .and_then(|e| e.noncurrent_days())
+                        .map(|d| d);
+
+                    let abort_incomplete_days = rule
+                        .abort_incomplete_multipart_upload()
+                        .and_then(|a| a.days_after_initiation())
+                        .map(|d| d);
+
+                    S3LifecycleRule {
+                        id: id_str,
+                        prefix,
+                        enabled,
+                        transitions,
+                        expiration_days,
+                        noncurrent_transitions,
+                        noncurrent_expiration_days,
+                        abort_incomplete_days,
+                    }
+                })
+                .collect();
+            Ok(rules)
+        }
+        Err(e) => {
+            let err_str = e.to_string();
+            if err_str.contains("NoSuchLifecycleConfiguration") {
+                Ok(vec![])
+            } else {
+                Err(s3err(err_str))
+            }
+        }
+    }
+}
+
+/// Set bucket lifecycle configuration rules.
+#[tauri::command]
+pub async fn s3_put_bucket_lifecycle(
+    state: State<'_, S3State>,
+    id: String,
+    rules: Vec<S3LifecycleRule>,
+) -> Result<(), FmError> {
+    let (client, bucket) = {
+        let map = state.0.lock().map_err(|e| s3err(e.to_string()))?;
+        let conn = map.get(&id).ok_or_else(|| s3err("S3 connection not found"))?;
+        (conn.client.clone(), conn.bucket.clone())
+    };
+
+    if rules.is_empty() {
+        // Remove lifecycle configuration
+        client
+            .delete_bucket_lifecycle()
+            .bucket(&bucket)
+            .send()
+            .await
+            .map_err(|e| s3err(e.to_string()))?;
+        return Ok(());
+    }
+
+    let sdk_rules: Vec<aws_sdk_s3::types::LifecycleRule> = rules
+        .iter()
+        .map(|r| {
+            let mut builder = aws_sdk_s3::types::LifecycleRule::builder()
+                .id(&r.id)
+                .filter(
+                    aws_sdk_s3::types::LifecycleRuleFilter::builder()
+                        .prefix(&r.prefix)
+                        .build(),
+                )
+                .status(if r.enabled {
+                    aws_sdk_s3::types::ExpirationStatus::Enabled
+                } else {
+                    aws_sdk_s3::types::ExpirationStatus::Disabled
+                });
+
+            // Transitions
+            for t in &r.transitions {
+                let sc = t.storage_class.parse::<aws_sdk_s3::types::TransitionStorageClass>()
+                    .unwrap_or(aws_sdk_s3::types::TransitionStorageClass::StandardIa);
+                builder = builder.transitions(
+                    aws_sdk_s3::types::Transition::builder()
+                        .days(t.days)
+                        .storage_class(sc)
+                        .build(),
+                );
+            }
+
+            // Expiration
+            if let Some(days) = r.expiration_days {
+                builder = builder.expiration(
+                    aws_sdk_s3::types::LifecycleExpiration::builder()
+                        .days(days)
+                        .build(),
+                );
+            }
+
+            // Noncurrent version transitions
+            for t in &r.noncurrent_transitions {
+                let sc = t.storage_class.parse::<aws_sdk_s3::types::TransitionStorageClass>()
+                    .unwrap_or(aws_sdk_s3::types::TransitionStorageClass::StandardIa);
+                builder = builder.noncurrent_version_transitions(
+                    aws_sdk_s3::types::NoncurrentVersionTransition::builder()
+                        .noncurrent_days(t.days)
+                        .storage_class(sc)
+                        .build(),
+                );
+            }
+
+            // Noncurrent version expiration
+            if let Some(days) = r.noncurrent_expiration_days {
+                builder = builder.noncurrent_version_expiration(
+                    aws_sdk_s3::types::NoncurrentVersionExpiration::builder()
+                        .noncurrent_days(days)
+                        .build(),
+                );
+            }
+
+            // Abort incomplete multipart upload
+            if let Some(days) = r.abort_incomplete_days {
+                builder = builder.abort_incomplete_multipart_upload(
+                    aws_sdk_s3::types::AbortIncompleteMultipartUpload::builder()
+                        .days_after_initiation(days)
+                        .build(),
+                );
+            }
+
+            builder.build().expect("valid lifecycle rule")
+        })
+        .collect();
+
+    let config = aws_sdk_s3::types::BucketLifecycleConfiguration::builder()
+        .set_rules(Some(sdk_rules))
+        .build()
+        .map_err(|e| s3err(e.to_string()))?;
+
+    client
+        .put_bucket_lifecycle_configuration()
+        .bucket(&bucket)
+        .lifecycle_configuration(config)
         .send()
         .await
         .map_err(|e| s3err(e.to_string()))?;

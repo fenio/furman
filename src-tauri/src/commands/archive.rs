@@ -339,10 +339,13 @@ pub fn extract_archive(
 
     let files_total = internal_paths.len() as u32;
 
-    let cancel_flag = Arc::new(AtomicBool::new(false));
+    let flags = Arc::new(crate::commands::file::OpFlags {
+        cancel: AtomicBool::new(false),
+        pause: AtomicBool::new(false),
+    });
     {
         let mut map = state.0.lock().map_err(|e| FmError::Other(e.to_string()))?;
-        map.insert(id.clone(), cancel_flag.clone());
+        map.insert(id.clone(), flags.clone());
     }
 
     // Use `7z x` to extract with full paths, targeting specific files.
@@ -383,7 +386,7 @@ pub fn extract_archive(
             }
             Ok(None) => {
                 // Still running — check cancel flag.
-                if cancel_flag.load(Ordering::Relaxed) {
+                if flags.cancel.load(Ordering::Relaxed) {
                     let _ = child.kill();
                     let _ = child.wait();
                     break Err(FmError::Other("Operation cancelled".into()));
@@ -396,7 +399,7 @@ pub fn extract_archive(
         }
     };
 
-    // Clean up the cancel flag from state.
+    // Clean up the flags from state.
     if let Ok(mut map) = state.0.lock() {
         map.remove(&id);
     }

@@ -261,6 +261,66 @@ pub struct S3MultipartUpload {
     pub initiated: i64,
 }
 
+// ── S3LifecycleRule ─────────────────────────────────────────────────────────
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct S3LifecycleTransition {
+    pub days: i32,
+    pub storage_class: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct S3LifecycleRule {
+    pub id: String,
+    pub prefix: String,
+    pub enabled: bool,
+    pub transitions: Vec<S3LifecycleTransition>,
+    pub expiration_days: Option<i32>,
+    pub noncurrent_transitions: Vec<S3LifecycleTransition>,
+    pub noncurrent_expiration_days: Option<i32>,
+    pub abort_incomplete_days: Option<i32>,
+}
+
+// ── Transfer Checkpoints ────────────────────────────────────────────────────
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TransferCheckpoint {
+    pub files_completed: Vec<String>,
+    pub bytes_done: u64,
+    pub bytes_total: u64,
+    pub files_done: u32,
+    pub files_total: u32,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct S3CompletedPart {
+    pub part_number: i32,
+    pub etag: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct S3UploadCheckpoint {
+    pub files_completed: Vec<String>,
+    pub current_file_upload_id: Option<String>,
+    pub current_file_key: Option<String>,
+    pub completed_parts: Vec<S3CompletedPart>,
+    pub bytes_done: u64,
+    pub bytes_total: u64,
+    pub files_done: u32,
+    pub files_total: u32,
+}
+
+// ── S3CorsRule ──────────────────────────────────────────────────────────────
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct S3CorsRule {
+    pub allowed_origins: Vec<String>,
+    pub allowed_methods: Vec<String>,
+    pub allowed_headers: Vec<String>,
+    pub expose_headers: Vec<String>,
+    pub max_age_seconds: Option<i32>,
+}
+
 // ── Display impls ───────────────────────────────────────────────────────────
 
 impl fmt::Display for ProgressEvent {

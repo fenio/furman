@@ -8,13 +8,14 @@
     s3GetBucketVersioning, s3PutBucketVersioning, s3GetBucketEncryption,
     s3GetBucketTags, s3PutBucketTags, s3ListMultipartUploads, s3AbortMultipartUpload,
     s3GetObjectMetadata, s3PutObjectMetadata, s3GetObjectTags, s3PutObjectTags,
+    s3GetBucketLifecycle, s3PutBucketLifecycle,
   } from '$lib/services/s3';
   import { invoke } from '@tauri-apps/api/core';
   import { formatSize, formatDate, formatPermissions } from '$lib/utils/format';
   import type {
     FileProperties, S3ObjectProperties, S3ObjectVersion, PanelBackend,
     S3BucketVersioning, S3BucketEncryption, S3Tag, S3MultipartUpload,
-    S3ObjectMetadata,
+    S3ObjectMetadata, S3LifecycleRule,
   } from '$lib/types';
 
   interface Props {
@@ -141,6 +142,22 @@
   let uploadsError = $state('');
   let abortingUpload = $state<string | null>(null);
   let abortingAll = $state(false);
+
+  // Bucket-level: Lifecycle Rules
+  let lifecycleExpanded = $state(false);
+  let lifecycleRules = $state<S3LifecycleRule[]>([]);
+  let lifecycleOriginal = $state('');
+  let lifecycleLoading = $state(false);
+  let lifecycleMessage = $state('');
+  let savingLifecycle = $state(false);
+  let editingRuleIndex = $state<number | null>(null);
+
+  const lifecycleDirty = $derived(JSON.stringify(lifecycleRules) !== lifecycleOriginal);
+
+  const lifecycleStorageClasses = [
+    'STANDARD_IA', 'ONEZONE_IA', 'INTELLIGENT_TIERING',
+    'GLACIER', 'GLACIER_IR', 'DEEP_ARCHIVE',
+  ];
 
   // Object-level: Metadata
   let metadataExpanded = $state(false);
@@ -361,6 +378,102 @@
     } finally {
       abortingAll = false;
     }
+  }
+
+  // ── Bucket-level: Lifecycle functions ────────────────────────────────────
+
+  async function loadLifecycleRules() {
+    if (lifecycleLoading) return;
+    lifecycleExpanded = !lifecycleExpanded;
+    if (!lifecycleExpanded || lifecycleRules.length > 0) return;
+    lifecycleLoading = true;
+    lifecycleMessage = '';
+    try {
+      lifecycleRules = await s3GetBucketLifecycle(s3ConnectionId);
+      lifecycleOriginal = JSON.stringify(lifecycleRules);
+    } catch (err: unknown) {
+      lifecycleMessage = 'Error: ' + String(err);
+    } finally {
+      lifecycleLoading = false;
+    }
+  }
+
+  function addLifecycleRule() {
+    lifecycleRules = [...lifecycleRules, {
+      id: `rule-${lifecycleRules.length + 1}`,
+      prefix: '',
+      enabled: true,
+      transitions: [],
+      expiration_days: null,
+      noncurrent_transitions: [],
+      noncurrent_expiration_days: null,
+      abort_incomplete_days: null,
+    }];
+    editingRuleIndex = lifecycleRules.length - 1;
+  }
+
+  function removeLifecycleRule(index: number) {
+    lifecycleRules = lifecycleRules.filter((_, i) => i !== index);
+    if (editingRuleIndex === index) editingRuleIndex = null;
+    else if (editingRuleIndex !== null && editingRuleIndex > index) editingRuleIndex--;
+  }
+
+  function addTransition(ruleIndex: number) {
+    const rule = lifecycleRules[ruleIndex];
+    rule.transitions = [...rule.transitions, { days: 30, storage_class: 'STANDARD_IA' }];
+    lifecycleRules = [...lifecycleRules];
+  }
+
+  function removeTransition(ruleIndex: number, tIndex: number) {
+    const rule = lifecycleRules[ruleIndex];
+    rule.transitions = rule.transitions.filter((_, i) => i !== tIndex);
+    lifecycleRules = [...lifecycleRules];
+  }
+
+  function addNoncurrentTransition(ruleIndex: number) {
+    const rule = lifecycleRules[ruleIndex];
+    rule.noncurrent_transitions = [...rule.noncurrent_transitions, { days: 30, storage_class: 'STANDARD_IA' }];
+    lifecycleRules = [...lifecycleRules];
+  }
+
+  function removeNoncurrentTransition(ruleIndex: number, tIndex: number) {
+    const rule = lifecycleRules[ruleIndex];
+    rule.noncurrent_transitions = rule.noncurrent_transitions.filter((_, i) => i !== tIndex);
+    lifecycleRules = [...lifecycleRules];
+  }
+
+  async function saveLifecycleRules() {
+    savingLifecycle = true;
+    lifecycleMessage = '';
+    try {
+      await s3PutBucketLifecycle(s3ConnectionId, lifecycleRules);
+      lifecycleOriginal = JSON.stringify(lifecycleRules);
+      lifecycleMessage = 'Lifecycle rules saved';
+    } catch (err: unknown) {
+      lifecycleMessage = 'Error: ' + String(err);
+    } finally {
+      savingLifecycle = false;
+    }
+  }
+
+  function lifecycleSummary(rule: S3LifecycleRule): string {
+    const parts: string[] = [];
+    if (rule.transitions.length > 0) {
+      parts.push(`${rule.transitions.length} transition(s)`);
+    }
+    if (rule.expiration_days !== null) {
+      parts.push(`expire ${rule.expiration_days}d`);
+    }
+    if (rule.noncurrent_transitions.length > 0) {
+      parts.push(`${rule.noncurrent_transitions.length} noncurrent transition(s)`);
+    }
+    if (rule.noncurrent_expiration_days !== null) {
+      parts.push(`noncurrent expire ${rule.noncurrent_expiration_days}d`);
+    }
+    if (rule.abort_incomplete_days !== null) {
+      parts.push(`abort incomplete ${rule.abort_incomplete_days}d`);
+    }
+    return parts.length > 0 ? parts.join(', ') : 'No actions configured';
   }
 
   // ── Object-level: Metadata functions ────────────────────────────────────
@@ -960,6 +1073,164 @@
               {/if}
             </div>
           {/if}
+
+          <!-- Lifecycle Rules -->
+          <button class="section-title versions-toggle" onclick={loadLifecycleRules}>
+            Lifecycle Rules {lifecycleExpanded ? '\u25B4' : '\u25BE'}
+          </button>
+          {#if lifecycleExpanded}
+            <div class="versions-section">
+              {#if lifecycleLoading}
+                <div class="loading">Loading lifecycle rules...</div>
+              {:else}
+                <div class="tag-editor">
+                  {#each lifecycleRules as rule, i}
+                    <div class="lifecycle-rule" class:lifecycle-disabled={!rule.enabled}>
+                      <div class="lifecycle-rule-header">
+                        <label class="lifecycle-enabled-label">
+                          <input type="checkbox" bind:checked={rule.enabled} onchange={() => { lifecycleRules = [...lifecycleRules]; }} />
+                        </label>
+                        <span class="lifecycle-rule-id" title={rule.id}>{rule.id || '(no id)'}</span>
+                        {#if editingRuleIndex !== i}
+                          <span class="lifecycle-summary">{lifecycleSummary(rule)}</span>
+                        {/if}
+                        <div class="lifecycle-rule-actions">
+                          <button class="version-action-btn" onclick={() => { editingRuleIndex = editingRuleIndex === i ? null : i; }}>
+                            {editingRuleIndex === i ? 'Collapse' : 'Edit'}
+                          </button>
+                          <button class="version-action-btn danger" onclick={() => removeLifecycleRule(i)} title="Delete rule">&times;</button>
+                        </div>
+                      </div>
+
+                      {#if editingRuleIndex === i}
+                        <div class="lifecycle-rule-body">
+                          <label class="meta-field">
+                            <span class="meta-label">Rule ID</span>
+                            <input class="meta-input" type="text" bind:value={rule.id} onchange={() => { lifecycleRules = [...lifecycleRules]; }} />
+                          </label>
+                          <label class="meta-field">
+                            <span class="meta-label">Prefix Filter</span>
+                            <input class="meta-input" type="text" bind:value={rule.prefix} placeholder="(all objects)" onchange={() => { lifecycleRules = [...lifecycleRules]; }} />
+                          </label>
+
+                          <!-- Current Version Transitions -->
+                          <div class="tag-header">
+                            <span class="meta-label">Transitions</span>
+                            <button class="version-action-btn" onclick={() => addTransition(i)}>+ Add</button>
+                          </div>
+                          {#each rule.transitions as t, ti}
+                            <div class="tag-row">
+                              <label class="lifecycle-days-label">
+                                Days:
+                                <input class="lifecycle-days-input" type="number" min="0" bind:value={t.days} onchange={() => { lifecycleRules = [...lifecycleRules]; }} />
+                              </label>
+                              <select class="sc-select" bind:value={t.storage_class} onchange={() => { lifecycleRules = [...lifecycleRules]; }}>
+                                {#each lifecycleStorageClasses as sc}
+                                  <option value={sc}>{sc}</option>
+                                {/each}
+                              </select>
+                              <button class="version-action-btn danger" onclick={() => removeTransition(i, ti)}>&times;</button>
+                            </div>
+                          {/each}
+
+                          <!-- Expiration -->
+                          <div class="tag-header">
+                            <span class="meta-label">Expiration (days)</span>
+                          </div>
+                          <div class="tag-row">
+                            <input
+                              class="lifecycle-days-input"
+                              type="number"
+                              min="0"
+                              value={rule.expiration_days ?? ''}
+                              oninput={(e) => {
+                                const v = (e.target as HTMLInputElement).value;
+                                rule.expiration_days = v ? parseInt(v, 10) : null;
+                                lifecycleRules = [...lifecycleRules];
+                              }}
+                              placeholder="none"
+                            />
+                          </div>
+
+                          <!-- Noncurrent Version Transitions -->
+                          <div class="tag-header">
+                            <span class="meta-label">Noncurrent Version Transitions</span>
+                            <button class="version-action-btn" onclick={() => addNoncurrentTransition(i)}>+ Add</button>
+                          </div>
+                          {#each rule.noncurrent_transitions as t, ti}
+                            <div class="tag-row">
+                              <label class="lifecycle-days-label">
+                                Days:
+                                <input class="lifecycle-days-input" type="number" min="0" bind:value={t.days} onchange={() => { lifecycleRules = [...lifecycleRules]; }} />
+                              </label>
+                              <select class="sc-select" bind:value={t.storage_class} onchange={() => { lifecycleRules = [...lifecycleRules]; }}>
+                                {#each lifecycleStorageClasses as sc}
+                                  <option value={sc}>{sc}</option>
+                                {/each}
+                              </select>
+                              <button class="version-action-btn danger" onclick={() => removeNoncurrentTransition(i, ti)}>&times;</button>
+                            </div>
+                          {/each}
+
+                          <!-- Noncurrent Version Expiration -->
+                          <div class="tag-header">
+                            <span class="meta-label">Noncurrent Version Expiration (days)</span>
+                          </div>
+                          <div class="tag-row">
+                            <input
+                              class="lifecycle-days-input"
+                              type="number"
+                              min="0"
+                              value={rule.noncurrent_expiration_days ?? ''}
+                              oninput={(e) => {
+                                const v = (e.target as HTMLInputElement).value;
+                                rule.noncurrent_expiration_days = v ? parseInt(v, 10) : null;
+                                lifecycleRules = [...lifecycleRules];
+                              }}
+                              placeholder="none"
+                            />
+                          </div>
+
+                          <!-- Abort Incomplete Multipart Upload -->
+                          <div class="tag-header">
+                            <span class="meta-label">Abort Incomplete Multipart (days)</span>
+                          </div>
+                          <div class="tag-row">
+                            <input
+                              class="lifecycle-days-input"
+                              type="number"
+                              min="0"
+                              value={rule.abort_incomplete_days ?? ''}
+                              oninput={(e) => {
+                                const v = (e.target as HTMLInputElement).value;
+                                rule.abort_incomplete_days = v ? parseInt(v, 10) : null;
+                                lifecycleRules = [...lifecycleRules];
+                              }}
+                              placeholder="none"
+                            />
+                          </div>
+                        </div>
+                      {/if}
+                    </div>
+                  {/each}
+                  {#if lifecycleRules.length === 0}
+                    <div class="versions-empty">No lifecycle rules</div>
+                  {/if}
+                  <div class="tag-actions">
+                    <button class="version-action-btn" onclick={addLifecycleRule}>+ Add Rule</button>
+                    {#if lifecycleDirty}
+                      <button class="dialog-btn apply-btn" onclick={saveLifecycleRules} disabled={savingLifecycle}>
+                        {savingLifecycle ? 'Saving...' : 'Save'}
+                      </button>
+                    {/if}
+                    {#if lifecycleMessage}
+                      <span class="sc-message" class:sc-error={lifecycleMessage.startsWith('Error')}>{lifecycleMessage}</span>
+                    {/if}
+                  </div>
+                </div>
+              {/if}
+            </div>
+          {/if}
         {/if}
       {/if}
 
@@ -1507,5 +1778,79 @@
   .meta-input:focus {
     outline: none;
     border-color: var(--border-active);
+  }
+
+  /* Lifecycle Rules */
+
+  .lifecycle-rule {
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--radius-sm);
+    padding: 6px;
+    margin-bottom: 6px;
+  }
+
+  .lifecycle-rule.lifecycle-disabled {
+    opacity: 0.6;
+  }
+
+  .lifecycle-rule-header {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    min-height: 24px;
+  }
+
+  .lifecycle-enabled-label {
+    flex-shrink: 0;
+  }
+
+  .lifecycle-rule-id {
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--text-primary);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 120px;
+  }
+
+  .lifecycle-summary {
+    font-size: 11px;
+    color: var(--text-secondary);
+    flex: 1;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .lifecycle-rule-actions {
+    display: flex;
+    gap: 4px;
+    flex-shrink: 0;
+    margin-left: auto;
+  }
+
+  .lifecycle-rule-body {
+    margin-top: 6px;
+    padding-top: 6px;
+    border-top: 1px solid var(--border-subtle);
+  }
+
+  .lifecycle-days-label {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    font-size: 11px;
+    color: var(--text-secondary);
+  }
+
+  .lifecycle-days-input {
+    width: 60px;
+    padding: 2px 4px;
+    font-size: 11px;
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--radius-sm);
+    background: var(--bg-surface);
+    color: var(--text-primary);
   }
 </style>

@@ -7,7 +7,7 @@
   import { terminalState } from '$lib/state/terminal.svelte';
   import { sidebarState } from '$lib/state/sidebar.svelte';
   import { workspacesState } from '$lib/state/workspaces.svelte';
-  import { copyFiles, moveFiles, deleteFiles, renameFile, createDirectory, openFileDefault, openInEditor, checkConflicts, extractArchive } from '$lib/services/tauri';
+  import { copyFiles, moveFiles, deleteFiles, renameFile, createDirectory, openFileDefault, openInEditor, checkConflicts } from '$lib/services/tauri';
   import { statusState } from '$lib/state/status.svelte';
   import { transfersState } from '$lib/state/transfers.svelte';
   import { s3Download, s3Upload, s3CopyObjects, s3DeleteObjects, s3RenameObject, s3CreateFolder, s3PresignUrl, s3DownloadToTemp } from '$lib/services/s3';
@@ -102,9 +102,19 @@
 
   window.addEventListener('sync-execute', handleSyncExecuteEvent);
 
+  function handleTransferDone() {
+    const reloads: Promise<void>[] = [];
+    if (panels.active.backend !== 'archive') reloads.push(panels.active.loadDirectory(panels.active.path));
+    if (panels.inactive.backend !== 'archive') reloads.push(panels.inactive.loadDirectory(panels.inactive.path));
+    Promise.all(reloads);
+  }
+
+  window.addEventListener('transfer-done', handleTransferDone);
+
   onDestroy(() => {
     dragDropUnlisten?.();
     window.removeEventListener('sync-execute', handleSyncExecuteEvent);
+    window.removeEventListener('transfer-done', handleTransferDone);
   });
 
   function executeSyncTransfer(detail: {
@@ -362,58 +372,39 @@
     const active = panels.active;
     const inactive = panels.inactive;
     const opId = 'file-op-' + Date.now() + '-' + Math.random().toString(36).slice(2, 6);
-    const fileCount = sources.length;
     const transferType = srcBackend === 'archive' ? 'extract' as const : 'copy' as const;
-    transfersState.add(opId, transferType, sources, dest);
 
-    (async () => {
-      let cancelled = false;
-      try {
-        const onProgress = (e: ProgressEvent) => {
-          transfersState.updateProgress(opId, e);
-        };
-        if (srcBackend === 'archive' && destBackend === 'local') {
-          const archivePath = active.archiveInfo!.archivePath;
-          const internalPaths = sources.map((s) => {
-            const hashIdx = s.indexOf('#');
-            return hashIdx >= 0 ? s.substring(hashIdx + 1) : s;
-          });
-          await extractArchive(opId, archivePath, internalPaths, dest, onProgress);
-        } else if (srcBackend === 'local' && destBackend === 'local') {
-          await copyFiles(opId, sources, dest, onProgress);
-        } else if (srcBackend === 's3' && destBackend === 'local') {
-          const conn = active.s3Connection!;
-          await s3Download(conn.connectionId, opId, sources, dest, onProgress);
-        } else if (srcBackend === 'local' && destBackend === 's3') {
-          const conn = inactive.s3Connection!;
-          const prefix = s3PathToPrefix(dest, conn.bucket);
-          await s3Upload(conn.connectionId, opId, sources, prefix, onProgress);
-        } else if (srcBackend === 's3' && destBackend === 's3') {
-          const srcConn = active.s3Connection!;
-          const destConn = inactive.s3Connection!;
-          const destPrefix = s3PathToPrefix(dest, destConn.bucket);
-          await s3CopyObjects(srcConn.connectionId, opId, sources, destConn.connectionId, destPrefix, onProgress);
-        }
-        transfersState.complete(opId);
-        statusState.setMessage(`Copied ${fileCount} file(s)`);
-      } catch (err: unknown) {
-        const msg = String(err);
-        if (msg.includes('cancelled')) {
-          cancelled = true;
-          transfersState.markCancelled(opId);
-          statusState.setMessage('Copy cancelled');
-        } else {
-          error(msg);
-          transfersState.fail(opId, msg);
-          statusState.setMessage('Copy failed');
-        }
-      } finally {
-        const reloads: Promise<void>[] = [];
-        if (active.backend !== 'archive') reloads.push(active.loadDirectory(active.path));
-        if (inactive.backend !== 'archive') reloads.push(inactive.loadDirectory(inactive.path));
-        await Promise.all(reloads);
-      }
-    })();
+    if (srcBackend === 'archive' && destBackend === 'local') {
+      const archivePath = active.archiveInfo!.archivePath;
+      const internalPaths = sources.map((s) => {
+        const hashIdx = s.indexOf('#');
+        return hashIdx >= 0 ? s.substring(hashIdx + 1) : s;
+      });
+      transfersState.enqueue({
+        id: opId,
+        type: transferType,
+        sources,
+        destination: dest,
+        srcBackend,
+        destBackend,
+        archivePath,
+        archiveInternalPaths: internalPaths,
+      });
+    } else {
+      transfersState.enqueue({
+        id: opId,
+        type: transferType,
+        sources,
+        destination: dest,
+        srcBackend,
+        destBackend,
+        s3SrcConnectionId: active.s3Connection?.connectionId,
+        s3DestConnectionId: inactive.s3Connection?.connectionId,
+        s3DestPrefix: destBackend === 's3' && inactive.s3Connection
+          ? s3PathToPrefix(dest, inactive.s3Connection.bucket)
+          : undefined,
+      });
+    }
   }
 
   function executeMove(
@@ -425,53 +416,20 @@
     const active = panels.active;
     const inactive = panels.inactive;
     const opId = 'file-op-' + Date.now() + '-' + Math.random().toString(36).slice(2, 6);
-    const fileCount = sources.length;
-    transfersState.add(opId, 'move', sources, dest);
 
-    (async () => {
-      let cancelled = false;
-      try {
-        const onProgress = (e: ProgressEvent) => {
-          transfersState.updateProgress(opId, e);
-        };
-        if (srcBackend === 'local' && destBackend === 'local') {
-          await moveFiles(opId, sources, dest, onProgress);
-        } else if (srcBackend === 's3' && destBackend === 'local') {
-          const conn = active.s3Connection!;
-          await s3Download(conn.connectionId, opId, sources, dest, onProgress);
-          await s3DeleteObjects(conn.connectionId, sources);
-        } else if (srcBackend === 'local' && destBackend === 's3') {
-          const conn = inactive.s3Connection!;
-          const prefix = s3PathToPrefix(dest, conn.bucket);
-          await s3Upload(conn.connectionId, opId, sources, prefix, onProgress);
-          await deleteFiles(sources, false);
-        } else if (srcBackend === 's3' && destBackend === 's3') {
-          const srcConn = active.s3Connection!;
-          const destConn = inactive.s3Connection!;
-          const destPrefix = s3PathToPrefix(dest, destConn.bucket);
-          await s3CopyObjects(srcConn.connectionId, opId, sources, destConn.connectionId, destPrefix, onProgress);
-          await s3DeleteObjects(srcConn.connectionId, sources);
-        }
-        transfersState.complete(opId);
-        statusState.setMessage(`Moved ${fileCount} file(s)`);
-      } catch (err: unknown) {
-        const msg = String(err);
-        if (msg.includes('cancelled')) {
-          cancelled = true;
-          transfersState.markCancelled(opId);
-          statusState.setMessage('Move cancelled');
-        } else {
-          error(msg);
-          transfersState.fail(opId, msg);
-          statusState.setMessage('Move failed');
-        }
-      } finally {
-        const reloads: Promise<void>[] = [];
-        if (active.backend !== 'archive') reloads.push(active.loadDirectory(active.path));
-        if (inactive.backend !== 'archive') reloads.push(inactive.loadDirectory(inactive.path));
-        await Promise.all(reloads);
-      }
-    })();
+    transfersState.enqueue({
+      id: opId,
+      type: 'move',
+      sources,
+      destination: dest,
+      srcBackend,
+      destBackend,
+      s3SrcConnectionId: active.s3Connection?.connectionId,
+      s3DestConnectionId: inactive.s3Connection?.connectionId,
+      s3DestPrefix: destBackend === 's3' && inactive.s3Connection
+        ? s3PathToPrefix(dest, inactive.s3Connection.bucket)
+        : undefined,
+    });
   }
 
   async function handleCopy() {

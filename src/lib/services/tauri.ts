@@ -1,5 +1,5 @@
 import { invoke, Channel } from '@tauri-apps/api/core';
-import type { DirListing, VolumeInfo, ProgressEvent, SearchEvent, SearchMode, SyncEvent, GitRepoInfo, FileProperties } from '$lib/types';
+import type { DirListing, VolumeInfo, ProgressEvent, SearchEvent, SearchMode, SyncEvent, GitRepoInfo, FileProperties, TransferCheckpoint } from '$lib/types';
 
 export async function listArchive(
   archivePath: string,
@@ -36,10 +36,10 @@ export async function copyFiles(
   sources: string[],
   destination: string,
   onProgress: (e: ProgressEvent) => void
-): Promise<void> {
+): Promise<TransferCheckpoint | null> {
   const channel = new Channel<ProgressEvent>();
   channel.onmessage = onProgress;
-  await invoke('copy_files', { id, sources, destination, channel });
+  return await invoke<TransferCheckpoint | null>('copy_files', { id, sources, destination, channel });
 }
 
 export async function moveFiles(
@@ -47,14 +47,18 @@ export async function moveFiles(
   sources: string[],
   destination: string,
   onProgress: (e: ProgressEvent) => void
-): Promise<void> {
+): Promise<TransferCheckpoint | null> {
   const channel = new Channel<ProgressEvent>();
   channel.onmessage = onProgress;
-  await invoke('move_files', { id, sources, destination, channel });
+  return await invoke<TransferCheckpoint | null>('move_files', { id, sources, destination, channel });
 }
 
 export async function cancelFileOperation(id: string): Promise<void> {
   await invoke('cancel_file_operation', { id });
+}
+
+export async function pauseFileOperation(id: string): Promise<void> {
+  await invoke('pause_file_operation', { id });
 }
 
 export async function deleteFiles(

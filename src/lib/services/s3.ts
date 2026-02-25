@@ -1,5 +1,5 @@
 import { invoke, Channel } from '@tauri-apps/api/core';
-import type { DirListing, ProgressEvent, S3Bucket, S3BucketEncryption, S3BucketVersioning, S3MultipartUpload, S3ObjectMetadata, S3ObjectProperties, S3ObjectVersion, S3Tag, SearchEvent } from '$lib/types';
+import type { DirListing, ProgressEvent, S3Bucket, S3BucketEncryption, S3BucketVersioning, S3LifecycleRule, S3MultipartUpload, S3ObjectMetadata, S3ObjectProperties, S3ObjectVersion, S3Tag, SearchEvent, TransferCheckpoint } from '$lib/types';
 
 export async function s3CheckCredentials(): Promise<boolean> {
   return await invoke<boolean>('s3_check_credentials');
@@ -58,10 +58,10 @@ export async function s3Download(
   keys: string[],
   destination: string,
   onProgress: (e: ProgressEvent) => void
-): Promise<void> {
+): Promise<TransferCheckpoint | null> {
   const channel = new Channel<ProgressEvent>();
   channel.onmessage = onProgress;
-  await invoke('s3_download', { id, opId, keys, destination, channel });
+  return await invoke<TransferCheckpoint | null>('s3_download', { id, opId, keys, destination, channel });
 }
 
 export async function s3Upload(
@@ -70,10 +70,10 @@ export async function s3Upload(
   sources: string[],
   destPrefix: string,
   onProgress: (e: ProgressEvent) => void
-): Promise<void> {
+): Promise<TransferCheckpoint | null> {
   const channel = new Channel<ProgressEvent>();
   channel.onmessage = onProgress;
-  await invoke('s3_upload', { id, opId, sources, destPrefix, channel });
+  return await invoke<TransferCheckpoint | null>('s3_upload', { id, opId, sources, destPrefix, channel });
 }
 
 export async function s3CopyObjects(
@@ -83,10 +83,10 @@ export async function s3CopyObjects(
   destId: string,
   destPrefix: string,
   onProgress: (e: ProgressEvent) => void
-): Promise<void> {
+): Promise<TransferCheckpoint | null> {
   const channel = new Channel<ProgressEvent>();
   channel.onmessage = onProgress;
-  await invoke('s3_copy_objects', { srcId, opId, srcKeys, destId, destPrefix, channel });
+  return await invoke<TransferCheckpoint | null>('s3_copy_objects', { srcId, opId, srcKeys, destId, destPrefix, channel });
 }
 
 export async function s3HeadObject(
@@ -291,4 +291,14 @@ export async function s3ListMultipartUploads(id: string, prefix?: string): Promi
 
 export async function s3AbortMultipartUpload(id: string, key: string, uploadId: string): Promise<void> {
   await invoke('s3_abort_multipart_upload', { id, key, uploadId });
+}
+
+// ── Lifecycle Rules ──────────────────────────────────────────────────────────
+
+export async function s3GetBucketLifecycle(id: string): Promise<S3LifecycleRule[]> {
+  return await invoke<S3LifecycleRule[]>('s3_get_bucket_lifecycle', { id });
+}
+
+export async function s3PutBucketLifecycle(id: string, rules: S3LifecycleRule[]): Promise<void> {
+  await invoke('s3_put_bucket_lifecycle', { id, rules });
 }

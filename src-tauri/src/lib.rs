@@ -89,6 +89,7 @@ pub fn run() {
             commands::file::rename_file,
             commands::file::check_conflicts,
             commands::file::cancel_file_operation,
+            commands::file::pause_file_operation,
             // metadata / content commands
             commands::metadata::read_file_text,
             commands::metadata::write_file_text,
@@ -144,6 +145,8 @@ pub fn run() {
             commands::s3::s3_put_bucket_tags,
             commands::s3::s3_list_multipart_uploads,
             commands::s3::s3_abort_multipart_upload,
+            commands::s3::s3_get_bucket_lifecycle,
+            commands::s3::s3_put_bucket_lifecycle,
             // archive commands
             commands::archive::list_archive,
             commands::archive::extract_archive,

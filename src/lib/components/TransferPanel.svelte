@@ -1,10 +1,14 @@
 <script lang="ts">
   import { transfersState } from '$lib/state/transfers.svelte';
+  import type { TransferStatus } from '$lib/state/transfers.svelte';
   import { formatSize } from '$lib/utils/format';
 
   const visible = $derived(transfersState.panelVisible && transfersState.transfers.length > 0);
   const activeCount = $derived(transfersState.active.length);
-  const hasFinished = $derived(transfersState.transfers.some((t) => t.status !== 'running'));
+  const queuedCount = $derived(transfersState.queued.length);
+  const hasFinished = $derived(
+    transfersState.transfers.some((t) => t.status === 'completed' || t.status === 'failed' || t.status === 'cancelled'),
+  );
 
   function typeLabel(type: string): string {
     switch (type) {
@@ -33,7 +37,7 @@
     }
   }
 
-  function transferLabel(t: { type: string; status: string; sources: string[]; destination: string; error?: string }): string {
+  function transferLabel(t: { type: string; status: TransferStatus; sources: string[]; destination: string; error?: string }): string {
     const count = t.sources.length;
     const dest = t.destination.split('/').filter(Boolean).pop() ?? t.destination;
     if (t.status === 'running') {
@@ -48,6 +52,12 @@
     if (t.status === 'failed') {
       return `${typeLabel(t.type)} failed: ${t.error ?? 'unknown error'}`;
     }
+    if (t.status === 'paused') {
+      return `${typeLabel(t.type)} paused — ${count} item(s) to ${dest}`;
+    }
+    if (t.status === 'queued') {
+      return `${typeLabel(t.type)} queued — ${count} item(s) to ${dest}`;
+    }
     return typeLabel(t.type);
   }
 
@@ -55,15 +65,29 @@
     if (!t.progress || t.progress.bytes_total === 0) return 0;
     return Math.round((t.progress.bytes_done / t.progress.bytes_total) * 100);
   }
+
+  function handleConcurrencyChange(e: Event) {
+    const val = parseInt((e.target as HTMLSelectElement).value, 10);
+    if (val > 0) {
+      transfersState.maxConcurrent = val;
+      transfersState.processQueue();
+    }
+  }
 </script>
 
 {#if visible}
 <div class="transfer-panel">
   <div class="transfer-header">
     <span class="transfer-title">
-      Transfers{#if activeCount > 0} ({activeCount} active){/if}
+      Transfers{#if activeCount > 0} ({activeCount} active{#if queuedCount > 0}, {queuedCount} queued{/if}){:else if queuedCount > 0} ({queuedCount} queued){/if}
     </span>
     <div class="transfer-header-buttons">
+      <select class="tp-concurrency" value={transfersState.maxConcurrent} onchange={handleConcurrencyChange} title="Max concurrent transfers">
+        <option value={1}>1</option>
+        <option value={2}>2</option>
+        <option value={3}>3</option>
+        <option value={5}>5</option>
+      </select>
       {#if hasFinished}
         <button class="tp-btn" onclick={() => transfersState.dismissCompleted()}>Clear done</button>
       {/if}
@@ -72,7 +96,14 @@
   </div>
   <div class="transfer-list">
     {#each transfersState.transfers as t (t.id)}
-      <div class="transfer-item" class:is-failed={t.status === 'failed'} class:is-cancelled={t.status === 'cancelled'} class:is-completed={t.status === 'completed'}>
+      <div
+        class="transfer-item"
+        class:is-failed={t.status === 'failed'}
+        class:is-cancelled={t.status === 'cancelled'}
+        class:is-completed={t.status === 'completed'}
+        class:is-paused={t.status === 'paused'}
+        class:is-queued={t.status === 'queued'}
+      >
         <div class="transfer-label" title={t.sources.join(', ')}>
           {transferLabel(t)}
         </div>
@@ -89,9 +120,34 @@
               <span>File {t.progress.files_done} of {t.progress.files_total}</span>
             </div>
           {/if}
+        {:else if t.status === 'paused'}
+          <div class="transfer-progress-row">
+            <div class="transfer-bar-container paused">
+              <div class="transfer-bar-fill paused" style="width: {percentage(t)}%"></div>
+            </div>
+            <span class="transfer-pct">{percentage(t)}%</span>
+          </div>
+          {#if t.progress}
+            <div class="transfer-stats">
+              <span>{formatSize(t.progress.bytes_done)} / {formatSize(t.progress.bytes_total)}</span>
+              <span>File {t.progress.files_done} of {t.progress.files_total}</span>
+            </div>
+          {/if}
+        {:else if t.status === 'queued'}
+          <div class="transfer-stats">
+            <span class="queued-label">Waiting...</span>
+          </div>
         {/if}
         <div class="transfer-actions">
           {#if t.status === 'running'}
+            <button class="tp-btn" onclick={() => transfersState.pause(t.id)}>Pause</button>
+            <button class="tp-btn tp-btn-cancel" onclick={() => transfersState.cancel(t.id)}>Cancel</button>
+          {:else if t.status === 'paused'}
+            <button class="tp-btn" onclick={() => transfersState.resume(t.id)}>Resume</button>
+            <button class="tp-btn tp-btn-cancel" onclick={() => transfersState.cancel(t.id)}>Cancel</button>
+          {:else if t.status === 'queued'}
+            <button class="tp-btn" onclick={() => transfersState.moveUp(t.id)} title="Move up">&uarr;</button>
+            <button class="tp-btn" onclick={() => transfersState.moveDown(t.id)} title="Move down">&darr;</button>
             <button class="tp-btn tp-btn-cancel" onclick={() => transfersState.cancel(t.id)}>Cancel</button>
           {:else}
             <button class="tp-btn" onclick={() => transfersState.dismiss(t.id)}>Dismiss</button>
@@ -133,6 +189,17 @@
   .transfer-header-buttons {
     display: flex;
     gap: 4px;
+    align-items: center;
+  }
+
+  .tp-concurrency {
+    padding: 1px 4px;
+    font-size: 11px;
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--radius-sm);
+    background: var(--bg-surface);
+    color: var(--text-secondary);
+    cursor: pointer;
   }
 
   .tp-btn {
@@ -183,6 +250,15 @@
     font-style: italic;
   }
 
+  .transfer-item.is-paused .transfer-label {
+    color: var(--text-secondary);
+  }
+
+  .transfer-item.is-queued .transfer-label {
+    color: var(--text-secondary);
+    font-style: italic;
+  }
+
   .transfer-label {
     font-size: 12px;
     color: var(--text-primary);
@@ -207,11 +283,25 @@
     overflow: hidden;
   }
 
+  .transfer-bar-container.paused {
+    background: repeating-linear-gradient(
+      45deg,
+      var(--progress-bar-bg),
+      var(--progress-bar-bg) 4px,
+      var(--border-subtle) 4px,
+      var(--border-subtle) 8px
+    );
+  }
+
   .transfer-bar-fill {
     height: 100%;
     background: var(--progress-bar-fill);
     border-radius: 2px;
     transition: width 0.15s linear;
+  }
+
+  .transfer-bar-fill.paused {
+    opacity: 0.6;
   }
 
   .transfer-pct {
@@ -229,9 +319,14 @@
     margin-bottom: 2px;
   }
 
+  .queued-label {
+    font-style: italic;
+  }
+
   .transfer-actions {
     display: flex;
     justify-content: flex-end;
+    gap: 4px;
     margin-top: 2px;
   }
 </style>

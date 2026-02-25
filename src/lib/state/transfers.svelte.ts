@@ -1,11 +1,12 @@
-import type { ProgressEvent } from '$lib/types';
-import { cancelFileOperation } from '$lib/services/tauri';
+import type { ProgressEvent, TransferCheckpoint } from '$lib/types';
+import { cancelFileOperation, pauseFileOperation, copyFiles, moveFiles, extractArchive } from '$lib/services/tauri';
+import { s3Download, s3Upload, s3CopyObjects } from '$lib/services/s3';
 import { formatSize } from '$lib/utils/format';
 
-type TransferStatus = 'running' | 'completed' | 'failed' | 'cancelled';
+export type TransferStatus = 'queued' | 'running' | 'paused' | 'completed' | 'failed' | 'cancelled';
 type TransferType = 'copy' | 'move' | 'extract';
 
-interface Transfer {
+export interface Transfer {
   id: string;
   type: TransferType;
   status: TransferStatus;
@@ -15,14 +16,34 @@ interface Transfer {
   error?: string;
   startedAt: number;
   completedAt?: number;
+  priority: number;
+  srcBackend: string;
+  destBackend: string;
+  s3SrcConnectionId?: string;
+  s3DestConnectionId?: string;
+  s3DestPrefix?: string;
+  archivePath?: string;
+  archiveInternalPaths?: string[];
+  checkpoint?: TransferCheckpoint | null;
 }
 
 class TransfersState {
   transfers = $state<Transfer[]>([]);
   panelVisible = $state(false);
+  maxConcurrent = $state(2);
 
   get active(): Transfer[] {
     return this.transfers.filter((t) => t.status === 'running');
+  }
+
+  get queued(): Transfer[] {
+    return this.transfers
+      .filter((t) => t.status === 'queued')
+      .sort((a, b) => a.priority - b.priority);
+  }
+
+  get paused(): Transfer[] {
+    return this.transfers.filter((t) => t.status === 'paused');
   }
 
   get hasActive(): boolean {
@@ -62,6 +83,34 @@ class TransfersState {
       : `${count} transfers — ${pct}%${suffix}`;
   }
 
+  enqueue(transfer: Omit<Transfer, 'status' | 'progress' | 'startedAt' | 'priority'>) {
+    this.transfers.push({
+      ...transfer,
+      status: 'queued',
+      progress: null,
+      startedAt: Date.now(),
+      priority: Date.now(),
+    });
+    this.panelVisible = true;
+    this.processQueue();
+  }
+
+  /** Start queued transfers up to maxConcurrent slots. */
+  processQueue() {
+    const runningCount = this.active.length;
+    const available = this.maxConcurrent - runningCount;
+    if (available <= 0) return;
+
+    const queued = this.queued;
+    const toStart = queued.slice(0, available);
+    for (const t of toStart) {
+      t.status = 'running';
+      t.startedAt = Date.now();
+      this.dispatchTransfer(t);
+    }
+  }
+
+  /** Legacy add for compatibility — immediately runs (used by OS drag-drop & sync). */
   add(id: string, type: TransferType, sources: string[], destination: string) {
     this.transfers.push({
       id,
@@ -71,6 +120,9 @@ class TransfersState {
       destination,
       progress: null,
       startedAt: Date.now(),
+      priority: Date.now(),
+      srcBackend: 'local',
+      destBackend: 'local',
     });
     this.panelVisible = true;
   }
@@ -86,6 +138,8 @@ class TransfersState {
       t.status = 'completed';
       t.completedAt = Date.now();
     }
+    this.processQueue();
+    window.dispatchEvent(new CustomEvent('transfer-done'));
   }
 
   fail(id: string, error: string) {
@@ -95,6 +149,7 @@ class TransfersState {
       t.error = error;
       t.completedAt = Date.now();
     }
+    this.processQueue();
   }
 
   markCancelled(id: string) {
@@ -103,9 +158,29 @@ class TransfersState {
       t.status = 'cancelled';
       t.completedAt = Date.now();
     }
+    this.processQueue();
+  }
+
+  markPaused(id: string, checkpoint?: TransferCheckpoint | null) {
+    const t = this.transfers.find((t) => t.id === id);
+    if (t) {
+      t.status = 'paused';
+      if (checkpoint) t.checkpoint = checkpoint;
+    }
+    this.processQueue();
   }
 
   async cancel(id: string) {
+    const t = this.transfers.find((t) => t.id === id);
+    if (!t) return;
+
+    if (t.status === 'queued') {
+      // Never started — just remove
+      t.status = 'cancelled';
+      t.completedAt = Date.now();
+      return;
+    }
+
     try {
       await cancelFileOperation(id);
     } catch {
@@ -113,16 +188,135 @@ class TransfersState {
     }
   }
 
+  async pause(id: string) {
+    const t = this.transfers.find((t) => t.id === id);
+    if (!t || t.status !== 'running') return;
+
+    try {
+      await pauseFileOperation(id);
+      // The backend will return a checkpoint via the dispatch promise,
+      // which calls markPaused()
+    } catch {
+      // Already completed or unknown op
+    }
+  }
+
+  resume(id: string) {
+    const t = this.transfers.find((t) => t.id === id);
+    if (!t || t.status !== 'paused') return;
+    t.status = 'queued';
+    t.priority = Date.now();
+    this.processQueue();
+  }
+
+  moveUp(id: string) {
+    const queued = this.queued;
+    const idx = queued.findIndex((t) => t.id === id);
+    if (idx <= 0) return;
+    const temp = queued[idx].priority;
+    queued[idx].priority = queued[idx - 1].priority;
+    queued[idx - 1].priority = temp;
+  }
+
+  moveDown(id: string) {
+    const queued = this.queued;
+    const idx = queued.findIndex((t) => t.id === id);
+    if (idx < 0 || idx >= queued.length - 1) return;
+    const temp = queued[idx].priority;
+    queued[idx].priority = queued[idx + 1].priority;
+    queued[idx + 1].priority = temp;
+  }
+
   dismiss(id: string) {
     this.transfers = this.transfers.filter((t) => t.id !== id);
   }
 
   dismissCompleted() {
-    this.transfers = this.transfers.filter((t) => t.status === 'running');
+    this.transfers = this.transfers.filter(
+      (t) => t.status === 'running' || t.status === 'queued' || t.status === 'paused',
+    );
   }
 
   toggle() {
     this.panelVisible = !this.panelVisible;
+  }
+
+  /** Dispatch a transfer to the appropriate backend. */
+  private async dispatchTransfer(t: Transfer) {
+    const onProgress = (e: ProgressEvent) => {
+      this.updateProgress(t.id, e);
+    };
+
+    try {
+      let result: TransferCheckpoint | null | undefined;
+
+      if (t.type === 'extract' && t.archivePath && t.archiveInternalPaths) {
+        await extractArchive(t.id, t.archivePath, t.archiveInternalPaths, t.destination, onProgress);
+      } else if (t.type === 'copy' || t.type === 'move') {
+        result = await this.dispatchCopyMove(t, onProgress);
+      }
+
+      // Check if paused (backend returned checkpoint)
+      if (result) {
+        this.markPaused(t.id, result);
+        return;
+      }
+
+      this.complete(t.id);
+    } catch (err: unknown) {
+      const msg = String(err);
+      if (msg.includes('cancelled')) {
+        this.markCancelled(t.id);
+      } else {
+        this.fail(t.id, msg);
+      }
+    }
+  }
+
+  private async dispatchCopyMove(
+    t: Transfer,
+    onProgress: (e: ProgressEvent) => void,
+  ): Promise<TransferCheckpoint | null | undefined> {
+    const { srcBackend, destBackend } = t;
+
+    if (t.type === 'copy') {
+      if (srcBackend === 'local' && destBackend === 'local') {
+        return await copyFiles(t.id, t.sources, t.destination, onProgress);
+      }
+      if (srcBackend === 's3' && destBackend === 'local') {
+        return await s3Download(t.s3SrcConnectionId!, t.id, t.sources, t.destination, onProgress);
+      }
+      if (srcBackend === 'local' && destBackend === 's3') {
+        return await s3Upload(t.s3DestConnectionId!, t.id, t.sources, t.s3DestPrefix!, onProgress);
+      }
+      if (srcBackend === 's3' && destBackend === 's3') {
+        return await s3CopyObjects(
+          t.s3SrcConnectionId!, t.id, t.sources,
+          t.s3DestConnectionId!, t.s3DestPrefix!, onProgress,
+        );
+      }
+    }
+
+    if (t.type === 'move') {
+      if (srcBackend === 'local' && destBackend === 'local') {
+        return await moveFiles(t.id, t.sources, t.destination, onProgress);
+      }
+      // S3 move = copy + delete (handled by caller in +layout.svelte)
+      if (srcBackend === 's3' && destBackend === 'local') {
+        return await s3Download(t.s3SrcConnectionId!, t.id, t.sources, t.destination, onProgress);
+      }
+      if (srcBackend === 'local' && destBackend === 's3') {
+        return await s3Upload(t.s3DestConnectionId!, t.id, t.sources, t.s3DestPrefix!, onProgress);
+      }
+      if (srcBackend === 's3' && destBackend === 's3') {
+        return await s3CopyObjects(
+          t.s3SrcConnectionId!, t.id, t.sources,
+          t.s3DestConnectionId!, t.s3DestPrefix!, onProgress,
+        );
+      }
+    }
+
+    return null;
   }
 }
 

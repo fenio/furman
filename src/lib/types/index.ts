@@ -187,6 +187,41 @@ export interface S3MultipartUpload {
   initiated: number;
 }
 
+export interface S3LifecycleTransition {
+  days: number;
+  storage_class: string;
+}
+
+export interface S3LifecycleRule {
+  id: string;
+  prefix: string;
+  enabled: boolean;
+  transitions: S3LifecycleTransition[];
+  expiration_days: number | null;
+  noncurrent_transitions: S3LifecycleTransition[];
+  noncurrent_expiration_days: number | null;
+  abort_incomplete_days: number | null;
+}
+
+export type TransferCheckpoint = {
+  files_completed: string[];
+  bytes_done: number;
+  bytes_total: number;
+  files_done: number;
+  files_total: number;
+};
+
+export type S3UploadCheckpoint = {
+  files_completed: string[];
+  current_file_upload_id: string | null;
+  current_file_key: string | null;
+  completed_parts: { part_number: number; etag: string }[];
+  bytes_done: number;
+  bytes_total: number;
+  files_done: number;
+  files_total: number;
+};
+
 export type PanelBackend = 'local' | 's3' | 'archive';
 
 export interface ArchiveInfo {
