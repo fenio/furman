@@ -966,7 +966,7 @@
   bind:this={overlayEl}
   onkeydown={handleKeydown}
 >
-  <div class="dialog-box">
+  <div class="dialog-box" class:bucket-dialog={s3IsBucketRoot}>
     <div class="dialog-title">Properties</div>
     <div class="dialog-body">
       {#if loading}
@@ -1796,9 +1796,9 @@
         {/if}
       {/if}
 
-      <div class="dialog-buttons">
-        <button class="dialog-btn primary" onclick={onClose}>Close</button>
-      </div>
+    </div>
+    <div class="dialog-buttons">
+      <button class="dialog-btn primary" onclick={onClose}>Close</button>
     </div>
   </div>
 </div>
@@ -1851,6 +1851,15 @@
     overflow-y: auto;
     user-select: text;
     -webkit-user-select: text;
+  }
+
+  .bucket-dialog {
+    height: 90vh;
+  }
+
+  .bucket-dialog .dialog-body {
+    flex: 1;
+    min-height: 0;
   }
 
   .loading, .error {
@@ -2014,7 +2023,8 @@
   .dialog-buttons {
     display: flex;
     justify-content: center;
-    margin-top: 8px;
+    padding: 12px 24px;
+    border-top: 1px solid var(--dialog-border);
     flex-shrink: 0;
   }
 
