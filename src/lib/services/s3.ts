@@ -1,5 +1,5 @@
 import { invoke, Channel } from '@tauri-apps/api/core';
-import type { DirListing, ProgressEvent, S3Bucket, S3ObjectProperties, SearchEvent } from '$lib/types';
+import type { DirListing, ProgressEvent, S3Bucket, S3ObjectProperties, S3ObjectVersion, SearchEvent } from '$lib/types';
 
 export async function s3CheckCredentials(): Promise<boolean> {
   return await invoke<boolean>('s3_check_credentials');
@@ -124,6 +124,54 @@ export async function s3DownloadToTemp(
 
 export async function s3PutText(id: string, key: string, content: string): Promise<void> {
   await invoke('s3_put_text', { id, key, content });
+}
+
+export async function s3ChangeStorageClass(
+  id: string,
+  key: string,
+  targetClass: string,
+): Promise<void> {
+  await invoke('s3_change_storage_class', { id, key, targetClass });
+}
+
+export async function s3RestoreObject(
+  id: string,
+  key: string,
+  days: number,
+  tier: string,
+): Promise<void> {
+  await invoke('s3_restore_object', { id, key, days, tier });
+}
+
+export async function s3ListObjectVersions(
+  id: string,
+  key: string,
+): Promise<S3ObjectVersion[]> {
+  return await invoke<S3ObjectVersion[]>('s3_list_object_versions', { id, key });
+}
+
+export async function s3DownloadVersion(
+  id: string,
+  key: string,
+  versionId: string,
+): Promise<string> {
+  return await invoke<string>('s3_download_version', { id, key, versionId });
+}
+
+export async function s3RestoreVersion(
+  id: string,
+  key: string,
+  versionId: string,
+): Promise<void> {
+  await invoke('s3_restore_version', { id, key, versionId });
+}
+
+export async function s3DeleteVersion(
+  id: string,
+  key: string,
+  versionId: string,
+): Promise<void> {
+  await invoke('s3_delete_version', { id, key, versionId });
 }
 
 export async function s3SearchObjects(

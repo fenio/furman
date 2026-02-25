@@ -35,6 +35,7 @@ aws-sdk-s3 = "1"
 aws-credential-types = "1"
 keyring = { version = "3", features = ["apple-native"] }
 tokio = { version = "1", features = ["sync", "fs", "io-util", "time"] }
+urlencoding = "2"
 
 [target.'cfg(target_os = "macos")'.dependencies]
 objc2 = "0.6"

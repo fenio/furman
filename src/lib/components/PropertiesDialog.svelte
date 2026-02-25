@@ -2,10 +2,10 @@
   import { onMount } from 'svelte';
   import { appState } from '$lib/state/app.svelte';
   import { getFileProperties, getDirectorySize } from '$lib/services/tauri';
-  import { s3HeadObject } from '$lib/services/s3';
+  import { s3HeadObject, s3ChangeStorageClass, s3RestoreObject, s3ListObjectVersions, s3DownloadVersion, s3RestoreVersion, s3DeleteVersion } from '$lib/services/s3';
   import { invoke } from '@tauri-apps/api/core';
   import { formatSize, formatDate, formatPermissions } from '$lib/utils/format';
-  import type { FileProperties, S3ObjectProperties, PanelBackend } from '$lib/types';
+  import type { FileProperties, S3ObjectProperties, S3ObjectVersion, PanelBackend } from '$lib/types';
 
   interface Props {
     path: string;
@@ -77,6 +77,128 @@
     }
   }
 
+  // Storage class management
+  const storageClasses = [
+    'STANDARD', 'STANDARD_IA', 'ONEZONE_IA', 'INTELLIGENT_TIERING',
+    'GLACIER', 'DEEP_ARCHIVE', 'GLACIER_IR',
+  ];
+  let selectedStorageClass = $state('');
+  let applyingClass = $state(false);
+  let classMessage = $state('');
+
+  const isGlacier = $derived(
+    s3Props?.storage_class === 'GLACIER' ||
+    s3Props?.storage_class === 'DEEP_ARCHIVE' ||
+    s3Props?.storage_class === 'GLACIER_IR'
+  );
+
+  // Glacier restore
+  let restoreDays = $state(7);
+  let restoreTier = $state('Standard');
+  let restoringGlacier = $state(false);
+  let restoreMessage = $state('');
+
+  // Versioning
+  let versionsExpanded = $state(false);
+  let versions = $state<S3ObjectVersion[]>([]);
+  let versionsLoading = $state(false);
+  let versionsError = $state('');
+  let versionActionLoading = $state<string | null>(null);
+
+  async function applyStorageClass() {
+    if (!s3Props || !selectedStorageClass || selectedStorageClass === s3Props.storage_class) return;
+    applyingClass = true;
+    classMessage = '';
+    try {
+      await s3ChangeStorageClass(s3ConnectionId, path, selectedStorageClass);
+      s3Props.storage_class = selectedStorageClass;
+      classMessage = 'Storage class updated';
+    } catch (err: unknown) {
+      classMessage = 'Error: ' + String(err);
+    } finally {
+      applyingClass = false;
+    }
+  }
+
+  async function restoreFromGlacier() {
+    if (!s3Props) return;
+    restoringGlacier = true;
+    restoreMessage = '';
+    try {
+      await s3RestoreObject(s3ConnectionId, path, restoreDays, restoreTier);
+      restoreMessage = 'Restore initiated';
+      // Refresh to get updated restore status
+      s3Props = await s3HeadObject(s3ConnectionId, path);
+    } catch (err: unknown) {
+      restoreMessage = 'Error: ' + String(err);
+    } finally {
+      restoringGlacier = false;
+    }
+  }
+
+  async function loadVersions() {
+    if (versionsLoading) return;
+    versionsExpanded = !versionsExpanded;
+    if (!versionsExpanded || versions.length > 0) return;
+    versionsLoading = true;
+    versionsError = '';
+    try {
+      versions = await s3ListObjectVersions(s3ConnectionId, path);
+    } catch (err: unknown) {
+      versionsError = String(err);
+    } finally {
+      versionsLoading = false;
+    }
+  }
+
+  async function handleDownloadVersion(vid: string) {
+    versionActionLoading = vid;
+    try {
+      const tempPath = await s3DownloadVersion(s3ConnectionId, path, vid);
+      // Open in viewer
+      const { appState: app } = await import('$lib/state/app.svelte');
+      app.viewerMode = 'text';
+      app.viewerPath = tempPath;
+      app.modal = 'viewer';
+    } catch (err: unknown) {
+      versionsError = String(err);
+    } finally {
+      versionActionLoading = null;
+    }
+  }
+
+  async function handleRestoreVersion(vid: string) {
+    if (!confirm(`Restore this version as current? This will overwrite the current object.`)) return;
+    versionActionLoading = vid;
+    try {
+      await s3RestoreVersion(s3ConnectionId, path, vid);
+      // Reload versions
+      versions = await s3ListObjectVersions(s3ConnectionId, path);
+      s3Props = await s3HeadObject(s3ConnectionId, path);
+    } catch (err: unknown) {
+      versionsError = String(err);
+    } finally {
+      versionActionLoading = null;
+    }
+  }
+
+  async function handleDeleteVersion(vid: string) {
+    if (!confirm(`Permanently delete this version? This cannot be undone.`)) return;
+    versionActionLoading = vid;
+    try {
+      await s3DeleteVersion(s3ConnectionId, path, vid);
+      versions = versions.filter(v => v.version_id !== vid);
+    } catch (err: unknown) {
+      versionsError = String(err);
+    } finally {
+      versionActionLoading = null;
+    }
+  }
+
+  function truncateVid(vid: string): string {
+    return vid.length > 16 ? vid.slice(0, 16) + '\u2026' : vid;
+  }
+
   let overlayEl = $state<HTMLDivElement | null>(null);
 
   function handleKeydown(e: KeyboardEvent) {
@@ -96,6 +218,7 @@
           s3IsPrefix = true;
         } else {
           s3Props = await s3HeadObject(s3ConnectionId, path);
+          selectedStorageClass = s3Props.storage_class ?? 'STANDARD';
         }
       } else {
         fileProps = await getFileProperties(path);
@@ -214,9 +337,123 @@
             <tr><td class="prop-label">Last Modified</td><td class="prop-value">{formatDate(s3Props.modified)}</td></tr>
             <tr><td class="prop-label">Content Type</td><td class="prop-value">{s3Props.content_type ?? '--'}</td></tr>
             <tr><td class="prop-label">ETag</td><td class="prop-value mono">{s3Props.etag ?? '--'}</td></tr>
-            <tr><td class="prop-label">Storage Class</td><td class="prop-value">{s3Props.storage_class ?? '--'}</td></tr>
+            {#if s3Props.version_id}
+              <tr><td class="prop-label">Version ID</td><td class="prop-value mono">{s3Props.version_id}</td></tr>
+            {/if}
           </tbody>
         </table>
+
+        <!-- Storage Class editor -->
+        <div class="section-title">Storage Class</div>
+        <div class="storage-class-section">
+          <div class="sc-row">
+            <select class="sc-select" bind:value={selectedStorageClass}>
+              {#each storageClasses as sc}
+                <option value={sc}>{sc}</option>
+              {/each}
+            </select>
+            <button
+              class="dialog-btn apply-btn"
+              onclick={applyStorageClass}
+              disabled={applyingClass || selectedStorageClass === s3Props.storage_class}
+            >
+              {applyingClass ? 'Applying...' : 'Apply'}
+            </button>
+          </div>
+          {#if classMessage}
+            <div class="sc-message" class:sc-error={classMessage.startsWith('Error')}>{classMessage}</div>
+          {/if}
+        </div>
+
+        <!-- Glacier restore (only for glacier classes) -->
+        {#if isGlacier}
+          <div class="section-title">Glacier Restore</div>
+          <div class="glacier-section">
+            {#if s3Props.restore_status}
+              <div class="restore-status">Restore status: {s3Props.restore_status}</div>
+            {/if}
+            <div class="glacier-row">
+              <label class="glacier-label">
+                Days:
+                <input class="glacier-input" type="number" min="1" max="365" bind:value={restoreDays} />
+              </label>
+              <label class="glacier-label">
+                Tier:
+                <select class="glacier-select" bind:value={restoreTier}>
+                  <option value="Standard">Standard</option>
+                  <option value="Bulk">Bulk</option>
+                  <option value="Expedited">Expedited</option>
+                </select>
+              </label>
+              <button class="dialog-btn apply-btn" onclick={restoreFromGlacier} disabled={restoringGlacier}>
+                {restoringGlacier ? 'Restoring...' : 'Restore'}
+              </button>
+            </div>
+            {#if restoreMessage}
+              <div class="sc-message" class:sc-error={restoreMessage.startsWith('Error')}>{restoreMessage}</div>
+            {/if}
+          </div>
+        {/if}
+
+        <!-- Versions section -->
+        <button class="section-title versions-toggle" onclick={loadVersions}>
+          Versions {versionsExpanded ? '\u25B4' : '\u25BE'}
+        </button>
+        {#if versionsExpanded}
+          <div class="versions-section">
+            {#if versionsLoading}
+              <div class="loading">Loading versions...</div>
+            {:else if versionsError}
+              <div class="error">{versionsError}</div>
+            {:else if versions.length === 0}
+              <div class="versions-empty">No version history (versioning may not be enabled on this bucket)</div>
+            {:else}
+              <div class="versions-list">
+                {#each versions as ver}
+                  <div class="version-row" class:version-latest={ver.is_latest} class:version-delete-marker={ver.is_delete_marker}>
+                    <div class="version-info">
+                      <span class="version-id mono" title={ver.version_id}>{truncateVid(ver.version_id)}</span>
+                      <span class="version-date">{formatDate(ver.modified)}</span>
+                      {#if !ver.is_delete_marker}
+                        <span class="version-size">{formatSize(ver.size)}</span>
+                      {/if}
+                      {#if ver.is_latest}
+                        <span class="version-badge latest">Latest</span>
+                      {/if}
+                      {#if ver.is_delete_marker}
+                        <span class="version-badge delete-marker">Delete Marker</span>
+                      {/if}
+                    </div>
+                    <div class="version-actions">
+                      {#if !ver.is_delete_marker}
+                        <button
+                          class="version-action-btn"
+                          onclick={() => handleDownloadVersion(ver.version_id)}
+                          disabled={versionActionLoading === ver.version_id}
+                          title="Download this version"
+                        >DL</button>
+                        {#if !ver.is_latest}
+                          <button
+                            class="version-action-btn"
+                            onclick={() => handleRestoreVersion(ver.version_id)}
+                            disabled={versionActionLoading === ver.version_id}
+                            title="Restore as current"
+                          >Restore</button>
+                        {/if}
+                      {/if}
+                      <button
+                        class="version-action-btn danger"
+                        onclick={() => handleDeleteVersion(ver.version_id)}
+                        disabled={versionActionLoading === ver.version_id}
+                        title="Delete this version"
+                      >Del</button>
+                    </div>
+                  </div>
+                {/each}
+              </div>
+            {/if}
+          </div>
+        {/if}
       {:else if s3IsPrefix}
         <!-- S3 prefix (virtual directory) -->
         <table class="props-table">
@@ -466,5 +703,230 @@
 
   .dialog-btn.primary:hover {
     background: rgba(110, 168, 254, 0.3);
+  }
+
+  /* Storage class section */
+  .storage-class-section {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+
+  .sc-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .sc-select {
+    flex: 1;
+    padding: 5px 8px;
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--radius-sm);
+    background: var(--bg-surface);
+    color: var(--text-primary);
+    font-size: 12px;
+    font-family: inherit;
+  }
+
+  .sc-select:focus {
+    outline: none;
+    border-color: var(--border-active);
+  }
+
+  .sc-message {
+    font-size: 12px;
+    color: var(--success-color, #4ec990);
+  }
+
+  .sc-message.sc-error {
+    color: var(--text-error, #ff6b6b);
+  }
+
+  /* Glacier section */
+  .glacier-section {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+
+  .glacier-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+  }
+
+  .glacier-label {
+    font-size: 12px;
+    color: var(--text-secondary);
+    display: flex;
+    align-items: center;
+    gap: 4px;
+  }
+
+  .glacier-input {
+    width: 60px;
+    padding: 4px 6px;
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--radius-sm);
+    background: var(--bg-surface);
+    color: var(--text-primary);
+    font-size: 12px;
+    font-family: inherit;
+    text-align: center;
+  }
+
+  .glacier-input:focus {
+    outline: none;
+    border-color: var(--border-active);
+  }
+
+  .glacier-select {
+    padding: 4px 6px;
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--radius-sm);
+    background: var(--bg-surface);
+    color: var(--text-primary);
+    font-size: 12px;
+    font-family: inherit;
+  }
+
+  .restore-status {
+    font-size: 12px;
+    color: var(--text-secondary);
+    font-style: italic;
+  }
+
+  /* Versions section */
+  .versions-toggle {
+    cursor: pointer;
+    background: none;
+    border: none;
+    text-align: left;
+    padding: 4px 0;
+    width: 100%;
+  }
+
+  .versions-toggle:hover {
+    opacity: 1;
+  }
+
+  .versions-section {
+    max-height: 200px;
+    overflow-y: auto;
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--radius-sm);
+    padding: 4px;
+  }
+
+  .versions-empty {
+    font-size: 12px;
+    color: var(--text-secondary);
+    text-align: center;
+    padding: 8px;
+  }
+
+  .versions-list {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+  }
+
+  .version-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 4px 6px;
+    border-radius: var(--radius-sm);
+    font-size: 11px;
+    transition: background var(--transition-fast);
+  }
+
+  .version-row:hover {
+    background: var(--bg-hover);
+  }
+
+  .version-row.version-latest {
+    background: rgba(110, 168, 254, 0.05);
+  }
+
+  .version-row.version-delete-marker {
+    opacity: 0.6;
+  }
+
+  .version-info {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    min-width: 0;
+    flex: 1;
+  }
+
+  .version-id {
+    font-size: 10px;
+    opacity: 0.7;
+  }
+
+  .version-date {
+    color: var(--text-secondary);
+    white-space: nowrap;
+  }
+
+  .version-size {
+    color: var(--text-secondary);
+    white-space: nowrap;
+  }
+
+  .version-badge {
+    font-size: 9px;
+    font-weight: 600;
+    text-transform: uppercase;
+    padding: 1px 4px;
+    border-radius: 2px;
+    white-space: nowrap;
+  }
+
+  .version-badge.latest {
+    background: rgba(110, 168, 254, 0.2);
+    color: var(--text-accent);
+  }
+
+  .version-badge.delete-marker {
+    background: rgba(255, 107, 107, 0.2);
+    color: var(--text-error, #ff6b6b);
+  }
+
+  .version-actions {
+    display: flex;
+    gap: 4px;
+    flex-shrink: 0;
+  }
+
+  .version-action-btn {
+    padding: 2px 6px;
+    font-size: 10px;
+    font-family: inherit;
+    border: 1px solid var(--border-subtle);
+    border-radius: 2px;
+    background: var(--bg-surface);
+    color: var(--text-primary);
+    cursor: pointer;
+    transition: background var(--transition-fast);
+  }
+
+  .version-action-btn:hover {
+    background: var(--bg-hover);
+    border-color: var(--border-active);
+  }
+
+  .version-action-btn.danger:hover {
+    border-color: var(--text-error, #ff6b6b);
+    color: var(--text-error, #ff6b6b);
+  }
+
+  .version-action-btn:disabled {
+    opacity: 0.4;
+    cursor: default;
   }
 </style>
