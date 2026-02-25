@@ -288,7 +288,8 @@
   role="region"
   onclick={() => onActivate?.()}
   ondragover={(e) => {
-    if (e.dataTransfer?.types.includes('application/x-furman-files')) {
+    if (e.dataTransfer?.types.includes('application/x-furman-files') ||
+        e.dataTransfer?.types.includes('Files')) {
       e.preventDefault();
       e.dataTransfer.dropEffect = e.shiftKey ? 'move' : 'copy';
       isDragOver = true;
@@ -303,13 +304,15 @@
     e.preventDefault();
     isDragOver = false;
     const raw = e.dataTransfer?.getData('application/x-furman-files');
-    if (!raw) return;
-    try {
-      const data = JSON.parse(raw);
-      if (data.side && data.side !== side) {
-        onDrop?.(data.side, e.shiftKey);
-      }
-    } catch { /* ignore */ }
+    if (raw) {
+      try {
+        const data = JSON.parse(raw);
+        if (data.side && data.side !== side) {
+          onDrop?.(data.side, e.shiftKey);
+        }
+      } catch { /* ignore */ }
+    }
+    // Native file drops are handled by Tauri's onDragDropEvent in +layout.svelte
   }}
 >
   <!-- Header: breadcrumb path -->
