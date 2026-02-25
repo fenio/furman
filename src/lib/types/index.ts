@@ -222,6 +222,36 @@ export type S3UploadCheckpoint = {
   files_total: number;
 };
 
+export interface S3CorsRule {
+  allowed_origins: string[];
+  allowed_methods: string[];
+  allowed_headers: string[];
+  expose_headers: string[];
+  max_age_seconds: number | null;
+}
+
+export interface S3PublicAccessBlock {
+  block_public_acls: boolean;
+  ignore_public_acls: boolean;
+  block_public_policy: boolean;
+  restrict_public_buckets: boolean;
+}
+
+export interface S3AclGrant {
+  grantee_type: string;
+  grantee_id: string | null;
+  grantee_uri: string | null;
+  grantee_email: string | null;
+  grantee_display_name: string | null;
+  permission: string;
+}
+
+export interface S3BucketAcl {
+  owner_id: string;
+  owner_display_name: string | null;
+  grants: S3AclGrant[];
+}
+
 export type PanelBackend = 'local' | 's3' | 'archive';
 
 export interface ArchiveInfo {

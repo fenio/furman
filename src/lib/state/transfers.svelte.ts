@@ -25,6 +25,9 @@ export interface Transfer {
   archivePath?: string;
   archiveInternalPaths?: string[];
   checkpoint?: TransferCheckpoint | null;
+  speedBytesPerSec: number;
+  /** @internal */ _lastProgressAt: number;
+  /** @internal */ _lastBytesDone: number;
 }
 
 class TransfersState {
@@ -83,13 +86,16 @@ class TransfersState {
       : `${count} transfers — ${pct}%${suffix}`;
   }
 
-  enqueue(transfer: Omit<Transfer, 'status' | 'progress' | 'startedAt' | 'priority'>) {
+  enqueue(transfer: Omit<Transfer, 'status' | 'progress' | 'startedAt' | 'priority' | 'speedBytesPerSec' | '_lastProgressAt' | '_lastBytesDone'>) {
     this.transfers.push({
       ...transfer,
       status: 'queued',
       progress: null,
       startedAt: Date.now(),
       priority: Date.now(),
+      speedBytesPerSec: 0,
+      _lastProgressAt: 0,
+      _lastBytesDone: 0,
     });
     this.panelVisible = true;
     this.processQueue();
@@ -123,13 +129,32 @@ class TransfersState {
       priority: Date.now(),
       srcBackend: 'local',
       destBackend: 'local',
+      speedBytesPerSec: 0,
+      _lastProgressAt: 0,
+      _lastBytesDone: 0,
     });
     this.panelVisible = true;
   }
 
   updateProgress(id: string, event: ProgressEvent) {
     const t = this.transfers.find((t) => t.id === id);
-    if (t) t.progress = event;
+    if (!t) return;
+
+    const now = Date.now();
+    if (t._lastProgressAt > 0) {
+      const dt = (now - t._lastProgressAt) / 1000; // seconds
+      if (dt > 0) {
+        const bytesDelta = event.bytes_done - t._lastBytesDone;
+        const instantSpeed = bytesDelta / dt;
+        const alpha = 0.3;
+        t.speedBytesPerSec = t.speedBytesPerSec > 0
+          ? alpha * instantSpeed + (1 - alpha) * t.speedBytesPerSec
+          : instantSpeed;
+      }
+    }
+    t._lastProgressAt = now;
+    t._lastBytesDone = event.bytes_done;
+    t.progress = event;
   }
 
   complete(id: string) {

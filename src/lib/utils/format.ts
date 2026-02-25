@@ -32,6 +32,14 @@ export function formatPermissions(mode: number): string {
   return result;
 }
 
+export function formatSpeed(bytesPerSec: number): string {
+  if (bytesPerSec <= 0) return '';
+  if (bytesPerSec < 1024) return `${bytesPerSec.toFixed(0)} B/s`;
+  if (bytesPerSec < 1024 * 1024) return `${(bytesPerSec / 1024).toFixed(1)} KB/s`;
+  if (bytesPerSec < 1024 * 1024 * 1024) return `${(bytesPerSec / (1024 * 1024)).toFixed(1)} MB/s`;
+  return `${(bytesPerSec / (1024 * 1024 * 1024)).toFixed(1)} GB/s`;
+}
+
 export function getFileIcon(entry: FileEntry): string {
   if (entry.name === '..') return ' ..';
   if (entry.is_dir) return '<DIR>';

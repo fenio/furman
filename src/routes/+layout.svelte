@@ -10,7 +10,7 @@
   import { copyFiles, moveFiles, deleteFiles, renameFile, createDirectory, openFileDefault, openInEditor, checkConflicts } from '$lib/services/tauri';
   import { statusState } from '$lib/state/status.svelte';
   import { transfersState } from '$lib/state/transfers.svelte';
-  import { s3Download, s3Upload, s3CopyObjects, s3DeleteObjects, s3RenameObject, s3CreateFolder, s3PresignUrl, s3DownloadToTemp } from '$lib/services/s3';
+  import { s3Download, s3Upload, s3CopyObjects, s3DeleteObjects, s3RenameObject, s3CreateFolder, s3PresignUrl, s3DownloadToTemp, s3BulkChangeStorageClass } from '$lib/services/s3';
   import { s3PathToPrefix } from '$lib/state/panels.svelte';
   import { error } from '$lib/services/log';
   import type { PanelData } from '$lib/state/panels.svelte';
@@ -588,6 +588,44 @@
     );
   }
 
+  async function handleCopyS3Uri() {
+    const active = panels.active;
+    if (active.backend !== 's3') return;
+    const entry = active.currentEntry;
+    if (!entry || entry.name === '..') return;
+    // entry.path is already s3://bucket/key
+    try {
+      await navigator.clipboard.writeText(entry.path);
+      statusState.setMessage(`Copied: ${entry.path}`);
+    } catch (err: unknown) {
+      error(String(err));
+    }
+  }
+
+  function handleBulkStorageClassChange() {
+    const active = panels.active;
+    if (active.backend !== 's3' || !active.s3Connection) return;
+    const selected = active.getSelectedOrCurrent();
+    if (selected.length === 0) return;
+
+    const connectionId = active.s3Connection.connectionId;
+    appState.showInput('Target storage class (e.g. STANDARD_IA, GLACIER):', 'STANDARD_IA', async (targetClass: string) => {
+      appState.closeModal();
+      if (!targetClass) return;
+      try {
+        const failed = await s3BulkChangeStorageClass(connectionId, selected, targetClass);
+        if (failed.length === 0) {
+          statusState.setMessage(`Storage class changed to ${targetClass} for ${selected.length} object(s)`);
+        } else {
+          statusState.setMessage(`${selected.length - failed.length} succeeded, ${failed.length} failed`);
+        }
+        await active.loadDirectory(active.path);
+      } catch (err: unknown) {
+        error(String(err));
+      }
+    });
+  }
+
   function handleQuit() {
     appState.showConfirm('Quit Furman?', async () => {
       try {
@@ -855,6 +893,14 @@
         case 'u':
           e.preventDefault();
           handlePresignUrl();                    // Cmd+U = Presigned URL
+          return;
+        case 'k':
+          e.preventDefault();
+          handleCopyS3Uri();                     // Cmd+K = Copy S3 URI
+          return;
+        case 'l':
+          e.preventDefault();
+          handleBulkStorageClassChange();         // Cmd+L = Bulk Storage Class
           return;
         case 'j':
           e.preventDefault();

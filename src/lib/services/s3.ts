@@ -1,5 +1,5 @@
 import { invoke, Channel } from '@tauri-apps/api/core';
-import type { DirListing, ProgressEvent, S3Bucket, S3BucketEncryption, S3BucketVersioning, S3LifecycleRule, S3MultipartUpload, S3ObjectMetadata, S3ObjectProperties, S3ObjectVersion, S3Tag, SearchEvent, TransferCheckpoint } from '$lib/types';
+import type { DirListing, ProgressEvent, S3Bucket, S3BucketAcl, S3BucketEncryption, S3BucketVersioning, S3CorsRule, S3LifecycleRule, S3MultipartUpload, S3ObjectMetadata, S3ObjectProperties, S3ObjectVersion, S3PublicAccessBlock, S3Tag, SearchEvent, TransferCheckpoint } from '$lib/types';
 
 export async function s3CheckCredentials(): Promise<boolean> {
   return await invoke<boolean>('s3_check_credentials');
@@ -301,4 +301,46 @@ export async function s3GetBucketLifecycle(id: string): Promise<S3LifecycleRule[
 
 export async function s3PutBucketLifecycle(id: string, rules: S3LifecycleRule[]): Promise<void> {
   await invoke('s3_put_bucket_lifecycle', { id, rules });
+}
+
+// ── CORS Configuration ───────────────────────────────────────────────────────
+
+export async function s3GetBucketCors(id: string): Promise<S3CorsRule[]> {
+  return await invoke<S3CorsRule[]>('s3_get_bucket_cors', { id });
+}
+
+export async function s3PutBucketCors(id: string, rules: S3CorsRule[]): Promise<void> {
+  await invoke('s3_put_bucket_cors', { id, rules });
+}
+
+// ── Bulk Storage Class Change ────────────────────────────────────────────────
+
+export async function s3BulkChangeStorageClass(id: string, keys: string[], targetClass: string): Promise<string[]> {
+  return await invoke<string[]>('s3_bulk_change_storage_class', { id, keys, targetClass });
+}
+
+// ── Public Access Block ──────────────────────────────────────────────────────
+
+export async function s3GetPublicAccessBlock(id: string): Promise<S3PublicAccessBlock> {
+  return await invoke<S3PublicAccessBlock>('s3_get_public_access_block', { id });
+}
+
+export async function s3PutPublicAccessBlock(id: string, config: S3PublicAccessBlock): Promise<void> {
+  await invoke('s3_put_public_access_block', { id, config });
+}
+
+// ── Bucket Policy ────────────────────────────────────────────────────────────
+
+export async function s3GetBucketPolicy(id: string): Promise<string> {
+  return await invoke<string>('s3_get_bucket_policy', { id });
+}
+
+export async function s3PutBucketPolicy(id: string, policy: string): Promise<void> {
+  await invoke('s3_put_bucket_policy', { id, policy });
+}
+
+// ── Bucket ACL (Read-Only) ───────────────────────────────────────────────────
+
+export async function s3GetBucketAcl(id: string): Promise<S3BucketAcl> {
+  return await invoke<S3BucketAcl>('s3_get_bucket_acl', { id });
 }

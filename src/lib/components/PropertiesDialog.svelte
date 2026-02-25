@@ -9,13 +9,17 @@
     s3GetBucketTags, s3PutBucketTags, s3ListMultipartUploads, s3AbortMultipartUpload,
     s3GetObjectMetadata, s3PutObjectMetadata, s3GetObjectTags, s3PutObjectTags,
     s3GetBucketLifecycle, s3PutBucketLifecycle,
+    s3GetBucketCors, s3PutBucketCors,
+    s3GetPublicAccessBlock, s3PutPublicAccessBlock,
+    s3GetBucketPolicy, s3PutBucketPolicy,
+    s3GetBucketAcl,
   } from '$lib/services/s3';
   import { invoke } from '@tauri-apps/api/core';
   import { formatSize, formatDate, formatPermissions } from '$lib/utils/format';
   import type {
     FileProperties, S3ObjectProperties, S3ObjectVersion, PanelBackend,
     S3BucketVersioning, S3BucketEncryption, S3Tag, S3MultipartUpload,
-    S3ObjectMetadata, S3LifecycleRule,
+    S3ObjectMetadata, S3LifecycleRule, S3CorsRule, S3PublicAccessBlock, S3BucketAcl,
   } from '$lib/types';
 
   interface Props {
@@ -158,6 +162,50 @@
     'STANDARD_IA', 'ONEZONE_IA', 'INTELLIGENT_TIERING',
     'GLACIER', 'GLACIER_IR', 'DEEP_ARCHIVE',
   ];
+
+  // Bucket-level: CORS Configuration
+  let corsExpanded = $state(false);
+  let corsRules = $state<S3CorsRule[]>([]);
+  let corsOriginal = $state('');
+  let corsLoading = $state(false);
+  let corsMessage = $state('');
+  let savingCors = $state(false);
+
+  const corsDirty = $derived(JSON.stringify(corsRules) !== corsOriginal);
+
+  const corsMethods = ['GET', 'PUT', 'POST', 'DELETE', 'HEAD'];
+
+  // Bucket-level: Public Access Block
+  let publicAccessBlock = $state<S3PublicAccessBlock | null>(null);
+  let publicAccessLoading = $state(false);
+  let publicAccessMessage = $state('');
+  let savingPublicAccess = $state(false);
+  let pabBlockPublicAcls = $state(false);
+  let pabIgnorePublicAcls = $state(false);
+  let pabBlockPublicPolicy = $state(false);
+  let pabRestrictPublicBuckets = $state(false);
+  let pabOriginal = $state('');
+
+  const publicAccessDirty = $derived(
+    JSON.stringify({ a: pabBlockPublicAcls, b: pabIgnorePublicAcls, c: pabBlockPublicPolicy, d: pabRestrictPublicBuckets }) !== pabOriginal
+  );
+
+  // Bucket-level: Bucket Policy
+  let policyExpanded = $state(false);
+  let policyText = $state('');
+  let policyOriginal = $state('');
+  let policyLoading = $state(false);
+  let policyMessage = $state('');
+  let savingPolicy = $state(false);
+  let policyJsonValid = $state(true);
+
+  const policyDirty = $derived(policyText !== policyOriginal);
+
+  // Bucket-level: ACL (read-only)
+  let aclExpanded = $state(false);
+  let bucketAcl = $state<S3BucketAcl | null>(null);
+  let aclLoading = $state(false);
+  let aclError = $state('');
 
   // Object-level: Metadata
   let metadataExpanded = $state(false);
@@ -476,6 +524,192 @@
     return parts.length > 0 ? parts.join(', ') : 'No actions configured';
   }
 
+  // ── Bucket-level: CORS functions ────────────────────────────────────────
+
+  async function loadCorsRules() {
+    if (corsLoading) return;
+    corsExpanded = !corsExpanded;
+    if (!corsExpanded || corsRules.length > 0 || corsOriginal) return;
+    corsLoading = true;
+    corsMessage = '';
+    try {
+      corsRules = await s3GetBucketCors(s3ConnectionId);
+      corsOriginal = JSON.stringify(corsRules);
+    } catch (err: unknown) {
+      corsMessage = 'Error: ' + String(err);
+    } finally {
+      corsLoading = false;
+    }
+  }
+
+  function addCorsRule() {
+    corsRules = [...corsRules, {
+      allowed_origins: ['*'],
+      allowed_methods: ['GET'],
+      allowed_headers: ['*'],
+      expose_headers: [],
+      max_age_seconds: null,
+    }];
+  }
+
+  function removeCorsRule(index: number) {
+    corsRules = corsRules.filter((_, i) => i !== index);
+  }
+
+  function toggleCorsMethod(ruleIndex: number, method: string) {
+    const rule = corsRules[ruleIndex];
+    if (rule.allowed_methods.includes(method)) {
+      rule.allowed_methods = rule.allowed_methods.filter(m => m !== method);
+    } else {
+      rule.allowed_methods = [...rule.allowed_methods, method];
+    }
+    corsRules = [...corsRules];
+  }
+
+  async function saveCorsRules() {
+    savingCors = true;
+    corsMessage = '';
+    try {
+      await s3PutBucketCors(s3ConnectionId, corsRules);
+      corsOriginal = JSON.stringify(corsRules);
+      corsMessage = 'CORS saved';
+    } catch (err: unknown) {
+      corsMessage = 'Error: ' + String(err);
+    } finally {
+      savingCors = false;
+    }
+  }
+
+  // ── Bucket-level: Public Access Block functions ────────────────────────
+
+  async function loadPublicAccessBlock() {
+    publicAccessLoading = true;
+    publicAccessMessage = '';
+    try {
+      publicAccessBlock = await s3GetPublicAccessBlock(s3ConnectionId);
+      pabBlockPublicAcls = publicAccessBlock.block_public_acls;
+      pabIgnorePublicAcls = publicAccessBlock.ignore_public_acls;
+      pabBlockPublicPolicy = publicAccessBlock.block_public_policy;
+      pabRestrictPublicBuckets = publicAccessBlock.restrict_public_buckets;
+      pabOriginal = JSON.stringify({ a: pabBlockPublicAcls, b: pabIgnorePublicAcls, c: pabBlockPublicPolicy, d: pabRestrictPublicBuckets });
+    } catch (err: unknown) {
+      publicAccessMessage = 'Error: ' + String(err);
+    } finally {
+      publicAccessLoading = false;
+    }
+  }
+
+  async function savePublicAccessBlock() {
+    savingPublicAccess = true;
+    publicAccessMessage = '';
+    try {
+      await s3PutPublicAccessBlock(s3ConnectionId, {
+        block_public_acls: pabBlockPublicAcls,
+        ignore_public_acls: pabIgnorePublicAcls,
+        block_public_policy: pabBlockPublicPolicy,
+        restrict_public_buckets: pabRestrictPublicBuckets,
+      });
+      pabOriginal = JSON.stringify({ a: pabBlockPublicAcls, b: pabIgnorePublicAcls, c: pabBlockPublicPolicy, d: pabRestrictPublicBuckets });
+      publicAccessMessage = 'Public access block saved';
+    } catch (err: unknown) {
+      publicAccessMessage = 'Error: ' + String(err);
+    } finally {
+      savingPublicAccess = false;
+    }
+  }
+
+  // ── Bucket-level: Bucket Policy functions ─────────────────────────────
+
+  async function loadBucketPolicy() {
+    if (policyLoading) return;
+    policyExpanded = !policyExpanded;
+    if (!policyExpanded || policyOriginal) return;
+    policyLoading = true;
+    policyMessage = '';
+    try {
+      const raw = await s3GetBucketPolicy(s3ConnectionId);
+      if (raw) {
+        try {
+          policyText = JSON.stringify(JSON.parse(raw), null, 2);
+        } catch {
+          policyText = raw;
+        }
+      } else {
+        policyText = '';
+      }
+      policyOriginal = policyText;
+      policyJsonValid = true;
+    } catch (err: unknown) {
+      policyMessage = 'Error: ' + String(err);
+    } finally {
+      policyLoading = false;
+    }
+  }
+
+  function handlePolicyInput(e: Event) {
+    policyText = (e.target as HTMLTextAreaElement).value;
+    if (policyText.trim() === '') {
+      policyJsonValid = true;
+    } else {
+      try {
+        JSON.parse(policyText);
+        policyJsonValid = true;
+      } catch {
+        policyJsonValid = false;
+      }
+    }
+  }
+
+  async function saveBucketPolicy() {
+    savingPolicy = true;
+    policyMessage = '';
+    try {
+      await s3PutBucketPolicy(s3ConnectionId, policyText.trim());
+      policyOriginal = policyText;
+      policyMessage = policyText.trim() ? 'Policy saved' : 'Policy deleted';
+    } catch (err: unknown) {
+      policyMessage = 'Error: ' + String(err);
+    } finally {
+      savingPolicy = false;
+    }
+  }
+
+  // ── Bucket-level: ACL functions ───────────────────────────────────────
+
+  async function loadBucketAcl() {
+    if (aclLoading) return;
+    aclExpanded = !aclExpanded;
+    if (!aclExpanded || bucketAcl) return;
+    aclLoading = true;
+    aclError = '';
+    try {
+      bucketAcl = await s3GetBucketAcl(s3ConnectionId);
+    } catch (err: unknown) {
+      aclError = String(err);
+    } finally {
+      aclLoading = false;
+    }
+  }
+
+  function friendlyGrantee(grant: import('$lib/types').S3AclGrant): string {
+    if (grant.grantee_uri) {
+      switch (grant.grantee_uri) {
+        case 'http://acs.amazonaws.com/groups/global/AllUsers':
+          return 'Everyone (Public)';
+        case 'http://acs.amazonaws.com/groups/global/AuthenticatedUsers':
+          return 'Authenticated Users';
+        case 'http://acs.amazonaws.com/groups/s3/LogDelivery':
+          return 'Log Delivery';
+        default:
+          return grant.grantee_uri;
+      }
+    }
+    if (grant.grantee_display_name) return grant.grantee_display_name;
+    if (grant.grantee_email) return grant.grantee_email;
+    if (grant.grantee_id) return grant.grantee_id.slice(0, 16) + '\u2026';
+    return 'Unknown';
+  }
+
   // ── Object-level: Metadata functions ────────────────────────────────────
 
   async function loadMetadata() {
@@ -601,9 +835,11 @@
           // Load bucket-level info
           bucketVersioningLoading = true;
           bucketEncryptionLoading = true;
+          publicAccessLoading = true;
           Promise.all([
             s3GetBucketVersioning(s3ConnectionId).then(v => { bucketVersioning = v; }),
             s3GetBucketEncryption(s3ConnectionId).then(e => { bucketEncryption = e; }),
+            loadPublicAccessBlock(),
           ]).catch(() => {}).finally(() => {
             bucketVersioningLoading = false;
             bucketEncryptionLoading = false;
@@ -998,6 +1234,45 @@
             {/if}
           </div>
 
+          <!-- Public Access Block -->
+          <div class="section-title">Public Access Block</div>
+          <div class="storage-class-section">
+            {#if publicAccessLoading}
+              <div class="loading">Loading...</div>
+            {:else if publicAccessMessage && !publicAccessBlock}
+              <div class="error">{publicAccessMessage}</div>
+            {:else if publicAccessBlock}
+              <div class="pab-section">
+                <label class="pab-checkbox">
+                  <input type="checkbox" bind:checked={pabBlockPublicAcls} />
+                  <span>Block public ACLs</span>
+                </label>
+                <label class="pab-checkbox">
+                  <input type="checkbox" bind:checked={pabIgnorePublicAcls} />
+                  <span>Ignore public ACLs</span>
+                </label>
+                <label class="pab-checkbox">
+                  <input type="checkbox" bind:checked={pabBlockPublicPolicy} />
+                  <span>Block public policy</span>
+                </label>
+                <label class="pab-checkbox">
+                  <input type="checkbox" bind:checked={pabRestrictPublicBuckets} />
+                  <span>Restrict public buckets</span>
+                </label>
+                <div class="tag-actions">
+                  {#if publicAccessDirty}
+                    <button class="dialog-btn apply-btn" onclick={savePublicAccessBlock} disabled={savingPublicAccess}>
+                      {savingPublicAccess ? 'Saving...' : 'Save'}
+                    </button>
+                  {/if}
+                  {#if publicAccessMessage}
+                    <span class="sc-message" class:sc-error={publicAccessMessage.startsWith('Error')}>{publicAccessMessage}</span>
+                  {/if}
+                </div>
+              </div>
+            {/if}
+          </div>
+
           <!-- Bucket Tags -->
           <button class="section-title versions-toggle" onclick={loadBucketTags}>
             Bucket Tags {bucketTagsExpanded ? '\u25B4' : '\u25BE'}
@@ -1227,6 +1502,187 @@
                       <span class="sc-message" class:sc-error={lifecycleMessage.startsWith('Error')}>{lifecycleMessage}</span>
                     {/if}
                   </div>
+                </div>
+              {/if}
+            </div>
+          {/if}
+
+          <!-- CORS Configuration -->
+          <button class="section-title versions-toggle" onclick={loadCorsRules}>
+            CORS Configuration {corsExpanded ? '\u25B4' : '\u25BE'}
+          </button>
+          {#if corsExpanded}
+            <div class="versions-section">
+              {#if corsLoading}
+                <div class="loading">Loading CORS rules...</div>
+              {:else}
+                <div class="tag-editor">
+                  {#each corsRules as rule, i}
+                    <div class="lifecycle-rule">
+                      <div class="lifecycle-rule-header">
+                        <span class="lifecycle-rule-id">Rule {i + 1}</span>
+                        <div class="lifecycle-rule-actions">
+                          <button class="version-action-btn danger" onclick={() => removeCorsRule(i)} title="Remove rule">&times;</button>
+                        </div>
+                      </div>
+                      <div class="lifecycle-rule-body">
+                        <label class="meta-field">
+                          <span class="meta-label">Allowed Origins</span>
+                          <textarea
+                            class="cors-textarea"
+                            value={rule.allowed_origins.join('\n')}
+                            oninput={(e) => {
+                              rule.allowed_origins = (e.target as HTMLTextAreaElement).value.split('\n').filter(s => s.trim());
+                              corsRules = [...corsRules];
+                            }}
+                            placeholder="* or https://example.com (one per line)"
+                            rows="2"
+                          ></textarea>
+                        </label>
+                        <div class="tag-header">
+                          <span class="meta-label">Allowed Methods</span>
+                        </div>
+                        <div class="cors-methods">
+                          {#each corsMethods as method}
+                            <label class="rwx-checkbox" class:checked={rule.allowed_methods.includes(method)}>
+                              <input type="checkbox" checked={rule.allowed_methods.includes(method)} onchange={() => toggleCorsMethod(i, method)} />
+                              {method}
+                            </label>
+                          {/each}
+                        </div>
+                        <label class="meta-field">
+                          <span class="meta-label">Allowed Headers</span>
+                          <input
+                            class="meta-input"
+                            type="text"
+                            value={rule.allowed_headers.join(', ')}
+                            oninput={(e) => {
+                              rule.allowed_headers = (e.target as HTMLInputElement).value.split(',').map(s => s.trim()).filter(Boolean);
+                              corsRules = [...corsRules];
+                            }}
+                            placeholder="* or comma-separated headers"
+                          />
+                        </label>
+                        <label class="meta-field">
+                          <span class="meta-label">Expose Headers</span>
+                          <input
+                            class="meta-input"
+                            type="text"
+                            value={rule.expose_headers.join(', ')}
+                            oninput={(e) => {
+                              rule.expose_headers = (e.target as HTMLInputElement).value.split(',').map(s => s.trim()).filter(Boolean);
+                              corsRules = [...corsRules];
+                            }}
+                            placeholder="comma-separated headers"
+                          />
+                        </label>
+                        <label class="meta-field">
+                          <span class="meta-label">Max Age (sec)</span>
+                          <input
+                            class="lifecycle-days-input"
+                            type="number"
+                            min="0"
+                            value={rule.max_age_seconds ?? ''}
+                            oninput={(e) => {
+                              const v = (e.target as HTMLInputElement).value;
+                              rule.max_age_seconds = v ? parseInt(v, 10) : null;
+                              corsRules = [...corsRules];
+                            }}
+                            placeholder="none"
+                          />
+                        </label>
+                      </div>
+                    </div>
+                  {/each}
+                  {#if corsRules.length === 0}
+                    <div class="versions-empty">No CORS rules</div>
+                  {/if}
+                  <div class="tag-actions">
+                    <button class="version-action-btn" onclick={addCorsRule}>+ Add Rule</button>
+                    {#if corsDirty}
+                      <button class="dialog-btn apply-btn" onclick={saveCorsRules} disabled={savingCors}>
+                        {savingCors ? 'Saving...' : 'Save'}
+                      </button>
+                    {/if}
+                    {#if corsMessage}
+                      <span class="sc-message" class:sc-error={corsMessage.startsWith('Error')}>{corsMessage}</span>
+                    {/if}
+                  </div>
+                </div>
+              {/if}
+            </div>
+          {/if}
+
+          <!-- Bucket Policy -->
+          <button class="section-title versions-toggle" onclick={loadBucketPolicy}>
+            Bucket Policy {policyExpanded ? '\u25B4' : '\u25BE'}
+          </button>
+          {#if policyExpanded}
+            <div class="versions-section">
+              {#if policyLoading}
+                <div class="loading">Loading policy...</div>
+              {:else}
+                <div class="tag-editor">
+                  <textarea
+                    class="policy-editor"
+                    value={policyText}
+                    oninput={handlePolicyInput}
+                    placeholder={'{"Version":"2012-10-17","Statement":[...]}'}
+                    rows="12"
+                  ></textarea>
+                  {#if !policyJsonValid}
+                    <div class="sc-message sc-error">Invalid JSON</div>
+                  {/if}
+                  <div class="tag-actions">
+                    {#if policyDirty}
+                      <button
+                        class="dialog-btn apply-btn"
+                        onclick={saveBucketPolicy}
+                        disabled={savingPolicy || !policyJsonValid}
+                      >
+                        {savingPolicy ? 'Saving...' : policyText.trim() ? 'Save Policy' : 'Delete Policy'}
+                      </button>
+                    {/if}
+                    {#if policyMessage}
+                      <span class="sc-message" class:sc-error={policyMessage.startsWith('Error')}>{policyMessage}</span>
+                    {/if}
+                  </div>
+                </div>
+              {/if}
+            </div>
+          {/if}
+
+          <!-- ACL (Read-Only) -->
+          <button class="section-title versions-toggle" onclick={loadBucketAcl}>
+            ACL {aclExpanded ? '\u25B4' : '\u25BE'}
+          </button>
+          {#if aclExpanded}
+            <div class="versions-section">
+              {#if aclLoading}
+                <div class="loading">Loading ACL...</div>
+              {:else if aclError}
+                <div class="error">{aclError}</div>
+              {:else if bucketAcl}
+                <div class="tag-editor">
+                  <div class="acl-owner">
+                    <span class="meta-label">Owner:</span>
+                    <span class="acl-owner-name">{bucketAcl.owner_display_name ?? bucketAcl.owner_id}</span>
+                  </div>
+                  {#if bucketAcl.grants.length === 0}
+                    <div class="versions-empty">No grants</div>
+                  {:else}
+                    <div class="versions-list">
+                      {#each bucketAcl.grants as grant}
+                        <div class="version-row">
+                          <div class="version-info">
+                            <span class="acl-grantee">{friendlyGrantee(grant)}</span>
+                          </div>
+                          <span class="version-badge latest">{grant.permission}</span>
+                        </div>
+                      {/each}
+                    </div>
+                  {/if}
+                  <div class="acl-note">ACL is read-only</div>
                 </div>
               {/if}
             </div>
@@ -1852,5 +2308,91 @@
     border-radius: var(--radius-sm);
     background: var(--bg-surface);
     color: var(--text-primary);
+  }
+
+  /* Public Access Block */
+  .pab-section {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+
+  .pab-checkbox {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 12px;
+    color: var(--text-primary);
+    cursor: pointer;
+  }
+
+  /* CORS */
+  .cors-textarea {
+    width: 100%;
+    padding: 4px 6px;
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--radius-sm);
+    background: var(--bg-surface);
+    color: var(--text-primary);
+    font-size: 11px;
+    font-family: inherit;
+    resize: vertical;
+  }
+
+  .cors-textarea:focus {
+    outline: none;
+    border-color: var(--border-active);
+  }
+
+  .cors-methods {
+    display: flex;
+    gap: 4px;
+    flex-wrap: wrap;
+    padding: 2px 0;
+  }
+
+  /* Policy Editor */
+  .policy-editor {
+    width: 100%;
+    padding: 6px 8px;
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--radius-sm);
+    background: var(--bg-surface);
+    color: var(--text-primary);
+    font-size: 11px;
+    font-family: var(--font-mono, monospace);
+    resize: vertical;
+    line-height: 1.4;
+  }
+
+  .policy-editor:focus {
+    outline: none;
+    border-color: var(--border-active);
+  }
+
+  /* ACL */
+  .acl-owner {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 4px 0;
+  }
+
+  .acl-owner-name {
+    font-size: 12px;
+    color: var(--text-primary);
+  }
+
+  .acl-grantee {
+    font-size: 11px;
+    color: var(--text-primary);
+  }
+
+  .acl-note {
+    font-size: 10px;
+    color: var(--text-secondary);
+    font-style: italic;
+    text-align: center;
+    padding: 4px 0;
   }
 </style>

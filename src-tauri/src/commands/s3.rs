@@ -1,8 +1,9 @@
 use crate::commands::file::FileOpState;
 use crate::models::{
-    DirListing, FileEntry, FmError, ProgressEvent, S3BucketEncryption, S3BucketVersioning,
-    S3EncryptionRule, S3LifecycleRule, S3LifecycleTransition, S3MultipartUpload, S3ObjectMetadata,
-    S3ObjectProperties, S3ObjectVersion, S3Tag, SearchDone, SearchEvent, SearchResult,
+    DirListing, FileEntry, FmError, ProgressEvent, S3AclGrant, S3BucketAcl,
+    S3BucketEncryption, S3BucketVersioning, S3CorsRule, S3EncryptionRule, S3LifecycleRule,
+    S3LifecycleTransition, S3MultipartUpload, S3ObjectMetadata, S3ObjectProperties,
+    S3ObjectVersion, S3PublicAccessBlock, S3Tag, SearchDone, SearchEvent, SearchResult,
 };
 use aws_config::BehaviorVersion;
 use aws_credential_types::provider::ProvideCredentials;
@@ -2745,4 +2746,353 @@ pub async fn s3_put_bucket_lifecycle(
         .map_err(|e| s3err(e.to_string()))?;
 
     Ok(())
+}
+
+// ── CORS Configuration ──────────────────────────────────────────────────────
+
+#[tauri::command]
+pub async fn s3_get_bucket_cors(
+    state: State<'_, S3State>,
+    id: String,
+) -> Result<Vec<S3CorsRule>, FmError> {
+    let (client, bucket) = {
+        let map = state.0.lock().map_err(|e| s3err(e.to_string()))?;
+        let conn = map.get(&id).ok_or_else(|| s3err("S3 connection not found"))?;
+        (conn.client.clone(), conn.bucket.clone())
+    };
+
+    let resp = client.get_bucket_cors().bucket(&bucket).send().await;
+
+    match resp {
+        Ok(r) => {
+            let rules = r
+                .cors_rules()
+                .iter()
+                .map(|rule| S3CorsRule {
+                    allowed_origins: rule.allowed_origins().iter().map(|s| s.to_string()).collect(),
+                    allowed_methods: rule.allowed_methods().iter().map(|s| s.to_string()).collect(),
+                    allowed_headers: rule.allowed_headers().iter().map(|s| s.to_string()).collect(),
+                    expose_headers: rule.expose_headers().iter().map(|s| s.to_string()).collect(),
+                    max_age_seconds: rule.max_age_seconds().map(|v| v as i32),
+                })
+                .collect();
+            Ok(rules)
+        }
+        Err(e) => {
+            let err_str = e.to_string();
+            if err_str.contains("NoSuchCORSConfiguration") {
+                Ok(vec![])
+            } else {
+                Err(s3err(err_str))
+            }
+        }
+    }
+}
+
+#[tauri::command]
+pub async fn s3_put_bucket_cors(
+    state: State<'_, S3State>,
+    id: String,
+    rules: Vec<S3CorsRule>,
+) -> Result<(), FmError> {
+    let (client, bucket) = {
+        let map = state.0.lock().map_err(|e| s3err(e.to_string()))?;
+        let conn = map.get(&id).ok_or_else(|| s3err("S3 connection not found"))?;
+        (conn.client.clone(), conn.bucket.clone())
+    };
+
+    if rules.is_empty() {
+        client
+            .delete_bucket_cors()
+            .bucket(&bucket)
+            .send()
+            .await
+            .map_err(|e| s3err(e.to_string()))?;
+        return Ok(());
+    }
+
+    let sdk_rules: Vec<aws_sdk_s3::types::CorsRule> = rules
+        .iter()
+        .map(|r| {
+            let mut builder = aws_sdk_s3::types::CorsRule::builder()
+                .set_allowed_origins(Some(r.allowed_origins.clone()))
+                .set_allowed_methods(Some(r.allowed_methods.clone()))
+                .set_allowed_headers(Some(r.allowed_headers.clone()))
+                .set_expose_headers(Some(r.expose_headers.clone()));
+            if let Some(max_age) = r.max_age_seconds {
+                builder = builder.max_age_seconds(max_age);
+            }
+            builder.build().expect("valid CORS rule")
+        })
+        .collect();
+
+    let config = aws_sdk_s3::types::CorsConfiguration::builder()
+        .set_cors_rules(Some(sdk_rules))
+        .build()
+        .map_err(|e| s3err(e.to_string()))?;
+
+    client
+        .put_bucket_cors()
+        .bucket(&bucket)
+        .cors_configuration(config)
+        .send()
+        .await
+        .map_err(|e| s3err(e.to_string()))?;
+
+    Ok(())
+}
+
+// ── Bulk Storage Class Change ───────────────────────────────────────────────
+
+#[tauri::command]
+pub async fn s3_bulk_change_storage_class(
+    state: State<'_, S3State>,
+    id: String,
+    keys: Vec<String>,
+    target_class: String,
+) -> Result<Vec<String>, FmError> {
+    let (client, bucket) = {
+        let map = state.0.lock().map_err(|e| s3err(e.to_string()))?;
+        let conn = map.get(&id).ok_or_else(|| s3err("S3 connection not found"))?;
+        (conn.client.clone(), conn.bucket.clone())
+    };
+
+    let storage_class = aws_sdk_s3::types::StorageClass::from(target_class.as_str());
+    let mut failed: Vec<String> = Vec::new();
+
+    for key in &keys {
+        let actual_key = strip_s3_prefix(key, &bucket);
+        let copy_source = format!("{}/{}", bucket, actual_key);
+
+        let result = client
+            .copy_object()
+            .bucket(&bucket)
+            .key(&actual_key)
+            .copy_source(&copy_source)
+            .storage_class(storage_class.clone())
+            .metadata_directive(aws_sdk_s3::types::MetadataDirective::Copy)
+            .send()
+            .await;
+
+        if result.is_err() {
+            failed.push(key.clone());
+        }
+    }
+
+    Ok(failed)
+}
+
+// ── Public Access Block ─────────────────────────────────────────────────────
+
+#[tauri::command]
+pub async fn s3_get_public_access_block(
+    state: State<'_, S3State>,
+    id: String,
+) -> Result<S3PublicAccessBlock, FmError> {
+    let (client, bucket) = {
+        let map = state.0.lock().map_err(|e| s3err(e.to_string()))?;
+        let conn = map.get(&id).ok_or_else(|| s3err("S3 connection not found"))?;
+        (conn.client.clone(), conn.bucket.clone())
+    };
+
+    let resp = client.get_public_access_block().bucket(&bucket).send().await;
+
+    match resp {
+        Ok(r) => {
+            if let Some(config) = r.public_access_block_configuration() {
+                Ok(S3PublicAccessBlock {
+                    block_public_acls: config.block_public_acls().unwrap_or(false),
+                    ignore_public_acls: config.ignore_public_acls().unwrap_or(false),
+                    block_public_policy: config.block_public_policy().unwrap_or(false),
+                    restrict_public_buckets: config.restrict_public_buckets().unwrap_or(false),
+                })
+            } else {
+                Ok(S3PublicAccessBlock {
+                    block_public_acls: false,
+                    ignore_public_acls: false,
+                    block_public_policy: false,
+                    restrict_public_buckets: false,
+                })
+            }
+        }
+        Err(e) => {
+            let err_str = e.to_string();
+            if err_str.contains("NoSuchPublicAccessBlockConfiguration") {
+                Ok(S3PublicAccessBlock {
+                    block_public_acls: false,
+                    ignore_public_acls: false,
+                    block_public_policy: false,
+                    restrict_public_buckets: false,
+                })
+            } else {
+                Err(s3err(err_str))
+            }
+        }
+    }
+}
+
+#[tauri::command]
+pub async fn s3_put_public_access_block(
+    state: State<'_, S3State>,
+    id: String,
+    config: S3PublicAccessBlock,
+) -> Result<(), FmError> {
+    let (client, bucket) = {
+        let map = state.0.lock().map_err(|e| s3err(e.to_string()))?;
+        let conn = map.get(&id).ok_or_else(|| s3err("S3 connection not found"))?;
+        (conn.client.clone(), conn.bucket.clone())
+    };
+
+    let sdk_config = aws_sdk_s3::types::PublicAccessBlockConfiguration::builder()
+        .block_public_acls(config.block_public_acls)
+        .ignore_public_acls(config.ignore_public_acls)
+        .block_public_policy(config.block_public_policy)
+        .restrict_public_buckets(config.restrict_public_buckets)
+        .build();
+
+    client
+        .put_public_access_block()
+        .bucket(&bucket)
+        .public_access_block_configuration(sdk_config)
+        .send()
+        .await
+        .map_err(|e| s3err(e.to_string()))?;
+
+    Ok(())
+}
+
+// ── Bucket Policy ───────────────────────────────────────────────────────────
+
+#[tauri::command]
+pub async fn s3_get_bucket_policy(
+    state: State<'_, S3State>,
+    id: String,
+) -> Result<String, FmError> {
+    let (client, bucket) = {
+        let map = state.0.lock().map_err(|e| s3err(e.to_string()))?;
+        let conn = map.get(&id).ok_or_else(|| s3err("S3 connection not found"))?;
+        (conn.client.clone(), conn.bucket.clone())
+    };
+
+    let resp = client.get_bucket_policy().bucket(&bucket).send().await;
+
+    match resp {
+        Ok(r) => Ok(r.policy().unwrap_or_default().to_string()),
+        Err(e) => {
+            let err_str = e.to_string();
+            if err_str.contains("NoSuchBucketPolicy") {
+                Ok(String::new())
+            } else {
+                Err(s3err(err_str))
+            }
+        }
+    }
+}
+
+#[tauri::command]
+pub async fn s3_put_bucket_policy(
+    state: State<'_, S3State>,
+    id: String,
+    policy: String,
+) -> Result<(), FmError> {
+    let (client, bucket) = {
+        let map = state.0.lock().map_err(|e| s3err(e.to_string()))?;
+        let conn = map.get(&id).ok_or_else(|| s3err("S3 connection not found"))?;
+        (conn.client.clone(), conn.bucket.clone())
+    };
+
+    if policy.trim().is_empty() {
+        client
+            .delete_bucket_policy()
+            .bucket(&bucket)
+            .send()
+            .await
+            .map_err(|e| s3err(e.to_string()))?;
+        return Ok(());
+    }
+
+    // Validate JSON
+    let _: serde_json::Value =
+        serde_json::from_str(&policy).map_err(|e| s3err(format!("Invalid JSON: {}", e)))?;
+
+    client
+        .put_bucket_policy()
+        .bucket(&bucket)
+        .policy(&policy)
+        .send()
+        .await
+        .map_err(|e| s3err(e.to_string()))?;
+
+    Ok(())
+}
+
+// ── Bucket ACL (Read-Only) ──────────────────────────────────────────────────
+
+#[tauri::command]
+pub async fn s3_get_bucket_acl(
+    state: State<'_, S3State>,
+    id: String,
+) -> Result<S3BucketAcl, FmError> {
+    let (client, bucket) = {
+        let map = state.0.lock().map_err(|e| s3err(e.to_string()))?;
+        let conn = map.get(&id).ok_or_else(|| s3err("S3 connection not found"))?;
+        (conn.client.clone(), conn.bucket.clone())
+    };
+
+    let resp = client
+        .get_bucket_acl()
+        .bucket(&bucket)
+        .send()
+        .await
+        .map_err(|e| s3err(e.to_string()))?;
+
+    let owner_id = resp
+        .owner()
+        .and_then(|o| o.id())
+        .unwrap_or_default()
+        .to_string();
+    let owner_display_name = resp
+        .owner()
+        .and_then(|o| o.display_name())
+        .map(|s| s.to_string());
+
+    let grants = resp
+        .grants()
+        .iter()
+        .map(|g| {
+            let (grantee_type, grantee_id, grantee_uri, grantee_email, grantee_display_name) =
+                if let Some(grantee) = g.grantee() {
+                    let gt = grantee.r#type().as_str().to_string();
+                    (
+                        gt,
+                        grantee.id().map(|s| s.to_string()),
+                        grantee.uri().map(|s| s.to_string()),
+                        grantee.email_address().map(|s| s.to_string()),
+                        grantee.display_name().map(|s| s.to_string()),
+                    )
+                } else {
+                    (String::new(), None, None, None, None)
+                };
+
+            let permission = g
+                .permission()
+                .map(|p| p.as_str().to_string())
+                .unwrap_or_default();
+
+            S3AclGrant {
+                grantee_type,
+                grantee_id,
+                grantee_uri,
+                grantee_email,
+                grantee_display_name,
+                permission,
+            }
+        })
+        .collect();
+
+    Ok(S3BucketAcl {
+        owner_id,
+        owner_display_name,
+        grants,
+    })
 }

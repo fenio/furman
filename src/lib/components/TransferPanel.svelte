@@ -1,7 +1,7 @@
 <script lang="ts">
   import { transfersState } from '$lib/state/transfers.svelte';
   import type { TransferStatus } from '$lib/state/transfers.svelte';
-  import { formatSize } from '$lib/utils/format';
+  import { formatSize, formatSpeed } from '$lib/utils/format';
 
   const visible = $derived(transfersState.panelVisible && transfersState.transfers.length > 0);
   const activeCount = $derived(transfersState.active.length);
@@ -116,7 +116,7 @@
           </div>
           {#if t.progress}
             <div class="transfer-stats">
-              <span>{formatSize(t.progress.bytes_done)} / {formatSize(t.progress.bytes_total)}</span>
+              <span>{formatSize(t.progress.bytes_done)} / {formatSize(t.progress.bytes_total)}{#if t.speedBytesPerSec > 0} — {formatSpeed(t.speedBytesPerSec)}{/if}</span>
               <span>File {t.progress.files_done} of {t.progress.files_total}</span>
             </div>
           {/if}

@@ -292,12 +292,14 @@ pub struct TransferCheckpoint {
     pub files_total: u32,
 }
 
+#[allow(dead_code)]
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct S3CompletedPart {
     pub part_number: i32,
     pub etag: String,
 }
 
+#[allow(dead_code)]
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct S3UploadCheckpoint {
     pub files_completed: Vec<String>,
@@ -319,6 +321,35 @@ pub struct S3CorsRule {
     pub allowed_headers: Vec<String>,
     pub expose_headers: Vec<String>,
     pub max_age_seconds: Option<i32>,
+}
+
+// ── S3PublicAccessBlock ─────────────────────────────────────────────────────
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct S3PublicAccessBlock {
+    pub block_public_acls: bool,
+    pub ignore_public_acls: bool,
+    pub block_public_policy: bool,
+    pub restrict_public_buckets: bool,
+}
+
+// ── S3BucketAcl ────────────────────────────────────────────────────────────
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct S3AclGrant {
+    pub grantee_type: String,
+    pub grantee_id: Option<String>,
+    pub grantee_uri: Option<String>,
+    pub grantee_email: Option<String>,
+    pub grantee_display_name: Option<String>,
+    pub permission: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct S3BucketAcl {
+    pub owner_id: String,
+    pub owner_display_name: Option<String>,
+    pub grants: Vec<S3AclGrant>,
 }
 
 // ── Display impls ───────────────────────────────────────────────────────────
