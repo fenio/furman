@@ -1,7 +1,7 @@
 use crate::commands::file::FileOpState;
 use crate::models::{
-    DirListing, FileEntry, FmError, ProgressEvent, S3ObjectProperties, SearchDone, SearchEvent,
-    SearchResult,
+    DirListing, FileEntry, FmError, ProgressEvent, S3ObjectProperties, S3ObjectVersion,
+    SearchDone, SearchEvent, SearchResult,
 };
 use aws_config::BehaviorVersion;
 use aws_credential_types::provider::ProvideCredentials;
@@ -18,10 +18,10 @@ use tokio::sync::Semaphore;
 pub struct S3State(pub Mutex<HashMap<String, S3Connection>>);
 
 pub(crate) struct S3Connection {
-    client: S3Client,
-    bucket: String,
+    pub(crate) client: S3Client,
+    pub(crate) bucket: String,
     #[allow(dead_code)]
-    region: String,
+    pub(crate) region: String,
 }
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
@@ -636,6 +636,7 @@ pub async fn s3_list_objects(
         group: String::new(),
         extension: None,
         git_status: None,
+        storage_class: None,
     });
 
     // Paginated listing with delimiter
@@ -682,6 +683,7 @@ pub async fn s3_list_objects(
                 group: String::new(),
                 extension: None,
                 git_status: None,
+                storage_class: None,
             });
         }
 
@@ -727,6 +729,7 @@ pub async fn s3_list_objects(
                 group: String::new(),
                 extension,
                 git_status: None,
+                storage_class: obj.storage_class().map(|s| s.as_str().to_string()),
             });
         }
 
@@ -1121,6 +1124,8 @@ pub async fn s3_head_object(
     let content_type = head.content_type().map(|s| s.to_string());
     let etag = head.e_tag().map(|s| s.to_string());
     let storage_class = head.storage_class().map(|s| s.as_str().to_string());
+    let restore_status = head.restore().map(|s| s.to_string());
+    let version_id = head.version_id().map(|s| s.to_string());
 
     Ok(S3ObjectProperties {
         key: actual_key,
@@ -1129,6 +1134,8 @@ pub async fn s3_head_object(
         content_type,
         etag,
         storage_class,
+        restore_status,
+        version_id,
     })
 }
 
@@ -1585,6 +1592,289 @@ pub async fn s3_put_text(
         .bucket(&bucket)
         .key(&stripped)
         .body(content.into_bytes().into())
+        .send()
+        .await
+        .map_err(|e| s3err(e.to_string()))?;
+
+    Ok(())
+}
+
+/// Change the storage class of an S3 object by copying it to itself.
+#[tauri::command]
+pub async fn s3_change_storage_class(
+    state: State<'_, S3State>,
+    id: String,
+    key: String,
+    target_class: String,
+) -> Result<(), FmError> {
+    let (client, bucket) = {
+        let map = state.0.lock().map_err(|e| s3err(e.to_string()))?;
+        let conn = map.get(&id).ok_or_else(|| s3err("S3 connection not found"))?;
+        (conn.client.clone(), conn.bucket.clone())
+    };
+
+    let actual_key = strip_s3_prefix(&key, &bucket);
+
+    // Check object size — reject >5 GiB (copy_object limit)
+    let head = client
+        .head_object()
+        .bucket(&bucket)
+        .key(&actual_key)
+        .send()
+        .await
+        .map_err(|e| s3err(e.to_string()))?;
+
+    let size = head.content_length().unwrap_or(0) as u64;
+    if size > COPY_MULTIPART_THRESHOLD {
+        return Err(s3err(format!(
+            "Object is too large ({:.1} GB) for storage class change via copy. Maximum is 5 GB.",
+            size as f64 / (1024.0 * 1024.0 * 1024.0)
+        )));
+    }
+
+    let copy_source = format!("{}/{}", bucket, actual_key);
+    let storage_class = aws_sdk_s3::types::StorageClass::from(target_class.as_str());
+
+    client
+        .copy_object()
+        .bucket(&bucket)
+        .key(&actual_key)
+        .copy_source(&copy_source)
+        .storage_class(storage_class)
+        .metadata_directive(aws_sdk_s3::types::MetadataDirective::Copy)
+        .send()
+        .await
+        .map_err(|e| s3err(e.to_string()))?;
+
+    Ok(())
+}
+
+/// Restore an object from Glacier or Deep Archive.
+#[tauri::command]
+pub async fn s3_restore_object(
+    state: State<'_, S3State>,
+    id: String,
+    key: String,
+    days: i32,
+    tier: String,
+) -> Result<(), FmError> {
+    let (client, bucket) = {
+        let map = state.0.lock().map_err(|e| s3err(e.to_string()))?;
+        let conn = map.get(&id).ok_or_else(|| s3err("S3 connection not found"))?;
+        (conn.client.clone(), conn.bucket.clone())
+    };
+
+    let actual_key = strip_s3_prefix(&key, &bucket);
+
+    let glacier_tier = aws_sdk_s3::types::Tier::from(tier.as_str());
+
+    let glacier_params = aws_sdk_s3::types::GlacierJobParameters::builder()
+        .tier(glacier_tier)
+        .build()
+        .map_err(|e| s3err(e.to_string()))?;
+
+    let restore_request = aws_sdk_s3::types::RestoreRequest::builder()
+        .days(days)
+        .glacier_job_parameters(glacier_params)
+        .build();
+
+    client
+        .restore_object()
+        .bucket(&bucket)
+        .key(&actual_key)
+        .restore_request(restore_request)
+        .send()
+        .await
+        .map_err(|e| s3err(e.to_string()))?;
+
+    Ok(())
+}
+
+/// List all versions of an S3 object.
+#[tauri::command]
+pub async fn s3_list_object_versions(
+    state: State<'_, S3State>,
+    id: String,
+    key: String,
+) -> Result<Vec<S3ObjectVersion>, FmError> {
+    let (client, bucket) = {
+        let map = state.0.lock().map_err(|e| s3err(e.to_string()))?;
+        let conn = map.get(&id).ok_or_else(|| s3err("S3 connection not found"))?;
+        (conn.client.clone(), conn.bucket.clone())
+    };
+
+    let actual_key = strip_s3_prefix(&key, &bucket);
+    let mut versions: Vec<S3ObjectVersion> = Vec::new();
+    let mut key_marker: Option<String> = None;
+    let mut version_id_marker: Option<String> = None;
+
+    loop {
+        let mut req = client
+            .list_object_versions()
+            .bucket(&bucket)
+            .prefix(&actual_key);
+
+        if let Some(km) = &key_marker {
+            req = req.key_marker(km);
+        }
+        if let Some(vm) = &version_id_marker {
+            req = req.version_id_marker(vm);
+        }
+
+        let resp = req.send().await.map_err(|e| s3err(e.to_string()))?;
+
+        for v in resp.versions() {
+            let vkey = v.key().unwrap_or_default();
+            if vkey != actual_key {
+                continue;
+            }
+            versions.push(S3ObjectVersion {
+                version_id: v.version_id().unwrap_or("null").to_string(),
+                is_latest: v.is_latest().unwrap_or(false),
+                is_delete_marker: false,
+                size: v.size().unwrap_or(0) as u64,
+                modified: v
+                    .last_modified()
+                    .and_then(|t| t.to_millis().ok())
+                    .unwrap_or(0),
+                etag: v.e_tag().map(|s| s.to_string()),
+                storage_class: v.storage_class().map(|s| s.as_str().to_string()),
+            });
+        }
+
+        for dm in resp.delete_markers() {
+            let dmkey = dm.key().unwrap_or_default();
+            if dmkey != actual_key {
+                continue;
+            }
+            versions.push(S3ObjectVersion {
+                version_id: dm.version_id().unwrap_or("null").to_string(),
+                is_latest: dm.is_latest().unwrap_or(false),
+                is_delete_marker: true,
+                size: 0,
+                modified: dm
+                    .last_modified()
+                    .and_then(|t| t.to_millis().ok())
+                    .unwrap_or(0),
+                etag: None,
+                storage_class: None,
+            });
+        }
+
+        if resp.is_truncated() == Some(true) {
+            key_marker = resp.next_key_marker().map(|s| s.to_string());
+            version_id_marker = resp.next_version_id_marker().map(|s| s.to_string());
+        } else {
+            break;
+        }
+    }
+
+    // Sort by modified descending (newest first)
+    versions.sort_by(|a, b| b.modified.cmp(&a.modified));
+
+    Ok(versions)
+}
+
+/// Download a specific version of an S3 object to a temp file.
+#[tauri::command]
+pub async fn s3_download_version(
+    state: State<'_, S3State>,
+    id: String,
+    key: String,
+    version_id: String,
+) -> Result<String, FmError> {
+    let (client, bucket) = {
+        let map = state.0.lock().map_err(|e| s3err(e.to_string()))?;
+        let conn = map.get(&id).ok_or_else(|| s3err("S3 connection not found"))?;
+        (conn.client.clone(), conn.bucket.clone())
+    };
+
+    let stripped_key = strip_s3_prefix(&key, &bucket);
+
+    let resp = client
+        .get_object()
+        .bucket(&bucket)
+        .key(&stripped_key)
+        .version_id(&version_id)
+        .send()
+        .await
+        .map_err(|e| s3err(e.to_string()))?;
+
+    let filename = stripped_key.rsplit('/').next().unwrap_or(&stripped_key);
+    let short_vid = if version_id.len() > 8 { &version_id[..8] } else { &version_id };
+    let safe_name = format!("{}-{}", short_vid, filename);
+    let temp_path = std::env::temp_dir().join("furman-preview").join(&safe_name);
+
+    if let Some(parent) = temp_path.parent() {
+        std::fs::create_dir_all(parent)?;
+    }
+
+    let body = resp
+        .body
+        .collect()
+        .await
+        .map_err(|e| s3err(e.to_string()))?;
+    std::fs::write(&temp_path, body.into_bytes())?;
+
+    Ok(temp_path.to_string_lossy().to_string())
+}
+
+/// Restore a specific version by copying it as the current version.
+#[tauri::command]
+pub async fn s3_restore_version(
+    state: State<'_, S3State>,
+    id: String,
+    key: String,
+    version_id: String,
+) -> Result<(), FmError> {
+    let (client, bucket) = {
+        let map = state.0.lock().map_err(|e| s3err(e.to_string()))?;
+        let conn = map.get(&id).ok_or_else(|| s3err("S3 connection not found"))?;
+        (conn.client.clone(), conn.bucket.clone())
+    };
+
+    let actual_key = strip_s3_prefix(&key, &bucket);
+
+    let copy_source = format!(
+        "{}/{}?versionId={}",
+        bucket,
+        actual_key,
+        urlencoding::encode(&version_id)
+    );
+
+    client
+        .copy_object()
+        .bucket(&bucket)
+        .key(&actual_key)
+        .copy_source(&copy_source)
+        .send()
+        .await
+        .map_err(|e| s3err(e.to_string()))?;
+
+    Ok(())
+}
+
+/// Delete a specific version of an S3 object.
+#[tauri::command]
+pub async fn s3_delete_version(
+    state: State<'_, S3State>,
+    id: String,
+    key: String,
+    version_id: String,
+) -> Result<(), FmError> {
+    let (client, bucket) = {
+        let map = state.0.lock().map_err(|e| s3err(e.to_string()))?;
+        let conn = map.get(&id).ok_or_else(|| s3err("S3 connection not found"))?;
+        (conn.client.clone(), conn.bucket.clone())
+    };
+
+    let actual_key = strip_s3_prefix(&key, &bucket);
+
+    client
+        .delete_object()
+        .bucket(&bucket)
+        .key(&actual_key)
+        .version_id(&version_id)
         .send()
         .await
         .map_err(|e| s3err(e.to_string()))?;

@@ -26,7 +26,9 @@
   import PreferencesDialog from '$lib/components/PreferencesDialog.svelte';
   import OverwriteDialog from '$lib/components/OverwriteDialog.svelte';
   import PropertiesDialog from '$lib/components/PropertiesDialog.svelte';
+  import SyncDialog from '$lib/components/SyncDialog.svelte';
   import { s3ProfilesState } from '$lib/state/s3profiles.svelte';
+  import type { SyncEntry } from '$lib/types';
 
   let bottomResizing = $state(false);
   let quakeResizing = $state(false);
@@ -175,6 +177,25 @@
     panels.active.loadDirectory(dirPath, fileName);
   }
 
+  function handleSyncExecute(entries: SyncEntry[]) {
+    appState.closeModal();
+    if (entries.length === 0) return;
+    // Dispatch custom event for +layout.svelte to handle the actual transfers
+    window.dispatchEvent(
+      new CustomEvent('sync-execute', {
+        detail: {
+          entries,
+          sourceBackend: appState.syncSourceBackend,
+          sourcePath: appState.syncSourcePath,
+          sourceS3Id: appState.syncSourceS3Id,
+          destBackend: appState.syncDestBackend,
+          destPath: appState.syncDestPath,
+          destS3Id: appState.syncDestS3Id,
+        },
+      }),
+    );
+  }
+
   function hideQuake(e: KeyboardEvent) {
     if (e.key === 'Escape' && terminalState.displayMode === 'quake') {
       terminalState.displayMode = 'none';
@@ -312,6 +333,19 @@
       path={appState.propertiesPath}
       backend={appState.propertiesBackend}
       s3ConnectionId={appState.propertiesS3ConnectionId}
+      onClose={() => appState.closeModal()}
+    />
+  {/if}
+
+  {#if appState.modal === 'sync'}
+    <SyncDialog
+      sourceBackend={appState.syncSourceBackend}
+      sourcePath={appState.syncSourcePath}
+      sourceS3Id={appState.syncSourceS3Id}
+      destBackend={appState.syncDestBackend}
+      destPath={appState.syncDestPath}
+      destS3Id={appState.syncDestS3Id}
+      onSync={handleSyncExecute}
       onClose={() => appState.closeModal()}
     />
   {/if}

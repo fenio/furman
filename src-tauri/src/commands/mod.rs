@@ -6,6 +6,7 @@ pub mod keychain;
 pub mod metadata;
 pub mod s3;
 pub mod search;
+pub mod sync;
 pub mod terminal;
 pub mod volumes;
 pub mod watcher;

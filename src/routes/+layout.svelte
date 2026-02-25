@@ -1,6 +1,7 @@
 <script lang="ts">
   import favicon from '$lib/assets/favicon.svg';
   import '../app.css';
+  import { onMount, onDestroy } from 'svelte';
   import { panels } from '$lib/state/panels.svelte';
   import { appState } from '$lib/state/app.svelte';
   import { terminalState } from '$lib/state/terminal.svelte';
@@ -12,9 +13,211 @@
   import { s3Download, s3Upload, s3CopyObjects, s3DeleteObjects, s3RenameObject, s3CreateFolder, s3PresignUrl, s3DownloadToTemp } from '$lib/services/s3';
   import { s3PathToPrefix } from '$lib/state/panels.svelte';
   import { error } from '$lib/services/log';
-  import type { ProgressEvent, S3ConnectionInfo } from '$lib/types';
+  import type { PanelData } from '$lib/state/panels.svelte';
+  import type { ProgressEvent, S3ConnectionInfo, SyncEntry } from '$lib/types';
 
   let { children } = $props();
+
+  // ── Native drag-and-drop from OS ──────────────────────────────────────────
+
+  function getTargetPanel(position: { x: number; y: number }): PanelData | null {
+    const panelEls = document.querySelectorAll('.file-panel');
+    for (const [i, el] of Array.from(panelEls).entries()) {
+      const rect = el.getBoundingClientRect();
+      if (position.x >= rect.left && position.x <= rect.right &&
+          position.y >= rect.top && position.y <= rect.bottom) {
+        return i === 0 ? panels.left : panels.right;
+      }
+    }
+    return null;
+  }
+
+  let dragDropUnlisten: (() => void) | null = null;
+
+  onMount(async () => {
+    try {
+      const { getCurrentWindow } = await import('@tauri-apps/api/window');
+      dragDropUnlisten = await getCurrentWindow().onDragDropEvent((event) => {
+        if (event.payload.type === 'drop') {
+          const paths = event.payload.paths;
+          const position = event.payload.position;
+          if (!paths || paths.length === 0) return;
+
+          const target = getTargetPanel(position);
+          if (!target) return;
+
+          const opId = 'drop-' + Date.now() + '-' + Math.random().toString(36).slice(2, 6);
+          const onProgress = (e: ProgressEvent) => {
+            transfersState.updateProgress(opId, e);
+          };
+
+          if (target.backend === 's3' && target.s3Connection) {
+            const conn = target.s3Connection;
+            const prefix = s3PathToPrefix(target.path, conn.bucket);
+            transfersState.add(opId, 'copy', paths, target.path);
+            s3Upload(conn.connectionId, opId, paths, prefix, onProgress)
+              .then(() => {
+                transfersState.complete(opId);
+                statusState.setMessage(`Uploaded ${paths.length} file(s) to S3`);
+                target.loadDirectory(target.path);
+              })
+              .catch((err) => {
+                error(String(err));
+                transfersState.fail(opId, String(err));
+                statusState.setMessage('Upload failed');
+              });
+          } else if (target.backend === 'local') {
+            transfersState.add(opId, 'copy', paths, target.path);
+            copyFiles(opId, paths, target.path, onProgress)
+              .then(() => {
+                transfersState.complete(opId);
+                statusState.setMessage(`Copied ${paths.length} file(s)`);
+                target.loadDirectory(target.path);
+              })
+              .catch((err) => {
+                error(String(err));
+                transfersState.fail(opId, String(err));
+                statusState.setMessage('Copy failed');
+              });
+          }
+        }
+      });
+    } catch {
+      // onDragDropEvent not available — will be handled by capability check
+    }
+  });
+
+  function handleSyncExecuteEvent(e: Event) {
+    const detail = (e as CustomEvent).detail as {
+      entries: SyncEntry[];
+      sourceBackend: string;
+      sourcePath: string;
+      sourceS3Id: string;
+      destBackend: string;
+      destPath: string;
+      destS3Id: string;
+    };
+    executeSyncTransfer(detail);
+  }
+
+  window.addEventListener('sync-execute', handleSyncExecuteEvent);
+
+  onDestroy(() => {
+    dragDropUnlisten?.();
+    window.removeEventListener('sync-execute', handleSyncExecuteEvent);
+  });
+
+  function executeSyncTransfer(detail: {
+    entries: SyncEntry[];
+    sourceBackend: string;
+    sourcePath: string;
+    sourceS3Id: string;
+    destBackend: string;
+    destPath: string;
+    destS3Id: string;
+  }) {
+    const { entries, sourceBackend, sourcePath, sourceS3Id, destBackend, destPath, destS3Id } = detail;
+
+    // Split entries by action needed
+    const toCopy = entries.filter((e) => e.status === 'new' || e.status === 'modified');
+    const toDelete = entries.filter((e) => e.status === 'deleted');
+
+    // Build full source paths for copy operations
+    if (toCopy.length > 0) {
+      const opId = 'sync-' + Date.now() + '-' + Math.random().toString(36).slice(2, 6);
+      const copySourcePaths = toCopy.map((e) => {
+        if (sourceBackend === 's3') {
+          // For S3 source, build full s3://bucket/prefix/relative_path
+          const base = sourcePath.endsWith('/') ? sourcePath : sourcePath + '/';
+          return base + e.relative_path;
+        } else {
+          // For local source, join path with relative path
+          const base = sourcePath.endsWith('/') ? sourcePath : sourcePath + '/';
+          return base + e.relative_path;
+        }
+      });
+
+      transfersState.add(opId, 'copy', copySourcePaths, destPath);
+
+      (async () => {
+        try {
+          const onProgress = (e: ProgressEvent) => {
+            transfersState.updateProgress(opId, e);
+          };
+
+          if (sourceBackend === 'local' && destBackend === 'local') {
+            await copyFiles(opId, copySourcePaths, destPath, onProgress);
+          } else if (sourceBackend === 's3' && destBackend === 'local') {
+            await s3Download(sourceS3Id, opId, copySourcePaths, destPath, onProgress);
+          } else if (sourceBackend === 'local' && destBackend === 's3') {
+            const prefix = s3PathToPrefix(destPath, '');
+            await s3Upload(destS3Id, opId, copySourcePaths, prefix, onProgress);
+          } else if (sourceBackend === 's3' && destBackend === 's3') {
+            const destPrefix = s3PathToPrefix(destPath, '');
+            await s3CopyObjects(sourceS3Id, opId, copySourcePaths, destS3Id, destPrefix, onProgress);
+          }
+
+          transfersState.complete(opId);
+          statusState.setMessage(`Synced ${toCopy.length} file(s)`);
+        } catch (err: unknown) {
+          const msg = String(err);
+          if (msg.includes('cancelled')) {
+            transfersState.markCancelled(opId);
+            statusState.setMessage('Sync cancelled');
+          } else {
+            error(msg);
+            transfersState.fail(opId, msg);
+            statusState.setMessage('Sync failed');
+          }
+        } finally {
+          // Handle deletions after copies complete
+          if (toDelete.length > 0) {
+            await executeSyncDeletes(toDelete, destBackend, destPath, destS3Id);
+          }
+          // Reload both panels
+          const reloads: Promise<void>[] = [];
+          if (panels.active.backend !== 'archive') reloads.push(panels.active.loadDirectory(panels.active.path));
+          if (panels.inactive.backend !== 'archive') reloads.push(panels.inactive.loadDirectory(panels.inactive.path));
+          await Promise.all(reloads);
+        }
+      })();
+    } else if (toDelete.length > 0) {
+      // Only deletions, no copies
+      (async () => {
+        await executeSyncDeletes(toDelete, destBackend, destPath, destS3Id);
+        const reloads: Promise<void>[] = [];
+        if (panels.active.backend !== 'archive') reloads.push(panels.active.loadDirectory(panels.active.path));
+        if (panels.inactive.backend !== 'archive') reloads.push(panels.inactive.loadDirectory(panels.inactive.path));
+        await Promise.all(reloads);
+      })();
+    }
+  }
+
+  async function executeSyncDeletes(
+    toDelete: SyncEntry[],
+    destBackend: string,
+    destPath: string,
+    destS3Id: string,
+  ) {
+    const deletePaths = toDelete.map((e) => {
+      const base = destPath.endsWith('/') ? destPath : destPath + '/';
+      return base + e.relative_path;
+    });
+
+    try {
+      if (destBackend === 's3') {
+        await s3DeleteObjects(destS3Id, deletePaths);
+      } else {
+        await deleteFiles(deletePaths, true);
+      }
+      statusState.setMessage(`Deleted ${toDelete.length} file(s) from destination`);
+    } catch (err: unknown) {
+      error(String(err));
+      statusState.setMessage('Sync delete failed');
+    }
+  }
+
+  // ── Constants ──────────────────────────────────────────────────────────────
 
   const imageExtensions = new Set(['png', 'jpg', 'jpeg', 'gif', 'bmp', 'svg', 'webp', 'ico']);
   const archiveExtensions = new Set(['zip', 'rar', '7z', 'tar', 'gz', 'tgz', 'bz2', 'xz']);
@@ -706,6 +909,19 @@
         case 'q':
           e.preventDefault();
           handleQuit();                          // Cmd+Q = Quit (F10)
+          return;
+        case 'y':
+          e.preventDefault();
+          {
+            const src = panels.active;
+            const dst = panels.inactive;
+            if (src.backend !== 'archive' && dst.backend !== 'archive') {
+              appState.showSync(
+                { backend: src.backend, path: src.path, s3Id: src.s3Connection?.connectionId ?? '' },
+                { backend: dst.backend, path: dst.path, s3Id: dst.s3Connection?.connectionId ?? '' },
+              );
+            }
+          }
           return;
       }
     }

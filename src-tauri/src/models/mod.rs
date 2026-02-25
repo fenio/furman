@@ -19,6 +19,7 @@ pub struct FileEntry {
     pub group: String,
     pub extension: Option<String>,
     pub git_status: Option<String>,
+    pub storage_class: Option<String>,
 }
 
 // ── DirListing ───────────────────────────────────────────────────────────────
@@ -140,6 +141,21 @@ pub struct S3ObjectProperties {
     pub content_type: Option<String>,
     pub etag: Option<String>,
     pub storage_class: Option<String>,
+    pub restore_status: Option<String>,
+    pub version_id: Option<String>,
+}
+
+// ── S3ObjectVersion ────────────────────────────────────────────────────────
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct S3ObjectVersion {
+    pub version_id: String,
+    pub is_latest: bool,
+    pub is_delete_marker: bool,
+    pub size: u64,
+    pub modified: i64,
+    pub etag: Option<String>,
+    pub storage_class: Option<String>,
 }
 
 // ── SearchEvent ─────────────────────────────────────────────────────────────
@@ -167,6 +183,31 @@ pub struct SearchDone {
 pub enum SearchEvent {
     Result(SearchResult),
     Done(SearchDone),
+}
+
+// ── SyncEvent ───────────────────────────────────────────────────────────
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SyncEntry {
+    pub relative_path: String,
+    pub status: String, // "new" | "modified" | "deleted" | "same"
+    pub source_size: u64,
+    pub dest_size: u64,
+    pub source_modified: i64, // epoch ms, 0 if missing
+    pub dest_modified: i64,   // epoch ms, 0 if missing
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(tag = "type")]
+pub enum SyncEvent {
+    Entry(SyncEntry),
+    Progress { scanned: u32 },
+    Done {
+        total: u32,
+        new_count: u32,
+        modified: u32,
+        deleted: u32,
+    },
 }
 
 // ── Display impls ───────────────────────────────────────────────────────────

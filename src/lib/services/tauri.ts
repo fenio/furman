@@ -1,5 +1,5 @@
 import { invoke, Channel } from '@tauri-apps/api/core';
-import type { DirListing, VolumeInfo, ProgressEvent, SearchEvent, SearchMode, GitRepoInfo, FileProperties } from '$lib/types';
+import type { DirListing, VolumeInfo, ProgressEvent, SearchEvent, SearchMode, SyncEvent, GitRepoInfo, FileProperties } from '$lib/types';
 
 export async function listArchive(
   archivePath: string,
@@ -158,6 +158,34 @@ export async function searchFiles(
 
 export async function cancelSearch(id: string): Promise<void> {
   await invoke('cancel_search', { id });
+}
+
+export async function syncDiff(
+  id: string,
+  sourceBackend: string,
+  sourcePath: string,
+  sourceS3Id: string,
+  destBackend: string,
+  destPath: string,
+  destS3Id: string,
+  onEvent: (e: SyncEvent) => void
+): Promise<void> {
+  const channel = new Channel<SyncEvent>();
+  channel.onmessage = onEvent;
+  await invoke('sync_diff', {
+    id,
+    sourceBackend,
+    sourcePath,
+    sourceS3Id,
+    destBackend,
+    destPath,
+    destS3Id,
+    channel,
+  });
+}
+
+export async function cancelSync(id: string): Promise<void> {
+  await invoke('cancel_sync', { id });
 }
 
 export async function getGitRepoInfo(path: string): Promise<GitRepoInfo | null> {

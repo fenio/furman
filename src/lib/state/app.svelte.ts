@@ -36,6 +36,12 @@ class AppState {
   propertiesPath = $state('');
   propertiesBackend = $state<PanelBackend>('local');
   propertiesS3ConnectionId = $state('');
+  syncSourceBackend = $state<PanelBackend>('local');
+  syncSourcePath = $state('');
+  syncSourceS3Id = $state('');
+  syncDestBackend = $state<PanelBackend>('local');
+  syncDestPath = $state('');
+  syncDestS3Id = $state('');
 
   showSearch(root: string, backend: PanelBackend = 'local', s3ConnectionId: string = '') {
     this.searchRoot = root;
@@ -103,6 +109,19 @@ class AppState {
     this.modal = 'overwrite';
   }
 
+  showSync(
+    source: { backend: PanelBackend; path: string; s3Id: string },
+    dest: { backend: PanelBackend; path: string; s3Id: string },
+  ) {
+    this.syncSourceBackend = source.backend;
+    this.syncSourcePath = source.path;
+    this.syncSourceS3Id = source.s3Id;
+    this.syncDestBackend = dest.backend;
+    this.syncDestPath = dest.path;
+    this.syncDestS3Id = dest.s3Id;
+    this.modal = 'sync';
+  }
+
   setIconSize(size: number) {
     this.iconSize = size;
     this.persistConfig();
@@ -162,6 +181,12 @@ class AppState {
     this.propertiesPath = '';
     this.propertiesBackend = 'local';
     this.propertiesS3ConnectionId = '';
+    this.syncSourceBackend = 'local';
+    this.syncSourcePath = '';
+    this.syncSourceS3Id = '';
+    this.syncDestBackend = 'local';
+    this.syncDestPath = '';
+    this.syncDestS3Id = '';
   }
 }
 

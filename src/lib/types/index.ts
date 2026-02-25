@@ -11,6 +11,7 @@ export interface FileEntry {
   group: string;
   extension: string | null;
   git_status: string | null;
+  storage_class: string | null;
 }
 
 export interface DirListing {
@@ -65,6 +66,7 @@ export type ModalType =
   | 's3-manager'
   | 'overwrite'
   | 'search'
+  | 'sync'
   | 'preferences'
   | 'properties';
 
@@ -87,6 +89,20 @@ export interface SearchDone {
 }
 
 export type SearchEvent = SearchResult | SearchDone;
+
+export interface SyncEntry {
+  relative_path: string;
+  status: 'new' | 'modified' | 'deleted' | 'same';
+  source_size: number;
+  dest_size: number;
+  source_modified: number;
+  dest_modified: number;
+}
+
+export type SyncEvent =
+  | ({ type: 'Entry' } & SyncEntry)
+  | { type: 'Progress'; scanned: number }
+  | { type: 'Done'; total: number; new_count: number; modified: number; deleted: number };
 
 export interface GitRepoInfo {
   branch: string;
@@ -116,6 +132,18 @@ export interface S3ObjectProperties {
   size: number;
   modified: number; // epoch ms
   content_type: string | null;
+  etag: string | null;
+  storage_class: string | null;
+  restore_status: string | null;
+  version_id: string | null;
+}
+
+export interface S3ObjectVersion {
+  version_id: string;
+  is_latest: boolean;
+  is_delete_marker: boolean;
+  size: number;
+  modified: number; // epoch ms
   etag: string | null;
   storage_class: string | null;
 }

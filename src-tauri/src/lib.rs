@@ -4,6 +4,7 @@ mod models;
 use commands::file::FileOpState;
 use commands::s3::S3State;
 use commands::search::SearchState;
+use commands::sync::SyncState;
 use commands::terminal::TerminalState;
 use commands::watcher::WatcherState;
 use std::collections::HashMap;
@@ -39,6 +40,7 @@ pub fn run() {
         .manage(S3State(Mutex::new(HashMap::new())))
         .manage(SearchState(Mutex::new(HashMap::new())))
         .manage(FileOpState(Mutex::new(HashMap::new())))
+        .manage(SyncState(Mutex::new(HashMap::new())))
         .setup(|app| {
             let mut targets = vec![
                 tauri_plugin_log::Target::new(tauri_plugin_log::TargetKind::LogDir { file_name: None }),
@@ -123,12 +125,21 @@ pub fn run() {
             commands::s3::s3_presign_url,
             commands::s3::s3_download_temp,
             commands::s3::s3_put_text,
+            commands::s3::s3_change_storage_class,
+            commands::s3::s3_restore_object,
+            commands::s3::s3_list_object_versions,
+            commands::s3::s3_download_version,
+            commands::s3::s3_restore_version,
+            commands::s3::s3_delete_version,
             // archive commands
             commands::archive::list_archive,
             commands::archive::extract_archive,
             // search commands
             commands::search::search_files,
             commands::search::cancel_search,
+            // sync commands
+            commands::sync::sync_diff,
+            commands::sync::cancel_sync,
             // keychain commands
             commands::keychain::keychain_set,
             commands::keychain::keychain_get,
