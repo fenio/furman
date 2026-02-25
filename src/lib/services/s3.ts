@@ -111,6 +111,10 @@ export async function s3RenameObject(id: string, key: string, newName: string): 
   await invoke('s3_rename_object', { id, key, newName });
 }
 
+export async function s3PresignUrl(id: string, key: string, expiresInSecs: number): Promise<string> {
+  return await invoke<string>('s3_presign_url', { id, key, expiresInSecs });
+}
+
 export async function s3SearchObjects(
   id: string,
   searchId: string,

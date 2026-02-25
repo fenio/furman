@@ -8,7 +8,7 @@
   import { workspacesState } from '$lib/state/workspaces.svelte';
   import { copyFiles, moveFiles, deleteFiles, renameFile, createDirectory, openFileDefault, openInEditor, checkConflicts, extractArchive, cancelFileOperation } from '$lib/services/tauri';
   import { statusState } from '$lib/state/status.svelte';
-  import { s3Download, s3Upload, s3CopyObjects, s3DeleteObjects, s3RenameObject, s3CreateFolder } from '$lib/services/s3';
+  import { s3Download, s3Upload, s3CopyObjects, s3DeleteObjects, s3RenameObject, s3CreateFolder, s3PresignUrl } from '$lib/services/s3';
   import { s3PathToPrefix } from '$lib/state/panels.svelte';
   import { error } from '$lib/services/log';
   import type { ProgressEvent, S3ConnectionInfo } from '$lib/types';
@@ -347,6 +347,27 @@
     });
   }
 
+  function handlePresignUrl() {
+    const active = panels.active;
+    const entry = active.currentEntry;
+    if (!entry || entry.name === '..' || entry.is_dir) return;
+    if (active.backend !== 's3' || !active.s3Connection) return;
+
+    const connectionId = active.s3Connection.connectionId;
+    appState.showInput('Link expires in (minutes):', '60', async (val: string) => {
+      appState.closeModal();
+      const minutes = parseInt(val, 10);
+      if (!minutes || minutes <= 0) return;
+      try {
+        const url = await s3PresignUrl(connectionId, entry.path, minutes * 60);
+        await navigator.clipboard.writeText(url);
+        statusState.setMessage('Presigned URL copied to clipboard');
+      } catch (err: unknown) {
+        error(String(err));
+      }
+    });
+  }
+
   function handleProperties() {
     const active = panels.active;
     const entry = active.currentEntry;
@@ -613,6 +634,10 @@
           } else {
             sidebarState.toggle();               // Hidden → open sidebar
           }
+          return;
+        case 'u':
+          e.preventDefault();
+          handlePresignUrl();                    // Cmd+U = Presigned URL
           return;
         case 'i':
           e.preventDefault();

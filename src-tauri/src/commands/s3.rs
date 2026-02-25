@@ -312,6 +312,136 @@ async fn upload_file_multipart(
     Ok(())
 }
 
+// ── Multipart copy helpers ───────────────────────────────────────────────────
+
+const COPY_MULTIPART_THRESHOLD: u64 = 5 * 1024 * 1024 * 1024; // 5 GiB
+
+/// Server-side multipart copy for objects larger than 5 GiB.
+async fn copy_object_multipart(
+    src_bucket: &str,
+    src_key: &str,
+    dest_client: &S3Client,
+    dest_bucket: &str,
+    dest_key: &str,
+    object_size: u64,
+) -> Result<(), FmError> {
+    // 1. Create multipart upload on destination
+    let create_resp = dest_client
+        .create_multipart_upload()
+        .bucket(dest_bucket)
+        .key(dest_key)
+        .send()
+        .await
+        .map_err(|e| s3err(e.to_string()))?;
+
+    let upload_id = create_resp
+        .upload_id()
+        .ok_or_else(|| s3err("Missing upload_id from create_multipart_upload"))?
+        .to_string();
+
+    // 2. Calculate part size (dynamic sizing to stay within 10k part limit)
+    let part_size = std::cmp::max(PART_SIZE, object_size / 10_000 + 1);
+    let num_parts = ((object_size + part_size - 1) / part_size) as i32;
+    let copy_source = format!("{}/{}", src_bucket, src_key);
+
+    let mut completed_parts: Vec<(i32, String)> = Vec::with_capacity(num_parts as usize);
+
+    // 3. Upload parts sequentially (server-side copy, no data through client)
+    for i in 0..num_parts {
+        let offset = i as u64 * part_size;
+        let end = std::cmp::min(offset + part_size, object_size) - 1;
+        let part_number = i + 1;
+
+        let result = dest_client
+            .upload_part_copy()
+            .bucket(dest_bucket)
+            .key(dest_key)
+            .upload_id(&upload_id)
+            .part_number(part_number)
+            .copy_source(&copy_source)
+            .copy_source_range(format!("bytes={}-{}", offset, end))
+            .send()
+            .await;
+
+        match result {
+            Ok(resp) => {
+                let etag = resp
+                    .copy_part_result()
+                    .and_then(|r| r.e_tag())
+                    .ok_or_else(|| s3err("Missing ETag in upload_part_copy response"))?
+                    .to_string();
+                completed_parts.push((part_number, etag));
+            }
+            Err(e) => {
+                // Abort on failure (best-effort)
+                let _ = dest_client
+                    .abort_multipart_upload()
+                    .bucket(dest_bucket)
+                    .key(dest_key)
+                    .upload_id(&upload_id)
+                    .send()
+                    .await;
+                return Err(s3err(e.to_string()));
+            }
+        }
+    }
+
+    // 4. Complete multipart upload
+    completed_parts.sort_by_key(|(num, _)| *num);
+
+    let parts: Vec<_> = completed_parts
+        .iter()
+        .map(|(num, etag)| {
+            aws_sdk_s3::types::CompletedPart::builder()
+                .part_number(*num)
+                .e_tag(etag)
+                .build()
+        })
+        .collect();
+
+    let completed_upload = aws_sdk_s3::types::CompletedMultipartUpload::builder()
+        .set_parts(Some(parts))
+        .build();
+
+    dest_client
+        .complete_multipart_upload()
+        .bucket(dest_bucket)
+        .key(dest_key)
+        .upload_id(&upload_id)
+        .multipart_upload(completed_upload)
+        .send()
+        .await
+        .map_err(|e| s3err(e.to_string()))?;
+
+    Ok(())
+}
+
+/// Copy a single object, using multipart copy for objects >= 5 GiB.
+async fn copy_single_or_multipart(
+    src_bucket: &str,
+    src_key: &str,
+    dest_client: &S3Client,
+    dest_bucket: &str,
+    dest_key: &str,
+    object_size: u64,
+) -> Result<(), FmError> {
+    if object_size < COPY_MULTIPART_THRESHOLD {
+        let copy_source = format!("{}/{}", src_bucket, src_key);
+        dest_client
+            .copy_object()
+            .bucket(dest_bucket)
+            .key(dest_key)
+            .copy_source(&copy_source)
+            .send()
+            .await
+            .map_err(|e| s3err(e.to_string()))?;
+    } else {
+        copy_object_multipart(src_bucket, src_key, dest_client, dest_bucket, dest_key, object_size)
+            .await?;
+    }
+    Ok(())
+}
+
 // ── S3Bucket model ───────────────────────────────────────────────────────────
 
 #[derive(Debug, Clone, serde::Serialize)]
@@ -932,16 +1062,11 @@ pub async fn s3_copy_objects(
 
             let filename = key.rsplit('/').next().unwrap_or(key);
             let dest_key = format!("{}{}", dest_prefix, filename);
-            let copy_source = format!("{}/{}", src_bucket, key);
 
-            dest_client
-                .copy_object()
-                .bucket(&dest_bucket)
-                .key(&dest_key)
-                .copy_source(&copy_source)
-                .send()
-                .await
-                .map_err(|e| s3err(e.to_string()))?;
+            copy_single_or_multipart(
+                &src_bucket, key, &dest_client, &dest_bucket, &dest_key, *size,
+            )
+            .await?;
 
             bytes_done += size;
             files_done += 1;
@@ -1156,26 +1281,28 @@ async fn rename_file(
     };
 
     // Check destination doesn't already exist
-    let head = client
+    let dest_head = client
         .head_object()
         .bucket(bucket)
         .key(&dest_key)
         .send()
         .await;
-    if head.is_ok() {
+    if dest_head.is_ok() {
         return Err(FmError::AlreadyExists(dest_key));
     }
 
-    // Copy to new key
-    let copy_source = format!("{}/{}", bucket, key);
-    client
-        .copy_object()
+    // Get source object size for multipart copy routing
+    let src_head = client
+        .head_object()
         .bucket(bucket)
-        .key(&dest_key)
-        .copy_source(&copy_source)
+        .key(key)
         .send()
         .await
         .map_err(|e| s3err(e.to_string()))?;
+    let object_size = src_head.content_length().unwrap_or(0) as u64;
+
+    // Copy to new key (multipart for large objects)
+    copy_single_or_multipart(bucket, key, client, bucket, &dest_key, object_size).await?;
 
     // Delete original
     client
@@ -1224,21 +1351,13 @@ async fn rename_prefix(
     }
 
     // Copy each object to new prefix
-    for (child_key, _, _) in &children {
+    for (child_key, size, _) in &children {
         let relative = child_key
             .strip_prefix(old_prefix)
             .unwrap_or(child_key);
         let dest_key = format!("{}{}", new_prefix, relative);
-        let copy_source = format!("{}/{}", bucket, child_key);
 
-        client
-            .copy_object()
-            .bucket(bucket)
-            .key(&dest_key)
-            .copy_source(&copy_source)
-            .send()
-            .await
-            .map_err(|e| s3err(e.to_string()))?;
+        copy_single_or_multipart(bucket, child_key, client, bucket, &dest_key, *size).await?;
     }
 
     // Batch delete originals (max 1000 per request)
@@ -1373,4 +1492,36 @@ pub async fn s3_search_objects(
     }));
 
     Ok(())
+}
+
+/// Generate a presigned GET URL for an S3 object.
+#[tauri::command]
+pub async fn s3_presign_url(
+    state: State<'_, S3State>,
+    id: String,
+    key: String,
+    expires_in_secs: u64,
+) -> Result<String, FmError> {
+    let (client, bucket) = {
+        let map = state.0.lock().map_err(|e| s3err(e.to_string()))?;
+        let conn = map.get(&id).ok_or_else(|| s3err("S3 connection not found"))?;
+        (conn.client.clone(), conn.bucket.clone())
+    };
+
+    let actual_key = strip_s3_prefix(&key, &bucket);
+
+    let presign_config = aws_sdk_s3::presigning::PresigningConfig::expires_in(
+        std::time::Duration::from_secs(expires_in_secs),
+    )
+    .map_err(|e| s3err(e.to_string()))?;
+
+    let presigned = client
+        .get_object()
+        .bucket(&bucket)
+        .key(&actual_key)
+        .presigned(presign_config)
+        .await
+        .map_err(|e| s3err(e.to_string()))?;
+
+    Ok(presigned.uri().to_string())
 }
