@@ -78,6 +78,8 @@
     }
     appState.editorPath = filePath;
     appState.editorDirty = false;
+    appState.editorS3ConnectionId = '';
+    appState.editorS3Key = '';
     appState.modal = 'editor';
   }
 
@@ -105,6 +107,8 @@
       const localPath = await s3DownloadToTemp(connectionId, s3Path);
       appState.editorPath = localPath;
       appState.editorDirty = false;
+      appState.editorS3ConnectionId = connectionId;
+      appState.editorS3Key = s3Path;
       appState.modal = 'editor';
     } catch (err: unknown) {
       error(String(err));

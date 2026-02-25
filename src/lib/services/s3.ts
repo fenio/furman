@@ -122,6 +122,10 @@ export async function s3DownloadToTemp(
   return await invoke<string>('s3_download_temp', { id, key });
 }
 
+export async function s3PutText(id: string, key: string, content: string): Promise<void> {
+  await invoke('s3_put_text', { id, key, content });
+}
+
 export async function s3SearchObjects(
   id: string,
   searchId: string,

@@ -14,6 +14,8 @@ class AppState {
   editorPath = $state('');
   editorContent = $state('');
   editorDirty = $state(false);
+  editorS3ConnectionId = $state('');
+  editorS3Key = $state('');
   confirmMessage = $state('');
   confirmCallback = $state<(() => void) | null>(null);
   inputPrompt = $state('');

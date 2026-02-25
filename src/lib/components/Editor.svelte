@@ -1,5 +1,6 @@
 <script lang="ts">
   import { readFileText, writeFileText } from '$lib/services/tauri';
+  import { s3PutText } from '$lib/services/s3';
   import { appState } from '$lib/state/app.svelte';
   import { onMount } from 'svelte';
 
@@ -59,6 +60,13 @@
     saving = true;
     try {
       await writeFileText(path, content);
+      if (appState.editorS3ConnectionId) {
+        await s3PutText(
+          appState.editorS3ConnectionId,
+          appState.editorS3Key,
+          content,
+        );
+      }
       originalContent = content;
       dirty = false;
     } catch (err: unknown) {

@@ -1564,6 +1564,34 @@ pub async fn s3_download_temp(
     Ok(temp_path.to_string_lossy().to_string())
 }
 
+/// Put text content directly to an S3 key (used by the editor write-back).
+#[tauri::command]
+pub async fn s3_put_text(
+    state: State<'_, S3State>,
+    id: String,
+    key: String,
+    content: String,
+) -> Result<(), FmError> {
+    let (client, bucket) = {
+        let map = state.0.lock().map_err(|e| s3err(e.to_string()))?;
+        let conn = map.get(&id).ok_or_else(|| s3err("S3 connection not found"))?;
+        (conn.client.clone(), conn.bucket.clone())
+    };
+
+    let stripped = strip_s3_prefix(&key, &bucket);
+
+    client
+        .put_object()
+        .bucket(&bucket)
+        .key(&stripped)
+        .body(content.into_bytes().into())
+        .send()
+        .await
+        .map_err(|e| s3err(e.to_string()))?;
+
+    Ok(())
+}
+
 /// Generate a presigned GET URL for an S3 object.
 #[tauri::command]
 pub async fn s3_presign_url(
