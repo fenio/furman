@@ -294,10 +294,10 @@
 
   {#if appState.modal === 's3-connect'}
     <S3ConnectDialog
-      onConnect={(bucket, region, endpoint, profile, accessKey, secretKey) => {
+      onConnect={(bucket, region, endpoint, profile, accessKey, secretKey, provider, customCapabilities) => {
         const cb = appState.s3ConnectCallback;
         appState.closeModal();
-        if (cb) cb(bucket, region, endpoint, profile, accessKey, secretKey);
+        if (cb) cb(bucket, region, endpoint, profile, accessKey, secretKey, provider, customCapabilities);
       }}
       onCancel={() => appState.closeModal()}
     />
@@ -333,6 +333,7 @@
       path={appState.propertiesPath}
       backend={appState.propertiesBackend}
       s3ConnectionId={appState.propertiesS3ConnectionId}
+      capabilities={appState.propertiesCapabilities}
       onClose={() => appState.closeModal()}
     />
   {/if}

@@ -2,6 +2,7 @@ import { readFileText, writeFileText } from '$lib/services/tauri';
 import type { FavoriteItem } from '$lib/state/sidebar.svelte';
 import type { Workspace } from '$lib/state/workspaces.svelte';
 import type { S3Profile } from '$lib/types';
+import { inferProviderFromEndpoint } from '$lib/data/s3-providers';
 
 export interface Config {
   theme: 'dark' | 'light';
@@ -42,7 +43,14 @@ export async function loadConfig(): Promise<Config> {
     const path = await getConfigPath();
     const text = await readFileText(path);
     const parsed = JSON.parse(text);
-    return { ...DEFAULT_CONFIG, ...parsed };
+    const config = { ...DEFAULT_CONFIG, ...parsed };
+    // Migrate existing profiles that lack a provider field
+    for (const p of config.s3Profiles) {
+      if (!p.provider) {
+        p.provider = inferProviderFromEndpoint(p.endpoint);
+      }
+    }
+    return config;
   } catch {
     return { ...DEFAULT_CONFIG };
   }

@@ -3,8 +3,9 @@
   import { appState } from '$lib/state/app.svelte';
   import { s3ProfilesState } from '$lib/state/s3profiles.svelte';
   import S3ConnectDialog from '$lib/components/S3ConnectDialog.svelte';
+  import { resolveCapabilities, getProviderIcon } from '$lib/data/s3-providers';
   import { error } from '$lib/services/log';
-  import type { S3Profile, S3ConnectionInfo } from '$lib/types';
+  import type { S3Profile, S3ConnectionInfo, S3ProviderCapabilities } from '$lib/types';
 
   interface Props {
     onClose: () => void;
@@ -42,11 +43,14 @@
     profile?: string,
     accessKey?: string,
     secretKey?: string,
+    provider?: string,
+    customCapabilities?: S3ProviderCapabilities,
   ) {
     connectError = '';
     const panel = panels.active;
     const connectionId = `s3-${Date.now()}`;
-    const info: S3ConnectionInfo = { bucket, region, connectionId };
+    const caps = resolveCapabilities({ provider, customCapabilities });
+    const info: S3ConnectionInfo = { bucket, region, connectionId, provider, capabilities: caps };
     if (endpoint) info.endpoint = endpoint;
     if (profile) info.profile = profile;
     try {
@@ -83,6 +87,8 @@
       p.profile,
       accessKey,
       secretKey,
+      p.provider,
+      p.customCapabilities,
     );
   }
 
@@ -164,6 +170,7 @@
           <div class="profile-list">
             {#each s3ProfilesState.profiles as p (p.id)}
               <div class="profile-row">
+                <img class="profile-icon" src={getProviderIcon(p.provider ?? 'aws')} alt="" />
                 <div class="profile-info">
                   <div class="profile-name">{p.name}</div>
                   <div class="profile-detail">{p.bucket} — {p.region}{p.endpoint ? ` — ${p.endpoint}` : ''}</div>
@@ -272,6 +279,12 @@
 
   .profile-row:hover {
     background: var(--bg-hover);
+  }
+
+  .profile-icon {
+    width: 20px;
+    height: 20px;
+    flex-shrink: 0;
   }
 
   .profile-info {

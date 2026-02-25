@@ -13,8 +13,9 @@
   import { s3Download, s3Upload, s3CopyObjects, s3DeleteObjects, s3RenameObject, s3CreateFolder, s3PresignUrl, s3DownloadToTemp, s3BulkChangeStorageClass } from '$lib/services/s3';
   import { s3PathToPrefix } from '$lib/state/panels.svelte';
   import { error } from '$lib/services/log';
+  import { resolveCapabilities } from '$lib/data/s3-providers';
   import type { PanelData } from '$lib/state/panels.svelte';
-  import type { ProgressEvent, S3ConnectionInfo, SyncEntry } from '$lib/types';
+  import type { ProgressEvent, S3ConnectionInfo, S3ProviderCapabilities, SyncEntry } from '$lib/types';
 
   let { children } = $props();
 
@@ -498,9 +499,10 @@
 
   function handleS3Connect() {
     const panel = panels.active;
-    appState.showS3Connect(async (bucket, region, endpoint, profile, accessKey, secretKey) => {
+    appState.showS3Connect(async (bucket, region, endpoint, profile, accessKey, secretKey, provider, customCapabilities) => {
       const connectionId = `s3-${Date.now()}`;
-      const info: S3ConnectionInfo = { bucket, region, connectionId };
+      const caps = resolveCapabilities({ provider, customCapabilities });
+      const info: S3ConnectionInfo = { bucket, region, connectionId, provider, capabilities: caps };
       if (endpoint) info.endpoint = endpoint;
       if (profile) info.profile = profile;
       try {
@@ -585,6 +587,7 @@
       entry.path,
       active.backend,
       active.s3Connection?.connectionId,
+      active.s3Connection?.capabilities,
     );
   }
 
@@ -605,11 +608,14 @@
   function handleBulkStorageClassChange() {
     const active = panels.active;
     if (active.backend !== 's3' || !active.s3Connection) return;
+    const caps = active.s3Connection.capabilities;
+    if (caps && caps.storageClasses.length <= 1) return;
     const selected = active.getSelectedOrCurrent();
     if (selected.length === 0) return;
 
     const connectionId = active.s3Connection.connectionId;
-    appState.showInput('Target storage class (e.g. STANDARD_IA, GLACIER):', 'STANDARD_IA', async (targetClass: string) => {
+    const defaultClass = caps && caps.storageClasses.length > 1 ? caps.storageClasses[1] : 'STANDARD_IA';
+    appState.showInput('Target storage class (e.g. STANDARD_IA, GLACIER):', defaultClass, async (targetClass: string) => {
       appState.closeModal();
       if (!targetClass) return;
       try {

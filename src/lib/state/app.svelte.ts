@@ -1,4 +1,4 @@
-import type { ModalType, ViewerMode, PanelBackend } from '$lib/types';
+import type { ModalType, ViewerMode, PanelBackend, S3ProviderCapabilities } from '$lib/types';
 import type { Theme } from '@tauri-apps/api/window';
 import { saveConfig, type Config } from '$lib/services/config';
 import { sidebarState } from '$lib/state/sidebar.svelte';
@@ -26,7 +26,7 @@ class AppState {
   startupSound = $state(true);
   showHidden = $state(false);
   calculateDirSizes = $state(true);
-  s3ConnectCallback = $state<((bucket: string, region: string, endpoint?: string, profile?: string, accessKey?: string, secretKey?: string) => void) | null>(null);
+  s3ConnectCallback = $state<((bucket: string, region: string, endpoint?: string, profile?: string, accessKey?: string, secretKey?: string, provider?: string, customCapabilities?: S3ProviderCapabilities) => void) | null>(null);
   searchRoot = $state('');
   searchBackend = $state<PanelBackend>('local');
   searchS3ConnectionId = $state('');
@@ -36,6 +36,7 @@ class AppState {
   propertiesPath = $state('');
   propertiesBackend = $state<PanelBackend>('local');
   propertiesS3ConnectionId = $state('');
+  propertiesCapabilities = $state<S3ProviderCapabilities | undefined>(undefined);
   syncSourceBackend = $state<PanelBackend>('local');
   syncSourcePath = $state('');
   syncSourceS3Id = $state('');
@@ -87,7 +88,7 @@ class AppState {
     this.modal = 'input';
   }
 
-  showS3Connect(callback: (bucket: string, region: string, endpoint?: string, profile?: string, accessKey?: string, secretKey?: string) => void) {
+  showS3Connect(callback: (bucket: string, region: string, endpoint?: string, profile?: string, accessKey?: string, secretKey?: string, provider?: string, customCapabilities?: S3ProviderCapabilities) => void) {
     this.s3ConnectCallback = callback;
     this.modal = 's3-connect';
   }
@@ -96,10 +97,11 @@ class AppState {
     this.modal = 's3-manager';
   }
 
-  showProperties(path: string, backend: PanelBackend, s3ConnectionId?: string) {
+  showProperties(path: string, backend: PanelBackend, s3ConnectionId?: string, capabilities?: S3ProviderCapabilities) {
     this.propertiesPath = path;
     this.propertiesBackend = backend;
     this.propertiesS3ConnectionId = s3ConnectionId ?? '';
+    this.propertiesCapabilities = capabilities;
     this.modal = 'properties';
   }
 
@@ -181,6 +183,7 @@ class AppState {
     this.propertiesPath = '';
     this.propertiesBackend = 'local';
     this.propertiesS3ConnectionId = '';
+    this.propertiesCapabilities = undefined;
     this.syncSourceBackend = 'local';
     this.syncSourcePath = '';
     this.syncSourceS3Id = '';

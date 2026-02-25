@@ -1,10 +1,11 @@
 <script lang="ts">
   import { onMount, untrack } from 'svelte';
   import { s3CheckCredentials, s3ListBuckets, s3CreateBucket, s3DeleteBucket } from '$lib/services/s3';
-  import type { S3Bucket, S3Profile } from '$lib/types';
+  import { S3_PROVIDERS, getProvider, inferProviderFromEndpoint } from '$lib/data/s3-providers';
+  import type { S3Bucket, S3Profile, S3ProviderCapabilities } from '$lib/types';
 
   interface Props {
-    onConnect: (bucket: string, region: string, endpoint?: string, profile?: string, accessKey?: string, secretKey?: string) => void;
+    onConnect: (bucket: string, region: string, endpoint?: string, profile?: string, accessKey?: string, secretKey?: string, provider?: string, customCapabilities?: S3ProviderCapabilities) => void;
     onCancel: () => void;
     saveMode?: boolean;
     initialData?: S3Profile;
@@ -22,6 +23,7 @@
   let profile = $state(init?.profile ?? '');
   let accessKey = $state(init?.accessKeyId ?? '');
   let secretKey = $state('');
+  let selectedProvider = $state(init?.provider ?? 'aws');
   let showManualCreds = $state(init?.credentialType === 'keychain' || false);
   let hasDefaultCreds = $state(true);
   let checking = $state(true);
@@ -31,6 +33,10 @@
   let browsing = $state(false);
   let browseError = $state('');
   let showBucketList = $state(false);
+  let showCustomCaps = $state(false);
+
+  // Custom capabilities (for 'custom' provider)
+  let customCaps = $state<S3ProviderCapabilities>(init?.customCapabilities ?? { ...getProvider('custom').capabilities });
 
   // Create / delete bucket
   let showCreateForm = $state(false);
@@ -40,6 +46,31 @@
   let deletingBucket = $state<string | null>(null);
 
   const isEditing = !!init;
+
+  const currentProvider = $derived(getProvider(selectedProvider));
+
+  function handleProviderChange(e: Event) {
+    const id = (e.target as HTMLSelectElement).value;
+    selectedProvider = id;
+    const p = getProvider(id);
+    if (p.regionHint && !region.trim()) {
+      region = p.regionHint;
+    }
+    if (id === 'custom') {
+      customCaps = { ...getProvider('custom').capabilities };
+    }
+  }
+
+  function handleEndpointBlur() {
+    const inferred = inferProviderFromEndpoint(endpoint.trim() || undefined);
+    if (inferred !== selectedProvider && inferred !== 'custom') {
+      selectedProvider = inferred;
+      const p = getProvider(inferred);
+      if (p.regionHint && (!region.trim() || region === 'us-east-1')) {
+        region = p.regionHint;
+      }
+    }
+  }
 
   onMount(async () => {
     try {
@@ -71,6 +102,8 @@
       ...(profile.trim() ? { profile: profile.trim() } : {}),
       credentialType,
       ...(credentialType === 'keychain' && accessKey.trim() ? { accessKeyId: accessKey.trim() } : {}),
+      provider: selectedProvider,
+      ...(selectedProvider === 'custom' ? { customCapabilities: { ...customCaps } } : {}),
     };
   }
 
@@ -83,6 +116,8 @@
       profile.trim() || undefined,
       showManualCreds && accessKey.trim() ? accessKey.trim() : undefined,
       showManualCreds && secretKey.trim() ? secretKey.trim() : undefined,
+      selectedProvider,
+      selectedProvider === 'custom' ? { ...customCaps } : undefined,
     );
   }
 
@@ -98,6 +133,8 @@
       profile.trim() || undefined,
       showManualCreds && accessKey.trim() ? accessKey.trim() : undefined,
       showManualCreds && secretKey.trim() ? secretKey.trim() : undefined,
+      selectedProvider,
+      selectedProvider === 'custom' ? { ...customCaps } : undefined,
     );
   }
 
@@ -207,6 +244,18 @@
   <div class="dialog-box">
     <div class="dialog-title">{isEditing ? 'Edit S3 Connection' : 'Connect to S3-Compatible Storage'}</div>
     <div class="dialog-body">
+      <div class="field-label">
+        Provider
+        <div class="provider-row">
+          <img class="provider-icon" src={currentProvider.icon} alt={currentProvider.name} />
+          <select class="dialog-input provider-select" value={selectedProvider} onchange={handleProviderChange}>
+            {#each S3_PROVIDERS as p}
+              <option value={p.id}>{p.name}</option>
+            {/each}
+          </select>
+        </div>
+      </div>
+
       {#if saveMode}
         <label class="field-label">
           Connection Name
@@ -294,20 +343,21 @@
           class="dialog-input"
           autocomplete="off"
           bind:value={region}
-          placeholder="us-east-1"
+          placeholder={currentProvider.regionHint || 'us-east-1'}
         />
       </label>
 
       <label class="field-label">
-        Endpoint (optional — for non-AWS providers)
+        Endpoint {selectedProvider === 'aws' ? '(optional)' : ''}
         <input
           type="text"
           class="dialog-input"
           autocomplete="off"
           bind:value={endpoint}
-          placeholder="https://us-east-1.linodeobjects.com"
+          placeholder={currentProvider.endpointHint || 'https://us-east-1.linodeobjects.com'}
+          onblur={handleEndpointBlur}
         />
-        <span class="field-hint">Linode, DigitalOcean, MinIO, Backblaze, etc. Leave empty for AWS.</span>
+        <span class="field-hint">Leave empty for AWS. Provider is auto-detected from endpoint.</span>
       </label>
 
       <label class="field-label">
@@ -357,6 +407,31 @@
             placeholder={isEditing ? 'Leave empty to keep current' : 'secret'}
           />
         </label>
+      {/if}
+
+      {#if selectedProvider === 'custom'}
+        <div class="caps-section">
+          <button class="caps-toggle" onclick={() => { showCustomCaps = !showCustomCaps; }}>
+            Capabilities {showCustomCaps ? '\u25B4' : '\u25BE'}
+          </button>
+          {#if showCustomCaps}
+            <div class="caps-grid">
+              <label class="caps-checkbox"><input type="checkbox" bind:checked={customCaps.versioning} /> Versioning</label>
+              <label class="caps-checkbox"><input type="checkbox" bind:checked={customCaps.lifecycleRules} /> Lifecycle Rules</label>
+              <label class="caps-checkbox"><input type="checkbox" bind:checked={customCaps.cors} /> CORS</label>
+              <label class="caps-checkbox"><input type="checkbox" bind:checked={customCaps.bucketPolicy} /> Bucket Policy</label>
+              <label class="caps-checkbox"><input type="checkbox" bind:checked={customCaps.acl} /> ACL</label>
+              <label class="caps-checkbox"><input type="checkbox" bind:checked={customCaps.publicAccessBlock} /> Public Access Block</label>
+              <label class="caps-checkbox"><input type="checkbox" bind:checked={customCaps.encryption} /> Encryption</label>
+              <label class="caps-checkbox"><input type="checkbox" bind:checked={customCaps.glacierRestore} /> Glacier Restore</label>
+              <label class="caps-checkbox"><input type="checkbox" bind:checked={customCaps.presignedUrls} /> Presigned URLs</label>
+              <label class="caps-checkbox"><input type="checkbox" bind:checked={customCaps.objectMetadata} /> Object Metadata</label>
+              <label class="caps-checkbox"><input type="checkbox" bind:checked={customCaps.objectTags} /> Object Tags</label>
+              <label class="caps-checkbox"><input type="checkbox" bind:checked={customCaps.bucketTags} /> Bucket Tags</label>
+              <label class="caps-checkbox"><input type="checkbox" bind:checked={customCaps.multipartUploadCleanup} /> Multipart Cleanup</label>
+            </div>
+          {/if}
+        </div>
       {/if}
 
       <div class="dialog-buttons">
@@ -631,5 +706,58 @@
     align-self: flex-start;
     font-size: 12px;
     padding: 4px 12px;
+  }
+
+  .provider-row {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+  }
+
+  .provider-icon {
+    width: 24px;
+    height: 24px;
+    flex-shrink: 0;
+  }
+
+  .provider-select {
+    flex: 1;
+    cursor: pointer;
+  }
+
+  .caps-section {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+
+  .caps-toggle {
+    background: none;
+    border: none;
+    color: var(--text-secondary);
+    font-size: 12px;
+    cursor: pointer;
+    text-align: left;
+    padding: 4px 0;
+    font-family: inherit;
+  }
+
+  .caps-toggle:hover {
+    color: var(--text-primary);
+  }
+
+  .caps-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 4px 16px;
+  }
+
+  .caps-checkbox {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 12px;
+    color: var(--text-primary);
+    cursor: pointer;
   }
 </style>

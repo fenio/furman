@@ -259,12 +259,31 @@ export interface ArchiveInfo {
   internalPath: string;
 }
 
+export interface S3ProviderCapabilities {
+  versioning: boolean;
+  lifecycleRules: boolean;
+  cors: boolean;
+  bucketPolicy: boolean;
+  acl: boolean;
+  publicAccessBlock: boolean;
+  encryption: boolean;
+  storageClasses: string[];
+  glacierRestore: boolean;
+  presignedUrls: boolean;
+  objectMetadata: boolean;
+  objectTags: boolean;
+  bucketTags: boolean;
+  multipartUploadCleanup: boolean;
+}
+
 export interface S3ConnectionInfo {
   bucket: string;
   region: string;
   endpoint?: string;
   profile?: string;
   connectionId: string;
+  provider?: string;
+  capabilities?: S3ProviderCapabilities;
 }
 
 export interface S3Profile {
@@ -276,4 +295,6 @@ export interface S3Profile {
   profile?: string;
   credentialType: 'keychain' | 'aws-profile' | 'default';
   accessKeyId?: string;
+  provider?: string;
+  customCapabilities?: S3ProviderCapabilities;
 }

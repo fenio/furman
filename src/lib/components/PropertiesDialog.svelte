@@ -20,16 +20,28 @@
     FileProperties, S3ObjectProperties, S3ObjectVersion, PanelBackend,
     S3BucketVersioning, S3BucketEncryption, S3Tag, S3MultipartUpload,
     S3ObjectMetadata, S3LifecycleRule, S3CorsRule, S3PublicAccessBlock, S3BucketAcl,
+    S3ProviderCapabilities,
   } from '$lib/types';
 
   interface Props {
     path: string;
     backend: PanelBackend;
     s3ConnectionId: string;
+    capabilities?: S3ProviderCapabilities;
     onClose: () => void;
   }
 
-  let { path, backend, s3ConnectionId, onClose }: Props = $props();
+  let { path, backend, s3ConnectionId, capabilities, onClose }: Props = $props();
+
+  // Default capabilities: all true if not provided (backward compat)
+  const ALL_CLASSES = ['STANDARD', 'STANDARD_IA', 'ONEZONE_IA', 'INTELLIGENT_TIERING', 'GLACIER', 'DEEP_ARCHIVE', 'GLACIER_IR'];
+  const caps: S3ProviderCapabilities = capabilities ?? {
+    versioning: true, lifecycleRules: true, cors: true, bucketPolicy: true,
+    acl: true, publicAccessBlock: true, encryption: true,
+    storageClasses: ALL_CLASSES,
+    glacierRestore: true, presignedUrls: true, objectMetadata: true,
+    objectTags: true, bucketTags: true, multipartUploadCleanup: true,
+  };
 
   let fileProps = $state<FileProperties | null>(null);
   let s3Props = $state<S3ObjectProperties | null>(null);
@@ -94,10 +106,7 @@
   }
 
   // Storage class management
-  const storageClasses = [
-    'STANDARD', 'STANDARD_IA', 'ONEZONE_IA', 'INTELLIGENT_TIERING',
-    'GLACIER', 'DEEP_ARCHIVE', 'GLACIER_IR',
-  ];
+  const storageClasses = caps.storageClasses.length > 0 ? caps.storageClasses : ALL_CLASSES;
   let selectedStorageClass = $state('');
   let applyingClass = $state(false);
   let classMessage = $state('');
@@ -832,15 +841,21 @@
         if (isBucketRoot(path)) {
           s3IsBucketRoot = true;
           s3IsPrefix = true;
-          // Load bucket-level info
-          bucketVersioningLoading = true;
-          bucketEncryptionLoading = true;
-          publicAccessLoading = true;
-          Promise.all([
-            s3GetBucketVersioning(s3ConnectionId).then(v => { bucketVersioning = v; }),
-            s3GetBucketEncryption(s3ConnectionId).then(e => { bucketEncryption = e; }),
-            loadPublicAccessBlock(),
-          ]).catch(() => {}).finally(() => {
+          // Load bucket-level info (only for supported capabilities)
+          const bucketLoads: Promise<void>[] = [];
+          if (caps.versioning) {
+            bucketVersioningLoading = true;
+            bucketLoads.push(s3GetBucketVersioning(s3ConnectionId).then(v => { bucketVersioning = v; }));
+          }
+          if (caps.encryption) {
+            bucketEncryptionLoading = true;
+            bucketLoads.push(s3GetBucketEncryption(s3ConnectionId).then(e => { bucketEncryption = e; }));
+          }
+          if (caps.publicAccessBlock) {
+            publicAccessLoading = true;
+            bucketLoads.push(loadPublicAccessBlock());
+          }
+          Promise.all(bucketLoads).catch(() => {}).finally(() => {
             bucketVersioningLoading = false;
             bucketEncryptionLoading = false;
           });
@@ -974,6 +989,7 @@
         </table>
 
         <!-- Storage Class editor -->
+        {#if storageClasses.length > 1}
         <div class="section-title">Storage Class</div>
         <div class="storage-class-section">
           <div class="sc-row">
@@ -994,9 +1010,10 @@
             <div class="sc-message" class:sc-error={classMessage.startsWith('Error')}>{classMessage}</div>
           {/if}
         </div>
+        {/if}
 
         <!-- Glacier restore (only for glacier classes) -->
-        {#if isGlacier}
+        {#if caps.glacierRestore && isGlacier}
           <div class="section-title">Glacier Restore</div>
           <div class="glacier-section">
             {#if s3Props.restore_status}
@@ -1026,6 +1043,7 @@
         {/if}
 
         <!-- Versions section -->
+        {#if caps.versioning}
         <button class="section-title versions-toggle" onclick={loadVersions}>
           Versions {versionsExpanded ? '\u25B4' : '\u25BE'}
         </button>
@@ -1085,7 +1103,10 @@
           </div>
         {/if}
 
+        {/if}
+
         <!-- Object Metadata section -->
+        {#if caps.objectMetadata}
         <button class="section-title versions-toggle" onclick={loadMetadata}>
           Metadata {metadataExpanded ? '\u25B4' : '\u25BE'}
         </button>
@@ -1139,7 +1160,10 @@
           </div>
         {/if}
 
+        {/if}
+
         <!-- Object Tags section -->
+        {#if caps.objectTags}
         <button class="section-title versions-toggle" onclick={loadObjectTags}>
           Tags {objTagsExpanded ? '\u25B4' : '\u25BE'}
         </button>
@@ -1177,6 +1201,7 @@
             {/if}
           </div>
         {/if}
+        {/if}
       {:else if s3IsPrefix}
         <!-- S3 prefix (virtual directory) -->
         <table class="props-table">
@@ -1188,6 +1213,7 @@
 
         {#if s3IsBucketRoot}
           <!-- Bucket Versioning -->
+          {#if caps.versioning}
           <div class="section-title">Versioning</div>
           <div class="storage-class-section">
             {#if bucketVersioningLoading}
@@ -1212,7 +1238,10 @@
             {/if}
           </div>
 
+          {/if}
+
           <!-- Bucket Encryption -->
+          {#if caps.encryption}
           <div class="section-title">Encryption</div>
           <div class="storage-class-section">
             {#if bucketEncryptionLoading}
@@ -1234,7 +1263,10 @@
             {/if}
           </div>
 
+          {/if}
+
           <!-- Public Access Block -->
+          {#if caps.publicAccessBlock}
           <div class="section-title">Public Access Block</div>
           <div class="storage-class-section">
             {#if publicAccessLoading}
@@ -1273,7 +1305,10 @@
             {/if}
           </div>
 
+          {/if}
+
           <!-- Bucket Tags -->
+          {#if caps.bucketTags}
           <button class="section-title versions-toggle" onclick={loadBucketTags}>
             Bucket Tags {bucketTagsExpanded ? '\u25B4' : '\u25BE'}
           </button>
@@ -1309,7 +1344,10 @@
             </div>
           {/if}
 
+          {/if}
+
           <!-- Incomplete Uploads -->
+          {#if caps.multipartUploadCleanup}
           <button class="section-title versions-toggle" onclick={loadMultipartUploads}>
             Incomplete Uploads {uploadsExpanded ? '\u25B4' : '\u25BE'}
           </button>
@@ -1349,7 +1387,10 @@
             </div>
           {/if}
 
+          {/if}
+
           <!-- Lifecycle Rules -->
+          {#if caps.lifecycleRules}
           <button class="section-title versions-toggle" onclick={loadLifecycleRules}>
             Lifecycle Rules {lifecycleExpanded ? '\u25B4' : '\u25BE'}
           </button>
@@ -1507,7 +1548,10 @@
             </div>
           {/if}
 
+          {/if}
+
           <!-- CORS Configuration -->
+          {#if caps.cors}
           <button class="section-title versions-toggle" onclick={loadCorsRules}>
             CORS Configuration {corsExpanded ? '\u25B4' : '\u25BE'}
           </button>
@@ -1613,7 +1657,10 @@
             </div>
           {/if}
 
+          {/if}
+
           <!-- Bucket Policy -->
+          {#if caps.bucketPolicy}
           <button class="section-title versions-toggle" onclick={loadBucketPolicy}>
             Bucket Policy {policyExpanded ? '\u25B4' : '\u25BE'}
           </button>
@@ -1652,7 +1699,10 @@
             </div>
           {/if}
 
+          {/if}
+
           <!-- ACL (Read-Only) -->
+          {#if caps.acl}
           <button class="section-title versions-toggle" onclick={loadBucketAcl}>
             ACL {aclExpanded ? '\u25B4' : '\u25BE'}
           </button>
@@ -1686,6 +1736,7 @@
                 </div>
               {/if}
             </div>
+          {/if}
           {/if}
         {/if}
       {/if}
