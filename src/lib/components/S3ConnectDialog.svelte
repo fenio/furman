@@ -419,26 +419,30 @@
         </div>
       {/if}
 
-      <div class="dialog-buttons">
-        {#if saveMode}
-          <button class="dialog-btn primary" onclick={handleSaveAndConnect} disabled={!bucket.trim() || !name.trim()}>Save & Connect</button>
-          {#if !isEditing}
-            <button class="dialog-btn" onclick={handleConnect} disabled={!bucket.trim()}>Connect Without Saving</button>
-          {:else}
-            <button class="dialog-btn" onclick={handleSave} disabled={!bucket.trim() || !name.trim()}>Save</button>
-          {/if}
+    </div>
+{/snippet}
+
+{#snippet formButtons()}
+    <div class="dialog-footer">
+      {#if saveMode}
+        <button class="dialog-btn primary" onclick={handleSaveAndConnect} disabled={!bucket.trim() || !name.trim()}>Save & Connect</button>
+        {#if !isEditing}
+          <button class="dialog-btn" onclick={handleConnect} disabled={!bucket.trim()}>Connect Without Saving</button>
         {:else}
-          <button class="dialog-btn primary" onclick={handleConnect} disabled={!bucket.trim()}>Connect</button>
+          <button class="dialog-btn" onclick={handleSave} disabled={!bucket.trim() || !name.trim()}>Save</button>
         {/if}
-        <button class="dialog-btn" onclick={onCancel}>Cancel</button>
-      </div>
+      {:else}
+        <button class="dialog-btn primary" onclick={handleConnect} disabled={!bucket.trim()}>Connect</button>
+      {/if}
+      <button class="dialog-btn" onclick={onCancel}>Cancel</button>
     </div>
 {/snippet}
 
 {#if embedded}
   <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
-  <div role="group" onkeydown={handleKeydown}>
+  <div class="embedded-wrapper" role="group" onkeydown={handleKeydown}>
     {@render formBody()}
+    {@render formButtons()}
   </div>
 {:else}
   <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
@@ -452,6 +456,7 @@
     <div class="dialog-box">
       <div class="dialog-title">{isEditing ? 'Edit S3 Connection' : 'Connect to S3-Compatible Storage'}</div>
       {@render formBody()}
+      {@render formButtons()}
     </div>
   </div>
 {/if}
@@ -478,8 +483,11 @@
     border-radius: var(--radius-lg);
     width: 72ch;
     max-width: 90vw;
+    max-height: 90vh;
     box-shadow: var(--shadow-dialog);
     overflow: hidden;
+    display: flex;
+    flex-direction: column;
   }
 
   .dialog-title {
@@ -492,11 +500,20 @@
     border-bottom: 1px solid var(--dialog-border);
   }
 
+  .embedded-wrapper {
+    display: flex;
+    flex-direction: column;
+    flex: 1;
+    overflow: hidden;
+  }
+
   .dialog-body {
     padding: 20px 24px;
     display: flex;
     flex-direction: column;
     gap: 12px;
+    flex: 1;
+    overflow-y: auto;
   }
 
   .field-label {
@@ -561,11 +578,13 @@
     cursor: not-allowed;
   }
 
-  .dialog-buttons {
+  .dialog-footer {
     display: flex;
     justify-content: center;
     gap: 10px;
-    margin-top: 4px;
+    padding: 16px 24px;
+    border-top: 1px solid var(--dialog-border);
+    flex-shrink: 0;
   }
 
   .dialog-btn {

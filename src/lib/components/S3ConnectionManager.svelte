@@ -175,7 +175,6 @@
           {#if s3ProfilesState.profiles.length === 0}
             <div class="empty-state">
               <div class="empty-text">No saved connections</div>
-              <button class="dialog-btn primary" onclick={handleAddNew}>Add New Connection</button>
             </div>
           {:else}
             <div class="profile-list">
@@ -194,12 +193,11 @@
                 </div>
               {/each}
             </div>
-
-            <div class="dialog-buttons">
-              <button class="dialog-btn primary" onclick={handleAddNew}>Add New</button>
-              <button class="dialog-btn" onclick={onClose}>Close</button>
-            </div>
           {/if}
+        </div>
+        <div class="dialog-footer">
+          <button class="dialog-btn primary" onclick={handleAddNew}>Add New</button>
+          <button class="dialog-btn" onclick={onClose}>Close</button>
         </div>
       {:else}
         <S3ConnectDialog
@@ -233,9 +231,13 @@
     border: 1px solid var(--dialog-border);
     border-radius: var(--radius-lg);
     width: 72ch;
+    height: 90vh;
     max-width: 90vw;
+    max-height: 1000px;
     box-shadow: var(--shadow-dialog);
     overflow: hidden;
+    display: flex;
+    flex-direction: column;
   }
 
   .dialog-title {
@@ -281,6 +283,17 @@
     display: flex;
     flex-direction: column;
     gap: 12px;
+    flex: 1;
+    overflow-y: auto;
+  }
+
+  .dialog-footer {
+    display: flex;
+    justify-content: center;
+    gap: 10px;
+    padding: 16px 24px;
+    border-top: 1px solid var(--dialog-border);
+    flex-shrink: 0;
   }
 
   .error-msg {
@@ -394,13 +407,6 @@
   .action-btn.danger:hover {
     border-color: var(--warning-color);
     color: var(--warning-color);
-  }
-
-  .dialog-buttons {
-    display: flex;
-    justify-content: center;
-    gap: 10px;
-    margin-top: 4px;
   }
 
   .dialog-btn {
