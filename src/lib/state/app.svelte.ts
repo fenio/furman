@@ -1,4 +1,4 @@
-import type { ModalType, ViewerMode, ProgressEvent } from '$lib/types';
+import type { ModalType, ViewerMode, ProgressEvent, PanelBackend } from '$lib/types';
 import type { Theme } from '@tauri-apps/api/window';
 import { saveConfig, type Config } from '$lib/services/config';
 import { sidebarState } from '$lib/state/sidebar.svelte';
@@ -31,6 +31,9 @@ class AppState {
   externalEditor = $state('');
   overwriteFiles = $state<string[]>([]);
   overwriteCallback = $state<((action: 'overwrite' | 'skip') => void) | null>(null);
+  propertiesPath = $state('');
+  propertiesBackend = $state<PanelBackend>('local');
+  propertiesS3ConnectionId = $state('');
 
   showSearch(root: string) {
     this.searchRoot = root;
@@ -87,6 +90,13 @@ class AppState {
 
   showS3Manager() {
     this.modal = 's3-manager';
+  }
+
+  showProperties(path: string, backend: PanelBackend, s3ConnectionId?: string) {
+    this.propertiesPath = path;
+    this.propertiesBackend = backend;
+    this.propertiesS3ConnectionId = s3ConnectionId ?? '';
+    this.modal = 'properties';
   }
 
   showOverwrite(files: string[], callback: (action: 'overwrite' | 'skip') => void) {
@@ -151,6 +161,9 @@ class AppState {
     this.searchRoot = '';
     this.overwriteFiles = [];
     this.overwriteCallback = null;
+    this.propertiesPath = '';
+    this.propertiesBackend = 'local';
+    this.propertiesS3ConnectionId = '';
   }
 }
 

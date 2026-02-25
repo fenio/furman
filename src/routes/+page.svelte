@@ -26,6 +26,7 @@
   import MenuDropdown from '$lib/components/MenuDropdown.svelte';
   import PreferencesDialog from '$lib/components/PreferencesDialog.svelte';
   import OverwriteDialog from '$lib/components/OverwriteDialog.svelte';
+  import PropertiesDialog from '$lib/components/PropertiesDialog.svelte';
   import { s3ProfilesState } from '$lib/state/s3profiles.svelte';
 
   let bottomResizing = $state(false);
@@ -309,6 +310,15 @@
 
   {#if appState.modal === 'preferences'}
     <PreferencesDialog onClose={() => appState.closeModal()} />
+  {/if}
+
+  {#if appState.modal === 'properties'}
+    <PropertiesDialog
+      path={appState.propertiesPath}
+      backend={appState.propertiesBackend}
+      s3ConnectionId={appState.propertiesS3ConnectionId}
+      onClose={() => appState.closeModal()}
+    />
   {/if}
 </div>
 

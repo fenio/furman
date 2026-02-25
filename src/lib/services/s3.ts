@@ -1,5 +1,5 @@
 import { invoke, Channel } from '@tauri-apps/api/core';
-import type { DirListing, ProgressEvent } from '$lib/types';
+import type { DirListing, ProgressEvent, S3ObjectProperties } from '$lib/types';
 
 export async function s3CheckCredentials(): Promise<boolean> {
   return await invoke<boolean>('s3_check_credentials');
@@ -71,6 +71,13 @@ export async function s3CopyObjects(
   const channel = new Channel<ProgressEvent>();
   channel.onmessage = onProgress;
   await invoke('s3_copy_objects', { srcId, opId, srcKeys, destId, destPrefix, channel });
+}
+
+export async function s3HeadObject(
+  id: string,
+  key: string
+): Promise<S3ObjectProperties> {
+  return await invoke<S3ObjectProperties>('s3_head_object', { id, key });
 }
 
 export async function s3DeleteObjects(

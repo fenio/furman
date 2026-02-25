@@ -337,6 +337,17 @@
     });
   }
 
+  function handleProperties() {
+    const active = panels.active;
+    const entry = active.currentEntry;
+    if (!entry || entry.name === '..') return;
+    appState.showProperties(
+      entry.path,
+      active.backend,
+      active.s3Connection?.connectionId,
+    );
+  }
+
   function handleQuit() {
     appState.showConfirm('Quit Furman?', async () => {
       try {
@@ -589,6 +600,10 @@
             sidebarState.toggle();               // Hidden → open sidebar
           }
           return;
+        case 'i':
+          e.preventDefault();
+          handleProperties();                    // Cmd+I = Properties (F9)
+          return;
         case 'q':
           e.preventDefault();
           handleQuit();                          // Cmd+Q = Quit (F10)
@@ -778,7 +793,7 @@
         break;
       case 'F9':
         e.preventDefault();
-        appState.menuActive = !appState.menuActive;
+        handleProperties();
         break;
       case 'F10':
         e.preventDefault();

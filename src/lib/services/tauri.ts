@@ -1,5 +1,5 @@
 import { invoke, Channel } from '@tauri-apps/api/core';
-import type { DirListing, VolumeInfo, ProgressEvent, SearchEvent, SearchMode, GitRepoInfo } from '$lib/types';
+import type { DirListing, VolumeInfo, ProgressEvent, SearchEvent, SearchMode, GitRepoInfo, FileProperties } from '$lib/types';
 
 export async function listArchive(
   archivePath: string,
@@ -107,6 +107,10 @@ export async function openInEditor(path: string, editor: string): Promise<void> 
 
 export async function getDirectorySize(path: string): Promise<number> {
   return await invoke<number>('get_directory_size', { path });
+}
+
+export async function getFileProperties(path: string): Promise<FileProperties> {
+  return await invoke<FileProperties>('get_file_properties', { path });
 }
 
 export async function listVolumes(): Promise<VolumeInfo[]> {

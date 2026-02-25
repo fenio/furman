@@ -66,7 +66,8 @@ export type ModalType =
   | 's3-manager'
   | 'overwrite'
   | 'search'
-  | 'preferences';
+  | 'preferences'
+  | 'properties';
 
 export type SearchMode = 'name' | 'content';
 
@@ -93,6 +94,31 @@ export interface GitRepoInfo {
   ahead: number;
   behind: number;
   dirty: boolean;
+}
+
+export interface FileProperties {
+  name: string;
+  path: string;
+  size: number;
+  is_dir: boolean;
+  is_symlink: boolean;
+  symlink_target: string | null;
+  created: number; // epoch ms
+  modified: number; // epoch ms
+  accessed: number; // epoch ms
+  permissions: number; // unix mode
+  owner: string;
+  group: string;
+  kind: string; // "File", "Directory", or "Symlink"
+}
+
+export interface S3ObjectProperties {
+  key: string;
+  size: number;
+  modified: number; // epoch ms
+  content_type: string | null;
+  etag: string | null;
+  storage_class: string | null;
 }
 
 export type PanelBackend = 'local' | 's3' | 'archive';

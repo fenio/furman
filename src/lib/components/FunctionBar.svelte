@@ -17,6 +17,7 @@
     { key: '6', label: 'Move', shortcut: '\u2318M' },
     { key: '7', label: 'MkDir', shortcut: '\u2318N' },
     { key: '8', label: 'Delete', shortcut: '\u2318D' },
+    { key: '9', label: 'Props', shortcut: '\u2318I' },
     { key: '10', label: 'Quit', shortcut: '\u2318Q' }
   ];
 
