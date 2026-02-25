@@ -1,4 +1,4 @@
-import type { ModalType, ViewerMode, ProgressEvent, PanelBackend } from '$lib/types';
+import type { ModalType, ViewerMode, PanelBackend } from '$lib/types';
 import type { Theme } from '@tauri-apps/api/window';
 import { saveConfig, type Config } from '$lib/services/config';
 import { sidebarState } from '$lib/state/sidebar.svelte';
@@ -19,8 +19,6 @@ class AppState {
   inputPrompt = $state('');
   inputValue = $state('');
   inputCallback = $state<((value: string) => void) | null>(null);
-  progressData = $state<ProgressEvent | null>(null);
-  fileOpId = $state('');
   menuActive = $state(false);
   iconSize = $state(48);
   startupSound = $state(true);
@@ -79,12 +77,6 @@ class AppState {
     this.inputValue = defaultValue;
     this.inputCallback = callback;
     this.modal = 'input';
-  }
-
-  showProgress(opId: string = '') {
-    this.progressData = null;
-    this.fileOpId = opId;
-    this.modal = 'progress';
   }
 
   showS3Connect(callback: (bucket: string, region: string, endpoint?: string, profile?: string, accessKey?: string, secretKey?: string) => void) {
@@ -158,8 +150,6 @@ class AppState {
     this.inputPrompt = '';
     this.inputValue = '';
     this.inputCallback = null;
-    this.progressData = null;
-    this.fileOpId = '';
     this.menuActive = false;
     this.s3ConnectCallback = null;
     this.searchRoot = '';

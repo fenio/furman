@@ -1,10 +1,16 @@
 <script lang="ts">
   import { statusState } from '$lib/state/status.svelte';
+  import { transfersState } from '$lib/state/transfers.svelte';
   import { panels } from '$lib/state/panels.svelte';
 
   const isLoading = $derived(panels.left.loading || panels.right.loading);
 
+  const hasTransfers = $derived(transfersState.hasActive);
+
   const displayText = $derived.by(() => {
+    if (hasTransfers) {
+      return transfersState.aggregateSummary;
+    }
     if (statusState.isProgress) {
       return statusState.progressDetail || 'Working...';
     }
@@ -17,17 +23,28 @@
     return '';
   });
 
+  const progressPercent = $derived(hasTransfers ? transfersState.aggregatePercent : statusState.progressPercent);
+  const showProgress = $derived(hasTransfers || statusState.isProgress);
   const showBar = $derived(!!displayText);
+  const clickable = $derived(transfersState.transfers.length > 0);
+
+  function handleClick() {
+    if (clickable) {
+      transfersState.toggle();
+    }
+  }
 </script>
 
 {#if showBar}
-<div class="status-bar">
-  {#if statusState.isProgress}
-    <div class="progress-fill" style="width: {statusState.progressPercent}%"></div>
+<!-- svelte-ignore a11y_click_events_have_key_events -->
+<!-- svelte-ignore a11y_no_static_element_interactions -->
+<div class="status-bar" class:clickable onclick={handleClick}>
+  {#if showProgress}
+    <div class="progress-fill" style="width: {progressPercent}%"></div>
   {/if}
   <span class="status-text">
-    {#if isLoading && !statusState.isProgress && !statusState.message}
-      <span class="spinner">⟳</span>
+    {#if isLoading && !showProgress && !statusState.message}
+      <span class="spinner">&#x27F3;</span>
     {/if}
     {displayText}
   </span>
@@ -46,6 +63,14 @@
     border-top: 1px solid var(--border-subtle);
     overflow: hidden;
     flex-shrink: 0;
+  }
+
+  .status-bar.clickable {
+    cursor: pointer;
+  }
+
+  .status-bar.clickable:hover {
+    background: var(--bg-hover);
   }
 
   .progress-fill {

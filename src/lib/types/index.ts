@@ -57,7 +57,6 @@ export type ModalType =
   | 'none'
   | 'confirm'
   | 'input'
-  | 'progress'
   | 'viewer'
   | 'editor'
   | 'menu'

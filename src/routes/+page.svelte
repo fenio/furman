@@ -15,8 +15,7 @@
   import TerminalPanel from '$lib/components/TerminalPanel.svelte';
   import ConfirmDialog from '$lib/components/ConfirmDialog.svelte';
   import InputDialog from '$lib/components/InputDialog.svelte';
-  import ProgressDialog from '$lib/components/ProgressDialog.svelte';
-  import { cancelFileOperation } from '$lib/services/tauri';
+  import TransferPanel from '$lib/components/TransferPanel.svelte';
   import { initLogging } from '$lib/services/log';
   import Viewer from '$lib/components/Viewer.svelte';
   import Editor from '$lib/components/Editor.svelte';
@@ -220,6 +219,7 @@
     {/if}
   </div><!-- /main-content -->
 
+  <TransferPanel />
   <StatusBar />
   <FunctionBar />
 
@@ -243,13 +243,6 @@
         if (cb) cb(val);
       }}
       onCancel={() => appState.closeModal()}
-    />
-  {/if}
-
-  {#if appState.modal === 'progress'}
-    <ProgressDialog
-      progress={appState.progressData}
-      onCancel={appState.fileOpId ? () => cancelFileOperation(appState.fileOpId) : undefined}
     />
   {/if}
 
