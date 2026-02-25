@@ -2141,10 +2141,13 @@ pub async fn s3_get_bucket_encryption(
             Ok(S3BucketEncryption { rules })
         }
         Err(e) => {
-            // Handle "ServerSideEncryptionConfigurationNotFoundError" gracefully
             let err_str = e.to_string();
+            let err_dbg = format!("{e:?}");
             if err_str.contains("ServerSideEncryptionConfigurationNotFound")
                 || err_str.contains("NoSuchConfiguration")
+                || err_dbg.contains("ServerSideEncryptionConfigurationNotFound")
+                || err_dbg.contains("NoSuchConfiguration")
+                || err_dbg.contains("StatusCode(404)")
             {
                 Ok(S3BucketEncryption { rules: vec![] })
             } else {
@@ -2302,7 +2305,11 @@ pub async fn s3_get_object_tags(
         }
         Err(e) => {
             let err_str = e.to_string();
-            if err_str.contains("NoSuchTagSet") {
+            let err_dbg = format!("{e:?}");
+            if err_str.contains("NoSuchTagSet")
+                || err_dbg.contains("NoSuchTagSet")
+                || err_dbg.contains("StatusCode(404)")
+            {
                 Ok(vec![])
             } else {
                 Err(s3err(err_str))
@@ -2392,7 +2399,11 @@ pub async fn s3_get_bucket_tags(
         }
         Err(e) => {
             let err_str = e.to_string();
-            if err_str.contains("NoSuchTagSet") || err_str.contains("NoSuchTagSetError") {
+            let err_dbg = format!("{e:?}");
+            if err_str.contains("NoSuchTagSet")
+                || err_dbg.contains("NoSuchTagSet")
+                || err_dbg.contains("StatusCode(404)")
+            {
                 Ok(vec![])
             } else {
                 Err(s3err(err_str))
@@ -2628,7 +2639,13 @@ pub async fn s3_get_bucket_lifecycle(
         }
         Err(e) => {
             let err_str = e.to_string();
-            if err_str.contains("NoSuchLifecycleConfiguration") {
+            let err_dbg = format!("{e:?}");
+            // S3-compatible providers may return 404 or different error codes
+            if err_str.contains("NoSuchLifecycleConfiguration")
+                || err_dbg.contains("NoSuchLifecycleConfiguration")
+                || err_dbg.contains("NoSuchConfiguration")
+                || err_dbg.contains("StatusCode(404)")
+            {
                 Ok(vec![])
             } else {
                 Err(s3err(err_str))
@@ -2780,7 +2797,11 @@ pub async fn s3_get_bucket_cors(
         }
         Err(e) => {
             let err_str = e.to_string();
-            if err_str.contains("NoSuchCORSConfiguration") {
+            let err_dbg = format!("{e:?}");
+            if err_str.contains("NoSuchCORSConfiguration")
+                || err_dbg.contains("NoSuchCORSConfiguration")
+                || err_dbg.contains("StatusCode(404)")
+            {
                 Ok(vec![])
             } else {
                 Err(s3err(err_str))
@@ -2917,7 +2938,11 @@ pub async fn s3_get_public_access_block(
         }
         Err(e) => {
             let err_str = e.to_string();
-            if err_str.contains("NoSuchPublicAccessBlockConfiguration") {
+            let err_dbg = format!("{e:?}");
+            if err_str.contains("NoSuchPublicAccessBlockConfiguration")
+                || err_dbg.contains("NoSuchPublicAccessBlockConfiguration")
+                || err_dbg.contains("StatusCode(404)")
+            {
                 Ok(S3PublicAccessBlock {
                     block_public_acls: false,
                     ignore_public_acls: false,
@@ -2980,7 +3005,11 @@ pub async fn s3_get_bucket_policy(
         Ok(r) => Ok(r.policy().unwrap_or_default().to_string()),
         Err(e) => {
             let err_str = e.to_string();
-            if err_str.contains("NoSuchBucketPolicy") {
+            let err_dbg = format!("{e:?}");
+            if err_str.contains("NoSuchBucketPolicy")
+                || err_dbg.contains("NoSuchBucketPolicy")
+                || err_dbg.contains("StatusCode(404)")
+            {
                 Ok(String::new())
             } else {
                 Err(s3err(err_str))

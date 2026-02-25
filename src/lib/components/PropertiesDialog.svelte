@@ -47,6 +47,7 @@
   let s3Props = $state<S3ObjectProperties | null>(null);
   let s3IsPrefix = $state(false);
   let s3IsBucketRoot = $state(false);
+  let bucketTab = $state<'general' | 'security' | 'lifecycle'>('general');
   let loading = $state(true);
   let error = $state('');
   let dirSize = $state<number | null>(null);
@@ -841,6 +842,13 @@
         if (isBucketRoot(path)) {
           s3IsBucketRoot = true;
           s3IsPrefix = true;
+          // Auto-expand all bucket sections
+          bucketTagsExpanded = true;
+          uploadsExpanded = true;
+          lifecycleExpanded = true;
+          corsExpanded = true;
+          policyExpanded = true;
+          aclExpanded = true;
           // Load bucket-level info (only for supported capabilities)
           const bucketLoads: Promise<void>[] = [];
           if (caps.versioning) {
@@ -854,6 +862,68 @@
           if (caps.publicAccessBlock) {
             publicAccessLoading = true;
             bucketLoads.push(loadPublicAccessBlock());
+          }
+          if (caps.bucketTags) {
+            bucketTagsLoading = true;
+            bucketLoads.push(
+              s3GetBucketTags(s3ConnectionId)
+                .then(t => { bucketTags = t; bucketTagsOriginal = JSON.stringify(t); })
+                .catch(err => { bucketTagsMessage = 'Error: ' + String(err); })
+                .finally(() => { bucketTagsLoading = false; })
+            );
+          }
+          if (caps.multipartUploadCleanup) {
+            uploadsLoading = true;
+            bucketLoads.push(
+              s3ListMultipartUploads(s3ConnectionId)
+                .then(u => { multipartUploads = u; })
+                .catch(err => { uploadsError = String(err); })
+                .finally(() => { uploadsLoading = false; })
+            );
+          }
+          if (caps.lifecycleRules) {
+            lifecycleLoading = true;
+            bucketLoads.push(
+              s3GetBucketLifecycle(s3ConnectionId)
+                .then(r => { lifecycleRules = r; lifecycleOriginal = JSON.stringify(r); })
+                .catch(err => { lifecycleMessage = 'Error: ' + String(err); })
+                .finally(() => { lifecycleLoading = false; })
+            );
+          }
+          if (caps.cors) {
+            corsLoading = true;
+            bucketLoads.push(
+              s3GetBucketCors(s3ConnectionId)
+                .then(r => { corsRules = r; corsOriginal = JSON.stringify(r); })
+                .catch(err => { corsMessage = 'Error: ' + String(err); })
+                .finally(() => { corsLoading = false; })
+            );
+          }
+          if (caps.bucketPolicy) {
+            policyLoading = true;
+            bucketLoads.push(
+              s3GetBucketPolicy(s3ConnectionId)
+                .then(raw => {
+                  if (raw) {
+                    try { policyText = JSON.stringify(JSON.parse(raw), null, 2); } catch { policyText = raw; }
+                  } else {
+                    policyText = '';
+                  }
+                  policyOriginal = policyText;
+                  policyJsonValid = true;
+                })
+                .catch(err => { policyMessage = 'Error: ' + String(err); })
+                .finally(() => { policyLoading = false; })
+            );
+          }
+          if (caps.acl) {
+            aclLoading = true;
+            bucketLoads.push(
+              s3GetBucketAcl(s3ConnectionId)
+                .then(a => { bucketAcl = a; })
+                .catch(err => { aclError = String(err); })
+                .finally(() => { aclLoading = false; })
+            );
           }
           Promise.all(bucketLoads).catch(() => {}).finally(() => {
             bucketVersioningLoading = false;
@@ -1212,8 +1282,18 @@
         </table>
 
         {#if s3IsBucketRoot}
+          <div class="tab-bar">
+            <button class="tab-btn" class:active={bucketTab === 'general'} onclick={() => { bucketTab = 'general'; }}>General</button>
+            {#if caps.publicAccessBlock || caps.bucketPolicy || caps.acl || caps.cors}
+              <button class="tab-btn" class:active={bucketTab === 'security'} onclick={() => { bucketTab = 'security'; }}>Security</button>
+            {/if}
+            {#if caps.lifecycleRules || caps.multipartUploadCleanup}
+              <button class="tab-btn" class:active={bucketTab === 'lifecycle'} onclick={() => { bucketTab = 'lifecycle'; }}>Lifecycle</button>
+            {/if}
+          </div>
+
           <!-- Bucket Versioning -->
-          {#if caps.versioning}
+          {#if bucketTab === 'general' && caps.versioning}
           <div class="section-title">Versioning</div>
           <div class="storage-class-section">
             {#if bucketVersioningLoading}
@@ -1241,7 +1321,7 @@
           {/if}
 
           <!-- Bucket Encryption -->
-          {#if caps.encryption}
+          {#if bucketTab === 'general' && caps.encryption}
           <div class="section-title">Encryption</div>
           <div class="storage-class-section">
             {#if bucketEncryptionLoading}
@@ -1266,7 +1346,7 @@
           {/if}
 
           <!-- Public Access Block -->
-          {#if caps.publicAccessBlock}
+          {#if bucketTab === 'security' && caps.publicAccessBlock}
           <div class="section-title">Public Access Block</div>
           <div class="storage-class-section">
             {#if publicAccessLoading}
@@ -1308,11 +1388,8 @@
           {/if}
 
           <!-- Bucket Tags -->
-          {#if caps.bucketTags}
-          <button class="section-title versions-toggle" onclick={loadBucketTags}>
-            Bucket Tags {bucketTagsExpanded ? '\u25B4' : '\u25BE'}
-          </button>
-          {#if bucketTagsExpanded}
+          {#if bucketTab === 'general' && caps.bucketTags}
+          <div class="section-title">Bucket Tags</div>
             <div class="versions-section">
               {#if bucketTagsLoading}
                 <div class="loading">Loading tags...</div>
@@ -1342,59 +1419,12 @@
                 </div>
               {/if}
             </div>
-          {/if}
-
-          {/if}
-
-          <!-- Incomplete Uploads -->
-          {#if caps.multipartUploadCleanup}
-          <button class="section-title versions-toggle" onclick={loadMultipartUploads}>
-            Incomplete Uploads {uploadsExpanded ? '\u25B4' : '\u25BE'}
-          </button>
-          {#if uploadsExpanded}
-            <div class="versions-section">
-              {#if uploadsLoading}
-                <div class="loading">Loading uploads...</div>
-              {:else if uploadsError}
-                <div class="error">{uploadsError}</div>
-              {:else if multipartUploads.length === 0}
-                <div class="versions-empty">No incomplete multipart uploads</div>
-              {:else}
-                <div class="versions-list">
-                  <div class="tag-actions" style="margin-bottom: 4px;">
-                    <button class="version-action-btn danger" onclick={abortAllUploads} disabled={abortingAll}>
-                      {abortingAll ? 'Aborting...' : 'Abort All'}
-                    </button>
-                  </div>
-                  {#each multipartUploads as upload}
-                    <div class="version-row">
-                      <div class="version-info">
-                        <span class="version-id mono" title={upload.key}>{upload.key.length > 40 ? upload.key.slice(0, 40) + '\u2026' : upload.key}</span>
-                        <span class="version-date">{formatDate(upload.initiated)}</span>
-                      </div>
-                      <div class="version-actions">
-                        <button
-                          class="version-action-btn danger"
-                          onclick={() => abortUpload(upload.key, upload.upload_id)}
-                          disabled={abortingUpload === upload.upload_id}
-                          title="Abort this upload"
-                        >Abort</button>
-                      </div>
-                    </div>
-                  {/each}
-                </div>
-              {/if}
-            </div>
-          {/if}
 
           {/if}
 
           <!-- Lifecycle Rules -->
-          {#if caps.lifecycleRules}
-          <button class="section-title versions-toggle" onclick={loadLifecycleRules}>
-            Lifecycle Rules {lifecycleExpanded ? '\u25B4' : '\u25BE'}
-          </button>
-          {#if lifecycleExpanded}
+          {#if bucketTab === 'lifecycle' && caps.lifecycleRules}
+          <div class="section-title">Lifecycle Rules</div>
             <div class="versions-section">
               {#if lifecycleLoading}
                 <div class="loading">Loading lifecycle rules...</div>
@@ -1546,16 +1576,50 @@
                 </div>
               {/if}
             </div>
+
           {/if}
 
+          <!-- Incomplete Uploads -->
+          {#if bucketTab === 'lifecycle' && caps.multipartUploadCleanup}
+          <div class="section-title">Incomplete Uploads</div>
+            <div class="versions-section">
+              {#if uploadsLoading}
+                <div class="loading">Loading uploads...</div>
+              {:else if uploadsError}
+                <div class="error">{uploadsError}</div>
+              {:else if multipartUploads.length === 0}
+                <div class="versions-empty">No incomplete multipart uploads</div>
+              {:else}
+                <div class="versions-list">
+                  <div class="tag-actions" style="margin-bottom: 4px;">
+                    <button class="version-action-btn danger" onclick={abortAllUploads} disabled={abortingAll}>
+                      {abortingAll ? 'Aborting...' : 'Abort All'}
+                    </button>
+                  </div>
+                  {#each multipartUploads as upload}
+                    <div class="version-row">
+                      <div class="version-info">
+                        <span class="version-id mono" title={upload.key}>{upload.key.length > 40 ? upload.key.slice(0, 40) + '\u2026' : upload.key}</span>
+                        <span class="version-date">{formatDate(upload.initiated)}</span>
+                      </div>
+                      <div class="version-actions">
+                        <button
+                          class="version-action-btn danger"
+                          onclick={() => abortUpload(upload.key, upload.upload_id)}
+                          disabled={abortingUpload === upload.upload_id}
+                          title="Abort this upload"
+                        >Abort</button>
+                      </div>
+                    </div>
+                  {/each}
+                </div>
+              {/if}
+            </div>
           {/if}
 
           <!-- CORS Configuration -->
-          {#if caps.cors}
-          <button class="section-title versions-toggle" onclick={loadCorsRules}>
-            CORS Configuration {corsExpanded ? '\u25B4' : '\u25BE'}
-          </button>
-          {#if corsExpanded}
+          {#if bucketTab === 'security' && caps.cors}
+          <div class="section-title">CORS Configuration</div>
             <div class="versions-section">
               {#if corsLoading}
                 <div class="loading">Loading CORS rules...</div>
@@ -1655,16 +1719,12 @@
                 </div>
               {/if}
             </div>
-          {/if}
 
           {/if}
 
           <!-- Bucket Policy -->
-          {#if caps.bucketPolicy}
-          <button class="section-title versions-toggle" onclick={loadBucketPolicy}>
-            Bucket Policy {policyExpanded ? '\u25B4' : '\u25BE'}
-          </button>
-          {#if policyExpanded}
+          {#if bucketTab === 'security' && caps.bucketPolicy}
+          <div class="section-title">Bucket Policy</div>
             <div class="versions-section">
               {#if policyLoading}
                 <div class="loading">Loading policy...</div>
@@ -1697,16 +1757,12 @@
                 </div>
               {/if}
             </div>
-          {/if}
 
           {/if}
 
           <!-- ACL (Read-Only) -->
-          {#if caps.acl}
-          <button class="section-title versions-toggle" onclick={loadBucketAcl}>
-            ACL {aclExpanded ? '\u25B4' : '\u25BE'}
-          </button>
-          {#if aclExpanded}
+          {#if bucketTab === 'security' && caps.acl}
+          <div class="section-title">ACL</div>
             <div class="versions-section">
               {#if aclLoading}
                 <div class="loading">Loading ACL...</div>
@@ -1736,7 +1792,6 @@
                 </div>
               {/if}
             </div>
-          {/if}
           {/if}
         {/if}
       {/if}
@@ -1768,9 +1823,9 @@
     background: var(--dialog-bg);
     border: 1px solid var(--dialog-border);
     border-radius: var(--radius-lg);
-    min-width: 50ch;
-    max-width: 70ch;
-    max-height: 85vh;
+    min-width: 70ch;
+    max-width: 100ch;
+    max-height: 90vh;
     box-shadow: var(--shadow-dialog);
     overflow: hidden;
     display: flex;
@@ -1794,6 +1849,8 @@
     flex-direction: column;
     gap: 12px;
     overflow-y: auto;
+    user-select: text;
+    -webkit-user-select: text;
   }
 
   .loading, .error {
@@ -2096,7 +2153,7 @@
   }
 
   .versions-section {
-    max-height: 200px;
+    max-height: 300px;
     overflow-y: auto;
     border: 1px solid var(--border-subtle);
     border-radius: var(--radius-sm);
@@ -2445,5 +2502,35 @@
     font-style: italic;
     text-align: center;
     padding: 4px 0;
+  }
+
+  /* Tab bar */
+  .tab-bar {
+    display: flex;
+    gap: 0;
+    border-bottom: 1px solid var(--border-subtle);
+    margin-bottom: 4px;
+  }
+
+  .tab-btn {
+    padding: 6px 16px;
+    font-size: 12px;
+    font-family: inherit;
+    font-weight: 500;
+    background: none;
+    border: none;
+    border-bottom: 2px solid transparent;
+    color: var(--text-secondary);
+    cursor: pointer;
+    transition: color var(--transition-fast), border-color var(--transition-fast);
+  }
+
+  .tab-btn:hover {
+    color: var(--text-primary);
+  }
+
+  .tab-btn.active {
+    border-bottom: 2px solid var(--text-accent);
+    color: var(--text-accent);
   }
 </style>

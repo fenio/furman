@@ -149,7 +149,7 @@ export const S3_PROVIDERS: S3ProviderProfile[] = [
     endpointHint: 'https://us-east-1.linodeobjects.com',
     regionHint: 'us-east-1',
     capabilities: {
-      versioning: false,
+      versioning: true,
       lifecycleRules: true,
       cors: true,
       bucketPolicy: false,

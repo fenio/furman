@@ -582,7 +582,19 @@
   function handleProperties() {
     const active = panels.active;
     const entry = active.currentEntry;
-    if (!entry || entry.name === '..') return;
+    if (!entry) return;
+    // If cursor is on '..' in an S3 bucket, show bucket-level properties
+    if (entry.name === '..') {
+      if (active.backend === 's3' && active.s3Connection) {
+        appState.showProperties(
+          `s3://${active.s3Connection.bucket}/`,
+          active.backend,
+          active.s3Connection.connectionId,
+          active.s3Connection.capabilities,
+        );
+      }
+      return;
+    }
     appState.showProperties(
       entry.path,
       active.backend,
