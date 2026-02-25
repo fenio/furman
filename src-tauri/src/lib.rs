@@ -121,6 +121,7 @@ pub fn run() {
             commands::s3::s3_rename_object,
             commands::s3::s3_search_objects,
             commands::s3::s3_presign_url,
+            commands::s3::s3_download_temp,
             // archive commands
             commands::archive::list_archive,
             commands::archive::extract_archive,

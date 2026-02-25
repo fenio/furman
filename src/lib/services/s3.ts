@@ -115,6 +115,13 @@ export async function s3PresignUrl(id: string, key: string, expiresInSecs: numbe
   return await invoke<string>('s3_presign_url', { id, key, expiresInSecs });
 }
 
+export async function s3DownloadToTemp(
+  id: string,
+  key: string
+): Promise<string> {
+  return await invoke<string>('s3_download_temp', { id, key });
+}
+
 export async function s3SearchObjects(
   id: string,
   searchId: string,

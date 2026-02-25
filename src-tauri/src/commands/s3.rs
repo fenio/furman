@@ -1494,6 +1494,76 @@ pub async fn s3_search_objects(
     Ok(())
 }
 
+/// Max size for preview download (50 MB).
+const PREVIEW_MAX_SIZE: u64 = 50 * 1024 * 1024;
+
+/// Download a single S3 object to a temp file and return the local path.
+/// Used for previewing/editing S3 files in the existing Viewer/Editor.
+#[tauri::command]
+pub async fn s3_download_temp(
+    state: State<'_, S3State>,
+    id: String,
+    key: String,
+) -> Result<String, FmError> {
+    let (client, bucket) = {
+        let map = state.0.lock().map_err(|e| s3err(e.to_string()))?;
+        let conn = map.get(&id).ok_or_else(|| s3err("S3 connection not found"))?;
+        (conn.client.clone(), conn.bucket.clone())
+    };
+
+    let stripped_key = strip_s3_prefix(&key, &bucket);
+
+    // Check object size via head_object
+    let head = client
+        .head_object()
+        .bucket(&bucket)
+        .key(&stripped_key)
+        .send()
+        .await
+        .map_err(|e| s3err(e.to_string()))?;
+
+    let size = head.content_length().unwrap_or(0) as u64;
+    if size > PREVIEW_MAX_SIZE {
+        return Err(s3err(format!(
+            "File is too large for preview ({:.1} MB). Use download instead.",
+            size as f64 / (1024.0 * 1024.0)
+        )));
+    }
+
+    // Build temp path: {temp}/furman-preview/{hash}-{filename}
+    let filename = stripped_key.rsplit('/').next().unwrap_or(&stripped_key);
+    let hash = {
+        use std::hash::{Hash, Hasher};
+        let mut hasher = std::collections::hash_map::DefaultHasher::new();
+        key.hash(&mut hasher);
+        format!("{:016x}", hasher.finish())
+    };
+    let safe_name = format!("{}-{}", &hash[..8], filename);
+    let temp_path = std::env::temp_dir().join("furman-preview").join(&safe_name);
+
+    if let Some(parent) = temp_path.parent() {
+        std::fs::create_dir_all(parent)?;
+    }
+
+    // Download the object
+    let resp = client
+        .get_object()
+        .bucket(&bucket)
+        .key(&stripped_key)
+        .send()
+        .await
+        .map_err(|e| s3err(e.to_string()))?;
+
+    let body = resp
+        .body
+        .collect()
+        .await
+        .map_err(|e| s3err(e.to_string()))?;
+    std::fs::write(&temp_path, body.into_bytes())?;
+
+    Ok(temp_path.to_string_lossy().to_string())
+}
+
 /// Generate a presigned GET URL for an S3 object.
 #[tauri::command]
 pub async fn s3_presign_url(

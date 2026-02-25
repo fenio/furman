@@ -9,7 +9,7 @@
   import { copyFiles, moveFiles, deleteFiles, renameFile, createDirectory, openFileDefault, openInEditor, checkConflicts, extractArchive } from '$lib/services/tauri';
   import { statusState } from '$lib/state/status.svelte';
   import { transfersState } from '$lib/state/transfers.svelte';
-  import { s3Download, s3Upload, s3CopyObjects, s3DeleteObjects, s3RenameObject, s3CreateFolder, s3PresignUrl } from '$lib/services/s3';
+  import { s3Download, s3Upload, s3CopyObjects, s3DeleteObjects, s3RenameObject, s3CreateFolder, s3PresignUrl, s3DownloadToTemp } from '$lib/services/s3';
   import { s3PathToPrefix } from '$lib/state/panels.svelte';
   import { error } from '$lib/services/log';
   import type { ProgressEvent, S3ConnectionInfo } from '$lib/types';
@@ -49,6 +49,8 @@
         } catch (err: unknown) {
           error(String(err));
         }
+      } else if (panel.backend === 's3' && panel.s3Connection) {
+        await openS3Viewer(entry.path, entry.extension, panel.s3Connection.connectionId);
       } else {
         // Open file in viewer
         openViewer(entry.path, entry.extension);
@@ -77,6 +79,37 @@
     appState.editorPath = filePath;
     appState.editorDirty = false;
     appState.modal = 'editor';
+  }
+
+  async function openS3Viewer(s3Path: string, ext: string | null, connectionId: string) {
+    statusState.setMessage('Downloading for preview...');
+    try {
+      const localPath = await s3DownloadToTemp(connectionId, s3Path);
+      const lower = (ext ?? '').toLowerCase();
+      if (imageExtensions.has(lower)) {
+        appState.viewerMode = 'image';
+      } else {
+        appState.viewerMode = 'text';
+      }
+      appState.viewerPath = localPath;
+      appState.modal = 'viewer';
+    } catch (err: unknown) {
+      error(String(err));
+      statusState.setMessage('Preview failed: ' + String(err));
+    }
+  }
+
+  async function openS3Editor(s3Path: string, connectionId: string) {
+    statusState.setMessage('Downloading for editing...');
+    try {
+      const localPath = await s3DownloadToTemp(connectionId, s3Path);
+      appState.editorPath = localPath;
+      appState.editorDirty = false;
+      appState.modal = 'editor';
+    } catch (err: unknown) {
+      error(String(err));
+      statusState.setMessage('Edit failed: ' + String(err));
+    }
   }
 
   async function getConflicts(sources: string[], destBackend: string, dest: string): Promise<string[]> {
@@ -588,7 +621,11 @@
           {
             const entry = active.currentEntry;
             if (entry && !entry.is_dir && entry.name !== '..') {
-              openViewer(entry.path, entry.extension);  // Cmd+3 = View (F3)
+              if (active.backend === 's3' && active.s3Connection) {
+                openS3Viewer(entry.path, entry.extension, active.s3Connection.connectionId);
+              } else {
+                openViewer(entry.path, entry.extension);  // Cmd+3 = View (F3)
+              }
             }
           }
           return;
@@ -597,7 +634,11 @@
           {
             const entry = active.currentEntry;
             if (entry && !entry.is_dir && entry.name !== '..') {
-              openEditor(entry.path);            // Cmd+E = Edit (F4)
+              if (active.backend === 's3' && active.s3Connection) {
+                openS3Editor(entry.path, active.s3Connection.connectionId);
+              } else {
+                openEditor(entry.path);            // Cmd+E = Edit (F4)
+              }
             }
           }
           return;
@@ -811,7 +852,11 @@
         {
           const entry = active.currentEntry;
           if (entry && !entry.is_dir && entry.name !== '..') {
-            openViewer(entry.path, entry.extension);
+            if (active.backend === 's3' && active.s3Connection) {
+              openS3Viewer(entry.path, entry.extension, active.s3Connection.connectionId);
+            } else {
+              openViewer(entry.path, entry.extension);
+            }
           }
         }
         break;
@@ -820,7 +865,11 @@
         {
           const entry = active.currentEntry;
           if (entry && !entry.is_dir && entry.name !== '..') {
-            openEditor(entry.path);
+            if (active.backend === 's3' && active.s3Connection) {
+              openS3Editor(entry.path, active.s3Connection.connectionId);
+            } else {
+              openEditor(entry.path);
+            }
           }
         }
         break;
