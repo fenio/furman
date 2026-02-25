@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { untrack } from 'svelte';
   import { panels } from '$lib/state/panels.svelte';
   import { appState } from '$lib/state/app.svelte';
   import { s3ProfilesState } from '$lib/state/s3profiles.svelte';
@@ -9,10 +10,13 @@
 
   interface Props {
     onClose: () => void;
+    initialTab?: 'saved' | 'connect';
+    onConnect?: (bucket: string, region: string, endpoint?: string, profile?: string, accessKey?: string, secretKey?: string, provider?: string, customCapabilities?: S3ProviderCapabilities) => void;
   }
 
-  let { onClose }: Props = $props();
+  let { onClose, initialTab = 'saved', onConnect: onConnectProp }: Props = $props();
 
+  let activeTab = $state(untrack(() => initialTab));
   let view = $state<'list' | 'add' | 'edit'>('list');
   let editingProfile = $state<S3Profile | undefined>(undefined);
   let connectError = $state('');
@@ -120,7 +124,7 @@
     if (e.key === 'Escape') {
       e.preventDefault();
       e.stopPropagation();
-      if (view !== 'list') {
+      if (activeTab === 'saved' && view !== 'list') {
         view = 'list';
         editingProfile = undefined;
       } else {
@@ -156,40 +160,54 @@
   >
     <div class="dialog-box">
       <div class="dialog-title">S3 Connections</div>
-      <div class="dialog-body">
-        {#if connectError}
-          <div class="error-msg">{connectError}</div>
-        {/if}
 
-        {#if s3ProfilesState.profiles.length === 0}
-          <div class="empty-state">
-            <div class="empty-text">No saved connections</div>
-            <button class="dialog-btn primary" onclick={handleAddNew}>Add New Connection</button>
-          </div>
-        {:else}
-          <div class="profile-list">
-            {#each s3ProfilesState.profiles as p (p.id)}
-              <div class="profile-row">
-                <img class="profile-icon" src={getProviderIcon(p.provider ?? 'aws')} alt="" />
-                <div class="profile-info">
-                  <div class="profile-name">{p.name}</div>
-                  <div class="profile-detail">{p.bucket} — {p.region}{p.endpoint ? ` — ${p.endpoint}` : ''}</div>
-                </div>
-                <div class="profile-actions">
-                  <button class="action-btn connect" onclick={() => handleConnectFromProfile(p)}>Connect</button>
-                  <button class="action-btn" onclick={() => handleEdit(p)}>Edit</button>
-                  <button class="action-btn danger" onclick={() => handleDelete(p)}>Delete</button>
-                </div>
-              </div>
-            {/each}
-          </div>
-
-          <div class="dialog-buttons">
-            <button class="dialog-btn primary" onclick={handleAddNew}>Add New</button>
-            <button class="dialog-btn" onclick={onClose}>Close</button>
-          </div>
-        {/if}
+      <div class="tab-bar">
+        <button class="tab-btn" class:active={activeTab === 'saved'} onclick={() => { activeTab = 'saved'; }}>Saved</button>
+        <button class="tab-btn" class:active={activeTab === 'connect'} onclick={() => { activeTab = 'connect'; }}>New Connection</button>
       </div>
+
+      {#if activeTab === 'saved'}
+        <div class="dialog-body">
+          {#if connectError}
+            <div class="error-msg">{connectError}</div>
+          {/if}
+
+          {#if s3ProfilesState.profiles.length === 0}
+            <div class="empty-state">
+              <div class="empty-text">No saved connections</div>
+              <button class="dialog-btn primary" onclick={handleAddNew}>Add New Connection</button>
+            </div>
+          {:else}
+            <div class="profile-list">
+              {#each s3ProfilesState.profiles as p (p.id)}
+                <div class="profile-row">
+                  <img class="profile-icon" src={getProviderIcon(p.provider ?? 'aws')} alt="" />
+                  <div class="profile-info">
+                    <div class="profile-name">{p.name}</div>
+                    <div class="profile-detail">{p.bucket} — {p.region}{p.endpoint ? ` — ${p.endpoint}` : ''}</div>
+                  </div>
+                  <div class="profile-actions">
+                    <button class="action-btn connect" onclick={() => handleConnectFromProfile(p)}>Connect</button>
+                    <button class="action-btn" onclick={() => handleEdit(p)}>Edit</button>
+                    <button class="action-btn danger" onclick={() => handleDelete(p)}>Delete</button>
+                  </div>
+                </div>
+              {/each}
+            </div>
+
+            <div class="dialog-buttons">
+              <button class="dialog-btn primary" onclick={handleAddNew}>Add New</button>
+              <button class="dialog-btn" onclick={onClose}>Close</button>
+            </div>
+          {/if}
+        </div>
+      {:else}
+        <S3ConnectDialog
+          embedded={true}
+          onConnect={onConnectProp ?? handleConnect}
+          onCancel={onClose}
+        />
+      {/if}
     </div>
   </div>
 {/if}
@@ -228,6 +246,34 @@
     font-weight: 600;
     font-size: 14px;
     border-bottom: 1px solid var(--dialog-border);
+  }
+
+  .tab-bar {
+    display: flex;
+    gap: 0;
+    border-bottom: 1px solid var(--dialog-border);
+    padding: 0 16px;
+  }
+
+  .tab-btn {
+    padding: 6px 16px;
+    font-size: 12px;
+    font-family: inherit;
+    background: none;
+    border: none;
+    border-bottom: 2px solid transparent;
+    color: var(--text-secondary);
+    cursor: pointer;
+    transition: color var(--transition-fast), border-color var(--transition-fast);
+  }
+
+  .tab-btn:hover {
+    color: var(--text-primary);
+  }
+
+  .tab-btn.active {
+    border-bottom: 2px solid var(--text-accent);
+    color: var(--text-accent);
   }
 
   .dialog-body {

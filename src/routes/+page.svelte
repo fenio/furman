@@ -19,7 +19,6 @@
   import { initLogging } from '$lib/services/log';
   import Viewer from '$lib/components/Viewer.svelte';
   import Editor from '$lib/components/Editor.svelte';
-  import S3ConnectDialog from '$lib/components/S3ConnectDialog.svelte';
   import S3ConnectionManager from '$lib/components/S3ConnectionManager.svelte';
   import SearchDialog from '$lib/components/SearchDialog.svelte';
   import MenuDropdown from '$lib/components/MenuDropdown.svelte';
@@ -292,19 +291,16 @@
     />
   {/if}
 
-  {#if appState.modal === 's3-connect'}
-    <S3ConnectDialog
+  {#if appState.modal === 's3-manager'}
+    <S3ConnectionManager
+      initialTab={appState.s3ManagerTab}
       onConnect={(bucket, region, endpoint, profile, accessKey, secretKey, provider, customCapabilities) => {
         const cb = appState.s3ConnectCallback;
         appState.closeModal();
         if (cb) cb(bucket, region, endpoint, profile, accessKey, secretKey, provider, customCapabilities);
       }}
-      onCancel={() => appState.closeModal()}
+      onClose={() => appState.closeModal()}
     />
-  {/if}
-
-  {#if appState.modal === 's3-manager'}
-    <S3ConnectionManager onClose={() => appState.closeModal()} />
   {/if}
 
   {#if appState.modal === 'overwrite'}

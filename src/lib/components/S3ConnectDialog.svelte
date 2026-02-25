@@ -10,9 +10,10 @@
     saveMode?: boolean;
     initialData?: S3Profile;
     onSave?: (profile: Omit<S3Profile, 'id'> & { id?: string }, secretKey?: string) => void;
+    embedded?: boolean;
   }
 
-  let { onConnect, onCancel, saveMode = false, initialData, onSave }: Props = $props();
+  let { onConnect, onCancel, saveMode = false, initialData, onSave, embedded = false }: Props = $props();
 
   const init = untrack(() => initialData);
 
@@ -234,15 +235,7 @@
   }
 </script>
 
-<div
-  class="dialog-overlay no-select"
-  role="dialog"
-  aria-modal="true"
-  tabindex="-1"
-  onkeydown={handleKeydown}
->
-  <div class="dialog-box">
-    <div class="dialog-title">{isEditing ? 'Edit S3 Connection' : 'Connect to S3-Compatible Storage'}</div>
+{#snippet formBody()}
     <div class="dialog-body">
       <div class="field-label">
         Provider
@@ -448,8 +441,28 @@
         <button class="dialog-btn" onclick={onCancel}>Cancel</button>
       </div>
     </div>
+{/snippet}
+
+{#if embedded}
+  <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
+  <div role="group" onkeydown={handleKeydown}>
+    {@render formBody()}
   </div>
-</div>
+{:else}
+  <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
+  <div
+    class="dialog-overlay no-select"
+    role="dialog"
+    aria-modal="true"
+    tabindex="-1"
+    onkeydown={handleKeydown}
+  >
+    <div class="dialog-box">
+      <div class="dialog-title">{isEditing ? 'Edit S3 Connection' : 'Connect to S3-Compatible Storage'}</div>
+      {@render formBody()}
+    </div>
+  </div>
+{/if}
 
 <style>
   .dialog-overlay {

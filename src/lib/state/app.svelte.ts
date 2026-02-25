@@ -27,6 +27,7 @@ class AppState {
   showHidden = $state(false);
   calculateDirSizes = $state(true);
   s3ConnectCallback = $state<((bucket: string, region: string, endpoint?: string, profile?: string, accessKey?: string, secretKey?: string, provider?: string, customCapabilities?: S3ProviderCapabilities) => void) | null>(null);
+  s3ManagerTab = $state<'saved' | 'connect'>('saved');
   searchRoot = $state('');
   searchBackend = $state<PanelBackend>('local');
   searchS3ConnectionId = $state('');
@@ -90,10 +91,12 @@ class AppState {
 
   showS3Connect(callback: (bucket: string, region: string, endpoint?: string, profile?: string, accessKey?: string, secretKey?: string, provider?: string, customCapabilities?: S3ProviderCapabilities) => void) {
     this.s3ConnectCallback = callback;
-    this.modal = 's3-connect';
+    this.s3ManagerTab = 'connect';
+    this.modal = 's3-manager';
   }
 
   showS3Manager() {
+    this.s3ManagerTab = 'saved';
     this.modal = 's3-manager';
   }
 

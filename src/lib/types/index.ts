@@ -62,7 +62,6 @@ export type ModalType =
   | 'editor'
   | 'menu'
   | 'volume-selector'
-  | 's3-connect'
   | 's3-manager'
   | 'overwrite'
   | 'search'
