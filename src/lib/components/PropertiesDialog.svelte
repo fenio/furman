@@ -77,8 +77,10 @@
     }
   }
 
+  let overlayEl = $state<HTMLDivElement | null>(null);
+
   function handleKeydown(e: KeyboardEvent) {
-    if (e.key === 'Escape') {
+    if (e.key === 'Escape' || e.key === 'Enter') {
       e.preventDefault();
       e.stopPropagation();
       onClose();
@@ -86,6 +88,7 @@
   }
 
   onMount(async () => {
+    overlayEl?.focus();
     try {
       if (backend === 's3') {
         // S3 "directories" are just prefixes — no real object to head_object
@@ -122,6 +125,7 @@
   role="dialog"
   aria-modal="true"
   tabindex="-1"
+  bind:this={overlayEl}
   onkeydown={handleKeydown}
 >
   <div class="dialog-box">
