@@ -1,7 +1,7 @@
 <script lang="ts">
   import { onMount, untrack } from 'svelte';
-  import { s3CheckCredentials } from '$lib/services/s3';
-  import type { S3Profile } from '$lib/types';
+  import { s3CheckCredentials, s3ListBuckets } from '$lib/services/s3';
+  import type { S3Bucket, S3Profile } from '$lib/types';
 
   interface Props {
     onConnect: (bucket: string, region: string, endpoint?: string, profile?: string, accessKey?: string, secretKey?: string) => void;
@@ -27,6 +27,10 @@
   let checking = $state(true);
   let bucketEl: HTMLInputElement | undefined = $state(undefined);
   let nameEl: HTMLInputElement | undefined = $state(undefined);
+  let buckets = $state<S3Bucket[]>([]);
+  let browsing = $state(false);
+  let browseError = $state('');
+  let showBucketList = $state(false);
 
   const isEditing = !!init;
 
@@ -98,6 +102,31 @@
     onCancel();
   }
 
+  async function handleBrowse() {
+    browsing = true;
+    browseError = '';
+    try {
+      buckets = await s3ListBuckets(
+        region.trim() || 'us-east-1',
+        endpoint.trim() || undefined,
+        profile.trim() || undefined,
+        showManualCreds && accessKey.trim() ? accessKey.trim() : undefined,
+        showManualCreds && secretKey.trim() ? secretKey.trim() : undefined,
+      );
+      showBucketList = true;
+    } catch (e: any) {
+      browseError = e?.message ?? String(e);
+      showBucketList = false;
+    } finally {
+      browsing = false;
+    }
+  }
+
+  function selectBucket(name: string) {
+    bucket = name;
+    showBucketList = false;
+  }
+
   function handleKeydown(e: KeyboardEvent) {
     if (e.key === 'Enter') {
       e.preventDefault();
@@ -139,17 +168,39 @@
         </label>
       {/if}
 
-      <label class="field-label">
+      <div class="field-label">
         Bucket
-        <input
-          type="text"
-          class="dialog-input"
-          autocomplete="off"
-          bind:value={bucket}
-          bind:this={bucketEl}
-          placeholder="my-bucket-name"
-        />
-      </label>
+        <div class="bucket-row">
+          <input
+            type="text"
+            class="dialog-input"
+            autocomplete="off"
+            bind:value={bucket}
+            bind:this={bucketEl}
+            placeholder="my-bucket-name"
+          />
+          <button class="dialog-btn browse-btn" onclick={handleBrowse} disabled={browsing}>
+            {browsing ? 'Loading...' : 'Browse'}
+          </button>
+        </div>
+        {#if showBucketList && buckets.length > 0}
+          <div class="bucket-list">
+            {#each buckets as b}
+              <button class="bucket-item" onclick={() => selectBucket(b.name)}>
+                <span class="bucket-name">{b.name}</span>
+                {#if b.created}
+                  <span class="bucket-date">{new Date(b.created).toLocaleDateString()}</span>
+                {/if}
+              </button>
+            {/each}
+          </div>
+        {:else if showBucketList && buckets.length === 0}
+          <span class="field-hint">No buckets found.</span>
+        {/if}
+        {#if browseError}
+          <span class="browse-error">Could not list buckets: {browseError}</span>
+        {/if}
+      </div>
 
       <label class="field-label">
         Region
@@ -380,5 +431,63 @@
 
   .dialog-btn.primary:hover:not(:disabled) {
     background: rgba(110,168,254,0.3);
+  }
+
+  .bucket-row {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+  }
+
+  .bucket-row .dialog-input {
+    flex: 1;
+  }
+
+  .browse-btn {
+    flex-shrink: 0;
+    white-space: nowrap;
+  }
+
+  .bucket-list {
+    max-height: 200px;
+    overflow-y: auto;
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--radius-sm);
+    background: var(--bg-primary);
+    display: flex;
+    flex-direction: column;
+  }
+
+  .bucket-item {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 6px 10px;
+    background: none;
+    border: none;
+    color: var(--text-primary);
+    font-size: 13px;
+    cursor: pointer;
+    text-align: left;
+  }
+
+  .bucket-item:hover {
+    background: var(--bg-hover);
+  }
+
+  .bucket-name {
+    font-family: inherit;
+  }
+
+  .bucket-date {
+    color: var(--text-secondary);
+    font-size: 11px;
+    margin-left: 12px;
+    flex-shrink: 0;
+  }
+
+  .browse-error {
+    font-size: 11px;
+    color: var(--warning-color);
   }
 </style>

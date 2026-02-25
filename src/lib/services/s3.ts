@@ -1,5 +1,5 @@
 import { invoke, Channel } from '@tauri-apps/api/core';
-import type { DirListing, ProgressEvent, S3ObjectProperties } from '$lib/types';
+import type { DirListing, ProgressEvent, S3Bucket, S3ObjectProperties } from '$lib/types';
 
 export async function s3CheckCredentials(): Promise<boolean> {
   return await invoke<boolean>('s3_check_credentials');
@@ -17,6 +17,22 @@ export async function s3Connect(
   await invoke('s3_connect', {
     id,
     bucket,
+    region,
+    endpoint: endpoint || null,
+    profile: profile || null,
+    accessKey: accessKey || null,
+    secretKey: secretKey || null,
+  });
+}
+
+export async function s3ListBuckets(
+  region: string,
+  endpoint?: string,
+  profile?: string,
+  accessKey?: string,
+  secretKey?: string,
+): Promise<S3Bucket[]> {
+  return await invoke<S3Bucket[]>('s3_list_buckets', {
     region,
     endpoint: endpoint || null,
     profile: profile || null,

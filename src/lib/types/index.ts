@@ -121,6 +121,11 @@ export interface S3ObjectProperties {
   storage_class: string | null;
 }
 
+export interface S3Bucket {
+  name: string;
+  created: number; // epoch ms
+}
+
 export type PanelBackend = 'local' | 's3' | 'archive';
 
 export interface ArchiveInfo {

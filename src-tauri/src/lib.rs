@@ -109,6 +109,7 @@ pub fn run() {
             // s3 commands
             commands::s3::s3_connect,
             commands::s3::s3_check_credentials,
+            commands::s3::s3_list_buckets,
             commands::s3::s3_disconnect,
             commands::s3::s3_list_objects,
             commands::s3::s3_download,
