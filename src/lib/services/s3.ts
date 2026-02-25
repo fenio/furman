@@ -1,5 +1,5 @@
 import { invoke, Channel } from '@tauri-apps/api/core';
-import type { DirListing, ProgressEvent, S3Bucket, S3ObjectProperties, S3ObjectVersion, SearchEvent } from '$lib/types';
+import type { DirListing, ProgressEvent, S3Bucket, S3BucketEncryption, S3BucketVersioning, S3MultipartUpload, S3ObjectMetadata, S3ObjectProperties, S3ObjectVersion, S3Tag, SearchEvent } from '$lib/types';
 
 export async function s3CheckCredentials(): Promise<boolean> {
   return await invoke<boolean>('s3_check_credentials');
@@ -184,4 +184,111 @@ export async function s3SearchObjects(
   const channel = new Channel<SearchEvent>();
   channel.onmessage = onEvent;
   await invoke('s3_search_objects', { id, searchId, prefix, query, channel });
+}
+
+// ── Bucket Management ───────────────────────────────────────────────────────
+
+export async function s3CreateBucket(
+  region: string,
+  bucketName: string,
+  endpoint?: string,
+  profile?: string,
+  accessKey?: string,
+  secretKey?: string,
+): Promise<void> {
+  await invoke('s3_create_bucket', {
+    region,
+    bucketName,
+    endpoint: endpoint || null,
+    profile: profile || null,
+    accessKey: accessKey || null,
+    secretKey: secretKey || null,
+  });
+}
+
+export async function s3DeleteBucket(
+  region: string,
+  bucketName: string,
+  endpoint?: string,
+  profile?: string,
+  accessKey?: string,
+  secretKey?: string,
+): Promise<void> {
+  await invoke('s3_delete_bucket', {
+    region,
+    bucketName,
+    endpoint: endpoint || null,
+    profile: profile || null,
+    accessKey: accessKey || null,
+    secretKey: secretKey || null,
+  });
+}
+
+export async function s3GetBucketVersioning(id: string): Promise<S3BucketVersioning> {
+  return await invoke<S3BucketVersioning>('s3_get_bucket_versioning', { id });
+}
+
+export async function s3PutBucketVersioning(id: string, enabled: boolean): Promise<void> {
+  await invoke('s3_put_bucket_versioning', { id, enabled });
+}
+
+export async function s3GetBucketEncryption(id: string): Promise<S3BucketEncryption> {
+  return await invoke<S3BucketEncryption>('s3_get_bucket_encryption', { id });
+}
+
+// ── Object Metadata ─────────────────────────────────────────────────────────
+
+export async function s3GetObjectMetadata(id: string, key: string): Promise<S3ObjectMetadata> {
+  return await invoke<S3ObjectMetadata>('s3_get_object_metadata', { id, key });
+}
+
+export async function s3PutObjectMetadata(
+  id: string,
+  key: string,
+  contentType: string | null,
+  contentDisposition: string | null,
+  cacheControl: string | null,
+  contentEncoding: string | null,
+  custom: Record<string, string>,
+): Promise<void> {
+  await invoke('s3_put_object_metadata', {
+    id,
+    key,
+    contentType: contentType || null,
+    contentDisposition: contentDisposition || null,
+    cacheControl: cacheControl || null,
+    contentEncoding: contentEncoding || null,
+    custom,
+  });
+}
+
+// ── Tagging ─────────────────────────────────────────────────────────────────
+
+export async function s3GetObjectTags(id: string, key: string): Promise<S3Tag[]> {
+  return await invoke<S3Tag[]>('s3_get_object_tags', { id, key });
+}
+
+export async function s3PutObjectTags(id: string, key: string, tags: S3Tag[]): Promise<void> {
+  await invoke('s3_put_object_tags', { id, key, tags });
+}
+
+export async function s3GetBucketTags(id: string): Promise<S3Tag[]> {
+  return await invoke<S3Tag[]>('s3_get_bucket_tags', { id });
+}
+
+export async function s3PutBucketTags(id: string, tags: S3Tag[]): Promise<void> {
+  await invoke('s3_put_bucket_tags', { id, tags });
+}
+
+// ── Multipart Upload Cleanup ────────────────────────────────────────────────
+
+export async function s3ListMultipartUploads(id: string, prefix?: string): Promise<S3MultipartUpload[]> {
+  return await invoke<S3MultipartUpload[]>('s3_list_multipart_uploads', {
+    id,
+    prefix: prefix || null,
+  });
+}
+
+export async function s3AbortMultipartUpload(id: string, key: string, uploadId: string): Promise<void> {
+  await invoke('s3_abort_multipart_upload', { id, key, uploadId });
 }

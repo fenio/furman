@@ -1,7 +1,8 @@
 use crate::commands::file::FileOpState;
 use crate::models::{
-    DirListing, FileEntry, FmError, ProgressEvent, S3ObjectProperties, S3ObjectVersion,
-    SearchDone, SearchEvent, SearchResult,
+    DirListing, FileEntry, FmError, ProgressEvent, S3BucketEncryption, S3BucketVersioning,
+    S3EncryptionRule, S3MultipartUpload, S3ObjectMetadata, S3ObjectProperties, S3ObjectVersion,
+    S3Tag, SearchDone, SearchEvent, SearchResult,
 };
 use aws_config::BehaviorVersion;
 use aws_credential_types::provider::ProvideCredentials;
@@ -1912,4 +1913,575 @@ pub async fn s3_presign_url(
         .map_err(|e| s3err(e.to_string()))?;
 
     Ok(presigned.uri().to_string())
+}
+
+// ── Bucket Management ───────────────────────────────────────────────────────
+
+/// Create a new S3 bucket.
+#[tauri::command]
+pub async fn s3_create_bucket(
+    region: String,
+    bucket_name: String,
+    endpoint: Option<String>,
+    profile: Option<String>,
+    access_key: Option<String>,
+    secret_key: Option<String>,
+) -> Result<(), FmError> {
+    let client = build_s3_client(
+        &region,
+        endpoint.as_deref(),
+        profile.as_deref(),
+        access_key.as_deref(),
+        secret_key.as_deref(),
+    )
+    .await?;
+
+    let mut req = client.create_bucket().bucket(&bucket_name);
+
+    // us-east-1 must NOT set a location constraint (AWS quirk)
+    if region != "us-east-1" {
+        let constraint = aws_sdk_s3::types::CreateBucketConfiguration::builder()
+            .location_constraint(aws_sdk_s3::types::BucketLocationConstraint::from(
+                region.as_str(),
+            ))
+            .build();
+        req = req.create_bucket_configuration(constraint);
+    }
+
+    req.send()
+        .await
+        .map_err(|e| s3err(format!("Could not create bucket '{}': {}", bucket_name, e)))?;
+
+    Ok(())
+}
+
+/// Delete an S3 bucket (must be empty).
+#[tauri::command]
+pub async fn s3_delete_bucket(
+    region: String,
+    bucket_name: String,
+    endpoint: Option<String>,
+    profile: Option<String>,
+    access_key: Option<String>,
+    secret_key: Option<String>,
+) -> Result<(), FmError> {
+    let client = build_s3_client(
+        &region,
+        endpoint.as_deref(),
+        profile.as_deref(),
+        access_key.as_deref(),
+        secret_key.as_deref(),
+    )
+    .await?;
+
+    client
+        .delete_bucket()
+        .bucket(&bucket_name)
+        .send()
+        .await
+        .map_err(|e| s3err(format!("Could not delete bucket '{}': {}", bucket_name, e)))?;
+
+    Ok(())
+}
+
+/// Get versioning status for a bucket.
+#[tauri::command]
+pub async fn s3_get_bucket_versioning(
+    state: State<'_, S3State>,
+    id: String,
+) -> Result<S3BucketVersioning, FmError> {
+    let (client, bucket) = {
+        let map = state.0.lock().map_err(|e| s3err(e.to_string()))?;
+        let conn = map.get(&id).ok_or_else(|| s3err("S3 connection not found"))?;
+        (conn.client.clone(), conn.bucket.clone())
+    };
+
+    let resp = client
+        .get_bucket_versioning()
+        .bucket(&bucket)
+        .send()
+        .await
+        .map_err(|e| s3err(e.to_string()))?;
+
+    let status = match resp.status() {
+        Some(s) => s.as_str().to_string(),
+        None => "Disabled".to_string(),
+    };
+
+    let mfa_delete = match resp.mfa_delete() {
+        Some(s) => s.as_str().to_string(),
+        None => "Disabled".to_string(),
+    };
+
+    Ok(S3BucketVersioning { status, mfa_delete })
+}
+
+/// Enable or suspend versioning on a bucket.
+#[tauri::command]
+pub async fn s3_put_bucket_versioning(
+    state: State<'_, S3State>,
+    id: String,
+    enabled: bool,
+) -> Result<(), FmError> {
+    let (client, bucket) = {
+        let map = state.0.lock().map_err(|e| s3err(e.to_string()))?;
+        let conn = map.get(&id).ok_or_else(|| s3err("S3 connection not found"))?;
+        (conn.client.clone(), conn.bucket.clone())
+    };
+
+    let status = if enabled {
+        aws_sdk_s3::types::BucketVersioningStatus::Enabled
+    } else {
+        aws_sdk_s3::types::BucketVersioningStatus::Suspended
+    };
+
+    let config = aws_sdk_s3::types::VersioningConfiguration::builder()
+        .status(status)
+        .build();
+
+    client
+        .put_bucket_versioning()
+        .bucket(&bucket)
+        .versioning_configuration(config)
+        .send()
+        .await
+        .map_err(|e| s3err(e.to_string()))?;
+
+    Ok(())
+}
+
+/// Get encryption configuration for a bucket.
+#[tauri::command]
+pub async fn s3_get_bucket_encryption(
+    state: State<'_, S3State>,
+    id: String,
+) -> Result<S3BucketEncryption, FmError> {
+    let (client, bucket) = {
+        let map = state.0.lock().map_err(|e| s3err(e.to_string()))?;
+        let conn = map.get(&id).ok_or_else(|| s3err("S3 connection not found"))?;
+        (conn.client.clone(), conn.bucket.clone())
+    };
+
+    let resp = client
+        .get_bucket_encryption()
+        .bucket(&bucket)
+        .send()
+        .await;
+
+    match resp {
+        Ok(r) => {
+            let rules = r
+                .server_side_encryption_configuration()
+                .map(|config| {
+                    config
+                        .rules()
+                        .iter()
+                        .filter_map(|rule| {
+                            let default = rule.apply_server_side_encryption_by_default()?;
+                            Some(S3EncryptionRule {
+                                sse_algorithm: default
+                                    .sse_algorithm()
+                                    .as_str()
+                                    .to_string(),
+                                kms_key_id: default
+                                    .kms_master_key_id()
+                                    .map(|s| s.to_string()),
+                                bucket_key_enabled: rule.bucket_key_enabled().unwrap_or(false),
+                            })
+                        })
+                        .collect()
+                })
+                .unwrap_or_default();
+            Ok(S3BucketEncryption { rules })
+        }
+        Err(e) => {
+            // Handle "ServerSideEncryptionConfigurationNotFoundError" gracefully
+            let err_str = e.to_string();
+            if err_str.contains("ServerSideEncryptionConfigurationNotFound")
+                || err_str.contains("NoSuchConfiguration")
+            {
+                Ok(S3BucketEncryption { rules: vec![] })
+            } else {
+                Err(s3err(err_str))
+            }
+        }
+    }
+}
+
+// ── Object Metadata ─────────────────────────────────────────────────────────
+
+/// Get metadata for an S3 object.
+#[tauri::command]
+pub async fn s3_get_object_metadata(
+    state: State<'_, S3State>,
+    id: String,
+    key: String,
+) -> Result<S3ObjectMetadata, FmError> {
+    let (client, bucket) = {
+        let map = state.0.lock().map_err(|e| s3err(e.to_string()))?;
+        let conn = map.get(&id).ok_or_else(|| s3err("S3 connection not found"))?;
+        (conn.client.clone(), conn.bucket.clone())
+    };
+
+    let actual_key = strip_s3_prefix(&key, &bucket);
+
+    let head = client
+        .head_object()
+        .bucket(&bucket)
+        .key(&actual_key)
+        .send()
+        .await
+        .map_err(|e| s3err(e.to_string()))?;
+
+    let custom: HashMap<String, String> = head
+        .metadata()
+        .map(|m| m.iter().map(|(k, v)| (k.clone(), v.clone())).collect())
+        .unwrap_or_default();
+
+    Ok(S3ObjectMetadata {
+        content_type: head.content_type().map(|s| s.to_string()),
+        content_disposition: head.content_disposition().map(|s| s.to_string()),
+        cache_control: head.cache_control().map(|s| s.to_string()),
+        content_encoding: head.content_encoding().map(|s| s.to_string()),
+        custom,
+    })
+}
+
+/// Update metadata for an S3 object via self-copy with REPLACE directive.
+#[tauri::command]
+pub async fn s3_put_object_metadata(
+    state: State<'_, S3State>,
+    id: String,
+    key: String,
+    content_type: Option<String>,
+    content_disposition: Option<String>,
+    cache_control: Option<String>,
+    content_encoding: Option<String>,
+    custom: HashMap<String, String>,
+) -> Result<(), FmError> {
+    let (client, bucket) = {
+        let map = state.0.lock().map_err(|e| s3err(e.to_string()))?;
+        let conn = map.get(&id).ok_or_else(|| s3err("S3 connection not found"))?;
+        (conn.client.clone(), conn.bucket.clone())
+    };
+
+    let actual_key = strip_s3_prefix(&key, &bucket);
+
+    // Check object size — reject >5 GiB (copy_object limit)
+    let head = client
+        .head_object()
+        .bucket(&bucket)
+        .key(&actual_key)
+        .send()
+        .await
+        .map_err(|e| s3err(e.to_string()))?;
+
+    let size = head.content_length().unwrap_or(0) as u64;
+    if size > COPY_MULTIPART_THRESHOLD {
+        return Err(s3err(format!(
+            "Object is too large ({:.1} GB) for metadata update via copy. Maximum is 5 GB.",
+            size as f64 / (1024.0 * 1024.0 * 1024.0)
+        )));
+    }
+
+    let copy_source = format!("{}/{}", bucket, actual_key);
+
+    let mut req = client
+        .copy_object()
+        .bucket(&bucket)
+        .key(&actual_key)
+        .copy_source(&copy_source)
+        .metadata_directive(aws_sdk_s3::types::MetadataDirective::Replace);
+
+    if let Some(ct) = &content_type {
+        req = req.content_type(ct);
+    }
+    if let Some(cd) = &content_disposition {
+        req = req.content_disposition(cd);
+    }
+    if let Some(cc) = &cache_control {
+        req = req.cache_control(cc);
+    }
+    if let Some(ce) = &content_encoding {
+        req = req.content_encoding(ce);
+    }
+
+    // Set custom metadata
+    for (k, v) in &custom {
+        req = req.metadata(k, v);
+    }
+
+    req.send()
+        .await
+        .map_err(|e| s3err(e.to_string()))?;
+
+    Ok(())
+}
+
+// ── Tagging ─────────────────────────────────────────────────────────────────
+
+/// Get tags for an S3 object.
+#[tauri::command]
+pub async fn s3_get_object_tags(
+    state: State<'_, S3State>,
+    id: String,
+    key: String,
+) -> Result<Vec<S3Tag>, FmError> {
+    let (client, bucket) = {
+        let map = state.0.lock().map_err(|e| s3err(e.to_string()))?;
+        let conn = map.get(&id).ok_or_else(|| s3err("S3 connection not found"))?;
+        (conn.client.clone(), conn.bucket.clone())
+    };
+
+    let actual_key = strip_s3_prefix(&key, &bucket);
+
+    let resp = client
+        .get_object_tagging()
+        .bucket(&bucket)
+        .key(&actual_key)
+        .send()
+        .await;
+
+    match resp {
+        Ok(r) => {
+            let tags = r
+                .tag_set()
+                .iter()
+                .map(|t| S3Tag {
+                    key: t.key().to_string(),
+                    value: t.value().to_string(),
+                })
+                .collect();
+            Ok(tags)
+        }
+        Err(e) => {
+            let err_str = e.to_string();
+            if err_str.contains("NoSuchTagSet") {
+                Ok(vec![])
+            } else {
+                Err(s3err(err_str))
+            }
+        }
+    }
+}
+
+/// Set tags on an S3 object (max 10 tags).
+#[tauri::command]
+pub async fn s3_put_object_tags(
+    state: State<'_, S3State>,
+    id: String,
+    key: String,
+    tags: Vec<S3Tag>,
+) -> Result<(), FmError> {
+    if tags.len() > 10 {
+        return Err(s3err("Maximum 10 tags per object"));
+    }
+
+    let (client, bucket) = {
+        let map = state.0.lock().map_err(|e| s3err(e.to_string()))?;
+        let conn = map.get(&id).ok_or_else(|| s3err("S3 connection not found"))?;
+        (conn.client.clone(), conn.bucket.clone())
+    };
+
+    let actual_key = strip_s3_prefix(&key, &bucket);
+
+    let tag_set: Vec<_> = tags
+        .iter()
+        .filter(|t| !t.key.is_empty())
+        .map(|t| {
+            aws_sdk_s3::types::Tag::builder()
+                .key(&t.key)
+                .value(&t.value)
+                .build()
+                .expect("valid tag")
+        })
+        .collect();
+
+    let tagging = aws_sdk_s3::types::Tagging::builder()
+        .set_tag_set(Some(tag_set))
+        .build()
+        .map_err(|e| s3err(e.to_string()))?;
+
+    client
+        .put_object_tagging()
+        .bucket(&bucket)
+        .key(&actual_key)
+        .tagging(tagging)
+        .send()
+        .await
+        .map_err(|e| s3err(e.to_string()))?;
+
+    Ok(())
+}
+
+/// Get tags for an S3 bucket.
+#[tauri::command]
+pub async fn s3_get_bucket_tags(
+    state: State<'_, S3State>,
+    id: String,
+) -> Result<Vec<S3Tag>, FmError> {
+    let (client, bucket) = {
+        let map = state.0.lock().map_err(|e| s3err(e.to_string()))?;
+        let conn = map.get(&id).ok_or_else(|| s3err("S3 connection not found"))?;
+        (conn.client.clone(), conn.bucket.clone())
+    };
+
+    let resp = client
+        .get_bucket_tagging()
+        .bucket(&bucket)
+        .send()
+        .await;
+
+    match resp {
+        Ok(r) => {
+            let tags = r
+                .tag_set()
+                .iter()
+                .map(|t| S3Tag {
+                    key: t.key().to_string(),
+                    value: t.value().to_string(),
+                })
+                .collect();
+            Ok(tags)
+        }
+        Err(e) => {
+            let err_str = e.to_string();
+            if err_str.contains("NoSuchTagSet") || err_str.contains("NoSuchTagSetError") {
+                Ok(vec![])
+            } else {
+                Err(s3err(err_str))
+            }
+        }
+    }
+}
+
+/// Set tags on an S3 bucket (max 50 tags).
+#[tauri::command]
+pub async fn s3_put_bucket_tags(
+    state: State<'_, S3State>,
+    id: String,
+    tags: Vec<S3Tag>,
+) -> Result<(), FmError> {
+    if tags.len() > 50 {
+        return Err(s3err("Maximum 50 tags per bucket"));
+    }
+
+    let (client, bucket) = {
+        let map = state.0.lock().map_err(|e| s3err(e.to_string()))?;
+        let conn = map.get(&id).ok_or_else(|| s3err("S3 connection not found"))?;
+        (conn.client.clone(), conn.bucket.clone())
+    };
+
+    let tag_set: Vec<_> = tags
+        .iter()
+        .filter(|t| !t.key.is_empty())
+        .map(|t| {
+            aws_sdk_s3::types::Tag::builder()
+                .key(&t.key)
+                .value(&t.value)
+                .build()
+                .expect("valid tag")
+        })
+        .collect();
+
+    let tagging = aws_sdk_s3::types::Tagging::builder()
+        .set_tag_set(Some(tag_set))
+        .build()
+        .map_err(|e| s3err(e.to_string()))?;
+
+    client
+        .put_bucket_tagging()
+        .bucket(&bucket)
+        .tagging(tagging)
+        .send()
+        .await
+        .map_err(|e| s3err(e.to_string()))?;
+
+    Ok(())
+}
+
+// ── Multipart Upload Cleanup ────────────────────────────────────────────────
+
+/// List incomplete multipart uploads for a bucket.
+#[tauri::command]
+pub async fn s3_list_multipart_uploads(
+    state: State<'_, S3State>,
+    id: String,
+    prefix: Option<String>,
+) -> Result<Vec<S3MultipartUpload>, FmError> {
+    let (client, bucket) = {
+        let map = state.0.lock().map_err(|e| s3err(e.to_string()))?;
+        let conn = map.get(&id).ok_or_else(|| s3err("S3 connection not found"))?;
+        (conn.client.clone(), conn.bucket.clone())
+    };
+
+    let mut uploads: Vec<S3MultipartUpload> = Vec::new();
+    let mut key_marker: Option<String> = None;
+    let mut upload_id_marker: Option<String> = None;
+
+    loop {
+        let mut req = client.list_multipart_uploads().bucket(&bucket);
+
+        if let Some(pfx) = &prefix {
+            req = req.prefix(pfx);
+        }
+        if let Some(km) = &key_marker {
+            req = req.key_marker(km);
+        }
+        if let Some(um) = &upload_id_marker {
+            req = req.upload_id_marker(um);
+        }
+
+        let resp = req.send().await.map_err(|e| s3err(e.to_string()))?;
+
+        for upload in resp.uploads() {
+            let key = upload.key().unwrap_or_default().to_string();
+            let uid = upload.upload_id().unwrap_or_default().to_string();
+            let initiated = upload
+                .initiated()
+                .and_then(|t| t.to_millis().ok())
+                .unwrap_or(0);
+
+            uploads.push(S3MultipartUpload {
+                key,
+                upload_id: uid,
+                initiated,
+            });
+        }
+
+        if resp.is_truncated() == Some(true) {
+            key_marker = resp.next_key_marker().map(|s| s.to_string());
+            upload_id_marker = resp.next_upload_id_marker().map(|s| s.to_string());
+        } else {
+            break;
+        }
+    }
+
+    Ok(uploads)
+}
+
+/// Abort a specific multipart upload.
+#[tauri::command]
+pub async fn s3_abort_multipart_upload(
+    state: State<'_, S3State>,
+    id: String,
+    key: String,
+    upload_id: String,
+) -> Result<(), FmError> {
+    let (client, bucket) = {
+        let map = state.0.lock().map_err(|e| s3err(e.to_string()))?;
+        let conn = map.get(&id).ok_or_else(|| s3err("S3 connection not found"))?;
+        (conn.client.clone(), conn.bucket.clone())
+    };
+
+    client
+        .abort_multipart_upload()
+        .bucket(&bucket)
+        .key(&key)
+        .upload_id(&upload_id)
+        .send()
+        .await
+        .map_err(|e| s3err(e.to_string()))?;
+
+    Ok(())
 }

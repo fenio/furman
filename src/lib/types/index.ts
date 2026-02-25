@@ -153,6 +153,40 @@ export interface S3Bucket {
   created: number; // epoch ms
 }
 
+export interface S3BucketVersioning {
+  status: string;
+  mfa_delete: string;
+}
+
+export interface S3EncryptionRule {
+  sse_algorithm: string;
+  kms_key_id: string | null;
+  bucket_key_enabled: boolean;
+}
+
+export interface S3BucketEncryption {
+  rules: S3EncryptionRule[];
+}
+
+export interface S3ObjectMetadata {
+  content_type: string | null;
+  content_disposition: string | null;
+  cache_control: string | null;
+  content_encoding: string | null;
+  custom: Record<string, string>;
+}
+
+export interface S3Tag {
+  key: string;
+  value: string;
+}
+
+export interface S3MultipartUpload {
+  key: string;
+  upload_id: string;
+  initiated: number;
+}
+
 export type PanelBackend = 'local' | 's3' | 'archive';
 
 export interface ArchiveInfo {

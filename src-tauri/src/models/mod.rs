@@ -1,4 +1,5 @@
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 use std::fmt;
 
 // ── FileEntry ────────────────────────────────────────────────────────────────
@@ -208,6 +209,56 @@ pub enum SyncEvent {
         modified: u32,
         deleted: u32,
     },
+}
+
+// ── S3BucketVersioning ─────────────────────────────────────────────────────
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct S3BucketVersioning {
+    pub status: String,     // "Enabled" | "Suspended" | "Disabled"
+    pub mfa_delete: String, // "Enabled" | "Disabled"
+}
+
+// ── S3BucketEncryption ─────────────────────────────────────────────────────
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct S3EncryptionRule {
+    pub sse_algorithm: String,
+    pub kms_key_id: Option<String>,
+    pub bucket_key_enabled: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct S3BucketEncryption {
+    pub rules: Vec<S3EncryptionRule>,
+}
+
+// ── S3ObjectMetadata ───────────────────────────────────────────────────────
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct S3ObjectMetadata {
+    pub content_type: Option<String>,
+    pub content_disposition: Option<String>,
+    pub cache_control: Option<String>,
+    pub content_encoding: Option<String>,
+    pub custom: HashMap<String, String>,
+}
+
+// ── S3Tag ──────────────────────────────────────────────────────────────────
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct S3Tag {
+    pub key: String,
+    pub value: String,
+}
+
+// ── S3MultipartUpload ──────────────────────────────────────────────────────
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct S3MultipartUpload {
+    pub key: String,
+    pub upload_id: String,
+    pub initiated: i64,
 }
 
 // ── Display impls ───────────────────────────────────────────────────────────

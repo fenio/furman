@@ -1,6 +1,6 @@
 <script lang="ts">
   import { onMount, untrack } from 'svelte';
-  import { s3CheckCredentials, s3ListBuckets } from '$lib/services/s3';
+  import { s3CheckCredentials, s3ListBuckets, s3CreateBucket, s3DeleteBucket } from '$lib/services/s3';
   import type { S3Bucket, S3Profile } from '$lib/types';
 
   interface Props {
@@ -31,6 +31,13 @@
   let browsing = $state(false);
   let browseError = $state('');
   let showBucketList = $state(false);
+
+  // Create / delete bucket
+  let showCreateForm = $state(false);
+  let newBucketName = $state('');
+  let creatingBucket = $state(false);
+  let createError = $state('');
+  let deletingBucket = $state<string | null>(null);
 
   const isEditing = !!init;
 
@@ -127,6 +134,52 @@
     showBucketList = false;
   }
 
+  function currentCredArgs(): [string | undefined, string | undefined, string | undefined, string | undefined] {
+    return [
+      endpoint.trim() || undefined,
+      profile.trim() || undefined,
+      showManualCreds && accessKey.trim() ? accessKey.trim() : undefined,
+      showManualCreds && secretKey.trim() ? secretKey.trim() : undefined,
+    ];
+  }
+
+  async function handleCreateBucket() {
+    if (!newBucketName.trim()) return;
+    creatingBucket = true;
+    createError = '';
+    try {
+      const r = region.trim() || 'us-east-1';
+      const [ep, prof, ak, sk] = currentCredArgs();
+      await s3CreateBucket(r, newBucketName.trim(), ep, prof, ak, sk);
+      // Refresh bucket list
+      buckets = await s3ListBuckets(r, ep, prof, ak, sk);
+      showBucketList = true;
+      newBucketName = '';
+      showCreateForm = false;
+    } catch (e: any) {
+      createError = e?.message ?? String(e);
+    } finally {
+      creatingBucket = false;
+    }
+  }
+
+  async function handleDeleteBucket(bucketName: string) {
+    if (!confirm(`Delete bucket "${bucketName}"? The bucket must be empty.`)) return;
+    deletingBucket = bucketName;
+    browseError = '';
+    try {
+      const r = region.trim() || 'us-east-1';
+      const [ep, prof, ak, sk] = currentCredArgs();
+      await s3DeleteBucket(r, bucketName, ep, prof, ak, sk);
+      buckets = buckets.filter(b => b.name !== bucketName);
+      if (bucket === bucketName) bucket = '';
+    } catch (e: any) {
+      browseError = e?.message ?? String(e);
+    } finally {
+      deletingBucket = null;
+    }
+  }
+
   function handleKeydown(e: KeyboardEvent) {
     if (e.key === 'Enter') {
       e.preventDefault();
@@ -186,19 +239,51 @@
         {#if showBucketList && buckets.length > 0}
           <div class="bucket-list">
             {#each buckets as b}
-              <button class="bucket-item" onclick={() => selectBucket(b.name)}>
-                <span class="bucket-name">{b.name}</span>
-                {#if b.created}
-                  <span class="bucket-date">{new Date(b.created).toLocaleDateString()}</span>
-                {/if}
-              </button>
+              <div class="bucket-item-row">
+                <button class="bucket-item" onclick={() => selectBucket(b.name)}>
+                  <span class="bucket-name">{b.name}</span>
+                  {#if b.created}
+                    <span class="bucket-date">{new Date(b.created).toLocaleDateString()}</span>
+                  {/if}
+                </button>
+                <button
+                  class="bucket-delete-btn"
+                  onclick={() => handleDeleteBucket(b.name)}
+                  disabled={deletingBucket === b.name}
+                  title="Delete bucket"
+                >&times;</button>
+              </div>
             {/each}
           </div>
         {:else if showBucketList && buckets.length === 0}
           <span class="field-hint">No buckets found.</span>
         {/if}
+        {#if showBucketList}
+          {#if showCreateForm}
+            <div class="create-bucket-form">
+              <input
+                type="text"
+                class="dialog-input create-input"
+                bind:value={newBucketName}
+                placeholder="new-bucket-name"
+                onkeydown={(e) => { if (e.key === 'Enter') { e.stopPropagation(); handleCreateBucket(); } }}
+              />
+              <button class="dialog-btn create-btn" onclick={handleCreateBucket} disabled={creatingBucket || !newBucketName.trim()}>
+                {creatingBucket ? 'Creating...' : 'Create'}
+              </button>
+              <button class="dialog-btn" onclick={() => { showCreateForm = false; createError = ''; }}>Cancel</button>
+            </div>
+            {#if createError}
+              <span class="browse-error">{createError}</span>
+            {/if}
+          {:else}
+            <button class="dialog-btn create-trigger" onclick={() => { showCreateForm = true; createError = ''; }}>
+              + Create Bucket
+            </button>
+          {/if}
+        {/if}
         {#if browseError}
-          <span class="browse-error">Could not list buckets: {browseError}</span>
+          <span class="browse-error">{browseError}</span>
         {/if}
       </div>
 
@@ -489,5 +574,62 @@
   .browse-error {
     font-size: 11px;
     color: var(--warning-color);
+  }
+
+  .bucket-item-row {
+    display: flex;
+    align-items: center;
+  }
+
+  .bucket-item-row .bucket-item {
+    flex: 1;
+  }
+
+  .bucket-delete-btn {
+    padding: 2px 8px;
+    background: none;
+    border: none;
+    color: var(--text-secondary);
+    font-size: 16px;
+    cursor: pointer;
+    opacity: 0;
+    transition: opacity var(--transition-fast), color var(--transition-fast);
+    flex-shrink: 0;
+  }
+
+  .bucket-item-row:hover .bucket-delete-btn {
+    opacity: 1;
+  }
+
+  .bucket-delete-btn:hover {
+    color: var(--text-error, #ff6b6b);
+  }
+
+  .bucket-delete-btn:disabled {
+    opacity: 0.3;
+    cursor: not-allowed;
+  }
+
+  .create-bucket-form {
+    display: flex;
+    gap: 6px;
+    align-items: center;
+  }
+
+  .create-input {
+    flex: 1;
+    padding: 6px 10px !important;
+    font-size: 13px !important;
+  }
+
+  .create-btn {
+    flex-shrink: 0;
+    white-space: nowrap;
+  }
+
+  .create-trigger {
+    align-self: flex-start;
+    font-size: 12px;
+    padding: 4px 12px;
   }
 </style>

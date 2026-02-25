@@ -2,10 +2,20 @@
   import { onMount } from 'svelte';
   import { appState } from '$lib/state/app.svelte';
   import { getFileProperties, getDirectorySize } from '$lib/services/tauri';
-  import { s3HeadObject, s3ChangeStorageClass, s3RestoreObject, s3ListObjectVersions, s3DownloadVersion, s3RestoreVersion, s3DeleteVersion } from '$lib/services/s3';
+  import {
+    s3HeadObject, s3ChangeStorageClass, s3RestoreObject, s3ListObjectVersions,
+    s3DownloadVersion, s3RestoreVersion, s3DeleteVersion,
+    s3GetBucketVersioning, s3PutBucketVersioning, s3GetBucketEncryption,
+    s3GetBucketTags, s3PutBucketTags, s3ListMultipartUploads, s3AbortMultipartUpload,
+    s3GetObjectMetadata, s3PutObjectMetadata, s3GetObjectTags, s3PutObjectTags,
+  } from '$lib/services/s3';
   import { invoke } from '@tauri-apps/api/core';
   import { formatSize, formatDate, formatPermissions } from '$lib/utils/format';
-  import type { FileProperties, S3ObjectProperties, S3ObjectVersion, PanelBackend } from '$lib/types';
+  import type {
+    FileProperties, S3ObjectProperties, S3ObjectVersion, PanelBackend,
+    S3BucketVersioning, S3BucketEncryption, S3Tag, S3MultipartUpload,
+    S3ObjectMetadata,
+  } from '$lib/types';
 
   interface Props {
     path: string;
@@ -19,6 +29,7 @@
   let fileProps = $state<FileProperties | null>(null);
   let s3Props = $state<S3ObjectProperties | null>(null);
   let s3IsPrefix = $state(false);
+  let s3IsBucketRoot = $state(false);
   let loading = $state(true);
   let error = $state('');
   let dirSize = $state<number | null>(null);
@@ -98,12 +109,65 @@
   let restoringGlacier = $state(false);
   let restoreMessage = $state('');
 
-  // Versioning
+  // Versioning (object-level)
   let versionsExpanded = $state(false);
   let versions = $state<S3ObjectVersion[]>([]);
   let versionsLoading = $state(false);
   let versionsError = $state('');
   let versionActionLoading = $state<string | null>(null);
+
+  // Bucket-level: Versioning
+  let bucketVersioning = $state<S3BucketVersioning | null>(null);
+  let bucketVersioningLoading = $state(false);
+  let applyingVersioning = $state(false);
+  let versioningMessage = $state('');
+
+  // Bucket-level: Encryption
+  let bucketEncryption = $state<S3BucketEncryption | null>(null);
+  let bucketEncryptionLoading = $state(false);
+
+  // Bucket-level: Tags
+  let bucketTagsExpanded = $state(false);
+  let bucketTags = $state<S3Tag[]>([]);
+  let bucketTagsOriginal = $state<string>('');
+  let bucketTagsLoading = $state(false);
+  let bucketTagsMessage = $state('');
+  let savingBucketTags = $state(false);
+
+  // Bucket-level: Incomplete uploads
+  let uploadsExpanded = $state(false);
+  let multipartUploads = $state<S3MultipartUpload[]>([]);
+  let uploadsLoading = $state(false);
+  let uploadsError = $state('');
+  let abortingUpload = $state<string | null>(null);
+  let abortingAll = $state(false);
+
+  // Object-level: Metadata
+  let metadataExpanded = $state(false);
+  let objectMetadata = $state<S3ObjectMetadata | null>(null);
+  let metadataLoading = $state(false);
+  let metadataMessage = $state('');
+  let savingMetadata = $state(false);
+  let metaContentType = $state('');
+  let metaContentDisposition = $state('');
+  let metaCacheControl = $state('');
+  let metaContentEncoding = $state('');
+  let metaCustom = $state<{key: string; value: string}[]>([]);
+  let metaOriginal = $state('');
+
+  // Object-level: Tags
+  let objTagsExpanded = $state(false);
+  let objectTags = $state<S3Tag[]>([]);
+  let objTagsOriginal = $state<string>('');
+  let objTagsLoading = $state(false);
+  let objTagsMessage = $state('');
+  let savingObjTags = $state(false);
+
+  const bucketTagsDirty = $derived(JSON.stringify(bucketTags) !== bucketTagsOriginal);
+  const objTagsDirty = $derived(JSON.stringify(objectTags) !== objTagsOriginal);
+  const metadataDirty = $derived(
+    JSON.stringify({ ct: metaContentType, cd: metaContentDisposition, cc: metaCacheControl, ce: metaContentEncoding, custom: metaCustom }) !== metaOriginal
+  );
 
   async function applyStorageClass() {
     if (!s3Props || !selectedStorageClass || selectedStorageClass === s3Props.storage_class) return;
@@ -127,7 +191,6 @@
     try {
       await s3RestoreObject(s3ConnectionId, path, restoreDays, restoreTier);
       restoreMessage = 'Restore initiated';
-      // Refresh to get updated restore status
       s3Props = await s3HeadObject(s3ConnectionId, path);
     } catch (err: unknown) {
       restoreMessage = 'Error: ' + String(err);
@@ -155,7 +218,6 @@
     versionActionLoading = vid;
     try {
       const tempPath = await s3DownloadVersion(s3ConnectionId, path, vid);
-      // Open in viewer
       const { appState: app } = await import('$lib/state/app.svelte');
       app.viewerMode = 'text';
       app.viewerPath = tempPath;
@@ -172,7 +234,6 @@
     versionActionLoading = vid;
     try {
       await s3RestoreVersion(s3ConnectionId, path, vid);
-      // Reload versions
       versions = await s3ListObjectVersions(s3ConnectionId, path);
       s3Props = await s3HeadObject(s3ConnectionId, path);
     } catch (err: unknown) {
@@ -199,6 +260,208 @@
     return vid.length > 16 ? vid.slice(0, 16) + '\u2026' : vid;
   }
 
+  // ── Bucket-level functions ──────────────────────────────────────────────
+
+  async function toggleBucketVersioning() {
+    if (!bucketVersioning) return;
+    const enable = bucketVersioning.status !== 'Enabled';
+    applyingVersioning = true;
+    versioningMessage = '';
+    try {
+      await s3PutBucketVersioning(s3ConnectionId, enable);
+      bucketVersioning = await s3GetBucketVersioning(s3ConnectionId);
+      versioningMessage = enable ? 'Versioning enabled' : 'Versioning suspended';
+    } catch (err: unknown) {
+      versioningMessage = 'Error: ' + String(err);
+    } finally {
+      applyingVersioning = false;
+    }
+  }
+
+  async function loadBucketTags() {
+    if (bucketTagsLoading) return;
+    bucketTagsExpanded = !bucketTagsExpanded;
+    if (!bucketTagsExpanded || bucketTags.length > 0) return;
+    bucketTagsLoading = true;
+    bucketTagsMessage = '';
+    try {
+      bucketTags = await s3GetBucketTags(s3ConnectionId);
+      bucketTagsOriginal = JSON.stringify(bucketTags);
+    } catch (err: unknown) {
+      bucketTagsMessage = 'Error: ' + String(err);
+    } finally {
+      bucketTagsLoading = false;
+    }
+  }
+
+  function addBucketTag() {
+    if (bucketTags.length >= 50) return;
+    bucketTags = [...bucketTags, { key: '', value: '' }];
+  }
+
+  function removeBucketTag(index: number) {
+    bucketTags = bucketTags.filter((_, i) => i !== index);
+  }
+
+  async function saveBucketTags() {
+    savingBucketTags = true;
+    bucketTagsMessage = '';
+    try {
+      const filtered = bucketTags.filter(t => t.key.trim());
+      await s3PutBucketTags(s3ConnectionId, filtered);
+      bucketTags = filtered;
+      bucketTagsOriginal = JSON.stringify(bucketTags);
+      bucketTagsMessage = 'Tags saved';
+    } catch (err: unknown) {
+      bucketTagsMessage = 'Error: ' + String(err);
+    } finally {
+      savingBucketTags = false;
+    }
+  }
+
+  async function loadMultipartUploads() {
+    if (uploadsLoading) return;
+    uploadsExpanded = !uploadsExpanded;
+    if (!uploadsExpanded) return;
+    uploadsLoading = true;
+    uploadsError = '';
+    try {
+      multipartUploads = await s3ListMultipartUploads(s3ConnectionId);
+    } catch (err: unknown) {
+      uploadsError = String(err);
+    } finally {
+      uploadsLoading = false;
+    }
+  }
+
+  async function abortUpload(key: string, uploadId: string) {
+    abortingUpload = uploadId;
+    try {
+      await s3AbortMultipartUpload(s3ConnectionId, key, uploadId);
+      multipartUploads = multipartUploads.filter(u => u.upload_id !== uploadId);
+    } catch (err: unknown) {
+      uploadsError = String(err);
+    } finally {
+      abortingUpload = null;
+    }
+  }
+
+  async function abortAllUploads() {
+    if (!confirm(`Abort all ${multipartUploads.length} incomplete uploads?`)) return;
+    abortingAll = true;
+    uploadsError = '';
+    try {
+      for (const u of multipartUploads) {
+        await s3AbortMultipartUpload(s3ConnectionId, u.key, u.upload_id);
+      }
+      multipartUploads = [];
+    } catch (err: unknown) {
+      uploadsError = String(err);
+      multipartUploads = await s3ListMultipartUploads(s3ConnectionId);
+    } finally {
+      abortingAll = false;
+    }
+  }
+
+  // ── Object-level: Metadata functions ────────────────────────────────────
+
+  async function loadMetadata() {
+    if (metadataLoading) return;
+    metadataExpanded = !metadataExpanded;
+    if (!metadataExpanded || objectMetadata) return;
+    metadataLoading = true;
+    metadataMessage = '';
+    try {
+      objectMetadata = await s3GetObjectMetadata(s3ConnectionId, path);
+      metaContentType = objectMetadata.content_type ?? '';
+      metaContentDisposition = objectMetadata.content_disposition ?? '';
+      metaCacheControl = objectMetadata.cache_control ?? '';
+      metaContentEncoding = objectMetadata.content_encoding ?? '';
+      metaCustom = Object.entries(objectMetadata.custom).map(([key, value]) => ({ key, value }));
+      metaOriginal = JSON.stringify({ ct: metaContentType, cd: metaContentDisposition, cc: metaCacheControl, ce: metaContentEncoding, custom: metaCustom });
+    } catch (err: unknown) {
+      metadataMessage = 'Error: ' + String(err);
+    } finally {
+      metadataLoading = false;
+    }
+  }
+
+  function addCustomMeta() {
+    metaCustom = [...metaCustom, { key: '', value: '' }];
+  }
+
+  function removeCustomMeta(index: number) {
+    metaCustom = metaCustom.filter((_, i) => i !== index);
+  }
+
+  async function saveMetadata() {
+    savingMetadata = true;
+    metadataMessage = '';
+    try {
+      const customMap: Record<string, string> = {};
+      for (const m of metaCustom) {
+        if (m.key.trim()) customMap[m.key.trim()] = m.value;
+      }
+      await s3PutObjectMetadata(
+        s3ConnectionId, path,
+        metaContentType || null,
+        metaContentDisposition || null,
+        metaCacheControl || null,
+        metaContentEncoding || null,
+        customMap,
+      );
+      metaOriginal = JSON.stringify({ ct: metaContentType, cd: metaContentDisposition, cc: metaCacheControl, ce: metaContentEncoding, custom: metaCustom });
+      metadataMessage = 'Metadata saved';
+    } catch (err: unknown) {
+      metadataMessage = 'Error: ' + String(err);
+    } finally {
+      savingMetadata = false;
+    }
+  }
+
+  // ── Object-level: Tags functions ────────────────────────────────────────
+
+  async function loadObjectTags() {
+    if (objTagsLoading) return;
+    objTagsExpanded = !objTagsExpanded;
+    if (!objTagsExpanded || objectTags.length > 0) return;
+    objTagsLoading = true;
+    objTagsMessage = '';
+    try {
+      objectTags = await s3GetObjectTags(s3ConnectionId, path);
+      objTagsOriginal = JSON.stringify(objectTags);
+    } catch (err: unknown) {
+      objTagsMessage = 'Error: ' + String(err);
+    } finally {
+      objTagsLoading = false;
+    }
+  }
+
+  function addObjectTag() {
+    if (objectTags.length >= 10) return;
+    objectTags = [...objectTags, { key: '', value: '' }];
+  }
+
+  function removeObjectTag(index: number) {
+    objectTags = objectTags.filter((_, i) => i !== index);
+  }
+
+  async function saveObjectTags() {
+    savingObjTags = true;
+    objTagsMessage = '';
+    try {
+      const filtered = objectTags.filter(t => t.key.trim());
+      await s3PutObjectTags(s3ConnectionId, path, filtered);
+      objectTags = filtered;
+      objTagsOriginal = JSON.stringify(objectTags);
+      objTagsMessage = 'Tags saved';
+    } catch (err: unknown) {
+      objTagsMessage = 'Error: ' + String(err);
+    } finally {
+      savingObjTags = false;
+    }
+  }
+
   let overlayEl = $state<HTMLDivElement | null>(null);
 
   function handleKeydown(e: KeyboardEvent) {
@@ -209,12 +472,30 @@
     }
   }
 
+  // Detect bucket root: s3://bucket-name/ with no further prefix
+  function isBucketRoot(p: string): boolean {
+    const match = p.match(/^s3:\/\/[^/]+\/$/);
+    return !!match;
+  }
+
   onMount(async () => {
     overlayEl?.focus();
     try {
       if (backend === 's3') {
-        // S3 "directories" are just prefixes — no real object to head_object
-        if (path.endsWith('/')) {
+        if (isBucketRoot(path)) {
+          s3IsBucketRoot = true;
+          s3IsPrefix = true;
+          // Load bucket-level info
+          bucketVersioningLoading = true;
+          bucketEncryptionLoading = true;
+          Promise.all([
+            s3GetBucketVersioning(s3ConnectionId).then(v => { bucketVersioning = v; }),
+            s3GetBucketEncryption(s3ConnectionId).then(e => { bucketEncryption = e; }),
+          ]).catch(() => {}).finally(() => {
+            bucketVersioningLoading = false;
+            bucketEncryptionLoading = false;
+          });
+        } else if (path.endsWith('/')) {
           s3IsPrefix = true;
         } else {
           s3Props = await s3HeadObject(s3ConnectionId, path);
@@ -454,14 +735,232 @@
             {/if}
           </div>
         {/if}
+
+        <!-- Object Metadata section -->
+        <button class="section-title versions-toggle" onclick={loadMetadata}>
+          Metadata {metadataExpanded ? '\u25B4' : '\u25BE'}
+        </button>
+        {#if metadataExpanded}
+          <div class="versions-section">
+            {#if metadataLoading}
+              <div class="loading">Loading metadata...</div>
+            {:else if metadataMessage && !objectMetadata}
+              <div class="error">{metadataMessage}</div>
+            {:else}
+              <div class="tag-editor">
+                <label class="meta-field">
+                  <span class="meta-label">Content-Type</span>
+                  <input class="meta-input" type="text" bind:value={metaContentType} placeholder="application/octet-stream" />
+                </label>
+                <label class="meta-field">
+                  <span class="meta-label">Content-Disposition</span>
+                  <input class="meta-input" type="text" bind:value={metaContentDisposition} placeholder="inline" />
+                </label>
+                <label class="meta-field">
+                  <span class="meta-label">Cache-Control</span>
+                  <input class="meta-input" type="text" bind:value={metaCacheControl} placeholder="max-age=3600" />
+                </label>
+                <label class="meta-field">
+                  <span class="meta-label">Content-Encoding</span>
+                  <input class="meta-input" type="text" bind:value={metaContentEncoding} placeholder="gzip" />
+                </label>
+                <div class="tag-header">
+                  <span class="meta-label">Custom Metadata</span>
+                  <button class="version-action-btn" onclick={addCustomMeta}>+ Add</button>
+                </div>
+                {#each metaCustom as meta, i}
+                  <div class="tag-row">
+                    <input class="tag-input" type="text" bind:value={meta.key} placeholder="key" />
+                    <input class="tag-input" type="text" bind:value={meta.value} placeholder="value" />
+                    <button class="version-action-btn danger" onclick={() => removeCustomMeta(i)} title="Remove">&times;</button>
+                  </div>
+                {/each}
+                <div class="tag-actions">
+                  {#if metadataDirty}
+                    <button class="dialog-btn apply-btn" onclick={saveMetadata} disabled={savingMetadata}>
+                      {savingMetadata ? 'Saving...' : 'Save'}
+                    </button>
+                  {/if}
+                  {#if metadataMessage}
+                    <span class="sc-message" class:sc-error={metadataMessage.startsWith('Error')}>{metadataMessage}</span>
+                  {/if}
+                </div>
+              </div>
+            {/if}
+          </div>
+        {/if}
+
+        <!-- Object Tags section -->
+        <button class="section-title versions-toggle" onclick={loadObjectTags}>
+          Tags {objTagsExpanded ? '\u25B4' : '\u25BE'}
+        </button>
+        {#if objTagsExpanded}
+          <div class="versions-section">
+            {#if objTagsLoading}
+              <div class="loading">Loading tags...</div>
+            {:else}
+              <div class="tag-editor">
+                {#each objectTags as tag, i}
+                  <div class="tag-row">
+                    <input class="tag-input" type="text" bind:value={tag.key} placeholder="key" />
+                    <input class="tag-input" type="text" bind:value={tag.value} placeholder="value" />
+                    <button class="version-action-btn danger" onclick={() => removeObjectTag(i)} title="Remove">&times;</button>
+                  </div>
+                {/each}
+                {#if objectTags.length === 0}
+                  <div class="versions-empty">No tags</div>
+                {/if}
+                <div class="tag-actions">
+                  <button class="version-action-btn" onclick={addObjectTag} disabled={objectTags.length >= 10}>+ Add Tag</button>
+                  {#if objTagsDirty}
+                    <button class="dialog-btn apply-btn" onclick={saveObjectTags} disabled={savingObjTags}>
+                      {savingObjTags ? 'Saving...' : 'Save'}
+                    </button>
+                  {/if}
+                  {#if objTagsMessage}
+                    <span class="sc-message" class:sc-error={objTagsMessage.startsWith('Error')}>{objTagsMessage}</span>
+                  {/if}
+                </div>
+                {#if objectTags.length >= 10}
+                  <div class="versions-empty">Maximum 10 tags reached</div>
+                {/if}
+              </div>
+            {/if}
+          </div>
+        {/if}
       {:else if s3IsPrefix}
         <!-- S3 prefix (virtual directory) -->
         <table class="props-table">
           <tbody>
-            <tr><td class="prop-label">Prefix</td><td class="prop-value path">{path}</td></tr>
-            <tr><td class="prop-label">Kind</td><td class="prop-value">S3 Prefix (virtual directory)</td></tr>
+            <tr><td class="prop-label">{s3IsBucketRoot ? 'Bucket' : 'Prefix'}</td><td class="prop-value path">{path}</td></tr>
+            <tr><td class="prop-label">Kind</td><td class="prop-value">{s3IsBucketRoot ? 'S3 Bucket' : 'S3 Prefix (virtual directory)'}</td></tr>
           </tbody>
         </table>
+
+        {#if s3IsBucketRoot}
+          <!-- Bucket Versioning -->
+          <div class="section-title">Versioning</div>
+          <div class="storage-class-section">
+            {#if bucketVersioningLoading}
+              <div class="loading">Loading...</div>
+            {:else if bucketVersioning}
+              <div class="sc-row">
+                <span class="meta-label">Status: <strong>{bucketVersioning.status}</strong></span>
+                <button
+                  class="dialog-btn apply-btn"
+                  onclick={toggleBucketVersioning}
+                  disabled={applyingVersioning}
+                >
+                  {applyingVersioning ? 'Applying...' : bucketVersioning.status === 'Enabled' ? 'Suspend' : 'Enable'}
+                </button>
+              </div>
+              {#if bucketVersioning.mfa_delete === 'Enabled'}
+                <div class="restore-status">MFA Delete: Enabled</div>
+              {/if}
+              {#if versioningMessage}
+                <div class="sc-message" class:sc-error={versioningMessage.startsWith('Error')}>{versioningMessage}</div>
+              {/if}
+            {/if}
+          </div>
+
+          <!-- Bucket Encryption -->
+          <div class="section-title">Encryption</div>
+          <div class="storage-class-section">
+            {#if bucketEncryptionLoading}
+              <div class="loading">Loading...</div>
+            {:else if bucketEncryption && bucketEncryption.rules.length > 0}
+              <table class="props-table">
+                <tbody>
+                  {#each bucketEncryption.rules as rule, i}
+                    <tr><td class="prop-label">Algorithm</td><td class="prop-value">{rule.sse_algorithm}</td></tr>
+                    {#if rule.kms_key_id}
+                      <tr><td class="prop-label">KMS Key</td><td class="prop-value mono">{rule.kms_key_id}</td></tr>
+                    {/if}
+                    <tr><td class="prop-label">Bucket Key</td><td class="prop-value">{rule.bucket_key_enabled ? 'Enabled' : 'Disabled'}</td></tr>
+                  {/each}
+                </tbody>
+              </table>
+            {:else}
+              <div class="versions-empty">No encryption configuration</div>
+            {/if}
+          </div>
+
+          <!-- Bucket Tags -->
+          <button class="section-title versions-toggle" onclick={loadBucketTags}>
+            Bucket Tags {bucketTagsExpanded ? '\u25B4' : '\u25BE'}
+          </button>
+          {#if bucketTagsExpanded}
+            <div class="versions-section">
+              {#if bucketTagsLoading}
+                <div class="loading">Loading tags...</div>
+              {:else}
+                <div class="tag-editor">
+                  {#each bucketTags as tag, i}
+                    <div class="tag-row">
+                      <input class="tag-input" type="text" bind:value={tag.key} placeholder="key" />
+                      <input class="tag-input" type="text" bind:value={tag.value} placeholder="value" />
+                      <button class="version-action-btn danger" onclick={() => removeBucketTag(i)} title="Remove">&times;</button>
+                    </div>
+                  {/each}
+                  {#if bucketTags.length === 0}
+                    <div class="versions-empty">No tags</div>
+                  {/if}
+                  <div class="tag-actions">
+                    <button class="version-action-btn" onclick={addBucketTag} disabled={bucketTags.length >= 50}>+ Add Tag</button>
+                    {#if bucketTagsDirty}
+                      <button class="dialog-btn apply-btn" onclick={saveBucketTags} disabled={savingBucketTags}>
+                        {savingBucketTags ? 'Saving...' : 'Save'}
+                      </button>
+                    {/if}
+                    {#if bucketTagsMessage}
+                      <span class="sc-message" class:sc-error={bucketTagsMessage.startsWith('Error')}>{bucketTagsMessage}</span>
+                    {/if}
+                  </div>
+                </div>
+              {/if}
+            </div>
+          {/if}
+
+          <!-- Incomplete Uploads -->
+          <button class="section-title versions-toggle" onclick={loadMultipartUploads}>
+            Incomplete Uploads {uploadsExpanded ? '\u25B4' : '\u25BE'}
+          </button>
+          {#if uploadsExpanded}
+            <div class="versions-section">
+              {#if uploadsLoading}
+                <div class="loading">Loading uploads...</div>
+              {:else if uploadsError}
+                <div class="error">{uploadsError}</div>
+              {:else if multipartUploads.length === 0}
+                <div class="versions-empty">No incomplete multipart uploads</div>
+              {:else}
+                <div class="versions-list">
+                  <div class="tag-actions" style="margin-bottom: 4px;">
+                    <button class="version-action-btn danger" onclick={abortAllUploads} disabled={abortingAll}>
+                      {abortingAll ? 'Aborting...' : 'Abort All'}
+                    </button>
+                  </div>
+                  {#each multipartUploads as upload}
+                    <div class="version-row">
+                      <div class="version-info">
+                        <span class="version-id mono" title={upload.key}>{upload.key.length > 40 ? upload.key.slice(0, 40) + '\u2026' : upload.key}</span>
+                        <span class="version-date">{formatDate(upload.initiated)}</span>
+                      </div>
+                      <div class="version-actions">
+                        <button
+                          class="version-action-btn danger"
+                          onclick={() => abortUpload(upload.key, upload.upload_id)}
+                          disabled={abortingUpload === upload.upload_id}
+                          title="Abort this upload"
+                        >Abort</button>
+                      </div>
+                    </div>
+                  {/each}
+                </div>
+              {/if}
+            </div>
+          {/if}
+        {/if}
       {/if}
 
       <div class="dialog-buttons">
@@ -493,8 +992,11 @@
     border-radius: var(--radius-lg);
     min-width: 50ch;
     max-width: 70ch;
+    max-height: 85vh;
     box-shadow: var(--shadow-dialog);
     overflow: hidden;
+    display: flex;
+    flex-direction: column;
   }
 
   .dialog-title {
@@ -505,6 +1007,7 @@
     font-weight: 600;
     font-size: 14px;
     border-bottom: 1px solid var(--dialog-border);
+    flex-shrink: 0;
   }
 
   .dialog-body {
@@ -512,6 +1015,7 @@
     display: flex;
     flex-direction: column;
     gap: 12px;
+    overflow-y: auto;
   }
 
   .loading, .error {
@@ -676,6 +1180,7 @@
     display: flex;
     justify-content: center;
     margin-top: 8px;
+    flex-shrink: 0;
   }
 
   .dialog-btn {
@@ -928,5 +1433,79 @@
   .version-action-btn:disabled {
     opacity: 0.4;
     cursor: default;
+  }
+
+  /* Tag editor */
+  .tag-editor {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    padding: 4px 0;
+  }
+
+  .tag-row {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+  }
+
+  .tag-input {
+    flex: 1;
+    padding: 3px 6px;
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--radius-sm);
+    background: var(--bg-surface);
+    color: var(--text-primary);
+    font-size: 11px;
+    font-family: inherit;
+  }
+
+  .tag-input:focus {
+    outline: none;
+    border-color: var(--border-active);
+  }
+
+  .tag-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 4px 0 2px;
+  }
+
+  .tag-actions {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding-top: 4px;
+  }
+
+  /* Metadata fields */
+  .meta-field {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .meta-label {
+    font-size: 11px;
+    color: var(--text-secondary);
+    white-space: nowrap;
+    min-width: 110px;
+  }
+
+  .meta-input {
+    flex: 1;
+    padding: 3px 6px;
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--radius-sm);
+    background: var(--bg-surface);
+    color: var(--text-primary);
+    font-size: 11px;
+    font-family: inherit;
+  }
+
+  .meta-input:focus {
+    outline: none;
+    border-color: var(--border-active);
   }
 </style>
