@@ -20,7 +20,7 @@
 ## Features
 
 - **Dual-pane navigation** with Tab to switch between panes
-- **S3 support** — browse and transfer files to/from any S3-compatible storage (AWS, MinIO, Backblaze B2, etc.)
+- **[S3 support](S3.md)** — full-featured S3 client for any S3-compatible storage (AWS, MinIO, Backblaze B2, etc.) with transfers, versioning, lifecycle rules, CORS, bucket policies, and more
 - **Integrated terminal** — bottom panel (Cmd+T), Quake-style drop-down (Cmd+\`), or in-pane mode (Cmd+Shift+T)
 - **Git integration** — panel header shows repo indicator with branch name, ahead/behind status, dirty flag, pull button, and branch switcher
 - **File viewer** (F3) — text with line numbers, image preview, hex dump
@@ -122,6 +122,17 @@ The `.dmg` will be in `src-tauri/target/release/bundle/dmg/`.
 | PageUp / PageDown | Scroll by page |
 | Insert or Space | Toggle selection |
 
+### S3
+
+| Shortcut | Action |
+|----------|--------|
+| Cmd+S | Connect / disconnect S3 |
+| Cmd+U | Presigned URL to clipboard |
+| Cmd+K | Copy S3 URI to clipboard |
+| Cmd+L | Bulk storage class change |
+| Cmd+Y | Sync between panels |
+| Cmd+I | Properties (bucket config, metadata, tags, versions) |
+
 ### Terminal & UI
 
 | Shortcut | Action |
@@ -130,9 +141,9 @@ The `.dmg` will be in `src-tauri/target/release/bundle/dmg/`.
 | Cmd+\` | Toggle Quake terminal |
 | Cmd+Shift+T | Toggle in-pane terminal |
 | Cmd+B | Toggle sidebar (press twice to focus for keyboard navigation) |
+| Cmd+J | Toggle transfer panel |
 | F9 | Toggle menu |
 | Cmd+F | Search |
-| Cmd+S | Connect to S3 |
 | Cmd+Shift+L | Toggle dark/light theme |
 | Cmd+Q | Quit |
 
