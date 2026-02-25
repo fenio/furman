@@ -1,6 +1,6 @@
 [package]
 name = "furman"
-version = "0.1.3"
+version = "0.1.5"
 description = "Furman File Manager for macOS"
 authors = ["Bartosz Fenski"]
 license = "GPL-3.0-only"

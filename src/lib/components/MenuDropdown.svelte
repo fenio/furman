@@ -34,7 +34,7 @@
     <div class="about-section">
       <img class="about-logo" src={logo} alt="Furman" />
       <div class="about-name">Furman</div>
-      <div class="about-version">v0.1.3</div>
+      <div class="about-version">v0.1.5</div>
       <div class="about-desc">Dual-pane file manager</div>
     </div>
   </div>
