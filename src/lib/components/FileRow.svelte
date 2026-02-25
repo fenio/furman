@@ -11,12 +11,13 @@
     isActive: boolean;
     rowIndex: number;
     panelSide?: 'left' | 'right';
+    isS3?: boolean;
     dirSize?: number;
     onclick?: (e: MouseEvent) => void;
     ondblclick?: () => void;
   }
 
-  let { entry, isSelected, isCursor, isActive, rowIndex, panelSide, dirSize, onclick, ondblclick }: Props = $props();
+  let { entry, isSelected, isCursor, isActive, rowIndex, panelSide, isS3, dirSize, onclick, ondblclick }: Props = $props();
 
   const archiveExtensions = new Set(['zip', 'rar', '7z', 'tar', 'gz', 'tgz', 'bz2', 'xz']);
   const imageExtensions = new Set(['png', 'jpg', 'jpeg', 'gif', 'bmp', 'svg', 'webp', 'ico']);
@@ -56,6 +57,25 @@
 
   const dateDisplay = $derived(formatDate(entry.modified));
   const permDisplay = $derived(formatPermissions(entry.permissions));
+
+  const storageClassAbbrev: Record<string, string> = {
+    'STANDARD': 'STD',
+    'STANDARD_IA': 'STD-IA',
+    'ONEZONE_IA': 'OZ-IA',
+    'INTELLIGENT_TIERING': 'INT-T',
+    'GLACIER': 'GLACR',
+    'DEEP_ARCHIVE': 'DEEP',
+    'GLACIER_IR': 'GL-IR',
+    'REDUCED_REDUNDANCY': 'RR',
+    'EXPRESS_ONEZONE': 'EXPR',
+  };
+
+  const lastColDisplay = $derived.by(() => {
+    if (!isS3) return permDisplay;
+    const sc = entry.storage_class;
+    if (!sc) return entry.is_dir ? '' : 'STD';
+    return storageClassAbbrev[sc] ?? sc;
+  });
 
   const gitBadgeClass = $derived.by(() => {
     switch (entry.git_status) {
@@ -122,7 +142,7 @@
   <span class="col-name">{displayName}</span>
   <span class="col-size">{sizeDisplay}</span>
   <span class="col-date">{dateDisplay}</span>
-  <span class="col-perm">{permDisplay}</span>
+  <span class="col-perm">{lastColDisplay}</span>
 </div>
 {#if showTooltip && rowEl}
   <ImageTooltip src={convertFileSrc(entry.path)} anchorRect={rowEl.getBoundingClientRect()} />

@@ -188,6 +188,7 @@ fn build_listing(
         group: String::new(),
         extension: None,
         git_status: None,
+        storage_class: None,
     });
 
     let prefix_with_slash = if prefix.is_empty() {
@@ -233,6 +234,7 @@ fn build_listing(
                     group: String::new(),
                     extension: None,
                     git_status: None,
+                    storage_class: None,
                 });
             }
         } else if raw.is_dir {
@@ -255,6 +257,7 @@ fn build_listing(
                     group: String::new(),
                     extension: None,
                     git_status: None,
+                    storage_class: None,
                 });
             }
         } else {
@@ -280,6 +283,7 @@ fn build_listing(
                 group: String::new(),
                 extension: ext,
                 git_status: None,
+                storage_class: None,
             });
         }
     }

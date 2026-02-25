@@ -394,7 +394,7 @@
       Date{sortIndicator('modified')}
     </button>
     <button class="col-header col-perm" onclick={() => handleColumnClick('extension')}>
-      Ext{sortIndicator('extension')}
+      {isS3 ? 'Class' : 'Ext'}{sortIndicator('extension')}
     </button>
   </div>
   {/if}
@@ -453,6 +453,7 @@
             {isActive}
             rowIndex={i}
             panelSide={side}
+            {isS3}
             dirSize={entry.is_dir ? panel.dirSizeCache[entry.path] : undefined}
 
             onclick={(e) => handleRowClick(i, e)}

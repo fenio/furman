@@ -211,6 +211,7 @@ fn entry_from_path(path: &Path) -> Result<FileEntry, FmError> {
         group,
         extension,
         git_status: None,
+        storage_class: None,
     })
 }
 
@@ -258,6 +259,7 @@ pub fn list_directory(path: String, show_hidden: bool) -> Result<DirListing, FmE
                 group: String::new(),
                 extension: None,
                 git_status: None,
+                storage_class: None,
             });
         }
     }
