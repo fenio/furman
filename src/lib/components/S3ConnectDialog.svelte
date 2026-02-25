@@ -25,7 +25,7 @@
   let accessKey = $state(init?.accessKeyId ?? '');
   let secretKey = $state('');
   let selectedProvider = $state(init?.provider ?? 'aws');
-  let showManualCreds = $state(init?.credentialType === 'keychain' || false);
+  let useDefaultCreds = $state(init?.credentialType !== 'keychain');
   let hasDefaultCreds = $state(true);
   let checking = $state(true);
   let bucketEl: HTMLInputElement | undefined = $state(undefined);
@@ -76,12 +76,8 @@
   onMount(async () => {
     try {
       hasDefaultCreds = await s3CheckCredentials();
-      if (!hasDefaultCreds && !isEditing) {
-        showManualCreds = true;
-      }
     } catch {
       hasDefaultCreds = false;
-      if (!isEditing) showManualCreds = true;
     } finally {
       checking = false;
     }
@@ -93,7 +89,7 @@
   });
 
   function buildProfile(): Omit<S3Profile, 'id'> & { id?: string } {
-    const credentialType = showManualCreds && accessKey.trim() ? 'keychain' as const : profile.trim() ? 'aws-profile' as const : 'default' as const;
+    const credentialType = !useDefaultCreds && accessKey.trim() ? 'keychain' as const : profile.trim() ? 'aws-profile' as const : 'default' as const;
     return {
       ...(init ? { id: init.id } : {}),
       name: name.trim(),
@@ -115,8 +111,8 @@
       region.trim() || 'us-east-1',
       endpoint.trim() || undefined,
       profile.trim() || undefined,
-      showManualCreds && accessKey.trim() ? accessKey.trim() : undefined,
-      showManualCreds && secretKey.trim() ? secretKey.trim() : undefined,
+      !useDefaultCreds && accessKey.trim() ? accessKey.trim() : undefined,
+      !useDefaultCreds && secretKey.trim() ? secretKey.trim() : undefined,
       selectedProvider,
       selectedProvider === 'custom' ? { ...customCaps } : undefined,
     );
@@ -125,15 +121,15 @@
   function handleSaveAndConnect() {
     if (!bucket.trim() || !name.trim()) return;
     const p = buildProfile();
-    const sk = showManualCreds && secretKey.trim() ? secretKey.trim() : undefined;
+    const sk = !useDefaultCreds && secretKey.trim() ? secretKey.trim() : undefined;
     onSave?.(p, sk);
     onConnect(
       bucket.trim(),
       region.trim() || 'us-east-1',
       endpoint.trim() || undefined,
       profile.trim() || undefined,
-      showManualCreds && accessKey.trim() ? accessKey.trim() : undefined,
-      showManualCreds && secretKey.trim() ? secretKey.trim() : undefined,
+      !useDefaultCreds && accessKey.trim() ? accessKey.trim() : undefined,
+      !useDefaultCreds && secretKey.trim() ? secretKey.trim() : undefined,
       selectedProvider,
       selectedProvider === 'custom' ? { ...customCaps } : undefined,
     );
@@ -142,7 +138,7 @@
   function handleSave() {
     if (!bucket.trim() || !name.trim()) return;
     const p = buildProfile();
-    const sk = showManualCreds && secretKey.trim() ? secretKey.trim() : undefined;
+    const sk = !useDefaultCreds && secretKey.trim() ? secretKey.trim() : undefined;
     onSave?.(p, sk);
     onCancel();
   }
@@ -155,8 +151,8 @@
         region.trim() || 'us-east-1',
         endpoint.trim() || undefined,
         profile.trim() || undefined,
-        showManualCreds && accessKey.trim() ? accessKey.trim() : undefined,
-        showManualCreds && secretKey.trim() ? secretKey.trim() : undefined,
+        !useDefaultCreds && accessKey.trim() ? accessKey.trim() : undefined,
+        !useDefaultCreds && secretKey.trim() ? secretKey.trim() : undefined,
       );
       showBucketList = true;
     } catch (e: any) {
@@ -176,8 +172,8 @@
     return [
       endpoint.trim() || undefined,
       profile.trim() || undefined,
-      showManualCreds && accessKey.trim() ? accessKey.trim() : undefined,
-      showManualCreds && secretKey.trim() ? secretKey.trim() : undefined,
+      !useDefaultCreds && accessKey.trim() ? accessKey.trim() : undefined,
+      !useDefaultCreds && secretKey.trim() ? secretKey.trim() : undefined,
     ];
   }
 
@@ -364,43 +360,39 @@
         />
       </label>
 
-      <div class="creds-toggle">
-        <label class="checkbox-label">
-          <input type="checkbox" bind:checked={showManualCreds} />
-          Manual credentials
-        </label>
-        {#if checking}
-          <span class="creds-status">Checking credentials...</span>
-        {:else if hasDefaultCreds}
+      {#if !checking && hasDefaultCreds}
+        <div class="creds-toggle">
+          <label class="checkbox-label">
+            <input type="checkbox" bind:checked={useDefaultCreds} />
+            Use default credentials
+          </label>
           <span class="creds-status ok">Default credentials found</span>
-        {:else}
-          <span class="creds-status warn">No default credentials</span>
-        {/if}
-      </div>
-
-      {#if showManualCreds}
-        <label class="field-label">
-          Access Key
-          <input
-            type="text"
-            class="dialog-input"
-            autocomplete="off"
-            bind:value={accessKey}
-            placeholder="AKIA..."
-          />
-        </label>
-
-        <label class="field-label">
-          Secret Key
-          <input
-            type="password"
-            class="dialog-input"
-            autocomplete="off"
-            bind:value={secretKey}
-            placeholder={isEditing ? 'Leave empty to keep current' : 'secret'}
-          />
-        </label>
+        </div>
       {/if}
+
+      <label class="field-label">
+        Access Key
+        <input
+          type="text"
+          class="dialog-input"
+          autocomplete="off"
+          bind:value={accessKey}
+          placeholder="AKIA..."
+          disabled={useDefaultCreds && hasDefaultCreds}
+        />
+      </label>
+
+      <label class="field-label">
+        Secret Key
+        <input
+          type="password"
+          class="dialog-input"
+          autocomplete="off"
+          bind:value={secretKey}
+          placeholder={isEditing ? 'Leave empty to keep current' : 'secret'}
+          disabled={useDefaultCreds && hasDefaultCreds}
+        />
+      </label>
 
       {#if selectedProvider === 'custom'}
         <div class="caps-section">
@@ -484,8 +476,8 @@
     background: var(--dialog-bg);
     border: 1px solid var(--dialog-border);
     border-radius: var(--radius-lg);
-    min-width: 50ch;
-    max-width: 80ch;
+    width: 72ch;
+    max-width: 90vw;
     box-shadow: var(--shadow-dialog);
     overflow: hidden;
   }
@@ -564,8 +556,9 @@
     color: var(--success-color);
   }
 
-  .creds-status.warn {
-    color: var(--warning-color);
+  .dialog-input:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
   }
 
   .dialog-buttons {
