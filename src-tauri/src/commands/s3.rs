@@ -1,13 +1,14 @@
 use crate::commands::file::FileOpState;
-use crate::models::{DirListing, FileEntry, FmError, ProgressEvent};
+use crate::models::{DirListing, FileEntry, FmError, ProgressEvent, S3ObjectProperties};
 use aws_config::BehaviorVersion;
 use aws_credential_types::provider::ProvideCredentials;
 use aws_sdk_s3::Client as S3Client;
 use std::collections::HashMap;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 use tauri::ipc::Channel;
 use tauri::State;
+use tokio::sync::Semaphore;
 
 // ── State ────────────────────────────────────────────────────────────────────
 
@@ -40,6 +41,13 @@ fn strip_s3_prefix(path: &str, bucket: &str) -> String {
 fn s3_path(bucket: &str, key: &str) -> String {
     format!("s3://{}/{}", bucket, key)
 }
+
+// ── Multipart upload constants ──────────────────────────────────────────────
+
+const MULTIPART_THRESHOLD: u64 = 8 * 1024 * 1024; // 8 MiB
+const PART_SIZE: u64 = 8 * 1024 * 1024; // 8 MiB
+const MAX_CONCURRENT_PARTS: usize = 4;
+const PART_RETRIES: u32 = 2;
 
 /// List ALL objects under a prefix (handles pagination), returns (key, size, modified_epoch_ms).
 async fn list_all_objects(
@@ -80,6 +88,225 @@ async fn list_all_objects(
     }
 
     Ok(results)
+}
+
+// ── Multipart upload helpers ─────────────────────────────────────────────────
+
+/// Upload a single part with retries and linear backoff.
+/// Reads `length` bytes from `file_path` at `offset` on each attempt (bounded memory).
+async fn upload_part_with_retry(
+    client: &S3Client,
+    bucket: &str,
+    key: &str,
+    upload_id: &str,
+    part_number: i32,
+    file_path: &std::path::Path,
+    offset: u64,
+    length: u64,
+    cancel_flag: &AtomicBool,
+) -> Result<(i32, String), FmError> {
+    use tokio::io::{AsyncReadExt, AsyncSeekExt};
+
+    for attempt in 0..=PART_RETRIES {
+        if cancel_flag.load(Ordering::Relaxed) {
+            return Err(FmError::Other("cancelled".into()));
+        }
+
+        // Read chunk from disk (re-read on each retry to avoid holding data during backoff)
+        let mut file = tokio::fs::File::open(file_path)
+            .await
+            .map_err(|e| FmError::Io(e))?;
+        file.seek(std::io::SeekFrom::Start(offset)).await.map_err(FmError::Io)?;
+        let mut buf = vec![0u8; length as usize];
+        file.read_exact(&mut buf).await.map_err(FmError::Io)?;
+
+        let result = client
+            .upload_part()
+            .bucket(bucket)
+            .key(key)
+            .upload_id(upload_id)
+            .part_number(part_number)
+            .body(buf.into())
+            .send()
+            .await;
+
+        match result {
+            Ok(resp) => {
+                let etag = resp
+                    .e_tag()
+                    .ok_or_else(|| s3err("Missing ETag in upload_part response"))?
+                    .to_string();
+                return Ok((part_number, etag));
+            }
+            Err(e) => {
+                if attempt < PART_RETRIES {
+                    let backoff = std::time::Duration::from_millis(500 * (attempt as u64 + 1));
+                    tokio::time::sleep(backoff).await;
+                } else {
+                    return Err(s3err(format!(
+                        "Part {} failed after {} retries: {}",
+                        part_number,
+                        PART_RETRIES + 1,
+                        e,
+                    )));
+                }
+            }
+        }
+    }
+    unreachable!()
+}
+
+/// Orchestrate a full multipart upload for a single large file.
+async fn upload_file_multipart(
+    client: &S3Client,
+    bucket: &str,
+    key: &str,
+    file_path: &std::path::Path,
+    file_size: u64,
+    cancel_flag: &Arc<AtomicBool>,
+    bytes_done: &Arc<AtomicU64>,
+    op_id: &str,
+    bytes_total: u64,
+    files_done: u32,
+    files_total: u32,
+    current_file: &str,
+    channel: &Channel<ProgressEvent>,
+) -> Result<(), FmError> {
+    // 1. Create multipart upload
+    let create_resp = client
+        .create_multipart_upload()
+        .bucket(bucket)
+        .key(key)
+        .send()
+        .await
+        .map_err(|e| s3err(e.to_string()))?;
+
+    let upload_id = create_resp
+        .upload_id()
+        .ok_or_else(|| s3err("Missing upload_id from create_multipart_upload"))?
+        .to_string();
+
+    // 2. Calculate parts with dynamic part size (handle files > 80 GiB within 10k part limit)
+    let part_size = std::cmp::max(PART_SIZE, file_size / 10_000 + 1);
+    let num_parts = ((file_size + part_size - 1) / part_size) as i32;
+
+    let semaphore = Arc::new(Semaphore::new(MAX_CONCURRENT_PARTS));
+    let mut handles = Vec::with_capacity(num_parts as usize);
+
+    // 3. Spawn tasks for each part
+    for i in 0..num_parts {
+        let offset = i as u64 * part_size;
+        let length = std::cmp::min(part_size, file_size - offset);
+        let part_number = i + 1; // S3 part numbers are 1-based
+
+        let client = client.clone();
+        let bucket = bucket.to_string();
+        let key = key.to_string();
+        let upload_id = upload_id.clone();
+        let file_path = file_path.to_path_buf();
+        let cancel_flag = cancel_flag.clone();
+        let sem = semaphore.clone();
+        let bytes_done = bytes_done.clone();
+        let channel = channel.clone();
+        let op_id = op_id.to_string();
+        let current_file = current_file.to_string();
+
+        let handle = tokio::spawn(async move {
+            let _permit = sem
+                .acquire()
+                .await
+                .map_err(|_| FmError::Other("semaphore closed".into()))?;
+
+            let result = upload_part_with_retry(
+                &client,
+                &bucket,
+                &key,
+                &upload_id,
+                part_number,
+                &file_path,
+                offset,
+                length,
+                &cancel_flag,
+            )
+            .await?;
+
+            // Update progress atomically
+            let new_bytes = bytes_done.fetch_add(length, Ordering::Relaxed) + length;
+            let _ = channel.send(ProgressEvent {
+                id: op_id,
+                bytes_done: new_bytes,
+                bytes_total,
+                current_file,
+                files_done,
+                files_total,
+            });
+
+            Ok::<(i32, String), FmError>(result)
+        });
+
+        handles.push(handle);
+    }
+
+    // 4. Join all handles, collect results
+    let mut completed_parts: Vec<(i32, String)> = Vec::with_capacity(num_parts as usize);
+    let mut first_error: Option<FmError> = None;
+
+    for handle in handles {
+        match handle.await {
+            Ok(Ok(part)) => completed_parts.push(part),
+            Ok(Err(e)) => {
+                if first_error.is_none() {
+                    first_error = Some(e);
+                }
+            }
+            Err(e) => {
+                if first_error.is_none() {
+                    first_error = Some(FmError::Other(format!("Task join error: {}", e)));
+                }
+            }
+        }
+    }
+
+    // 5. On any failure → abort multipart upload (best-effort) → return error
+    if let Some(err) = first_error {
+        let _ = client
+            .abort_multipart_upload()
+            .bucket(bucket)
+            .key(key)
+            .upload_id(&upload_id)
+            .send()
+            .await;
+        return Err(err);
+    }
+
+    // 6. Sort parts by number → complete multipart upload
+    completed_parts.sort_by_key(|(num, _)| *num);
+
+    let parts: Vec<_> = completed_parts
+        .iter()
+        .map(|(num, etag)| {
+            aws_sdk_s3::types::CompletedPart::builder()
+                .part_number(*num)
+                .e_tag(etag)
+                .build()
+        })
+        .collect();
+
+    let completed_upload = aws_sdk_s3::types::CompletedMultipartUpload::builder()
+        .set_parts(Some(parts))
+        .build();
+
+    client
+        .complete_multipart_upload()
+        .bucket(bucket)
+        .key(key)
+        .upload_id(&upload_id)
+        .multipart_upload(completed_upload)
+        .send()
+        .await
+        .map_err(|e| s3err(e.to_string()))?;
+
+    Ok(())
 }
 
 // ── Commands ─────────────────────────────────────────────────────────────────
@@ -490,25 +717,52 @@ pub async fn s3_upload(
                 return Err(FmError::Other("Operation cancelled".into()));
             }
 
-            let data = std::fs::read(local_path)?;
-            let size = data.len() as u64;
-
-            client
-                .put_object()
-                .bucket(&bucket)
-                .key(key)
-                .body(data.into())
-                .send()
-                .await
-                .map_err(|e| s3err(e.to_string()))?;
-
-            bytes_done += size;
-            files_done += 1;
-
+            let file_size = std::fs::metadata(local_path)
+                .map(|m| m.len())
+                .unwrap_or(0);
             let filename = local_path
                 .file_name()
                 .map(|n| n.to_string_lossy().to_string())
                 .unwrap_or_default();
+
+            if file_size > MULTIPART_THRESHOLD {
+                // Large file: multipart upload with concurrent parts
+                let atomic_bytes_done = Arc::new(AtomicU64::new(bytes_done));
+                upload_file_multipart(
+                    &client,
+                    &bucket,
+                    key,
+                    local_path,
+                    file_size,
+                    &cancel_flag,
+                    &atomic_bytes_done,
+                    &op_id,
+                    bytes_total,
+                    files_done,
+                    files_total,
+                    &filename,
+                    &channel,
+                )
+                .await?;
+                bytes_done = atomic_bytes_done.load(Ordering::Relaxed);
+            } else {
+                // Small file: single put_object
+                let data = std::fs::read(local_path)?;
+                let size = data.len() as u64;
+
+                client
+                    .put_object()
+                    .bucket(&bucket)
+                    .key(key)
+                    .body(data.into())
+                    .send()
+                    .await
+                    .map_err(|e| s3err(e.to_string()))?;
+
+                bytes_done += size;
+            }
+
+            files_done += 1;
 
             let _ = channel.send(ProgressEvent {
                 id: op_id.clone(),
@@ -645,6 +899,48 @@ pub async fn s3_copy_objects(
     }
 
     result
+}
+
+/// Get properties of a single S3 object via head_object.
+#[tauri::command]
+pub async fn s3_head_object(
+    state: State<'_, S3State>,
+    id: String,
+    key: String,
+) -> Result<S3ObjectProperties, FmError> {
+    let (client, bucket) = {
+        let map = state.0.lock().map_err(|e| s3err(e.to_string()))?;
+        let conn = map.get(&id).ok_or_else(|| s3err("S3 connection not found"))?;
+        (conn.client.clone(), conn.bucket.clone())
+    };
+
+    let actual_key = strip_s3_prefix(&key, &bucket);
+
+    let head = client
+        .head_object()
+        .bucket(&bucket)
+        .key(&actual_key)
+        .send()
+        .await
+        .map_err(|e| s3err(e.to_string()))?;
+
+    let size = head.content_length().unwrap_or(0) as u64;
+    let modified = head
+        .last_modified()
+        .and_then(|t| t.to_millis().ok())
+        .unwrap_or(0);
+    let content_type = head.content_type().map(|s| s.to_string());
+    let etag = head.e_tag().map(|s| s.to_string());
+    let storage_class = head.storage_class().map(|s| s.as_str().to_string());
+
+    Ok(S3ObjectProperties {
+        key: actual_key,
+        size,
+        modified,
+        content_type,
+        etag,
+        storage_class,
+    })
 }
 
 /// Delete S3 objects. For prefix keys, lists and deletes all children.
