@@ -181,7 +181,7 @@
     background: var(--dialog-bg);
     border: 1px solid var(--dialog-border);
     border-radius: var(--radius-lg);
-    width: 56ch;
+    width: 72ch;
     max-width: 90vw;
     box-shadow: var(--shadow-dialog);
     overflow: hidden;
@@ -260,7 +260,7 @@
   }
 
   .keys {
-    flex: 0 0 16ch;
+    flex: 0 0 19ch;
     font-family: inherit;
     font-size: 11px;
     color: var(--text-secondary);
