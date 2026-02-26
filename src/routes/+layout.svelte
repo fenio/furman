@@ -14,6 +14,7 @@
   import { s3PathToPrefix } from '$lib/state/panels.svelte';
   import { error } from '$lib/services/log';
   import { resolveCapabilities } from '$lib/data/s3-providers';
+  import { dragState } from '$lib/services/drag';
   import type { PanelData } from '$lib/state/panels.svelte';
   import type { ProgressEvent, S3ConnectionInfo, S3ProviderCapabilities, SyncEntry } from '$lib/types';
 
@@ -21,13 +22,14 @@
 
   // ── Native drag-and-drop from OS ──────────────────────────────────────────
 
-  function getTargetPanel(position: { x: number; y: number }): PanelData | null {
+  function getTargetPanel(position: { x: number; y: number }): { panel: PanelData; side: 'left' | 'right' } | null {
     const panelEls = document.querySelectorAll('.file-panel');
     for (const [i, el] of Array.from(panelEls).entries()) {
       const rect = el.getBoundingClientRect();
       if (position.x >= rect.left && position.x <= rect.right &&
           position.y >= rect.top && position.y <= rect.bottom) {
-        return i === 0 ? panels.left : panels.right;
+        const side = i === 0 ? 'left' as const : 'right' as const;
+        return { panel: i === 0 ? panels.left : panels.right, side };
       }
     }
     return null;
@@ -44,42 +46,51 @@
           const position = event.payload.position;
           if (!paths || paths.length === 0) return;
 
-          const target = getTargetPanel(position);
-          if (!target) return;
+          const result = getTargetPanel(position);
+          if (!result) return;
+          const { panel: target, side: targetSide } = result;
 
+          // Internal drag from within the app (panel-to-panel via native drag)
+          if (dragState.source && dragState.source.side !== targetSide) {
+            const sourceSide = dragState.source.side;
+            panels.activePanel = sourceSide;
+            // Dispatch F5 (copy) or F6 (move if Shift held) — same as HTML5 panel-to-panel drop
+            const key = dragState.shiftHeld ? 'F6' : 'F5';
+            window.dispatchEvent(new KeyboardEvent('keydown', { key }));
+            dragState.source = null;
+            return;
+          }
+          // Internal drag dropped on the same panel — ignore
+          if (dragState.source) {
+            dragState.source = null;
+            return;
+          }
+
+          // External drag from OS (Finder → app)
           const opId = 'drop-' + Date.now() + '-' + Math.random().toString(36).slice(2, 6);
-          const onProgress = (e: ProgressEvent) => {
-            transfersState.updateProgress(opId, e);
-          };
 
           if (target.backend === 's3' && target.s3Connection) {
             const conn = target.s3Connection;
             const prefix = s3PathToPrefix(target.path, conn.bucket);
-            transfersState.add(opId, 'copy', paths, target.path);
-            s3Upload(conn.connectionId, opId, paths, prefix, onProgress)
-              .then(() => {
-                transfersState.complete(opId);
-                statusState.setMessage(`Uploaded ${paths.length} file(s) to S3`);
-                target.loadDirectory(target.path);
-              })
-              .catch((err) => {
-                error(String(err));
-                transfersState.fail(opId, String(err));
-                statusState.setMessage('Upload failed');
-              });
+            transfersState.enqueue({
+              id: opId,
+              type: 'copy',
+              sources: paths,
+              destination: target.path,
+              srcBackend: 'local',
+              destBackend: 's3',
+              s3DestConnectionId: conn.connectionId,
+              s3DestPrefix: prefix,
+            });
           } else if (target.backend === 'local') {
-            transfersState.add(opId, 'copy', paths, target.path);
-            copyFiles(opId, paths, target.path, onProgress)
-              .then(() => {
-                transfersState.complete(opId);
-                statusState.setMessage(`Copied ${paths.length} file(s)`);
-                target.loadDirectory(target.path);
-              })
-              .catch((err) => {
-                error(String(err));
-                transfersState.fail(opId, String(err));
-                statusState.setMessage('Copy failed');
-              });
+            transfersState.enqueue({
+              id: opId,
+              type: 'copy',
+              sources: paths,
+              destination: target.path,
+              srcBackend: 'local',
+              destBackend: 'local',
+            });
           }
         }
       });

@@ -445,6 +445,9 @@
             isCursor={i === panel.cursorIndex}
             {isActive}
             panelSide={side}
+            backend={panel.backend}
+            s3ConnectionId={panel.s3Connection?.connectionId}
+            getSelectedPaths={() => panel.getSelectedOrCurrent()}
             onclick={(e) => handleRowClick(i, e)}
             ondblclick={() => handleRowDblClick(i)}
           />
@@ -458,7 +461,9 @@
             panelSide={side}
             {isS3}
             dirSize={entry.is_dir ? panel.dirSizeCache[entry.path] : undefined}
-
+            backend={panel.backend}
+            s3ConnectionId={panel.s3Connection?.connectionId}
+            getSelectedPaths={() => panel.getSelectedOrCurrent()}
             onclick={(e) => handleRowClick(i, e)}
             ondblclick={() => handleRowDblClick(i)}
           />

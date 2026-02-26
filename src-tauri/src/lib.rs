@@ -42,6 +42,7 @@ pub fn run() {
         .manage(SearchState(Mutex::new(HashMap::new())))
         .manage(FileOpState(Mutex::new(HashMap::new())))
         .manage(SyncState(Mutex::new(HashMap::new())))
+        .plugin(tauri_plugin_drag::init())
         .setup(|app| {
             let mut targets = vec![
                 tauri_plugin_log::Target::new(tauri_plugin_log::TargetKind::LogDir { file_name: None }),

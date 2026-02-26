@@ -12,6 +12,7 @@
     "core:event:allow-listen",
     "core:window:allow-close",
     "core:window:allow-set-theme",
-    "log:default"
+    "log:default",
+    "drag:default"
   ]
 }

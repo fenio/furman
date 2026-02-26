@@ -1,8 +1,11 @@
 <script lang="ts">
-  import type { FileEntry } from '$lib/types';
+  import type { FileEntry, PanelBackend } from '$lib/types';
   import { formatSize, formatDate, formatPermissions } from '$lib/utils/format';
   import { convertFileSrc } from '@tauri-apps/api/core';
   import ImageTooltip from './ImageTooltip.svelte';
+  import { startLocalFileDrag, startS3FileDrag, dragState } from '$lib/services/drag';
+  import { statusState } from '$lib/state/status.svelte';
+  import { error as logError } from '$lib/services/log';
 
   interface Props {
     entry: FileEntry;
@@ -13,11 +16,14 @@
     panelSide?: 'left' | 'right';
     isS3?: boolean;
     dirSize?: number;
+    backend?: PanelBackend;
+    s3ConnectionId?: string;
+    getSelectedPaths?: () => string[];
     onclick?: (e: MouseEvent) => void;
     ondblclick?: () => void;
   }
 
-  let { entry, isSelected, isCursor, isActive, rowIndex, panelSide, isS3, dirSize, onclick, ondblclick }: Props = $props();
+  let { entry, isSelected, isCursor, isActive, rowIndex, panelSide, isS3, dirSize, backend, s3ConnectionId, getSelectedPaths, onclick, ondblclick }: Props = $props();
 
   const archiveExtensions = new Set(['zip', 'rar', '7z', 'tar', 'gz', 'tgz', 'bz2', 'xz']);
   const imageExtensions = new Set(['png', 'jpg', 'jpeg', 'gif', 'bmp', 'svg', 'webp', 'ico']);
@@ -115,6 +121,56 @@
     if (hoverTimer) { clearTimeout(hoverTimer); hoverTimer = null; }
     showTooltip = false;
   }
+
+  function handleDragGesture(e: MouseEvent) {
+    if (entry.name === '..' || e.button !== 0) return;
+    if (!panelSide || !backend || backend === 'archive') return;
+
+    const startX = e.clientX;
+    const startY = e.clientY;
+    const dragSide = panelSide;
+    const dragBackend = backend;
+    const dragS3Id = s3ConnectionId;
+    let started = false;
+
+    function onMove(ev: MouseEvent) {
+      if (started) return;
+      const dx = ev.clientX - startX;
+      const dy = ev.clientY - startY;
+      if (Math.abs(dx) + Math.abs(dy) <= 5) return;
+
+      started = true;
+      cleanup();
+
+      const paths = getSelectedPaths ? getSelectedPaths() : [entry.path];
+      if (paths.length === 0) return;
+
+      dragState.source = { side: dragSide, backend: dragBackend, paths, s3ConnectionId: dragS3Id };
+
+      if (dragBackend === 'local') {
+        startLocalFileDrag(paths)
+          .catch((err) => logError(String(err)))
+          .finally(() => { dragState.source = null; });
+      } else if (dragBackend === 's3' && dragS3Id) {
+        statusState.setMessage('Preparing drag...');
+        startS3FileDrag(dragS3Id, paths)
+          .catch((err) => logError(String(err)))
+          .finally(() => { dragState.source = null; statusState.setMessage(''); });
+      }
+    }
+
+    function onUp() {
+      cleanup();
+    }
+
+    function cleanup() {
+      window.removeEventListener('mousemove', onMove);
+      window.removeEventListener('mouseup', onUp);
+    }
+
+    window.addEventListener('mousemove', onMove);
+    window.addEventListener('mouseup', onUp);
+  }
 </script>
 
 <!-- svelte-ignore a11y_click_events_have_key_events -->
@@ -123,13 +179,7 @@
   class={rowClass}
   role="row"
   tabindex="-1"
-  draggable={entry.name !== '..'}
-  ondragstart={(e) => {
-    if (panelSide && e.dataTransfer) {
-      e.dataTransfer.setData('application/x-furman-files', JSON.stringify({ side: panelSide }));
-      e.dataTransfer.effectAllowed = 'copyMove';
-    }
-  }}
+  onmousedown={handleDragGesture}
   onmouseenter={onMouseEnter}
   onmouseleave={onMouseLeave}
   {onclick}
