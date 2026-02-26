@@ -63,14 +63,12 @@ impl TestContext {
         } else {
             Some(config.endpoint.as_str())
         };
-        let ak = if config.access_key.is_empty() { None } else { Some(config.access_key.as_str()) };
-        let sk = if config.secret_key.is_empty() { None } else { Some(config.secret_key.as_str()) };
         let client = build_s3_client(
             &config.region,
             endpoint,
             None,
-            ak,
-            sk,
+            Some(&config.access_key),
+            Some(&config.secret_key),
             None,
             None,
             None,

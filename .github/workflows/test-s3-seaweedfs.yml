@@ -48,8 +48,8 @@ jobs:
         working-directory: src-tauri
         env:
           S3_TEST_ENDPOINT: http://localhost:8333
-          S3_TEST_ACCESS_KEY: ''
-          S3_TEST_SECRET_KEY: ''
+          S3_TEST_ACCESS_KEY: anonymous
+          S3_TEST_SECRET_KEY: anonymous
           S3_TEST_REGION: us-east-1
         run: |
           cargo test --test s3_integration -- --test-threads=4 \
