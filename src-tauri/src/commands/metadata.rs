@@ -59,8 +59,16 @@ pub fn open_file_default(path: String) -> Result<(), FmError> {
     }
     #[cfg(target_os = "macos")]
     {
-        std::process::Command::new("open")
-            .arg(&p)
+        // Use "open -a Finder" for directories whose names end in ".app",
+        // because plain "open" treats them as application bundles.
+        let mut cmd = std::process::Command::new("open");
+        if p.is_dir()
+            && p.extension()
+                .map_or(false, |ext| ext.eq_ignore_ascii_case("app"))
+        {
+            cmd.args(["-a", "Finder"]);
+        }
+        cmd.arg(&p)
             .spawn()
             .map_err(|e| FmError::Other(format!("Failed to open file: {e}")))?;
     }
