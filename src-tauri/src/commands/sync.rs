@@ -1,4 +1,4 @@
-use crate::commands::s3::S3State;
+use crate::s3::S3State;
 use crate::models::{FmError, SyncEntry, SyncEvent};
 use std::collections::HashMap;
 use std::fs;

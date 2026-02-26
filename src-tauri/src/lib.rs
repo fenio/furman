@@ -1,8 +1,9 @@
 mod commands;
-mod models;
+pub mod models;
+pub mod s3;
 
 use commands::file::FileOpState;
-use commands::s3::S3State;
+use s3::S3State;
 use commands::search::SearchState;
 use commands::sync::SyncState;
 use commands::terminal::TerminalState;
