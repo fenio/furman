@@ -1408,6 +1408,9 @@
         if (active.filterText) {
           // Delete last character from filter
           active.filterText = active.filterText.slice(0, -1);
+          if (active.filterText) {
+            active.cursorIndex = Math.min(1, active.filteredSortedEntries.length - 1);
+          }
         } else {
           // Go to parent directory — focus on the directory we just left
           const parentEntry = active.filteredSortedEntries.find((en) => en.name === '..');
@@ -1496,6 +1499,7 @@
         if (e.key.length === 1 && !e.metaKey && !e.altKey && !e.ctrlKey && e.key !== ' ') {
           e.preventDefault();
           active.filterText += e.key;
+          active.cursorIndex = Math.min(1, active.filteredSortedEntries.length - 1);
         }
         break;
     }
