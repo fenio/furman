@@ -7,7 +7,8 @@
 </p>
 
 <p align="center">
-  <b>F</b>ile & <b>U</b>RL <b>R</b>epository <b>MAN</b>ager — a dual-pane file manager for macOS inspired by times when Dos Navigator was the king.
+  <b>F</b>ile & <b>U</b>RL <b>R</b>epository <b>MAN</b>ager — a dual-pane file manager for macOS inspired by times when Dos Navigator was the king.<br>
+  <sub><i>furman</i> is also Polish for "coachman" — a driver of horses, and in our case, of files.</sub>
 </p>
 
 <p align="center">
