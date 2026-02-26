@@ -951,6 +951,10 @@
           e.preventDefault();
           appState.toggleLayout();               // Cmd+P = Toggle single/dual pane
           return;
+        case '/':
+          e.preventDefault();
+          appState.modal = 'shortcuts';          // Cmd+/ = Shortcuts cheatsheet
+          return;
         case 'j':
           e.preventDefault();
           transfersState.toggle();               // Cmd+J = Transfer panel

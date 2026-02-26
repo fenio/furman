@@ -26,6 +26,7 @@
   import OverwriteDialog from '$lib/components/OverwriteDialog.svelte';
   import PropertiesDialog from '$lib/components/PropertiesDialog.svelte';
   import SyncDialog from '$lib/components/SyncDialog.svelte';
+  import ShortcutsDialog from '$lib/components/ShortcutsDialog.svelte';
   import { s3ProfilesState } from '$lib/state/s3profiles.svelte';
   import type { SyncEntry } from '$lib/types';
 
@@ -332,6 +333,10 @@
       capabilities={appState.propertiesCapabilities}
       onClose={() => appState.closeModal()}
     />
+  {/if}
+
+  {#if appState.modal === 'shortcuts'}
+    <ShortcutsDialog onClose={() => appState.closeModal()} />
   {/if}
 
   {#if appState.modal === 'sync'}

@@ -29,6 +29,16 @@
       Preferences...
     </button>
 
+    <button
+      class="menu-row"
+      role="menuitem"
+      onclick={() => { appState.menuActive = false; appState.modal = 'shortcuts'; }}
+    >
+      <span class="check"></span>
+      Shortcuts...
+      <span class="menu-shortcut">{'\u2318'}/</span>
+    </button>
+
     <div class="menu-divider"></div>
 
     <div class="about-section">
@@ -85,6 +95,13 @@
     text-align: center;
     font-size: 12px;
     flex-shrink: 0;
+  }
+
+  .menu-shortcut {
+    margin-left: auto;
+    font-size: 11px;
+    color: var(--text-secondary);
+    opacity: 0.6;
   }
 
   .menu-divider {

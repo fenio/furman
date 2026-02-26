@@ -67,7 +67,8 @@ export type ModalType =
   | 'search'
   | 'sync'
   | 'preferences'
-  | 'properties';
+  | 'properties'
+  | 'shortcuts';
 
 export type SearchMode = 'name' | 'content';
 
