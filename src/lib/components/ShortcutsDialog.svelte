@@ -81,6 +81,7 @@
           shortcuts: [
             { keys: '\u2318P', desc: 'Toggle single / dual pane' },
             { keys: '\u2318B', desc: 'Toggle sidebar' },
+            { keys: '\u2318D', desc: 'Save workspace' },
             { keys: '\u2318J', desc: 'Toggle transfer panel' },
             { keys: '\u2318Y', desc: 'Sync directories' },
             { keys: '\u2318\u21E7L', desc: 'Toggle dark / light theme' },

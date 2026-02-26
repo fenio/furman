@@ -1195,7 +1195,16 @@
           if (active.backend === 's3') {
             handleBookmarkS3();                  // Cmd+D = Bookmark S3 path
           } else {
-            handleDelete();                      // Cmd+D = Delete (F8)
+            appState.showInput('Workspace name:', '', (name) => {
+              appState.closeModal();
+              if (!name) return;
+              workspacesState.save({
+                name,
+                leftPath: panels.left.path,
+                rightPath: panels.right.path,
+                activePanel: panels.activePanel,
+              });
+            });                                  // Cmd+D = Save workspace
           }
           return;
         case 's':
