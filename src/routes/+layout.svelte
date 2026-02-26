@@ -766,7 +766,7 @@
       }
       await active.loadDirectory(active.path);
       if (mkdirError) {
-        appState.showConfirm(mkdirError, () => {});
+        appState.showAlert(mkdirError);
       }
     });
   }

@@ -22,6 +22,7 @@ class AppState {
   editorS3Key = $state('');
   confirmMessage = $state('');
   confirmCallback = $state<(() => void) | null>(null);
+  confirmAlertOnly = $state(false);
   inputPrompt = $state('');
   inputValue = $state('');
   inputCallback = $state<((value: string) => void) | null>(null);
@@ -112,6 +113,14 @@ class AppState {
   showConfirm(message: string, callback: () => void) {
     this.confirmMessage = message;
     this.confirmCallback = callback;
+    this.confirmAlertOnly = false;
+    this.modal = 'confirm';
+  }
+
+  showAlert(message: string) {
+    this.confirmMessage = message;
+    this.confirmCallback = null;
+    this.confirmAlertOnly = true;
     this.modal = 'confirm';
   }
 
@@ -230,6 +239,7 @@ class AppState {
     this.modal = 'none';
     this.confirmMessage = '';
     this.confirmCallback = null;
+    this.confirmAlertOnly = false;
     this.inputPrompt = '';
     this.inputValue = '';
     this.inputCallback = null;

@@ -258,6 +258,7 @@
   {#if appState.modal === 'confirm'}
     <ConfirmDialog
       message={appState.confirmMessage}
+      alertOnly={appState.confirmAlertOnly}
       onConfirm={() => {
         const cb = appState.confirmCallback;
         if (cb) cb();

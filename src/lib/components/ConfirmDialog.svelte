@@ -3,9 +3,10 @@
     message: string;
     onConfirm: () => void;
     onCancel: () => void;
+    alertOnly?: boolean;
   }
 
-  let { message, onConfirm, onCancel }: Props = $props();
+  let { message, onConfirm, onCancel, alertOnly = false }: Props = $props();
 
   let dialogEl: HTMLDivElement | undefined = $state(undefined);
 
@@ -19,7 +20,7 @@
     if (e.key === 'Enter') {
       e.preventDefault();
       e.stopPropagation();
-      onConfirm();
+      alertOnly ? onCancel() : onConfirm();
     } else if (e.key === 'Escape') {
       e.preventDefault();
       e.stopPropagation();
@@ -38,12 +39,16 @@
   aria-modal="true"
 >
   <div class="dialog-box">
-    <div class="dialog-title">Confirm</div>
+    <div class="dialog-title">{alertOnly ? 'Error' : 'Confirm'}</div>
     <div class="dialog-body">
       <p class="dialog-message">{message}</p>
       <div class="dialog-buttons">
-        <button class="dialog-btn primary" onclick={onConfirm}>Yes</button>
-        <button class="dialog-btn" onclick={onCancel}>No</button>
+        {#if alertOnly}
+          <button class="dialog-btn primary" onclick={onCancel}>OK</button>
+        {:else}
+          <button class="dialog-btn primary" onclick={onConfirm}>Yes</button>
+          <button class="dialog-btn" onclick={onCancel}>No</button>
+        {/if}
       </div>
     </div>
   </div>
