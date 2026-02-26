@@ -1,5 +1,5 @@
 import { invoke, Channel } from '@tauri-apps/api/core';
-import type { DirListing, KmsKeyInfo, ProgressEvent, S3Bucket, S3BucketAcl, S3BucketEncryption, S3BucketVersioning, S3CorsRule, S3LifecycleRule, S3MultipartUpload, S3ObjectMetadata, S3ObjectProperties, S3ObjectVersion, S3PublicAccessBlock, S3Tag, SearchEvent, TransferCheckpoint } from '$lib/types';
+import type { DirListing, KmsKeyInfo, ProgressEvent, S3Bucket, S3BucketAcl, S3BucketEncryption, S3BucketVersioning, S3CorsRule, S3LifecycleRule, S3MultipartUpload, S3ObjectLegalHold, S3ObjectLockConfig, S3ObjectMetadata, S3ObjectProperties, S3ObjectRetention, S3ObjectVersion, S3PublicAccessBlock, S3Tag, SearchEvent, TransferCheckpoint } from '$lib/types';
 
 export async function s3CheckCredentials(): Promise<boolean> {
   return await invoke<boolean>('s3_check_credentials');
@@ -477,6 +477,60 @@ export async function s3UploadEncrypted(
 
 export async function s3IsObjectEncrypted(id: string, key: string): Promise<boolean> {
   return await invoke<boolean>('s3_is_object_encrypted', { id, key });
+}
+
+// ── Object Lock ─────────────────────────────────────────────────────────────
+
+export async function s3GetObjectLockConfiguration(id: string): Promise<S3ObjectLockConfig> {
+  return await invoke<S3ObjectLockConfig>('s3_get_object_lock_configuration', { id });
+}
+
+export async function s3PutObjectLockConfiguration(
+  id: string,
+  mode: string | null,
+  days: number | null,
+  years: number | null,
+): Promise<void> {
+  await invoke('s3_put_object_lock_configuration', {
+    id,
+    mode: mode || null,
+    days: days ?? null,
+    years: years ?? null,
+  });
+}
+
+export async function s3GetObjectRetention(id: string, key: string): Promise<S3ObjectRetention> {
+  return await invoke<S3ObjectRetention>('s3_get_object_retention', { id, key });
+}
+
+export async function s3PutObjectRetention(
+  id: string,
+  key: string,
+  mode: string,
+  retainUntilDate: string,
+  bypassGovernance: boolean,
+): Promise<void> {
+  await invoke('s3_put_object_retention', { id, key, mode, retainUntilDate, bypassGovernance });
+}
+
+export async function s3GetObjectLegalHold(id: string, key: string): Promise<S3ObjectLegalHold> {
+  return await invoke<S3ObjectLegalHold>('s3_get_object_legal_hold', { id, key });
+}
+
+export async function s3PutObjectLegalHold(id: string, key: string, status: string): Promise<void> {
+  await invoke('s3_put_object_legal_hold', { id, key, status });
+}
+
+export async function s3BulkPutObjectRetention(
+  id: string,
+  keys: string[],
+  mode: string,
+  retainUntilDate: string,
+  bypassGovernance: boolean,
+): Promise<string[]> {
+  return await invoke<string[]>('s3_bulk_put_object_retention', {
+    id, keys, mode, retainUntilDate, bypassGovernance,
+  });
 }
 
 // ── Bandwidth Throttling ────────────────────────────────────────────────────

@@ -2,8 +2,9 @@ use crate::commands::file::FileOpState;
 use crate::models::{
     DirListing, FmError, KmsKeyInfo, ProgressEvent, S3BucketAcl, S3BucketEncryption,
     S3BucketLogging, S3BucketOwnership, S3BucketVersioning, S3BucketWebsite, S3CorsRule,
-    S3LifecycleRule, S3MultipartUpload, S3ObjectMetadata, S3ObjectProperties, S3ObjectVersion,
-    S3PublicAccessBlock, S3Tag, SearchEvent, TransferCheckpoint,
+    S3LifecycleRule, S3MultipartUpload, S3ObjectLegalHold, S3ObjectLockConfig, S3ObjectMetadata,
+    S3ObjectProperties, S3ObjectRetention, S3ObjectVersion, S3PublicAccessBlock, S3Tag, SearchEvent,
+    TransferCheckpoint,
 };
 use crate::s3::{self, build_s3_client, s3err, S3State, BANDWIDTH_LIMIT};
 use crate::s3::service::{S3Bucket, S3Service};
@@ -929,4 +930,90 @@ pub async fn s3_list_kms_keys(
         .collect();
 
     Ok(result)
+}
+
+// ── Object Lock ──────────────────────────────────────────────────────────
+
+#[tauri::command]
+pub async fn s3_get_object_lock_configuration(
+    state: State<'_, S3State>,
+    id: String,
+) -> Result<S3ObjectLockConfig, FmError> {
+    let service = get_service(&state, &id)?;
+    service.get_object_lock_configuration().await
+}
+
+#[tauri::command]
+pub async fn s3_put_object_lock_configuration(
+    state: State<'_, S3State>,
+    id: String,
+    mode: Option<String>,
+    days: Option<i32>,
+    years: Option<i32>,
+) -> Result<(), FmError> {
+    let service = get_service(&state, &id)?;
+    service
+        .put_object_lock_configuration(mode.as_deref(), days, years)
+        .await
+}
+
+#[tauri::command]
+pub async fn s3_get_object_retention(
+    state: State<'_, S3State>,
+    id: String,
+    key: String,
+) -> Result<S3ObjectRetention, FmError> {
+    let service = get_service(&state, &id)?;
+    service.get_object_retention(&key).await
+}
+
+#[tauri::command]
+pub async fn s3_put_object_retention(
+    state: State<'_, S3State>,
+    id: String,
+    key: String,
+    mode: String,
+    retain_until_date: String,
+    bypass_governance: bool,
+) -> Result<(), FmError> {
+    let service = get_service(&state, &id)?;
+    service
+        .put_object_retention(&key, &mode, &retain_until_date, bypass_governance)
+        .await
+}
+
+#[tauri::command]
+pub async fn s3_get_object_legal_hold(
+    state: State<'_, S3State>,
+    id: String,
+    key: String,
+) -> Result<S3ObjectLegalHold, FmError> {
+    let service = get_service(&state, &id)?;
+    service.get_object_legal_hold(&key).await
+}
+
+#[tauri::command]
+pub async fn s3_put_object_legal_hold(
+    state: State<'_, S3State>,
+    id: String,
+    key: String,
+    status: String,
+) -> Result<(), FmError> {
+    let service = get_service(&state, &id)?;
+    service.put_object_legal_hold(&key, &status).await
+}
+
+#[tauri::command]
+pub async fn s3_bulk_put_object_retention(
+    state: State<'_, S3State>,
+    id: String,
+    keys: Vec<String>,
+    mode: String,
+    retain_until_date: String,
+    bypass_governance: bool,
+) -> Result<Vec<String>, FmError> {
+    let service = get_service(&state, &id)?;
+    service
+        .bulk_put_object_retention(&keys, &mode, &retain_until_date, bypass_governance)
+        .await
 }

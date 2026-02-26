@@ -18,6 +18,9 @@
     s3GetRequestPayment, s3PutRequestPayment,
     s3GetBucketOwnership, s3PutBucketOwnership,
     s3GetBucketLogging, s3PutBucketLogging,
+    s3GetObjectLockConfiguration, s3PutObjectLockConfiguration,
+    s3GetObjectRetention, s3PutObjectRetention,
+    s3GetObjectLegalHold, s3PutObjectLegalHold,
   } from '$lib/services/s3';
   import { invoke } from '@tauri-apps/api/core';
   import { formatSize, formatDate, formatPermissions } from '$lib/utils/format';
@@ -26,6 +29,7 @@
     S3BucketVersioning, S3BucketEncryption, S3Tag, S3MultipartUpload,
     S3ObjectMetadata, S3LifecycleRule, S3CorsRule, S3PublicAccessBlock, S3BucketAcl,
     S3ProviderCapabilities, S3BucketWebsite, S3BucketLogging, S3BucketOwnership,
+    S3ObjectLockConfig, S3ObjectRetention, S3ObjectLegalHold,
     KmsKeyInfo,
   } from '$lib/types';
 
@@ -48,6 +52,7 @@
     glacierRestore: true, presignedUrls: true, objectMetadata: true,
     objectTags: true, bucketTags: true, multipartUploadCleanup: true,
     websiteHosting: true, requesterPays: true, objectOwnership: true, serverAccessLogging: true,
+    objectLock: true,
   };
 
   let fileProps = $state<FileProperties | null>(null);
@@ -296,6 +301,31 @@
   let logEnabled = $state(false);
   let logTargetBucket = $state('');
   let logTargetPrefix = $state('');
+
+  // Bucket-level: Object Lock
+  let objectLockConfig = $state<S3ObjectLockConfig | null>(null);
+  let objectLockLoading = $state(false);
+  let objectLockMessage = $state('');
+  let savingObjectLock = $state(false);
+  let olRetentionMode = $state('');
+  let olRetentionDays = $state<number | null>(null);
+  let olRetentionYears = $state<number | null>(null);
+  let olPeriodUnit = $state<'days' | 'years'>('days');
+
+  // Object-level: Retention
+  let objRetention = $state<S3ObjectRetention | null>(null);
+  let objRetentionLoading = $state(false);
+  let objRetentionMessage = $state('');
+  let savingObjRetention = $state(false);
+  let objRetMode = $state('GOVERNANCE');
+  let objRetDate = $state('');
+  let objRetBypass = $state(false);
+
+  // Object-level: Legal Hold
+  let objLegalHold = $state<S3ObjectLegalHold | null>(null);
+  let objLegalHoldLoading = $state(false);
+  let objLegalHoldMessage = $state('');
+  let savingLegalHold = $state(false);
 
   // Object-level: Metadata
   let metadataExpanded = $state(false);
@@ -946,6 +976,79 @@
     }
   }
 
+  // ── Bucket-level: Object Lock functions ──────────────────────────────────
+
+  async function saveObjectLockRetention() {
+    if (savingObjectLock) return;
+    savingObjectLock = true;
+    objectLockMessage = '';
+    try {
+      if (olRetentionMode) {
+        const days = olPeriodUnit === 'days' ? olRetentionDays : null;
+        const years = olPeriodUnit === 'years' ? olRetentionYears : null;
+        await s3PutObjectLockConfiguration(s3ConnectionId, olRetentionMode, days, years);
+      } else {
+        await s3PutObjectLockConfiguration(s3ConnectionId, null, null, null);
+      }
+      objectLockMessage = 'Default retention saved';
+      objectLockConfig = await s3GetObjectLockConfiguration(s3ConnectionId);
+      olRetentionMode = objectLockConfig.default_retention_mode ?? '';
+      if (objectLockConfig.default_retention_years) {
+        olPeriodUnit = 'years';
+        olRetentionYears = objectLockConfig.default_retention_years;
+        olRetentionDays = null;
+      } else {
+        olPeriodUnit = 'days';
+        olRetentionDays = objectLockConfig.default_retention_days;
+        olRetentionYears = null;
+      }
+    } catch (err: unknown) {
+      objectLockMessage = 'Error: ' + String(err);
+    } finally {
+      savingObjectLock = false;
+    }
+  }
+
+  // ── Object-level: Retention functions ──────────────────────────────────
+
+  async function saveObjectRetention() {
+    if (savingObjRetention || !objRetMode || !objRetDate) return;
+    savingObjRetention = true;
+    objRetentionMessage = '';
+    try {
+      const isoDate = new Date(objRetDate).toISOString();
+      await s3PutObjectRetention(s3ConnectionId, path, objRetMode, isoDate, objRetBypass);
+      objRetentionMessage = 'Retention updated';
+      objRetention = await s3GetObjectRetention(s3ConnectionId, path);
+      if (objRetention.mode) objRetMode = objRetention.mode;
+      if (objRetention.retain_until_date) {
+        objRetDate = objRetention.retain_until_date.slice(0, 10);
+      }
+    } catch (err: unknown) {
+      objRetentionMessage = 'Error: ' + String(err);
+    } finally {
+      savingObjRetention = false;
+    }
+  }
+
+  // ── Object-level: Legal Hold functions ─────────────────────────────────
+
+  async function toggleLegalHold() {
+    if (savingLegalHold) return;
+    savingLegalHold = true;
+    objLegalHoldMessage = '';
+    const newStatus = objLegalHold?.status === 'ON' ? 'OFF' : 'ON';
+    try {
+      await s3PutObjectLegalHold(s3ConnectionId, path, newStatus);
+      objLegalHold = { status: newStatus };
+      objLegalHoldMessage = newStatus === 'ON' ? 'Legal hold placed' : 'Legal hold removed';
+    } catch (err: unknown) {
+      objLegalHoldMessage = 'Error: ' + String(err);
+    } finally {
+      savingLegalHold = false;
+    }
+  }
+
   // ── Object-level: Metadata functions ────────────────────────────────────
 
   async function loadMetadata() {
@@ -1195,6 +1298,25 @@
                 .finally(() => { ownershipLoading = false; })
             );
           }
+          if (caps.objectLock) {
+            objectLockLoading = true;
+            bucketLoads.push(
+              s3GetObjectLockConfiguration(s3ConnectionId)
+                .then(olc => {
+                  objectLockConfig = olc;
+                  olRetentionMode = olc.default_retention_mode ?? '';
+                  if (olc.default_retention_years) {
+                    olPeriodUnit = 'years';
+                    olRetentionYears = olc.default_retention_years;
+                  } else {
+                    olPeriodUnit = 'days';
+                    olRetentionDays = olc.default_retention_days;
+                  }
+                })
+                .catch(err => { objectLockMessage = 'Error: ' + String(err); })
+                .finally(() => { objectLockLoading = false; })
+            );
+          }
           if (caps.serverAccessLogging) {
             loggingLoading = true;
             bucketLoads.push(
@@ -1218,6 +1340,23 @@
         } else {
           s3Props = await s3HeadObject(s3ConnectionId, path);
           selectedStorageClass = s3Props.storage_class ?? 'STANDARD';
+          // Load object-level Object Lock data
+          if (caps.objectLock) {
+            objRetentionLoading = true;
+            objLegalHoldLoading = true;
+            s3GetObjectRetention(s3ConnectionId, path)
+              .then(r => {
+                objRetention = r;
+                if (r.mode) objRetMode = r.mode;
+                if (r.retain_until_date) objRetDate = r.retain_until_date.slice(0, 10);
+              })
+              .catch(() => {})
+              .finally(() => { objRetentionLoading = false; });
+            s3GetObjectLegalHold(s3ConnectionId, path)
+              .then(lh => { objLegalHold = lh; })
+              .catch(() => {})
+              .finally(() => { objLegalHoldLoading = false; });
+          }
         }
       } else {
         fileProps = await getFileProperties(path);
@@ -1442,6 +1581,80 @@
               {/if}
             </div>
           {/if}
+
+          <!-- Object Retention -->
+          {#if caps.objectLock}
+            <div class="section-title">Object Retention</div>
+            <div class="storage-class-section">
+              {#if objRetentionLoading}
+                <div class="loading">Loading...</div>
+              {:else}
+                <div class="tag-editor">
+                  {#if objRetention?.mode}
+                    <div class="meta-row">
+                      <span class="meta-label">Current</span>
+                      <span class="readonly-value">{objRetention.mode} until {objRetention.retain_until_date ?? 'N/A'}</span>
+                    </div>
+                  {:else}
+                    <div class="meta-row">
+                      <span class="meta-label">Current</span>
+                      <span class="readonly-value">No retention set</span>
+                    </div>
+                  {/if}
+                  <div class="meta-row">
+                    <span class="meta-label">Mode</span>
+                    <select class="meta-input" bind:value={objRetMode}>
+                      <option value="GOVERNANCE">Governance</option>
+                      <option value="COMPLIANCE">Compliance</option>
+                    </select>
+                  </div>
+                  <div class="meta-row">
+                    <span class="meta-label">Retain Until</span>
+                    <input type="date" class="meta-input" bind:value={objRetDate} />
+                  </div>
+                  {#if objRetention?.mode === 'GOVERNANCE'}
+                    <div class="meta-row">
+                      <span class="meta-label">Bypass</span>
+                      <label class="pab-toggle">
+                        <input type="checkbox" bind:checked={objRetBypass} />
+                        <span>Bypass governance retention</span>
+                      </label>
+                    </div>
+                  {/if}
+                  <div class="tag-actions">
+                    <button class="dialog-btn primary" onclick={saveObjectRetention} disabled={savingObjRetention || !objRetMode || !objRetDate}>
+                      {savingObjRetention ? 'Applying...' : 'Apply'}
+                    </button>
+                    {#if objRetentionMessage}
+                      <span class="sc-message" class:sc-error={objRetentionMessage.startsWith('Error')}>{objRetentionMessage}</span>
+                    {/if}
+                  </div>
+                </div>
+              {/if}
+            </div>
+
+            <!-- Legal Hold -->
+            <div class="section-title">Legal Hold</div>
+            <div class="storage-class-section">
+              {#if objLegalHoldLoading}
+                <div class="loading">Loading...</div>
+              {:else}
+                <div class="sc-row">
+                  <span class="meta-label">Status: <strong>{objLegalHold?.status ?? 'OFF'}</strong></span>
+                  <button
+                    class="dialog-btn apply-btn"
+                    onclick={toggleLegalHold}
+                    disabled={savingLegalHold}
+                  >
+                    {savingLegalHold ? 'Applying...' : objLegalHold?.status === 'ON' ? 'Remove Hold' : 'Place Hold'}
+                  </button>
+                </div>
+                {#if objLegalHoldMessage}
+                  <div class="sc-message" class:sc-error={objLegalHoldMessage.startsWith('Error')}>{objLegalHoldMessage}</div>
+                {/if}
+              {/if}
+            </div>
+          {/if}
         {/if}
 
         {#if objectTab === 'metadata'}
@@ -1634,6 +1847,67 @@
               {#if versioningMessage}
                 <div class="sc-message" class:sc-error={versioningMessage.startsWith('Error')}>{versioningMessage}</div>
               {/if}
+            {/if}
+          </div>
+
+          {/if}
+
+          <!-- Object Lock -->
+          {#if bucketTab === 'general' && caps.objectLock}
+          <div class="section-title">Object Lock</div>
+          <div class="storage-class-section">
+            {#if objectLockLoading}
+              <div class="loading">Loading...</div>
+            {:else if objectLockConfig}
+              <div class="tag-editor">
+                <div class="meta-row">
+                  <span class="meta-label">Status</span>
+                  <span class="readonly-value">{objectLockConfig.enabled ? 'Enabled' : 'Not enabled'}</span>
+                </div>
+                {#if objectLockConfig.enabled}
+                  <div class="meta-row">
+                    <span class="meta-label">Default Retention</span>
+                    <select class="meta-input" bind:value={olRetentionMode}>
+                      <option value="">None</option>
+                      <option value="GOVERNANCE">Governance</option>
+                      <option value="COMPLIANCE">Compliance</option>
+                    </select>
+                  </div>
+                  {#if olRetentionMode}
+                    <div class="meta-row">
+                      <span class="meta-label">Period</span>
+                      <div style="display: flex; gap: 4px; align-items: center; flex: 1;">
+                        <input
+                          type="number"
+                          class="meta-input"
+                          min="1"
+                          value={olPeriodUnit === 'days' ? olRetentionDays ?? '' : olRetentionYears ?? ''}
+                          oninput={(e) => {
+                            const val = parseInt((e.target as HTMLInputElement).value) || null;
+                            if (olPeriodUnit === 'days') { olRetentionDays = val; olRetentionYears = null; }
+                            else { olRetentionYears = val; olRetentionDays = null; }
+                          }}
+                        />
+                        <select class="meta-input" style="max-width: 80px;" bind:value={olPeriodUnit} onchange={() => {
+                          if (olPeriodUnit === 'days') { olRetentionDays = olRetentionYears; olRetentionYears = null; }
+                          else { olRetentionYears = olRetentionDays; olRetentionDays = null; }
+                        }}>
+                          <option value="days">Days</option>
+                          <option value="years">Years</option>
+                        </select>
+                      </div>
+                    </div>
+                  {/if}
+                  <div class="tag-actions">
+                    <button class="dialog-btn primary" onclick={saveObjectLockRetention} disabled={savingObjectLock}>
+                      {savingObjectLock ? 'Saving...' : 'Save'}
+                    </button>
+                    {#if objectLockMessage}
+                      <span class="sc-message" class:sc-error={objectLockMessage.startsWith('Error')}>{objectLockMessage}</span>
+                    {/if}
+                  </div>
+                {/if}
+              </div>
             {/if}
           </div>
 

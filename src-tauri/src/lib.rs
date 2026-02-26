@@ -171,6 +171,13 @@ pub fn run() {
             commands::s3::s3_list_kms_keys,
             commands::s3::s3_upload_encrypted,
             commands::s3::s3_is_object_encrypted,
+            commands::s3::s3_get_object_lock_configuration,
+            commands::s3::s3_put_object_lock_configuration,
+            commands::s3::s3_get_object_retention,
+            commands::s3::s3_put_object_retention,
+            commands::s3::s3_get_object_legal_hold,
+            commands::s3::s3_put_object_legal_hold,
+            commands::s3::s3_bulk_put_object_retention,
             // archive commands
             commands::archive::list_archive,
             commands::archive::extract_archive,

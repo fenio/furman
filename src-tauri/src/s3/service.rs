@@ -10,9 +10,9 @@ use tokio::io::AsyncWriteExt;
 use crate::models::{
     DirListing, FileEntry, FmError, ProgressEvent, S3AclGrant, S3BucketAcl, S3BucketEncryption,
     S3BucketLogging, S3BucketOwnership, S3BucketVersioning, S3BucketWebsite, S3CorsRule,
-    S3EncryptionRule, S3LifecycleRule, S3LifecycleTransition, S3MultipartUpload, S3ObjectMetadata,
-    S3ObjectProperties, S3ObjectVersion, S3PublicAccessBlock, S3Tag, SearchDone, SearchEvent,
-    SearchResult, TransferCheckpoint,
+    S3EncryptionRule, S3LifecycleRule, S3LifecycleTransition, S3MultipartUpload, S3ObjectLegalHold,
+    S3ObjectLockConfig, S3ObjectMetadata, S3ObjectProperties, S3ObjectRetention, S3ObjectVersion,
+    S3PublicAccessBlock, S3Tag, SearchDone, SearchEvent, SearchResult, TransferCheckpoint,
 };
 
 use super::helpers::*;
@@ -2733,5 +2733,324 @@ impl S3Service {
             .map_err(|e| s3err(e.to_string()))?;
 
         Ok(())
+    }
+
+    // ── Object Lock ─────────────────────────────────────────────────────
+
+    /// Get Object Lock configuration for the bucket.
+    pub async fn get_object_lock_configuration(&self) -> Result<S3ObjectLockConfig, FmError> {
+        let resp = self
+            .client
+            .get_object_lock_configuration()
+            .bucket(&self.bucket)
+            .send()
+            .await;
+
+        match resp {
+            Ok(r) => {
+                let olc = r.object_lock_configuration();
+                let enabled = olc
+                    .map(|c| {
+                        c.object_lock_enabled()
+                            == Some(&aws_sdk_s3::types::ObjectLockEnabled::Enabled)
+                    })
+                    .unwrap_or(false);
+
+                let (mode, days, years) = olc
+                    .and_then(|c| c.rule())
+                    .and_then(|r| r.default_retention())
+                    .map(|dr| {
+                        let m = dr.mode().map(|m| m.as_str().to_string());
+                        let d = dr.days().map(|d| d as i32);
+                        let y = dr.years().map(|y| y as i32);
+                        (m, d, y)
+                    })
+                    .unwrap_or((None, None, None));
+
+                Ok(S3ObjectLockConfig {
+                    enabled,
+                    default_retention_mode: mode,
+                    default_retention_days: days,
+                    default_retention_years: years,
+                })
+            }
+            Err(e) => {
+                let err_str = e.to_string();
+                let err_dbg = format!("{e:?}");
+                if err_str.contains("ObjectLockConfigurationNotFound")
+                    || err_dbg.contains("ObjectLockConfigurationNotFound")
+                    || err_dbg.contains("StatusCode(404)")
+                {
+                    Ok(S3ObjectLockConfig {
+                        enabled: false,
+                        default_retention_mode: None,
+                        default_retention_days: None,
+                        default_retention_years: None,
+                    })
+                } else {
+                    Err(s3err(err_str))
+                }
+            }
+        }
+    }
+
+    /// Set default Object Lock retention configuration for the bucket.
+    pub async fn put_object_lock_configuration(
+        &self,
+        mode: Option<&str>,
+        days: Option<i32>,
+        years: Option<i32>,
+    ) -> Result<(), FmError> {
+        let config = if let Some(m) = mode {
+            let retention_mode = match m {
+                "GOVERNANCE" => aws_sdk_s3::types::ObjectLockRetentionMode::Governance,
+                "COMPLIANCE" => aws_sdk_s3::types::ObjectLockRetentionMode::Compliance,
+                other => return Err(s3err(format!("Unknown retention mode: {}", other))),
+            };
+
+            let mut dr_builder = aws_sdk_s3::types::DefaultRetention::builder()
+                .mode(retention_mode);
+            if let Some(d) = days {
+                dr_builder = dr_builder.days(d);
+            }
+            if let Some(y) = years {
+                dr_builder = dr_builder.years(y);
+            }
+
+            let rule = aws_sdk_s3::types::ObjectLockRule::builder()
+                .default_retention(dr_builder.build())
+                .build();
+
+            aws_sdk_s3::types::ObjectLockConfiguration::builder()
+                .object_lock_enabled(aws_sdk_s3::types::ObjectLockEnabled::Enabled)
+                .rule(rule)
+                .build()
+        } else {
+            // No default retention — just set enabled with no rule
+            aws_sdk_s3::types::ObjectLockConfiguration::builder()
+                .object_lock_enabled(aws_sdk_s3::types::ObjectLockEnabled::Enabled)
+                .build()
+        };
+
+        self.client
+            .put_object_lock_configuration()
+            .bucket(&self.bucket)
+            .object_lock_configuration(config)
+            .send()
+            .await
+            .map_err(|e| s3err(e.to_string()))?;
+
+        Ok(())
+    }
+
+    /// Get retention settings for a specific object.
+    pub async fn get_object_retention(&self, key: &str) -> Result<S3ObjectRetention, FmError> {
+        let actual_key = strip_s3_prefix(key, &self.bucket);
+
+        let resp = self
+            .client
+            .get_object_retention()
+            .bucket(&self.bucket)
+            .key(&actual_key)
+            .send()
+            .await;
+
+        match resp {
+            Ok(r) => {
+                let retention = r.retention();
+                let mode = retention
+                    .and_then(|r| r.mode())
+                    .map(|m| m.as_str().to_string());
+                let retain_until = retention
+                    .and_then(|r| r.retain_until_date())
+                    .map(|d| d.fmt(aws_sdk_s3::primitives::DateTimeFormat::DateTime).unwrap_or_default());
+
+                Ok(S3ObjectRetention {
+                    mode,
+                    retain_until_date: retain_until,
+                })
+            }
+            Err(e) => {
+                let err_str = e.to_string();
+                let err_dbg = format!("{e:?}");
+                if err_str.contains("NoSuchObjectLockConfiguration")
+                    || err_dbg.contains("NoSuchObjectLockConfiguration")
+                    || err_str.contains("InvalidRequest")
+                    || err_dbg.contains("InvalidRequest")
+                    || err_dbg.contains("StatusCode(404)")
+                {
+                    Ok(S3ObjectRetention {
+                        mode: None,
+                        retain_until_date: None,
+                    })
+                } else {
+                    Err(s3err(err_str))
+                }
+            }
+        }
+    }
+
+    /// Set retention on a specific object.
+    pub async fn put_object_retention(
+        &self,
+        key: &str,
+        mode: &str,
+        retain_until_date: &str,
+        bypass_governance: bool,
+    ) -> Result<(), FmError> {
+        let actual_key = strip_s3_prefix(key, &self.bucket);
+
+        let retention_mode = match mode {
+            "GOVERNANCE" => aws_sdk_s3::types::ObjectLockRetentionMode::Governance,
+            "COMPLIANCE" => aws_sdk_s3::types::ObjectLockRetentionMode::Compliance,
+            other => return Err(s3err(format!("Unknown retention mode: {}", other))),
+        };
+
+        let date = aws_sdk_s3::primitives::DateTime::from_str(
+            retain_until_date,
+            aws_sdk_s3::primitives::DateTimeFormat::DateTime,
+        )
+        .map_err(|e| s3err(format!("Invalid date: {}", e)))?;
+
+        let retention = aws_sdk_s3::types::ObjectLockRetention::builder()
+            .mode(retention_mode)
+            .retain_until_date(date)
+            .build();
+
+        let mut req = self
+            .client
+            .put_object_retention()
+            .bucket(&self.bucket)
+            .key(&actual_key)
+            .retention(retention);
+
+        if bypass_governance {
+            req = req.bypass_governance_retention(true);
+        }
+
+        req.send()
+            .await
+            .map_err(|e| s3err(e.to_string()))?;
+
+        Ok(())
+    }
+
+    /// Get legal hold status for a specific object.
+    pub async fn get_object_legal_hold(&self, key: &str) -> Result<S3ObjectLegalHold, FmError> {
+        let actual_key = strip_s3_prefix(key, &self.bucket);
+
+        let resp = self
+            .client
+            .get_object_legal_hold()
+            .bucket(&self.bucket)
+            .key(&actual_key)
+            .send()
+            .await;
+
+        match resp {
+            Ok(r) => {
+                let status = r
+                    .legal_hold()
+                    .and_then(|lh| lh.status())
+                    .map(|s| s.as_str().to_string())
+                    .unwrap_or_else(|| "OFF".to_string());
+                Ok(S3ObjectLegalHold { status })
+            }
+            Err(e) => {
+                let err_str = e.to_string();
+                let err_dbg = format!("{e:?}");
+                if err_str.contains("NoSuchObjectLockConfiguration")
+                    || err_dbg.contains("NoSuchObjectLockConfiguration")
+                    || err_str.contains("InvalidRequest")
+                    || err_dbg.contains("InvalidRequest")
+                    || err_dbg.contains("StatusCode(404)")
+                {
+                    Ok(S3ObjectLegalHold {
+                        status: "OFF".to_string(),
+                    })
+                } else {
+                    Err(s3err(err_str))
+                }
+            }
+        }
+    }
+
+    /// Set legal hold on a specific object.
+    pub async fn put_object_legal_hold(
+        &self,
+        key: &str,
+        status: &str,
+    ) -> Result<(), FmError> {
+        let actual_key = strip_s3_prefix(key, &self.bucket);
+
+        let hold_status = match status {
+            "ON" => aws_sdk_s3::types::ObjectLockLegalHoldStatus::On,
+            "OFF" => aws_sdk_s3::types::ObjectLockLegalHoldStatus::Off,
+            other => return Err(s3err(format!("Unknown legal hold status: {}", other))),
+        };
+
+        let legal_hold = aws_sdk_s3::types::ObjectLockLegalHold::builder()
+            .status(hold_status)
+            .build();
+
+        self.client
+            .put_object_legal_hold()
+            .bucket(&self.bucket)
+            .key(&actual_key)
+            .legal_hold(legal_hold)
+            .send()
+            .await
+            .map_err(|e| s3err(e.to_string()))?;
+
+        Ok(())
+    }
+
+    /// Bulk set retention on multiple objects. Returns list of failed keys.
+    pub async fn bulk_put_object_retention(
+        &self,
+        keys: &[String],
+        mode: &str,
+        retain_until_date: &str,
+        bypass_governance: bool,
+    ) -> Result<Vec<String>, FmError> {
+        let retention_mode = match mode {
+            "GOVERNANCE" => aws_sdk_s3::types::ObjectLockRetentionMode::Governance,
+            "COMPLIANCE" => aws_sdk_s3::types::ObjectLockRetentionMode::Compliance,
+            other => return Err(s3err(format!("Unknown retention mode: {}", other))),
+        };
+
+        let date = aws_sdk_s3::primitives::DateTime::from_str(
+            retain_until_date,
+            aws_sdk_s3::primitives::DateTimeFormat::DateTime,
+        )
+        .map_err(|e| s3err(format!("Invalid date: {}", e)))?;
+
+        let mut failed: Vec<String> = Vec::new();
+
+        for key in keys {
+            let actual_key = strip_s3_prefix(key, &self.bucket);
+
+            let retention = aws_sdk_s3::types::ObjectLockRetention::builder()
+                .mode(retention_mode.clone())
+                .retain_until_date(date)
+                .build();
+
+            let mut req = self
+                .client
+                .put_object_retention()
+                .bucket(&self.bucket)
+                .key(&actual_key)
+                .retention(retention);
+
+            if bypass_governance {
+                req = req.bypass_governance_retention(true);
+            }
+
+            if req.send().await.is_err() {
+                failed.push(key.clone());
+            }
+        }
+
+        Ok(failed)
     }
 }

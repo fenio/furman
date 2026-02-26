@@ -386,6 +386,27 @@ pub struct S3BucketOwnership {
     pub object_ownership: String, // "BucketOwnerEnforced" | "BucketOwnerPreferred" | "ObjectWriter"
 }
 
+// ── S3 Object Lock ──────────────────────────────────────────────────
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct S3ObjectLockConfig {
+    pub enabled: bool,
+    pub default_retention_mode: Option<String>,  // "GOVERNANCE" | "COMPLIANCE"
+    pub default_retention_days: Option<i32>,
+    pub default_retention_years: Option<i32>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct S3ObjectRetention {
+    pub mode: Option<String>,              // "GOVERNANCE" | "COMPLIANCE"
+    pub retain_until_date: Option<String>, // ISO-8601
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct S3ObjectLegalHold {
+    pub status: String, // "ON" | "OFF"
+}
+
 // ── Display impls ───────────────────────────────────────────────────────────
 
 impl fmt::Display for ProgressEvent {

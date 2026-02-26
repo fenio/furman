@@ -268,6 +268,22 @@ export interface S3BucketOwnership {
   object_ownership: string;
 }
 
+export interface S3ObjectLockConfig {
+  enabled: boolean;
+  default_retention_mode: string | null;  // "GOVERNANCE" | "COMPLIANCE"
+  default_retention_days: number | null;
+  default_retention_years: number | null;
+}
+
+export interface S3ObjectRetention {
+  mode: string | null;              // "GOVERNANCE" | "COMPLIANCE"
+  retain_until_date: string | null; // ISO-8601
+}
+
+export interface S3ObjectLegalHold {
+  status: string; // "ON" | "OFF"
+}
+
 export interface KmsKeyInfo {
   key_id: string;
   arn: string;
@@ -300,6 +316,7 @@ export interface S3ProviderCapabilities {
   requesterPays: boolean;
   objectOwnership: boolean;
   serverAccessLogging: boolean;
+  objectLock: boolean;
 }
 
 export interface S3ConnectionInfo {

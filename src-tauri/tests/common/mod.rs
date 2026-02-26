@@ -96,6 +96,59 @@ impl TestContext {
         }
     }
 
+    /// Create a new test context with a unique bucket that has Object Lock enabled.
+    /// Object Lock requires versioning, which is automatically enabled.
+    pub async fn new_with_object_lock() -> Self {
+        let config = MinioConfig::from_env();
+        let endpoint = if config.endpoint.is_empty() {
+            None
+        } else {
+            Some(config.endpoint.as_str())
+        };
+        let (client, _) = build_s3_client(
+            &config.region,
+            endpoint,
+            None,
+            Some(&config.access_key),
+            Some(&config.secret_key),
+            None,
+            None,
+            None,
+            None,
+            None,
+        )
+        .await
+        .expect("Failed to build S3 client for testing");
+
+        let bucket = format!("test-lock-{}", Uuid::new_v4());
+
+        // Create bucket with Object Lock enabled
+        let mut req = client.create_bucket().bucket(&bucket).object_lock_enabled_for_bucket(true);
+
+        if config.region != "us-east-1" {
+            let constraint = aws_sdk_s3::types::CreateBucketConfiguration::builder()
+                .location_constraint(aws_sdk_s3::types::BucketLocationConstraint::from(
+                    config.region.as_str(),
+                ))
+                .build();
+            req = req.create_bucket_configuration(constraint);
+        }
+
+        req.send()
+            .await
+            .expect("Failed to create Object Lock test bucket");
+
+        let service = S3Service::new(client.clone(), bucket.clone());
+
+        Self {
+            service,
+            bucket,
+            client,
+            config,
+            extra_buckets: Vec::new(),
+        }
+    }
+
     /// Create an additional bucket (for cross-bucket tests). Returns the bucket name.
     pub async fn create_extra_bucket(&mut self) -> String {
         let bucket = format!("test-extra-{}", Uuid::new_v4());

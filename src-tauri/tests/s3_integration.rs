@@ -1381,3 +1381,207 @@ async fn test_transfer_acceleration() {
 
     ctx.cleanup().await;
 }
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Object Lock
+// ═══════════════════════════════════════════════════════════════════════════
+
+#[tokio::test]
+async fn test_object_lock_configuration() {
+    let ctx = TestContext::new_with_object_lock().await;
+
+    // Get initial config — should be enabled with no default retention
+    let config = ctx
+        .service
+        .get_object_lock_configuration()
+        .await
+        .expect("get_object_lock_configuration failed");
+    assert!(config.enabled, "Object Lock should be enabled");
+
+    // Set default retention (Governance, 30 days)
+    ctx.service
+        .put_object_lock_configuration(Some("GOVERNANCE"), Some(30), None)
+        .await
+        .expect("put_object_lock_configuration failed");
+
+    // Read back
+    let config2 = ctx
+        .service
+        .get_object_lock_configuration()
+        .await
+        .expect("get_object_lock_configuration after put failed");
+    assert!(config2.enabled);
+    assert_eq!(config2.default_retention_mode.as_deref(), Some("GOVERNANCE"));
+    assert_eq!(config2.default_retention_days, Some(30));
+
+    // Clear default retention
+    ctx.service
+        .put_object_lock_configuration(None, None, None)
+        .await
+        .expect("clear default retention failed");
+
+    let config3 = ctx
+        .service
+        .get_object_lock_configuration()
+        .await
+        .expect("get after clear failed");
+    assert!(config3.enabled);
+    assert!(config3.default_retention_mode.is_none());
+
+    ctx.cleanup().await;
+}
+
+#[tokio::test]
+async fn test_object_lock_not_enabled() {
+    let ctx = TestContext::new().await;
+
+    // Regular bucket should report Object Lock not enabled
+    let config = ctx
+        .service
+        .get_object_lock_configuration()
+        .await
+        .expect("get_object_lock_configuration on regular bucket");
+    assert!(!config.enabled, "Object Lock should not be enabled on regular bucket");
+    assert!(config.default_retention_mode.is_none());
+
+    ctx.cleanup().await;
+}
+
+#[tokio::test]
+async fn test_object_retention_roundtrip() {
+    let ctx = TestContext::new_with_object_lock().await;
+
+    // Upload a test object
+    ctx.put_object("retention-test.txt", b"hello lock").await;
+
+    // Initially no retention
+    let _ret = ctx
+        .service
+        .get_object_retention("retention-test.txt")
+        .await
+        .expect("get_object_retention failed");
+    // Might have mode from default retention or be empty
+    // Just verify it doesn't error
+
+    // Set governance retention 1 day in the future
+    let future = chrono::Utc::now() + chrono::Duration::days(1);
+    let date_str = future.format("%Y-%m-%dT%H:%M:%SZ").to_string();
+
+    ctx.service
+        .put_object_retention("retention-test.txt", "GOVERNANCE", &date_str, false)
+        .await
+        .expect("put_object_retention failed");
+
+    // Read back
+    let ret2 = ctx
+        .service
+        .get_object_retention("retention-test.txt")
+        .await
+        .expect("get_object_retention after put failed");
+    assert_eq!(ret2.mode.as_deref(), Some("GOVERNANCE"));
+    assert!(ret2.retain_until_date.is_some());
+
+    // Bypass governance to remove retention (so cleanup works)
+    let past = chrono::Utc::now() - chrono::Duration::seconds(1);
+    let past_str = past.format("%Y-%m-%dT%H:%M:%SZ").to_string();
+    // Some S3 implementations don't allow setting retention in the past, so try bypass
+    let _ = ctx
+        .service
+        .put_object_retention("retention-test.txt", "GOVERNANCE", &past_str, true)
+        .await;
+
+    ctx.cleanup().await;
+}
+
+#[tokio::test]
+async fn test_legal_hold_roundtrip() {
+    let ctx = TestContext::new_with_object_lock().await;
+
+    ctx.put_object("legal-hold-test.txt", b"hold me").await;
+
+    // Initially OFF
+    let hold = ctx
+        .service
+        .get_object_legal_hold("legal-hold-test.txt")
+        .await
+        .expect("get_object_legal_hold failed");
+    assert_eq!(hold.status, "OFF");
+
+    // Enable legal hold
+    ctx.service
+        .put_object_legal_hold("legal-hold-test.txt", "ON")
+        .await
+        .expect("put_object_legal_hold ON failed");
+
+    let hold2 = ctx
+        .service
+        .get_object_legal_hold("legal-hold-test.txt")
+        .await
+        .expect("get after ON failed");
+    assert_eq!(hold2.status, "ON");
+
+    // Disable legal hold
+    ctx.service
+        .put_object_legal_hold("legal-hold-test.txt", "OFF")
+        .await
+        .expect("put_object_legal_hold OFF failed");
+
+    let hold3 = ctx
+        .service
+        .get_object_legal_hold("legal-hold-test.txt")
+        .await
+        .expect("get after OFF failed");
+    assert_eq!(hold3.status, "OFF");
+
+    ctx.cleanup().await;
+}
+
+#[tokio::test]
+async fn test_bulk_put_object_retention() {
+    let ctx = TestContext::new_with_object_lock().await;
+
+    ctx.put_object("bulk-ret-1.txt", b"one").await;
+    ctx.put_object("bulk-ret-2.txt", b"two").await;
+    ctx.put_object("bulk-ret-3.txt", b"three").await;
+
+    let future = chrono::Utc::now() + chrono::Duration::days(1);
+    let date_str = future.format("%Y-%m-%dT%H:%M:%SZ").to_string();
+
+    let failed = ctx
+        .service
+        .bulk_put_object_retention(
+            &[
+                "bulk-ret-1.txt".to_string(),
+                "bulk-ret-2.txt".to_string(),
+                "bulk-ret-3.txt".to_string(),
+            ],
+            "GOVERNANCE",
+            &date_str,
+            false,
+        )
+        .await
+        .expect("bulk_put_object_retention failed");
+    assert!(failed.is_empty(), "No keys should have failed: {:?}", failed);
+
+    // Verify each
+    for key in &["bulk-ret-1.txt", "bulk-ret-2.txt", "bulk-ret-3.txt"] {
+        let ret = ctx
+            .service
+            .get_object_retention(key)
+            .await
+            .expect("get retention failed");
+        assert_eq!(ret.mode.as_deref(), Some("GOVERNANCE"));
+    }
+
+    // Bypass governance for cleanup
+    let past = chrono::Utc::now() - chrono::Duration::seconds(1);
+    let past_str = past.format("%Y-%m-%dT%H:%M:%SZ").to_string();
+    for key in &["bulk-ret-1.txt", "bulk-ret-2.txt", "bulk-ret-3.txt"] {
+        let _ = ctx
+            .service
+            .put_object_retention(key, "GOVERNANCE", &past_str, true)
+            .await;
+    }
+
+    ctx.cleanup().await;
+}
