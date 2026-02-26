@@ -6,6 +6,7 @@
   let { onClose }: Props = $props();
 
   let dialogEl: HTMLDivElement | undefined = $state(undefined);
+  let activeTab = $state('general');
 
   $effect(() => {
     if (dialogEl) {
@@ -21,79 +22,106 @@
     }
   }
 
-  const sections = [
+  const tabs = [
     {
-      title: 'Navigation',
-      shortcuts: [
-        { keys: 'Arrow Keys', desc: 'Move cursor' },
-        { keys: 'Home / End', desc: 'Jump to first / last entry' },
-        { keys: 'Page Up / Down', desc: 'Scroll by page' },
-        { keys: 'Enter', desc: 'Open file or enter directory' },
-        { keys: 'Backspace', desc: 'Go to parent directory' },
-        { keys: 'Tab', desc: 'Switch active panel' },
-        { keys: 'Space', desc: 'Quick look' },
+      id: 'general',
+      label: 'General',
+      groups: [
+        {
+          title: 'Navigation',
+          shortcuts: [
+            { keys: '\u2191 \u2193 \u2190 \u2192', desc: 'Move cursor' },
+            { keys: 'Home / End', desc: 'Jump to first / last' },
+            { keys: 'Page Up / Down', desc: 'Scroll by page' },
+            { keys: 'Enter', desc: 'Open file or enter directory' },
+            { keys: 'Backspace', desc: 'Go to parent directory' },
+            { keys: 'Tab', desc: 'Switch active panel' },
+            { keys: 'Space', desc: 'Quick look' },
+          ],
+        },
+        {
+          title: 'Selection',
+          shortcuts: [
+            { keys: 'Shift + Arrow', desc: 'Extend selection' },
+            { keys: 'Shift + Home / End', desc: 'Select to start / end' },
+            { keys: 'Insert', desc: 'Toggle select and move down' },
+            { keys: 'Type any letter', desc: 'Quick filter' },
+            { keys: 'Esc', desc: 'Clear filter' },
+          ],
+        },
       ],
     },
     {
-      title: 'Selection',
-      shortcuts: [
-        { keys: 'Shift + Arrow', desc: 'Extend selection' },
-        { keys: 'Shift + Home / End', desc: 'Select to start / end' },
-        { keys: 'Insert', desc: 'Toggle select and move down' },
+      id: 'files',
+      label: 'Files',
+      groups: [
+        {
+          title: 'File Operations',
+          shortcuts: [
+            { keys: 'F2 / \u2318R', desc: 'Rename' },
+            { keys: 'F3 / \u23183', desc: 'View file' },
+            { keys: 'F4 / \u2318E', desc: 'Edit file' },
+            { keys: 'F5 / \u2318C', desc: 'Copy to other panel' },
+            { keys: 'F6 / \u2318M', desc: 'Move to other panel' },
+            { keys: 'Shift+F6', desc: 'Rename (alt)' },
+            { keys: 'F7 / \u2318N', desc: 'Create directory' },
+            { keys: 'F8 / \u2318D', desc: 'Delete' },
+            { keys: 'F9 / \u2318I', desc: 'Properties' },
+            { keys: 'F10 / \u2318Q', desc: 'Quit' },
+          ],
+        },
       ],
     },
     {
-      title: 'File Operations',
-      shortcuts: [
-        { keys: 'F2 / \u2318R', desc: 'Rename' },
-        { keys: 'F3 / \u2318\u21E73', desc: 'View file' },
-        { keys: 'F4 / \u2318E', desc: 'Edit file' },
-        { keys: 'F5 / \u2318C', desc: 'Copy to other panel' },
-        { keys: 'F6 / \u2318M', desc: 'Move to other panel' },
-        { keys: 'Shift+F6', desc: 'Rename (alt)' },
-        { keys: 'F7 / \u2318N', desc: 'Create directory' },
-        { keys: 'F8 / \u2318D / \u2318\u232B', desc: 'Delete' },
-        { keys: 'F9 / \u2318I', desc: 'Properties' },
-        { keys: 'F10 / \u2318Q', desc: 'Quit' },
+      id: 'panels',
+      label: 'Panels',
+      groups: [
+        {
+          title: 'Layout',
+          shortcuts: [
+            { keys: '\u2318P', desc: 'Toggle single / dual pane' },
+            { keys: '\u2318B', desc: 'Toggle sidebar' },
+            { keys: '\u2318J', desc: 'Toggle transfer panel' },
+            { keys: '\u2318Y', desc: 'Sync directories' },
+            { keys: '\u2318\u21E7L', desc: 'Toggle dark / light theme' },
+          ],
+        },
+        {
+          title: 'Terminal',
+          shortcuts: [
+            { keys: '\u2318T', desc: 'Bottom terminal' },
+            { keys: '\u2318\u21E7T', desc: 'In-pane terminal' },
+            { keys: '\u2318`', desc: 'Quake console' },
+            { keys: 'Esc', desc: 'Hide quake console' },
+          ],
+        },
+        {
+          title: 'Search',
+          shortcuts: [
+            { keys: '\u2318F', desc: 'Search files' },
+            { keys: '\u2318/', desc: 'This cheatsheet' },
+          ],
+        },
       ],
     },
     {
-      title: 'Panels & Layout',
-      shortcuts: [
-        { keys: '\u2318P', desc: 'Toggle single / dual pane' },
-        { keys: '\u2318B', desc: 'Toggle sidebar' },
-        { keys: '\u2318J', desc: 'Toggle transfer panel' },
-        { keys: '\u2318Y', desc: 'Sync directories' },
-      ],
-    },
-    {
-      title: 'S3',
-      shortcuts: [
-        { keys: '\u2318S', desc: 'Connect / disconnect S3' },
-        { keys: '\u2318U', desc: 'Presigned URL' },
-        { keys: '\u2318K', desc: 'Copy S3 URI' },
-        { keys: '\u2318L', desc: 'Bulk storage class change' },
-      ],
-    },
-    {
-      title: 'Search & Terminal',
-      shortcuts: [
-        { keys: '\u2318F', desc: 'Search files' },
-        { keys: '\u2318T', desc: 'Toggle bottom terminal' },
-        { keys: '\u2318\u21E7T', desc: 'Toggle in-pane terminal' },
-        { keys: '\u2318`', desc: 'Toggle quake terminal' },
-        { keys: 'Esc', desc: 'Hide quake / clear filter' },
-      ],
-    },
-    {
-      title: 'Other',
-      shortcuts: [
-        { keys: '\u2318\u21E7L', desc: 'Toggle dark / light theme' },
-        { keys: '\u2318/', desc: 'Show this cheatsheet' },
-        { keys: 'Type any letter', desc: 'Quick filter' },
+      id: 's3',
+      label: 'S3',
+      groups: [
+        {
+          title: 'S3 Operations',
+          shortcuts: [
+            { keys: '\u2318S', desc: 'Connect / disconnect S3' },
+            { keys: '\u2318U', desc: 'Presigned URL' },
+            { keys: '\u2318K', desc: 'Copy S3 URI' },
+            { keys: '\u2318L', desc: 'Bulk storage class change' },
+          ],
+        },
       ],
     },
   ];
+
+  const currentTab = $derived(tabs.find((t) => t.id === activeTab)!);
 </script>
 
 <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
@@ -107,23 +135,28 @@
 >
   <div class="dialog-box">
     <div class="dialog-title">Keyboard Shortcuts</div>
+    <div class="tab-bar">
+      {#each tabs as tab}
+        <button
+          class="tab-btn"
+          class:active={activeTab === tab.id}
+          onclick={() => { activeTab = tab.id; }}
+        >{tab.label}</button>
+      {/each}
+    </div>
     <div class="dialog-body">
-      <div class="shortcuts-grid">
-        {#each sections as section}
-          <div class="section">
-            <div class="section-title">{section.title}</div>
-            {#each section.shortcuts as shortcut}
-              <div class="shortcut-row">
-                <kbd class="keys">{shortcut.keys}</kbd>
-                <span class="desc">{shortcut.desc}</span>
-              </div>
-            {/each}
+      {#each currentTab.groups as group}
+        <div class="section-title">{group.title}</div>
+        {#each group.shortcuts as shortcut}
+          <div class="shortcut-row">
+            <kbd class="keys">{shortcut.keys}</kbd>
+            <span class="desc">{shortcut.desc}</span>
           </div>
         {/each}
-      </div>
-      <div class="dialog-buttons">
-        <button class="dialog-btn primary" onclick={onClose}>Close</button>
-      </div>
+      {/each}
+    </div>
+    <div class="dialog-footer">
+      <button class="dialog-btn primary" onclick={onClose}>Close</button>
     </div>
   </div>
 </div>
@@ -148,9 +181,8 @@
     background: var(--dialog-bg);
     border: 1px solid var(--dialog-border);
     border-radius: var(--radius-lg);
-    min-width: 50ch;
-    max-width: 90ch;
-    max-height: 85vh;
+    width: 48ch;
+    max-width: 90vw;
     box-shadow: var(--shadow-dialog);
     overflow: hidden;
     display: flex;
@@ -168,43 +200,67 @@
     flex-shrink: 0;
   }
 
+  .tab-bar {
+    display: flex;
+    gap: 0;
+    border-bottom: 1px solid var(--dialog-border);
+    flex-shrink: 0;
+  }
+
+  .tab-btn {
+    flex: 1;
+    padding: 8px 12px;
+    font-size: 12px;
+    font-family: inherit;
+    color: var(--text-secondary);
+    background: none;
+    border: none;
+    border-bottom: 2px solid transparent;
+    cursor: pointer;
+    transition: color var(--transition-fast), border-color var(--transition-fast);
+  }
+
+  .tab-btn:hover {
+    color: var(--text-primary);
+  }
+
+  .tab-btn.active {
+    color: var(--text-accent);
+    border-bottom-color: var(--text-accent);
+  }
+
   .dialog-body {
-    padding: 16px 24px 20px;
-    overflow-y: auto;
-  }
-
-  .shortcuts-grid {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: 16px 32px;
-  }
-
-  .section {
+    padding: 16px 24px;
     display: flex;
     flex-direction: column;
-    gap: 4px;
+    gap: 6px;
   }
 
   .section-title {
-    font-size: 12px;
+    font-size: 11px;
     font-weight: 600;
-    color: var(--text-accent);
     text-transform: uppercase;
     letter-spacing: 0.05em;
-    margin-bottom: 4px;
+    color: var(--text-secondary);
+    opacity: 0.7;
+    padding-top: 4px;
+  }
+
+  .section-title:first-child {
+    padding-top: 0;
   }
 
   .shortcut-row {
     display: flex;
     align-items: baseline;
-    gap: 10px;
+    gap: 12px;
     font-size: 13px;
-    line-height: 1.7;
+    line-height: 1.8;
   }
 
   .keys {
     flex-shrink: 0;
-    min-width: 12ch;
+    min-width: 14ch;
     font-family: inherit;
     font-size: 11px;
     color: var(--text-secondary);
@@ -219,10 +275,12 @@
     color: var(--text-primary);
   }
 
-  .dialog-buttons {
+  .dialog-footer {
     display: flex;
     justify-content: center;
-    margin-top: 16px;
+    padding: 12px 24px;
+    border-top: 1px solid var(--dialog-border);
+    flex-shrink: 0;
   }
 
   .dialog-btn {
@@ -233,6 +291,7 @@
     color: var(--text-primary);
     cursor: pointer;
     font-size: 13px;
+    font-family: inherit;
     transition: background var(--transition-fast), border-color var(--transition-fast);
   }
 
