@@ -52,6 +52,7 @@ impl TestContext {
             None,
             None,
             None,
+            None,
         )
         .await
         .expect("Failed to build S3 client for testing");

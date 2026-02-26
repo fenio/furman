@@ -11,7 +11,7 @@
   interface Props {
     onClose: () => void;
     initialTab?: 'saved' | 'connect';
-    onConnect?: (bucket: string, region: string, endpoint?: string, profile?: string, accessKey?: string, secretKey?: string, provider?: string, customCapabilities?: S3ProviderCapabilities, roleArn?: string, externalId?: string, sessionName?: string, sessionDurationSecs?: number) => void;
+    onConnect?: (bucket: string, region: string, endpoint?: string, profile?: string, accessKey?: string, secretKey?: string, provider?: string, customCapabilities?: S3ProviderCapabilities, roleArn?: string, externalId?: string, sessionName?: string, sessionDurationSecs?: number, useTransferAcceleration?: boolean) => void;
   }
 
   let { onClose, initialTab = 'saved', onConnect: onConnectProp }: Props = $props();
@@ -52,6 +52,7 @@
     externalId?: string,
     sessionName?: string,
     sessionDurationSecs?: number,
+    useTransferAcceleration?: boolean,
   ) {
     connectError = '';
     const panel = panels.active;
@@ -61,7 +62,7 @@
     if (endpoint) info.endpoint = endpoint;
     if (profile) info.profile = profile;
     try {
-      await panel.connectS3(info, endpoint, profile, accessKey, secretKey, roleArn, externalId, sessionName, sessionDurationSecs);
+      await panel.connectS3(info, endpoint, profile, accessKey, secretKey, roleArn, externalId, sessionName, sessionDurationSecs, useTransferAcceleration);
       onClose();
     } catch (err: unknown) {
       connectError = err instanceof Error ? err.message : String(err);
@@ -100,6 +101,7 @@
       p.externalId,
       p.sessionName,
       p.sessionDurationSecs,
+      p.useTransferAcceleration,
     );
   }
 

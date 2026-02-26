@@ -302,16 +302,32 @@
     try {
       const localPath = await s3DownloadToTemp(connectionId, s3Path);
       const lower = (ext ?? '').toLowerCase();
-      if (imageExtensions.has(lower)) {
+      if (systemOpenExtensions.has(lower)) {
+        await openFileDefault(localPath);
+        statusState.setMessage('');
+      } else if (imageExtensions.has(lower)) {
         appState.viewerMode = 'image';
+        appState.viewerPath = localPath;
+        appState.modal = 'viewer';
       } else {
         appState.viewerMode = 'text';
+        appState.viewerPath = localPath;
+        appState.modal = 'viewer';
       }
-      appState.viewerPath = localPath;
-      appState.modal = 'viewer';
     } catch (err: unknown) {
       error(String(err));
       statusState.setMessage('Preview failed: ' + String(err));
+    }
+  }
+
+  function quickLook() {
+    const panel = panels.active;
+    const entry = panel.currentEntry;
+    if (!entry || entry.is_dir || entry.name === '..') return;
+    if (panel.backend === 's3' && panel.s3Connection) {
+      openS3Viewer(entry.path, entry.extension, panel.s3Connection.connectionId);
+    } else {
+      openViewer(entry.path, entry.extension);
     }
   }
 
@@ -1077,13 +1093,7 @@
         break;
       case ' ':
         e.preventDefault();
-        {
-          const entry = active.currentEntry;
-          if (entry && entry.name !== '..') {
-            active.toggleSelection(entry.path);
-          }
-          active.moveCursor(1);
-        }
+        quickLook();
         break;
       case 'F2':
         e.preventDefault();

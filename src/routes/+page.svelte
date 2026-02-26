@@ -294,7 +294,7 @@
   {#if appState.modal === 's3-manager'}
     <S3ConnectionManager
       initialTab={appState.s3ManagerTab}
-      onConnect={(bucket, region, endpoint, profile, accessKey, secretKey, provider, customCapabilities, roleArn, externalId, sessionName, sessionDurationSecs) => {
+      onConnect={(bucket, region, endpoint, profile, accessKey, secretKey, provider, customCapabilities, roleArn, externalId, sessionName, sessionDurationSecs, useTransferAcceleration) => {
         const cb = appState.s3ConnectCallback;
         appState.closeModal();
         if (cb) cb(bucket, region, endpoint, profile, accessKey, secretKey, provider, customCapabilities);

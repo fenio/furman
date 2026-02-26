@@ -300,4 +300,5 @@ export interface S3Profile {
   externalId?: string;
   sessionName?: string;
   sessionDurationSecs?: number;
+  useTransferAcceleration?: boolean;
 }

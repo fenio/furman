@@ -29,6 +29,7 @@ pub async fn build_s3_client(
     external_id: Option<&str>,
     session_name: Option<&str>,
     session_duration_secs: Option<i32>,
+    use_transfer_acceleration: Option<bool>,
 ) -> Result<S3Client, FmError> {
     let mut loader = if let (Some(ak), Some(sk)) = (access_key, secret_key) {
         let creds = aws_credential_types::Credentials::new(
@@ -113,6 +114,9 @@ pub async fn build_s3_client(
     let mut s3_config_builder = aws_sdk_s3::config::Builder::from(&final_config);
     if endpoint.is_some_and(|ep| !ep.is_empty()) {
         s3_config_builder = s3_config_builder.force_path_style(true);
+    }
+    if use_transfer_acceleration.unwrap_or(false) && endpoint.is_none_or(|ep| ep.is_empty()) {
+        s3_config_builder.set_accelerate(Some(true));
     }
     Ok(S3Client::from_conf(s3_config_builder.build()))
 }

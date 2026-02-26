@@ -50,6 +50,7 @@ pub async fn s3_list_buckets(
         external_id.as_deref(),
         session_name.as_deref(),
         session_duration_secs,
+        None,
     )
     .await?;
     s3::service::list_buckets(&client).await
@@ -69,6 +70,7 @@ pub async fn s3_connect(
     external_id: Option<String>,
     session_name: Option<String>,
     session_duration_secs: Option<i32>,
+    use_transfer_acceleration: Option<bool>,
 ) -> Result<(), FmError> {
     let client = build_s3_client(
         &region,
@@ -80,6 +82,7 @@ pub async fn s3_connect(
         external_id.as_deref(),
         session_name.as_deref(),
         session_duration_secs,
+        use_transfer_acceleration,
     )
     .await?;
 
@@ -441,6 +444,7 @@ pub async fn s3_create_bucket(
         external_id.as_deref(),
         session_name.as_deref(),
         session_duration_secs,
+        None,
     )
     .await?;
     s3::service::create_bucket(&client, &bucket_name, &region).await
@@ -469,6 +473,7 @@ pub async fn s3_delete_bucket(
         external_id.as_deref(),
         session_name.as_deref(),
         session_duration_secs,
+        None,
     )
     .await?;
     s3::service::delete_bucket(&client, &bucket_name).await

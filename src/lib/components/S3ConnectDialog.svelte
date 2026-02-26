@@ -5,7 +5,7 @@
   import type { S3Bucket, S3Profile, S3ProviderCapabilities } from '$lib/types';
 
   interface Props {
-    onConnect: (bucket: string, region: string, endpoint?: string, profile?: string, accessKey?: string, secretKey?: string, provider?: string, customCapabilities?: S3ProviderCapabilities, roleArn?: string, externalId?: string, sessionName?: string, sessionDurationSecs?: number) => void;
+    onConnect: (bucket: string, region: string, endpoint?: string, profile?: string, accessKey?: string, secretKey?: string, provider?: string, customCapabilities?: S3ProviderCapabilities, roleArn?: string, externalId?: string, sessionName?: string, sessionDurationSecs?: number, useTransferAcceleration?: boolean) => void;
     onCancel: () => void;
     saveMode?: boolean;
     initialData?: S3Profile;
@@ -41,6 +41,7 @@
   let externalIdVal = $state(init?.externalId ?? '');
   let sessionDuration = $state(init?.sessionDurationSecs ?? 3600);
   let showAssumeRole = $state(!!(init?.roleArn));
+  let useAcceleration = $state(init?.useTransferAcceleration ?? false);
 
   // Custom capabilities (for 'custom' provider)
   let customCaps = $state<S3ProviderCapabilities>(init?.customCapabilities ?? { ...getProvider('custom').capabilities });
@@ -110,6 +111,7 @@
       ...(roleArn.trim() ? { roleArn: roleArn.trim() } : {}),
       ...(externalIdVal.trim() ? { externalId: externalIdVal.trim() } : {}),
       ...(roleArn.trim() ? { sessionDurationSecs: sessionDuration } : {}),
+      ...(useAcceleration ? { useTransferAcceleration: true } : {}),
     };
   }
 
@@ -128,6 +130,7 @@
       externalIdVal.trim() || undefined,
       roleArn.trim() ? undefined : undefined, // sessionName uses default
       roleArn.trim() ? sessionDuration : undefined,
+      useAcceleration || undefined,
     );
   }
 
@@ -149,6 +152,7 @@
       externalIdVal.trim() || undefined,
       roleArn.trim() ? undefined : undefined,
       roleArn.trim() ? sessionDuration : undefined,
+      useAcceleration || undefined,
     );
   }
 
@@ -413,6 +417,16 @@
           disabled={useDefaultCreds && hasDefaultCreds}
         />
       </label>
+
+      {#if !endpoint.trim()}
+        <div class="creds-toggle">
+          <label class="checkbox-label">
+            <input type="checkbox" bind:checked={useAcceleration} />
+            Transfer Acceleration
+          </label>
+          <span class="field-hint">Route transfers through CloudFront edge locations</span>
+        </div>
+      {/if}
 
       <div class="caps-section">
         <button class="caps-toggle" onclick={() => { showAssumeRole = !showAssumeRole; }}>
