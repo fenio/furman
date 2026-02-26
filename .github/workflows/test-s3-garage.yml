@@ -18,7 +18,8 @@ jobs:
         run: |
           mkdir -p /tmp/garage/data /tmp/garage/meta
 
-          cat > /tmp/garage/garage.toml << 'TOML'
+          RPC_SECRET=$(openssl rand -hex 32)
+          cat > /tmp/garage/garage.toml <<TOML
           metadata_dir = "/tmp/garage/meta"
           data_dir = "/tmp/garage/data"
           db_engine = "sqlite"
@@ -38,7 +39,7 @@ jobs:
 
           [rpc]
           bind_addr = "[::]:3901"
-          secret = "$(openssl rand -hex 32)"
+          secret = "${RPC_SECRET}"
           TOML
 
           docker run -d --name garage \
@@ -57,6 +58,13 @@ jobs:
             echo "Waiting for Garage... ($i/30)"
             sleep 1
           done
+
+          # Show logs if container didn't start
+          if ! docker exec garage /garage status 2>/dev/null; then
+            echo "Garage failed to start. Container logs:"
+            docker logs garage
+            exit 1
+          fi
 
           # Get node ID and configure layout
           NODE_ID=$(docker exec garage /garage status 2>&1 | grep -oP '[0-9a-f]{16}' | head -1)
