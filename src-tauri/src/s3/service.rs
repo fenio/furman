@@ -2203,4 +2203,72 @@ impl S3Service {
             grants,
         })
     }
+
+    /// Update bucket ACL with a canned ACL string.
+    pub async fn put_bucket_acl(&self, acl: &str) -> Result<(), FmError> {
+        use aws_sdk_s3::types::BucketCannedAcl;
+        let canned = match acl {
+            "private" => BucketCannedAcl::Private,
+            "public-read" => BucketCannedAcl::PublicRead,
+            "public-read-write" => BucketCannedAcl::PublicReadWrite,
+            "authenticated-read" => BucketCannedAcl::AuthenticatedRead,
+            other => return Err(s3err(format!("Unknown canned ACL: {}", other))),
+        };
+        self.client
+            .put_bucket_acl()
+            .bucket(&self.bucket)
+            .acl(canned)
+            .send()
+            .await
+            .map_err(|e| s3err(e.to_string()))?;
+        Ok(())
+    }
+
+    /// Update default bucket encryption configuration.
+    pub async fn put_bucket_encryption(
+        &self,
+        sse_algorithm: &str,
+        kms_key_id: Option<&str>,
+        bucket_key_enabled: bool,
+    ) -> Result<(), FmError> {
+        use aws_sdk_s3::types::{
+            ServerSideEncryption, ServerSideEncryptionByDefault, ServerSideEncryptionConfiguration,
+            ServerSideEncryptionRule,
+        };
+
+        let algorithm = match sse_algorithm {
+            "AES256" | "aws:kms:dsse" => ServerSideEncryption::Aes256,
+            "aws:kms" => ServerSideEncryption::AwsKms,
+            other => return Err(s3err(format!("Unknown SSE algorithm: {}", other))),
+        };
+
+        let mut default_encryption = ServerSideEncryptionByDefault::builder()
+            .sse_algorithm(algorithm);
+
+        if let Some(key_id) = kms_key_id {
+            if !key_id.is_empty() {
+                default_encryption = default_encryption.kms_master_key_id(key_id);
+            }
+        }
+
+        let rule = ServerSideEncryptionRule::builder()
+            .apply_server_side_encryption_by_default(default_encryption.build().map_err(|e| s3err(e.to_string()))?)
+            .bucket_key_enabled(bucket_key_enabled)
+            .build();
+
+        let config = ServerSideEncryptionConfiguration::builder()
+            .rules(rule)
+            .build()
+            .map_err(|e| s3err(e.to_string()))?;
+
+        self.client
+            .put_bucket_encryption()
+            .bucket(&self.bucket)
+            .server_side_encryption_configuration(config)
+            .send()
+            .await
+            .map_err(|e| s3err(e.to_string()))?;
+
+        Ok(())
+    }
 }

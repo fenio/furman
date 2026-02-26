@@ -694,6 +694,30 @@ pub async fn s3_get_bucket_acl(
 }
 
 #[tauri::command]
+pub async fn s3_put_bucket_acl(
+    state: State<'_, S3State>,
+    id: String,
+    acl: String,
+) -> Result<(), FmError> {
+    let service = get_service(&state, &id)?;
+    service.put_bucket_acl(&acl).await
+}
+
+#[tauri::command]
+pub async fn s3_put_bucket_encryption(
+    state: State<'_, S3State>,
+    id: String,
+    sse_algorithm: String,
+    kms_key_id: Option<String>,
+    bucket_key_enabled: bool,
+) -> Result<(), FmError> {
+    let service = get_service(&state, &id)?;
+    service
+        .put_bucket_encryption(&sse_algorithm, kms_key_id.as_deref(), bucket_key_enabled)
+        .await
+}
+
+#[tauri::command]
 pub async fn s3_set_bandwidth_limit(bytes_per_sec: u64) -> Result<(), FmError> {
     BANDWIDTH_LIMIT.store(bytes_per_sec, std::sync::atomic::Ordering::Relaxed);
     Ok(())

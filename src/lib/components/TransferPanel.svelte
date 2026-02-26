@@ -1,7 +1,7 @@
 <script lang="ts">
   import { transfersState } from '$lib/state/transfers.svelte';
   import type { TransferStatus } from '$lib/state/transfers.svelte';
-  import { formatSize, formatSpeed } from '$lib/utils/format';
+  import { formatSize, formatSpeed, formatEta } from '$lib/utils/format';
   import { s3SetBandwidthLimit } from '$lib/services/s3';
   import { appState } from '$lib/state/app.svelte';
 
@@ -134,7 +134,7 @@
           </div>
           {#if t.progress}
             <div class="transfer-stats">
-              <span>{formatSize(t.progress.bytes_done)} / {formatSize(t.progress.bytes_total)}{#if t.speedBytesPerSec > 0} — {formatSpeed(t.speedBytesPerSec)}{/if}</span>
+              <span>{formatSize(t.progress.bytes_done)} / {formatSize(t.progress.bytes_total)}{#if t.speedBytesPerSec > 0} — {formatSpeed(t.speedBytesPerSec)}{#if formatEta(t.progress.bytes_total - t.progress.bytes_done, t.speedBytesPerSec)} — {formatEta(t.progress.bytes_total - t.progress.bytes_done, t.speedBytesPerSec)} left{/if}{/if}</span>
               <span>File {t.progress.files_done} of {t.progress.files_total}</span>
             </div>
           {/if}

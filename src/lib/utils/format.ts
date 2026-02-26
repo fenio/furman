@@ -40,6 +40,16 @@ export function formatSpeed(bytesPerSec: number): string {
   return `${(bytesPerSec / (1024 * 1024 * 1024)).toFixed(1)} GB/s`;
 }
 
+export function formatEta(bytesRemaining: number, bytesPerSec: number): string {
+  if (bytesPerSec <= 0 || bytesRemaining <= 0) return '';
+  const secs = Math.round(bytesRemaining / bytesPerSec);
+  if (secs < 60) return `${secs}s`;
+  if (secs < 3600) return `${Math.floor(secs / 60)}m ${secs % 60}s`;
+  const h = Math.floor(secs / 3600);
+  const m = Math.floor((secs % 3600) / 60);
+  return `${h}h ${m}m`;
+}
+
 export function getFileIcon(entry: FileEntry): string {
   if (entry.name === '..') return ' ..';
   if (entry.is_dir) return '<DIR>';

@@ -12,7 +12,8 @@
     s3GetBucketCors, s3PutBucketCors,
     s3GetPublicAccessBlock, s3PutPublicAccessBlock,
     s3GetBucketPolicy, s3PutBucketPolicy,
-    s3GetBucketAcl, s3PresignUrl,
+    s3GetBucketAcl, s3PutBucketAcl, s3PresignUrl,
+    s3PutBucketEncryption,
   } from '$lib/services/s3';
   import { invoke } from '@tauri-apps/api/core';
   import { formatSize, formatDate, formatPermissions } from '$lib/utils/format';
@@ -239,11 +240,21 @@
 
   const policyDirty = $derived(policyText !== policyOriginal);
 
-  // Bucket-level: ACL (read-only)
+  // Bucket-level: ACL
   let aclExpanded = $state(false);
   let bucketAcl = $state<S3BucketAcl | null>(null);
   let aclLoading = $state(false);
   let aclError = $state('');
+  let selectedCannedAcl = $state('');
+  let savingAcl = $state(false);
+  let aclMessage = $state('');
+
+  // Bucket-level: Encryption editing
+  let encEditAlgorithm = $state('AES256');
+  let encEditKmsKeyId = $state('');
+  let encEditBucketKey = $state(false);
+  let savingEncryption = $state(false);
+  let encryptionMessage = $state('');
 
   // Object-level: Metadata
   let metadataExpanded = $state(false);
@@ -749,6 +760,45 @@
     return 'Unknown';
   }
 
+  async function saveAcl() {
+    if (!selectedCannedAcl || savingAcl) return;
+    savingAcl = true;
+    aclMessage = '';
+    try {
+      await s3PutBucketAcl(s3ConnectionId, selectedCannedAcl);
+      aclMessage = 'ACL updated';
+      // Reload ACL display
+      bucketAcl = await s3GetBucketAcl(s3ConnectionId);
+    } catch (err: unknown) {
+      aclMessage = 'Error: ' + String(err);
+    } finally {
+      savingAcl = false;
+    }
+  }
+
+  async function saveEncryption() {
+    if (savingEncryption) return;
+    savingEncryption = true;
+    encryptionMessage = '';
+    try {
+      const kmsKey = encEditAlgorithm === 'aws:kms' ? encEditKmsKeyId || null : null;
+      await s3PutBucketEncryption(s3ConnectionId, encEditAlgorithm, kmsKey, encEditBucketKey);
+      encryptionMessage = 'Encryption updated';
+      // Reload
+      bucketEncryption = await s3GetBucketEncryption(s3ConnectionId);
+      if (bucketEncryption && bucketEncryption.rules.length > 0) {
+        const r = bucketEncryption.rules[0];
+        encEditAlgorithm = r.sse_algorithm;
+        encEditKmsKeyId = r.kms_key_id ?? '';
+        encEditBucketKey = r.bucket_key_enabled;
+      }
+    } catch (err: unknown) {
+      encryptionMessage = 'Error: ' + String(err);
+    } finally {
+      savingEncryption = false;
+    }
+  }
+
   // ── Object-level: Metadata functions ────────────────────────────────────
 
   async function loadMetadata() {
@@ -887,7 +937,14 @@
           }
           if (caps.encryption) {
             bucketEncryptionLoading = true;
-            bucketLoads.push(s3GetBucketEncryption(s3ConnectionId).then(e => { bucketEncryption = e; }));
+            bucketLoads.push(s3GetBucketEncryption(s3ConnectionId).then(e => {
+              bucketEncryption = e;
+              if (e && e.rules.length > 0) {
+                encEditAlgorithm = e.rules[0].sse_algorithm;
+                encEditKmsKeyId = e.rules[0].kms_key_id ?? '';
+                encEditBucketKey = e.rules[0].bucket_key_enabled;
+              }
+            }));
           }
           if (caps.publicAccessBlock) {
             publicAccessLoading = true;
@@ -1391,20 +1448,37 @@
           <div class="storage-class-section">
             {#if bucketEncryptionLoading}
               <div class="loading">Loading...</div>
-            {:else if bucketEncryption && bucketEncryption.rules.length > 0}
-              <table class="props-table">
-                <tbody>
-                  {#each bucketEncryption.rules as rule, i}
-                    <tr><td class="prop-label">Algorithm</td><td class="prop-value">{rule.sse_algorithm}</td></tr>
-                    {#if rule.kms_key_id}
-                      <tr><td class="prop-label">KMS Key</td><td class="prop-value mono">{rule.kms_key_id}</td></tr>
-                    {/if}
-                    <tr><td class="prop-label">Bucket Key</td><td class="prop-value">{rule.bucket_key_enabled ? 'Enabled' : 'Disabled'}</td></tr>
-                  {/each}
-                </tbody>
-              </table>
             {:else}
-              <div class="versions-empty">No encryption configuration</div>
+              <div class="tag-editor">
+                <div class="meta-row">
+                  <span class="meta-label">Algorithm</span>
+                  <select class="meta-input" bind:value={encEditAlgorithm}>
+                    <option value="AES256">SSE-S3 (AES256)</option>
+                    <option value="aws:kms">SSE-KMS (aws:kms)</option>
+                  </select>
+                </div>
+                {#if encEditAlgorithm === 'aws:kms'}
+                  <div class="meta-row">
+                    <span class="meta-label">KMS Key ID</span>
+                    <input type="text" class="meta-input" bind:value={encEditKmsKeyId} placeholder="Default aws/s3 key" />
+                  </div>
+                {/if}
+                <div class="meta-row">
+                  <span class="meta-label">Bucket Key</span>
+                  <label class="pab-toggle">
+                    <input type="checkbox" bind:checked={encEditBucketKey} />
+                    <span>{encEditBucketKey ? 'Enabled' : 'Disabled'}</span>
+                  </label>
+                </div>
+                <div class="tag-actions">
+                  <button class="dialog-btn primary" onclick={saveEncryption} disabled={savingEncryption}>
+                    {savingEncryption ? 'Saving...' : 'Save'}
+                  </button>
+                  {#if encryptionMessage}
+                    <span class="sc-message" class:sc-error={encryptionMessage.startsWith('Error')}>{encryptionMessage}</span>
+                  {/if}
+                </div>
+              </div>
             {/if}
           </div>
 
@@ -1825,7 +1899,7 @@
 
           {/if}
 
-          <!-- ACL (Read-Only) -->
+          <!-- ACL -->
           {#if bucketTab === 'security' && caps.acl}
           <div class="section-title">ACL</div>
             <div class="versions-section">
@@ -1853,7 +1927,24 @@
                       {/each}
                     </div>
                   {/if}
-                  <div class="acl-note">ACL is read-only</div>
+                  <div class="meta-row" style="margin-top: 8px;">
+                    <span class="meta-label">Set Canned ACL</span>
+                    <select class="meta-input" bind:value={selectedCannedAcl}>
+                      <option value="">-- Select --</option>
+                      <option value="private">Private</option>
+                      <option value="public-read">Public Read</option>
+                      <option value="public-read-write">Public Read/Write</option>
+                      <option value="authenticated-read">Authenticated Read</option>
+                    </select>
+                  </div>
+                  <div class="tag-actions">
+                    <button class="dialog-btn primary" onclick={saveAcl} disabled={!selectedCannedAcl || savingAcl}>
+                      {savingAcl ? 'Applying...' : 'Apply ACL'}
+                    </button>
+                    {#if aclMessage}
+                      <span class="sc-message" class:sc-error={aclMessage.startsWith('Error')}>{aclMessage}</span>
+                    {/if}
+                  </div>
                 </div>
               {/if}
             </div>
@@ -2616,14 +2707,6 @@
   .acl-grantee {
     font-size: 11px;
     color: var(--text-primary);
-  }
-
-  .acl-note {
-    font-size: 10px;
-    color: var(--text-secondary);
-    font-style: italic;
-    text-align: center;
-    padding: 4px 0;
   }
 
   /* Tab bar */

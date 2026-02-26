@@ -371,10 +371,30 @@ export async function s3PutBucketPolicy(id: string, policy: string): Promise<voi
   await invoke('s3_put_bucket_policy', { id, policy });
 }
 
-// ── Bucket ACL (Read-Only) ───────────────────────────────────────────────────
+// ── Bucket ACL ──────────────────────────────────────────────────────────────
 
 export async function s3GetBucketAcl(id: string): Promise<S3BucketAcl> {
   return await invoke<S3BucketAcl>('s3_get_bucket_acl', { id });
+}
+
+export async function s3PutBucketAcl(id: string, acl: string): Promise<void> {
+  await invoke('s3_put_bucket_acl', { id, acl });
+}
+
+// ── Bucket Encryption ───────────────────────────────────────────────────────
+
+export async function s3PutBucketEncryption(
+  id: string,
+  sseAlgorithm: string,
+  kmsKeyId: string | null,
+  bucketKeyEnabled: boolean,
+): Promise<void> {
+  await invoke('s3_put_bucket_encryption', {
+    id,
+    sseAlgorithm,
+    kmsKeyId: kmsKeyId || null,
+    bucketKeyEnabled,
+  });
 }
 
 // ── Bandwidth Throttling ────────────────────────────────────────────────────
