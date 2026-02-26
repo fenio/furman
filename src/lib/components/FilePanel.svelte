@@ -1,5 +1,6 @@
 <script lang="ts">
   import type { PanelData } from '$lib/state/panels.svelte';
+  import type { SortField } from '$lib/types';
   import { appState } from '$lib/state/app.svelte';
   import { statusState } from '$lib/state/status.svelte';
   import { formatSize } from '$lib/utils/format';
@@ -91,7 +92,7 @@
     }
   });
 
-  function handleColumnClick(field: 'name' | 'size' | 'modified' | 'extension') {
+  function handleColumnClick(field: SortField) {
     panel.toggleSort(field);
   }
 
@@ -396,8 +397,8 @@
     <button class="col-header col-date" onclick={() => handleColumnClick('modified')}>
       Date{sortIndicator('modified')}
     </button>
-    <button class="col-header col-perm" onclick={() => handleColumnClick('extension')}>
-      {isS3 ? 'Class' : 'Ext'}{sortIndicator('extension')}
+    <button class="col-header col-perm" onclick={() => handleColumnClick(isS3 ? 'storage_class' : 'extension')}>
+      {isS3 ? 'Class' : 'Ext'}{sortIndicator(isS3 ? 'storage_class' : 'extension')}
     </button>
   </div>
   {/if}

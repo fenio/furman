@@ -22,6 +22,13 @@ function compareField(
       if (cmp !== 0) return dir * cmp;
       return dir * a.name.localeCompare(b.name, undefined, { sensitivity: 'base' });
     }
+    case 'storage_class': {
+      const scA = a.storage_class ?? '';
+      const scB = b.storage_class ?? '';
+      const cmp = scA.localeCompare(scB, undefined, { sensitivity: 'base' });
+      if (cmp !== 0) return dir * cmp;
+      return dir * a.name.localeCompare(b.name, undefined, { sensitivity: 'base' });
+    }
     default:
       return 0;
   }

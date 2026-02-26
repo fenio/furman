@@ -1,4 +1,4 @@
-import type { ModalType, ViewerMode, PanelBackend, S3ProviderCapabilities } from '$lib/types';
+import type { ModalType, ViewerMode, PanelBackend, S3ProviderCapabilities, SortField, SortDirection } from '$lib/types';
 import type { Theme } from '@tauri-apps/api/window';
 import { saveConfig, type Config } from '$lib/services/config';
 import { sidebarState } from '$lib/state/sidebar.svelte';
@@ -34,6 +34,8 @@ class AppState {
   searchRoot = $state('');
   searchBackend = $state<PanelBackend>('local');
   searchS3ConnectionId = $state('');
+  sortField = $state<SortField>('name');
+  sortDirection = $state<SortDirection>('asc');
   externalEditor = $state('');
   overwriteFiles = $state<string[]>([]);
   overwriteCallback = $state<((action: 'overwrite' | 'skip') => void) | null>(null);
@@ -156,6 +158,8 @@ class AppState {
     this.showHidden = config.showHidden;
     this.externalEditor = config.externalEditor;
     this.calculateDirSizes = config.calculateDirSizes;
+    this.sortField = config.sortField ?? 'name';
+    this.sortDirection = config.sortDirection ?? 'asc';
     transfersState.bandwidthLimit = config.bandwidthLimit ?? 0;
     s3SetBandwidthLimit(transfersState.bandwidthLimit).catch(() => {});
   }
@@ -179,6 +183,8 @@ class AppState {
       workspaces: workspacesState.workspaces,
       s3Profiles: s3ProfilesState.profiles,
       bandwidthLimit: transfersState.bandwidthLimit,
+      sortField: this.sortField,
+      sortDirection: this.sortDirection,
     });
   }
 

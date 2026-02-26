@@ -12,8 +12,8 @@ export class PanelData {
   cursorIndex = $state(0);
   selectionAnchor = $state(0);
   selectedPaths = $state<Set<string>>(new Set());
-  sortField = $state<SortField>('name');
-  sortDirection = $state<SortDirection>('asc');
+  sortField = $state<SortField>(appState.sortField);
+  sortDirection = $state<SortDirection>(appState.sortDirection);
   viewMode = $state<ViewMode>('list');
   gridColumns = $state(1);
   filterText = $state('');
@@ -306,6 +306,9 @@ export class PanelData {
       this.sortField = field;
       this.sortDirection = 'asc';
     }
+    appState.sortField = this.sortField;
+    appState.sortDirection = this.sortDirection;
+    appState.persistConfig();
   }
 
   toggleViewMode() {

@@ -50,7 +50,7 @@ export interface TerminalExit {
   code: number | null;
 }
 
-export type SortField = 'name' | 'size' | 'modified' | 'extension';
+export type SortField = 'name' | 'size' | 'modified' | 'extension' | 'storage_class';
 export type SortDirection = 'asc' | 'desc';
 export type ViewMode = 'list' | 'icon';
 export type ViewerMode = 'text' | 'image' | 'hex';
