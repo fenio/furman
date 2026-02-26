@@ -3,6 +3,7 @@
   import { appState } from '$lib/state/app.svelte';
   import { getFileProperties, getDirectorySize } from '$lib/services/tauri';
   import MfaDialog from './MfaDialog.svelte';
+  import CloudFrontTab from './CloudFrontTab.svelte';
   import {
     s3HeadObject, s3ChangeStorageClass, s3RestoreObject, s3ListObjectVersions,
     s3DownloadVersion, s3RestoreVersion, s3DeleteVersion,
@@ -53,14 +54,14 @@
     glacierRestore: true, presignedUrls: true, objectMetadata: true,
     objectTags: true, bucketTags: true, multipartUploadCleanup: true,
     websiteHosting: true, requesterPays: true, objectOwnership: true, serverAccessLogging: true,
-    objectLock: true, listBuckets: true,
+    objectLock: true, listBuckets: true, cloudfront: true,
   };
 
   let fileProps = $state<FileProperties | null>(null);
   let s3Props = $state<S3ObjectProperties | null>(null);
   let s3IsPrefix = $state(false);
   let s3IsBucketRoot = $state(false);
-  let bucketTab = $state<'general' | 'security' | 'cors' | 'acl' | 'lifecycle'>('general');
+  let bucketTab = $state<'general' | 'security' | 'cors' | 'acl' | 'lifecycle' | 'cdn'>('general');
   let objectTab = $state<'general' | 'metadata' | 'versions'>('general');
   let loading = $state(true);
   let error = $state('');
@@ -1869,6 +1870,9 @@
             {#if caps.lifecycleRules || caps.multipartUploadCleanup}
               <button class="tab-btn" class:active={bucketTab === 'lifecycle'} onclick={() => { bucketTab = 'lifecycle'; }}>Lifecycle</button>
             {/if}
+            {#if caps.cloudfront}
+              <button class="tab-btn" class:active={bucketTab === 'cdn'} onclick={() => { bucketTab = 'cdn'; }}>CDN</button>
+            {/if}
           </div>
 
           <!-- Bucket Versioning -->
@@ -2625,6 +2629,10 @@
                 </div>
               {/if}
             </div>
+          {/if}
+
+          {#if bucketTab === 'cdn' && caps.cloudfront}
+            <CloudFrontTab s3ConnectionId={s3ConnectionId} />
           {/if}
         {/if}
       {/if}

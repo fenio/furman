@@ -293,6 +293,53 @@ export interface KmsKeyInfo {
   alias: string | null;
 }
 
+// ── CloudFront Types ────────────────────────────────────────────────────────
+
+export interface CfDistributionSummary {
+  id: string;
+  domain_name: string;
+  status: string;
+  enabled: boolean;
+  comment: string;
+  last_modified: string;
+  price_class: string;
+  http_version: string;
+  aliases: string[];
+}
+
+export interface CfCustomErrorResponse {
+  error_code: number;
+  response_page_path: string | null;
+  response_code: string | null;
+  error_caching_min_ttl: number | null;
+}
+
+export interface CfDistributionConfig {
+  comment: string;
+  enabled: boolean;
+  default_root_object: string;
+  price_class: string;
+  http_version: string;
+  viewer_protocol_policy: string;
+  aliases: string[];
+  custom_error_responses: CfCustomErrorResponse[];
+}
+
+export interface CfDistribution {
+  id: string;
+  domain_name: string;
+  status: string;
+  etag: string;
+  config: CfDistributionConfig;
+}
+
+export interface CfInvalidation {
+  id: string;
+  status: string;
+  create_time: string;
+  paths: string[];
+}
+
 export type PanelBackend = 'local' | 's3' | 'archive';
 
 export interface ArchiveInfo {
@@ -321,6 +368,7 @@ export interface S3ProviderCapabilities {
   serverAccessLogging: boolean;
   objectLock: boolean;
   listBuckets: boolean;
+  cloudfront: boolean;
 }
 
 export interface S3ConnectionInfo {

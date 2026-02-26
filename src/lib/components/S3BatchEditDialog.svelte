@@ -22,6 +22,7 @@
     websiteHosting: true, requesterPays: true, objectOwnership: true, serverAccessLogging: true,
     objectLock: true,
     listBuckets: true,
+    cloudfront: true,
   };
 
   type TabType = 'metadata' | 'tags';

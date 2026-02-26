@@ -743,6 +743,7 @@
               <label class="caps-checkbox"><input type="checkbox" bind:checked={customCaps.objectOwnership} /> Object Ownership</label>
               <label class="caps-checkbox"><input type="checkbox" bind:checked={customCaps.serverAccessLogging} /> Access Logging</label>
               <label class="caps-checkbox"><input type="checkbox" bind:checked={customCaps.listBuckets} /> List Buckets</label>
+              <label class="caps-checkbox"><input type="checkbox" bind:checked={customCaps.cloudfront} /> CloudFront CDN</label>
             </div>
           {/if}
         </div>

@@ -1,4 +1,5 @@
 pub mod archive;
+pub mod cloudfront;
 pub mod directory;
 pub mod file;
 pub mod git;

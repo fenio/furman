@@ -1,4 +1,5 @@
 mod commands;
+pub mod cloudfront;
 pub mod models;
 pub mod s3;
 
@@ -180,6 +181,14 @@ pub fn run() {
             commands::s3::s3_bulk_put_object_retention,
             commands::s3::s3_batch_put_object_metadata,
             commands::s3::s3_batch_put_object_tags,
+            // cloudfront commands
+            commands::cloudfront::cf_list_distributions,
+            commands::cloudfront::cf_get_distribution,
+            commands::cloudfront::cf_create_distribution,
+            commands::cloudfront::cf_update_distribution,
+            commands::cloudfront::cf_delete_distribution,
+            commands::cloudfront::cf_create_invalidation,
+            commands::cloudfront::cf_list_invalidations,
             // archive commands
             commands::archive::list_archive,
             commands::archive::extract_archive,

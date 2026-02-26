@@ -409,6 +409,58 @@ pub struct S3ObjectLegalHold {
     pub status: String, // "ON" | "OFF"
 }
 
+// ── CloudFront Types ────────────────────────────────────────────────────────
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CfDistributionSummary {
+    pub id: String,
+    pub domain_name: String,
+    pub status: String,
+    pub enabled: bool,
+    pub comment: String,
+    pub last_modified: String,
+    pub price_class: String,
+    pub http_version: String,
+    pub aliases: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CfCustomErrorResponse {
+    pub error_code: i32,
+    pub response_page_path: Option<String>,
+    pub response_code: Option<String>,
+    pub error_caching_min_ttl: Option<i64>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CfDistributionConfig {
+    pub comment: String,
+    pub enabled: bool,
+    pub default_root_object: String,
+    pub price_class: String,
+    pub http_version: String,
+    pub viewer_protocol_policy: String,
+    pub aliases: Vec<String>,
+    pub custom_error_responses: Vec<CfCustomErrorResponse>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CfDistribution {
+    pub id: String,
+    pub domain_name: String,
+    pub status: String,
+    pub etag: String,
+    pub config: CfDistributionConfig,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CfInvalidation {
+    pub id: String,
+    pub status: String,
+    pub create_time: String,
+    pub paths: Vec<String>,
+}
+
 // ── Display impls ───────────────────────────────────────────────────────────
 
 impl fmt::Display for ProgressEvent {
