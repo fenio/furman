@@ -520,7 +520,7 @@
       kdf_memory_cost: profile.kdfMemoryCost ?? 19456,
       kdf_time_cost: profile.kdfTimeCost ?? 2,
       kdf_parallelism: profile.kdfParallelism ?? 1,
-      secure_temp_cleanup: profile.secureTempCleanup ?? false,
+      secure_temp_cleanup: appState.secureTempCleanup,
     };
   }
 

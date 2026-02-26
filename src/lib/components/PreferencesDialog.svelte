@@ -1,7 +1,9 @@
 <script lang="ts">
   import { appState } from '$lib/state/app.svelte';
   import { panels } from '$lib/state/panels.svelte';
+  import { transfersState } from '$lib/state/transfers.svelte';
   import { getLogPath, openFileDefault } from '$lib/services/tauri';
+  import { formatSize } from '$lib/utils/format';
 
   interface Props {
     onClose: () => void;
@@ -116,6 +118,43 @@
         />
         <span class="pref-hint">Leave empty to use built-in editor</span>
       </div>
+
+      <div class="section-title">S3 Transfers</div>
+
+      <div class="pref-row">
+        <span class="pref-label">Concurrent Transfers</span>
+        <select class="pref-select" value={transfersState.maxConcurrent} onchange={(e) => appState.setMaxConcurrent(Number((e.target as HTMLSelectElement).value))}>
+          <option value={1}>1</option>
+          <option value={2}>2</option>
+          <option value={3}>3</option>
+          <option value={4}>4</option>
+          <option value={5}>5</option>
+        </select>
+      </div>
+
+      <div class="pref-row column">
+        <span class="pref-label">Bandwidth Limit</span>
+        <select class="pref-select full-width" value={transfersState.bandwidthLimit} onchange={(e) => appState.setBandwidthLimit(Number((e.target as HTMLSelectElement).value))}>
+          <option value={0}>Unlimited</option>
+          <option value={131072}>128 KB/s</option>
+          <option value={524288}>512 KB/s</option>
+          <option value={1048576}>1 MB/s</option>
+          <option value={5242880}>5 MB/s</option>
+          <option value={10485760}>10 MB/s</option>
+          <option value={52428800}>50 MB/s</option>
+          <option value={104857600}>100 MB/s</option>
+        </select>
+      </div>
+
+      <label class="pref-row checkbox">
+        <input
+          type="checkbox"
+          checked={appState.secureTempCleanup}
+          onchange={() => appState.setSecureTempCleanup(!appState.secureTempCleanup)}
+        />
+        Secure Temp Cleanup
+      </label>
+      <span class="pref-hint">Overwrite encrypted temp files with zeros before deleting</span>
 
       <div class="section-title">Diagnostics</div>
 
@@ -295,6 +334,27 @@
     font-size: 11px;
     color: var(--text-secondary);
     opacity: 0.6;
+  }
+
+  .pref-select {
+    padding: 4px 10px;
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--radius-sm);
+    background: var(--bg-surface);
+    color: var(--text-primary);
+    font-size: 12px;
+    font-family: inherit;
+    cursor: pointer;
+    transition: border-color var(--transition-fast);
+  }
+
+  .pref-select:focus {
+    outline: none;
+    border-color: var(--border-active);
+  }
+
+  .pref-select.full-width {
+    width: 100%;
   }
 
   .dialog-footer {

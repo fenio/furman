@@ -51,6 +51,7 @@ class AppState {
   syncDestBackend = $state<PanelBackend>('local');
   syncDestPath = $state('');
   syncDestS3Id = $state('');
+  secureTempCleanup = $state(false);
 
   showSearch(root: string, backend: PanelBackend = 'local', s3ConnectionId: string = '') {
     this.searchRoot = root;
@@ -80,6 +81,22 @@ class AppState {
 
   setStartupSound(val: boolean) {
     this.startupSound = val;
+    this.persistConfig();
+  }
+
+  setSecureTempCleanup(val: boolean) {
+    this.secureTempCleanup = val;
+    this.persistConfig();
+  }
+
+  setMaxConcurrent(val: number) {
+    transfersState.maxConcurrent = val;
+    this.persistConfig();
+  }
+
+  setBandwidthLimit(val: number) {
+    transfersState.bandwidthLimit = val;
+    s3SetBandwidthLimit(val).catch(() => {});
     this.persistConfig();
   }
 
@@ -164,6 +181,8 @@ class AppState {
     this.sortField = config.sortField ?? 'name';
     this.sortDirection = config.sortDirection ?? 'asc';
     transfersState.bandwidthLimit = config.bandwidthLimit ?? 0;
+    transfersState.maxConcurrent = config.maxConcurrent ?? 2;
+    this.secureTempCleanup = config.secureTempCleanup ?? false;
     s3SetBandwidthLimit(transfersState.bandwidthLimit).catch(() => {});
   }
 
@@ -187,6 +206,8 @@ class AppState {
       s3Profiles: s3ProfilesState.profiles,
       s3Bookmarks: s3BookmarksState.bookmarks,
       bandwidthLimit: transfersState.bandwidthLimit,
+      maxConcurrent: transfersState.maxConcurrent,
+      secureTempCleanup: this.secureTempCleanup,
       sortField: this.sortField,
       sortDirection: this.sortDirection,
     });

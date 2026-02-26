@@ -17,6 +17,8 @@ export interface Config {
   s3Profiles: S3Profile[];
   s3Bookmarks: S3Bookmark[];
   bandwidthLimit: number;
+  maxConcurrent: number;
+  secureTempCleanup: boolean;
   sortField: SortField;
   sortDirection: SortDirection;
 }
@@ -34,6 +36,8 @@ export const DEFAULT_CONFIG: Config = {
   s3Profiles: [],
   s3Bookmarks: [],
   bandwidthLimit: 0,
+  maxConcurrent: 2,
+  secureTempCleanup: false,
   sortField: 'name',
   sortDirection: 'asc',
 };

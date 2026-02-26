@@ -49,7 +49,6 @@
   let kdfParallelism = $state(init?.kdfParallelism ?? 1);
   let autoEncryptMinSize = $state(init?.autoEncryptMinSize ?? 0);
   let autoEncryptExtensions = $state(init?.autoEncryptExtensions?.join(', ') ?? '');
-  let secureTempCleanup = $state(init?.secureTempCleanup ?? false);
   let showEncryptionSettings = $state(false);
 
   // Custom capabilities (for 'custom' provider)
@@ -128,7 +127,6 @@
       ...(defaultEncryption && kdfParallelism !== 1 ? { kdfParallelism } : {}),
       ...(defaultEncryption && autoEncryptMinSize > 0 ? { autoEncryptMinSize } : {}),
       ...(defaultEncryption && autoEncryptExtensions.trim() ? { autoEncryptExtensions: autoEncryptExtensions.split(',').map(s => s.trim()).filter(Boolean) } : {}),
-      ...(defaultEncryption && secureTempCleanup ? { secureTempCleanup: true } : {}),
     };
   }
 
@@ -519,14 +517,6 @@
                 />
                 <span class="field-hint">Only trigger encryption when files match these extensions</span>
               </label>
-
-              <div class="creds-toggle">
-                <label class="checkbox-label">
-                  <input type="checkbox" bind:checked={secureTempCleanup} />
-                  Secure temp cleanup
-                </label>
-                <span class="field-hint">Overwrite temp files with zeros before deleting</span>
-              </div>
             </div>
           {/if}
         </div>
