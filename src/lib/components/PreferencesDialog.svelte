@@ -3,13 +3,14 @@
   import { panels } from '$lib/state/panels.svelte';
   import { transfersState } from '$lib/state/transfers.svelte';
   import { getLogPath, openFileDefault } from '$lib/services/tauri';
-  import { formatSize } from '$lib/utils/format';
 
   interface Props {
     onClose: () => void;
   }
 
   let { onClose }: Props = $props();
+
+  let activeTab = $state<'general' | 's3'>('general');
 
   const sizes = [
     { label: 'Small', value: 32 },
@@ -47,122 +48,132 @@
 >
   <div class="dialog-box">
     <div class="dialog-title">Preferences</div>
+    <div class="tab-bar">
+      <button class="tab-btn" class:active={activeTab === 'general'} onclick={() => { activeTab = 'general'; }}>General</button>
+      <button class="tab-btn" class:active={activeTab === 's3'} onclick={() => { activeTab = 's3'; }}>S3</button>
+    </div>
     <div class="dialog-body">
 
-      <div class="section-title">Appearance</div>
+      {#if activeTab === 'general'}
+        <div class="section-title">Appearance</div>
 
-      <div class="pref-row">
-        <span class="pref-label">Theme</span>
-        <button class="toggle-btn" onclick={() => appState.toggleTheme()}>
-          {appState.theme === 'dark' ? 'Dark' : 'Light'}
-        </button>
-      </div>
-
-      <div class="pref-row column">
-        <span class="pref-label">Icon Size</span>
-        <div class="radio-group">
-          {#each sizes as s}
-            <label class="radio-label" class:active={appState.iconSize === s.value}>
-              <input
-                type="radio"
-                name="iconSize"
-                value={s.value}
-                checked={appState.iconSize === s.value}
-                onchange={() => appState.setIconSize(s.value)}
-              />
-              {s.label}
-              <span class="size-hint">{s.value}px</span>
-            </label>
-          {/each}
+        <div class="pref-row">
+          <span class="pref-label">Theme</span>
+          <button class="toggle-btn" onclick={() => appState.toggleTheme()}>
+            {appState.theme === 'dark' ? 'Dark' : 'Light'}
+          </button>
         </div>
-      </div>
 
-      <div class="section-title">Behavior</div>
+        <div class="pref-row column">
+          <span class="pref-label">Icon Size</span>
+          <div class="radio-group">
+            {#each sizes as s}
+              <label class="radio-label" class:active={appState.iconSize === s.value}>
+                <input
+                  type="radio"
+                  name="iconSize"
+                  value={s.value}
+                  checked={appState.iconSize === s.value}
+                  onchange={() => appState.setIconSize(s.value)}
+                />
+                {s.label}
+                <span class="size-hint">{s.value}px</span>
+              </label>
+            {/each}
+          </div>
+        </div>
 
-      <label class="pref-row checkbox">
-        <input
-          type="checkbox"
-          checked={appState.showHidden}
-          onchange={toggleShowHidden}
-        />
-        Show Hidden Files
-      </label>
+        <div class="section-title">Behavior</div>
 
-      <label class="pref-row checkbox">
-        <input
-          type="checkbox"
-          checked={appState.calculateDirSizes}
-          onchange={() => appState.setCalculateDirSizes(!appState.calculateDirSizes)}
-        />
-        Calculate Directory Sizes on Selection
-      </label>
+        <label class="pref-row checkbox">
+          <input
+            type="checkbox"
+            checked={appState.showHidden}
+            onchange={toggleShowHidden}
+          />
+          Show Hidden Files
+        </label>
 
-      <label class="pref-row checkbox">
-        <input
-          type="checkbox"
-          checked={appState.startupSound}
-          onchange={() => appState.setStartupSound(!appState.startupSound)}
-        />
-        Startup Sound
-      </label>
+        <label class="pref-row checkbox">
+          <input
+            type="checkbox"
+            checked={appState.calculateDirSizes}
+            onchange={() => appState.setCalculateDirSizes(!appState.calculateDirSizes)}
+          />
+          Calculate Directory Sizes on Selection
+        </label>
 
-      <div class="pref-row column">
-        <span class="pref-label">External Editor</span>
-        <input
-          class="pref-input"
-          type="text"
-          autocomplete="off"
-          placeholder="e.g. code, vim, subl"
-          value={appState.externalEditor}
-          oninput={(e) => appState.setExternalEditor((e.target as HTMLInputElement).value)}
-        />
-        <span class="pref-hint">Leave empty to use built-in editor</span>
-      </div>
+        <label class="pref-row checkbox">
+          <input
+            type="checkbox"
+            checked={appState.startupSound}
+            onchange={() => appState.setStartupSound(!appState.startupSound)}
+          />
+          Startup Sound
+        </label>
 
-      <div class="section-title">S3 Transfers</div>
+        <div class="pref-row column">
+          <span class="pref-label">External Editor</span>
+          <input
+            class="pref-input"
+            type="text"
+            autocomplete="off"
+            placeholder="e.g. code, vim, subl"
+            value={appState.externalEditor}
+            oninput={(e) => appState.setExternalEditor((e.target as HTMLInputElement).value)}
+          />
+          <span class="pref-hint">Leave empty to use built-in editor</span>
+        </div>
 
-      <div class="pref-row">
-        <span class="pref-label">Concurrent Transfers</span>
-        <select class="pref-select" value={transfersState.maxConcurrent} onchange={(e) => appState.setMaxConcurrent(Number((e.target as HTMLSelectElement).value))}>
-          <option value={1}>1</option>
-          <option value={2}>2</option>
-          <option value={3}>3</option>
-          <option value={4}>4</option>
-          <option value={5}>5</option>
-        </select>
-      </div>
+        <div class="section-title">Diagnostics</div>
 
-      <div class="pref-row column">
-        <span class="pref-label">Bandwidth Limit</span>
-        <select class="pref-select full-width" value={transfersState.bandwidthLimit} onchange={(e) => appState.setBandwidthLimit(Number((e.target as HTMLSelectElement).value))}>
-          <option value={0}>Unlimited</option>
-          <option value={131072}>128 KB/s</option>
-          <option value={524288}>512 KB/s</option>
-          <option value={1048576}>1 MB/s</option>
-          <option value={5242880}>5 MB/s</option>
-          <option value={10485760}>10 MB/s</option>
-          <option value={52428800}>50 MB/s</option>
-          <option value={104857600}>100 MB/s</option>
-        </select>
-      </div>
+        <div class="pref-row">
+          <span class="pref-label">Log Files</span>
+          <button class="toggle-btn" onclick={openLogFolder}>Open Log Folder</button>
+        </div>
+        <span class="pref-hint">Share log files when reporting issues</span>
+      {/if}
 
-      <label class="pref-row checkbox">
-        <input
-          type="checkbox"
-          checked={appState.secureTempCleanup}
-          onchange={() => appState.setSecureTempCleanup(!appState.secureTempCleanup)}
-        />
-        Secure Temp Cleanup
-      </label>
-      <span class="pref-hint">Overwrite encrypted temp files with zeros before deleting</span>
+      {#if activeTab === 's3'}
+        <div class="section-title">Transfers</div>
 
-      <div class="section-title">Diagnostics</div>
+        <div class="pref-row">
+          <span class="pref-label">Concurrent Transfers</span>
+          <select class="pref-select" value={transfersState.maxConcurrent} onchange={(e) => appState.setMaxConcurrent(Number((e.target as HTMLSelectElement).value))}>
+            <option value={1}>1</option>
+            <option value={2}>2</option>
+            <option value={3}>3</option>
+            <option value={4}>4</option>
+            <option value={5}>5</option>
+          </select>
+        </div>
 
-      <div class="pref-row">
-        <span class="pref-label">Log Files</span>
-        <button class="toggle-btn" onclick={openLogFolder}>Open Log Folder</button>
-      </div>
-      <span class="pref-hint">Share log files when reporting issues</span>
+        <div class="pref-row column">
+          <span class="pref-label">Bandwidth Limit</span>
+          <select class="pref-select full-width" value={transfersState.bandwidthLimit} onchange={(e) => appState.setBandwidthLimit(Number((e.target as HTMLSelectElement).value))}>
+            <option value={0}>Unlimited</option>
+            <option value={131072}>128 KB/s</option>
+            <option value={524288}>512 KB/s</option>
+            <option value={1048576}>1 MB/s</option>
+            <option value={5242880}>5 MB/s</option>
+            <option value={10485760}>10 MB/s</option>
+            <option value={52428800}>50 MB/s</option>
+            <option value={104857600}>100 MB/s</option>
+          </select>
+        </div>
+
+        <div class="section-title">Security</div>
+
+        <label class="pref-row checkbox">
+          <input
+            type="checkbox"
+            checked={appState.secureTempCleanup}
+            onchange={() => appState.setSecureTempCleanup(!appState.secureTempCleanup)}
+          />
+          Secure Temp Cleanup
+        </label>
+        <span class="pref-hint">Overwrite encrypted temp files with zeros before deleting</span>
+      {/if}
 
     </div>
     <div class="dialog-footer">
@@ -209,6 +220,34 @@
     font-weight: 600;
     font-size: 14px;
     border-bottom: 1px solid var(--dialog-border);
+  }
+
+  .tab-bar {
+    display: flex;
+    gap: 0;
+    border-bottom: 1px solid var(--dialog-border);
+  }
+
+  .tab-btn {
+    padding: 6px 16px;
+    font-size: 12px;
+    font-family: inherit;
+    font-weight: 500;
+    background: none;
+    border: none;
+    border-bottom: 2px solid transparent;
+    color: var(--text-secondary);
+    cursor: pointer;
+    transition: color var(--transition-fast), border-color var(--transition-fast);
+  }
+
+  .tab-btn:hover {
+    color: var(--text-primary);
+  }
+
+  .tab-btn.active {
+    border-bottom: 2px solid var(--text-accent);
+    color: var(--text-accent);
   }
 
   .dialog-body {
