@@ -21,7 +21,7 @@
 ## Features
 
 - **Dual-pane navigation** with Tab to switch between panes
-- **[S3 support](S3.md)** — full-featured S3 client for any S3-compatible storage (AWS, MinIO, Backblaze B2, etc.) with transfers, versioning, lifecycle rules, CORS, bucket policies, client-side encryption, and more
+- **[S3 support](S3.md)** — full-featured S3 client for 38+ S3-compatible providers (AWS, MinIO, Backblaze B2, Cloudflare R2, etc.) with multipart transfers, versioning, object lock, batch metadata/tag editing, lifecycle rules, CORS, bucket policies, client-side encryption (AES-256-GCM / ChaCha20), sync with exclude filters, bandwidth throttling, IAM role assumption, anonymous access, and more
 - **Integrated terminal** — bottom panel (Cmd+T), Quake-style drop-down (Cmd+\`), or in-pane mode (Cmd+Shift+T)
 - **Git integration** — panel header shows repo indicator with branch name, ahead/behind status, dirty flag, pull button, and branch switcher
 - **File viewer** (F3) — text with line numbers, image preview, hex dump
@@ -132,7 +132,7 @@ The `.dmg` will be in `src-tauri/target/release/bundle/dmg/`.
 | Cmd+K | Copy S3 URI to clipboard |
 | Cmd+L | Bulk storage class change |
 | Cmd+Y | Sync between panels |
-| Cmd+I | Properties (bucket config, metadata, tags, versions) |
+| Cmd+I | Properties (single) / Batch Edit (multi-select) |
 
 ### Terminal & UI
 
