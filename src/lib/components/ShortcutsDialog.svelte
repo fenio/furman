@@ -181,7 +181,7 @@
     background: var(--dialog-bg);
     border: 1px solid var(--dialog-border);
     border-radius: var(--radius-lg);
-    width: 48ch;
+    width: 56ch;
     max-width: 90vw;
     box-shadow: var(--shadow-dialog);
     overflow: hidden;
@@ -234,6 +234,7 @@
     display: flex;
     flex-direction: column;
     gap: 6px;
+    height: 420px;
   }
 
   .section-title {
@@ -259,8 +260,7 @@
   }
 
   .keys {
-    flex-shrink: 0;
-    min-width: 14ch;
+    flex: 0 0 16ch;
     font-family: inherit;
     font-size: 11px;
     color: var(--text-secondary);
