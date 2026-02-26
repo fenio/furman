@@ -7,7 +7,7 @@
 </p>
 
 <p align="center">
-  A dual-pane file manager for macOS inspired by times when Dos Navigator was the king.
+  <b>F</b>ile & <b>U</b>RL <b>R</b>epository <b>MAN</b>ager — a dual-pane file manager for macOS inspired by times when Dos Navigator was the king.
 </p>
 
 <p align="center">
