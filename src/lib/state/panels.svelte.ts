@@ -1,7 +1,7 @@
 import type { FileEntry, SortField, SortDirection, ViewMode, PanelBackend, S3ConnectionInfo, ArchiveInfo, GitRepoInfo } from '$lib/types';
 import { sortEntries } from '$lib/utils/sort';
 import { listDirectory, listArchive, watchDirectory, unwatchDirectory, getGitRepoInfo, getDirectorySize } from '$lib/services/tauri';
-import { s3Connect, s3Disconnect, s3ListObjects } from '$lib/services/s3';
+import { s3Connect, s3Disconnect, s3ListObjects, s3IsObjectEncrypted } from '$lib/services/s3';
 import { appState } from '$lib/state/app.svelte';
 
 
@@ -65,6 +65,11 @@ export class PanelData {
   dirSizeCache = $state<Record<string, number>>({});
   private dirSizePending = new Set<string>();
 
+  /** Cache of encryption status for S3 objects (key → encrypted). */
+  encryptionCache = $state<Record<string, boolean>>({});
+  private encryptionPending = new Set<string>();
+  private encryptionDebounceTimer: ReturnType<typeof setTimeout> | null = null;
+
   constructor(side: string) {
     this.watchId = `watch-${side}`;
   }
@@ -89,6 +94,25 @@ export class PanelData {
         });
       }
     }
+  }
+
+  /** Check encryption status for an S3 object (debounced). */
+  checkEncryption(key: string) {
+    if (this.backend !== 's3' || !this.s3Connection) return;
+    if (key in this.encryptionCache || this.encryptionPending.has(key)) return;
+    if (key.endsWith('/')) return; // directories can't be encrypted
+
+    if (this.encryptionDebounceTimer) clearTimeout(this.encryptionDebounceTimer);
+    const connectionId = this.s3Connection.connectionId;
+    this.encryptionDebounceTimer = setTimeout(() => {
+      this.encryptionPending.add(key);
+      s3IsObjectEncrypted(connectionId, key).then((encrypted) => {
+        this.encryptionCache = { ...this.encryptionCache, [key]: encrypted };
+        this.encryptionPending.delete(key);
+      }).catch(() => {
+        this.encryptionPending.delete(key);
+      });
+    }, 300);
   }
 
   clearFilter() {
@@ -135,6 +159,8 @@ export class PanelData {
     this.clearFilter();
     this.dirSizeCache = {};
     this.dirSizePending.clear();
+    this.encryptionCache = {};
+    this.encryptionPending.clear();
 
     // If we're in archive mode and the ".." path is a real filesystem path (not archive://),
     // that means we're exiting the archive

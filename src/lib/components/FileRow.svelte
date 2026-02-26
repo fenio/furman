@@ -16,6 +16,7 @@
     panelSide?: 'left' | 'right';
     isS3?: boolean;
     dirSize?: number;
+    encrypted?: boolean;
     backend?: PanelBackend;
     s3ConnectionId?: string;
     getSelectedPaths?: () => string[];
@@ -23,7 +24,7 @@
     ondblclick?: () => void;
   }
 
-  let { entry, isSelected, isCursor, isActive, rowIndex, panelSide, isS3, dirSize, backend, s3ConnectionId, getSelectedPaths, onclick, ondblclick }: Props = $props();
+  let { entry, isSelected, isCursor, isActive, rowIndex, panelSide, isS3, dirSize, encrypted, backend, s3ConnectionId, getSelectedPaths, onclick, ondblclick }: Props = $props();
 
   const archiveExtensions = new Set(['zip', 'rar', '7z', 'tar', 'gz', 'tgz', 'bz2', 'xz']);
   const imageExtensions = new Set(['png', 'jpg', 'jpeg', 'gif', 'bmp', 'svg', 'webp', 'ico']);
@@ -189,6 +190,9 @@
   {#if entry.git_status}
     <span class="col-git {gitBadgeClass}">{entry.git_status}</span>
   {/if}
+  {#if encrypted}
+    <span class="col-encrypted" title="Client-side encrypted">&#x1F512;</span>
+  {/if}
   <span class="col-name">{displayName}</span>
   <span class="col-size">{sizeDisplay}</span>
   <span class="col-date">{dateDisplay}</span>
@@ -276,6 +280,14 @@
   .col-git.git-I { color: var(--git-ignored); }
   .col-git.git-R { color: var(--git-renamed); }
   .col-git.git-U { color: var(--git-conflict); }
+
+  .col-encrypted {
+    flex: 0 0 1.8ch;
+    text-align: center;
+    font-size: 10px;
+    line-height: 28px;
+    opacity: 0.7;
+  }
 
   .col-name {
     flex: 1 1 0;

@@ -42,6 +42,7 @@
   let sessionDuration = $state(init?.sessionDurationSecs ?? 3600);
   let showAssumeRole = $state(!!(init?.roleArn));
   let useAcceleration = $state(init?.useTransferAcceleration ?? false);
+  let defaultEncryption = $state(init?.defaultClientEncryption ?? false);
 
   // Custom capabilities (for 'custom' provider)
   let customCaps = $state<S3ProviderCapabilities>(init?.customCapabilities ?? { ...getProvider('custom').capabilities });
@@ -112,6 +113,7 @@
       ...(externalIdVal.trim() ? { externalId: externalIdVal.trim() } : {}),
       ...(roleArn.trim() ? { sessionDurationSecs: sessionDuration } : {}),
       ...(useAcceleration ? { useTransferAcceleration: true } : {}),
+      ...(defaultEncryption ? { defaultClientEncryption: true } : {}),
     };
   }
 
@@ -427,6 +429,14 @@
           <span class="field-hint">Route transfers through CloudFront edge locations</span>
         </div>
       {/if}
+
+      <div class="creds-toggle">
+        <label class="checkbox-label">
+          <input type="checkbox" bind:checked={defaultEncryption} />
+          Client-side encryption by default
+        </label>
+        <span class="field-hint">Prompt for password when uploading to this bucket</span>
+      </div>
 
       <div class="caps-section">
         <button class="caps-toggle" onclick={() => { showAssumeRole = !showAssumeRole; }}>

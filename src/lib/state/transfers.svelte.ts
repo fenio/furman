@@ -1,6 +1,6 @@
 import type { ProgressEvent, TransferCheckpoint } from '$lib/types';
 import { cancelFileOperation, pauseFileOperation, copyFiles, moveFiles, extractArchive } from '$lib/services/tauri';
-import { s3Download, s3Upload, s3CopyObjects } from '$lib/services/s3';
+import { s3Download, s3Upload, s3CopyObjects, s3UploadEncrypted } from '$lib/services/s3';
 import { formatSize } from '$lib/utils/format';
 
 export type TransferStatus = 'queued' | 'running' | 'paused' | 'completed' | 'failed' | 'cancelled';
@@ -24,6 +24,7 @@ export interface Transfer {
   s3DestPrefix?: string;
   archivePath?: string;
   archiveInternalPaths?: string[];
+  encryptionPassword?: string;
   checkpoint?: TransferCheckpoint | null;
   speedBytesPerSec: number;
   /** @internal */ _lastProgressAt: number;
@@ -310,9 +311,12 @@ class TransfersState {
         return await copyFiles(t.id, t.sources, t.destination, onProgress);
       }
       if (srcBackend === 's3' && destBackend === 'local') {
-        return await s3Download(t.s3SrcConnectionId!, t.id, t.sources, t.destination, onProgress);
+        return await s3Download(t.s3SrcConnectionId!, t.id, t.sources, t.destination, onProgress, t.encryptionPassword);
       }
       if (srcBackend === 'local' && destBackend === 's3') {
+        if (t.encryptionPassword) {
+          return await s3UploadEncrypted(t.s3DestConnectionId!, t.id, t.sources, t.s3DestPrefix!, t.encryptionPassword, onProgress);
+        }
         return await s3Upload(t.s3DestConnectionId!, t.id, t.sources, t.s3DestPrefix!, onProgress);
       }
       if (srcBackend === 's3' && destBackend === 's3') {
@@ -329,9 +333,12 @@ class TransfersState {
       }
       // S3 move = copy + delete (handled by caller in +layout.svelte)
       if (srcBackend === 's3' && destBackend === 'local') {
-        return await s3Download(t.s3SrcConnectionId!, t.id, t.sources, t.destination, onProgress);
+        return await s3Download(t.s3SrcConnectionId!, t.id, t.sources, t.destination, onProgress, t.encryptionPassword);
       }
       if (srcBackend === 'local' && destBackend === 's3') {
+        if (t.encryptionPassword) {
+          return await s3UploadEncrypted(t.s3DestConnectionId!, t.id, t.sources, t.s3DestPrefix!, t.encryptionPassword, onProgress);
+        }
         return await s3Upload(t.s3DestConnectionId!, t.id, t.sources, t.s3DestPrefix!, onProgress);
       }
       if (srcBackend === 's3' && destBackend === 's3') {

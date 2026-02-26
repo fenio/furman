@@ -2,11 +2,12 @@
   interface Props {
     prompt: string;
     value: string;
+    inputType?: 'text' | 'password';
     onSubmit: (value: string) => void;
     onCancel: () => void;
   }
 
-  let { prompt, value, onSubmit, onCancel }: Props = $props();
+  let { prompt, value, inputType = 'text', onSubmit, onCancel }: Props = $props();
 
   let inputValue = $state('');
   let inputEl: HTMLInputElement | undefined = $state(undefined);
@@ -45,7 +46,7 @@
     <div class="dialog-title">{prompt}</div>
     <div class="dialog-body">
       <input
-        type="text"
+        type={inputType}
         class="dialog-input"
         autocomplete="off"
         bind:value={inputValue}

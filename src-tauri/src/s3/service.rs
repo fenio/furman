@@ -17,6 +17,12 @@ use crate::models::{
 
 use super::helpers::*;
 
+fn cleanup_temp_files(files: &[PathBuf]) {
+    for f in files {
+        let _ = std::fs::remove_file(f);
+    }
+}
+
 // ── S3Bucket model ──────────────────────────────────────────────────────────
 
 #[derive(Debug, Clone, serde::Serialize)]
@@ -262,6 +268,7 @@ impl S3Service {
         cancel: &AtomicBool,
         pause: &AtomicBool,
         on_progress: &(dyn Fn(ProgressEvent) + Send + Sync),
+        password: Option<&str>,
     ) -> Result<Option<TransferCheckpoint>, FmError> {
         let dest = PathBuf::from(destination);
 
@@ -334,6 +341,7 @@ impl S3Service {
                 .map_err(|e| s3err(e.to_string()))?;
 
             let etag = resp.e_tag().map(|s| s.trim_matches('"').to_string());
+            let obj_metadata: HashMap<String, String> = resp.metadata().cloned().unwrap_or_default();
             let expected_size = *_size;
             let mut body = resp.body;
             let mut file = tokio::fs::File::create(&local_path).await.map_err(FmError::Io)?;
@@ -393,6 +401,19 @@ impl S3Service {
                 }
             }
 
+            // Decrypt if encrypted and password provided
+            if let Some(pw) = password {
+                if let Some(enc_params) = super::crypto::EncryptionParams::from_metadata(&obj_metadata) {
+                    super::crypto::decrypt_file(&local_path, pw, &enc_params)?;
+                }
+            } else if super::crypto::EncryptionParams::is_encrypted(&obj_metadata) {
+                let _ = tokio::fs::remove_file(&local_path).await;
+                return Err(s3err(format!(
+                    "File '{}' is encrypted — password required for download",
+                    key
+                )));
+            }
+
             files_done += 1;
             completed_files.push(key.clone());
 
@@ -419,6 +440,7 @@ impl S3Service {
         cancel: &AtomicBool,
         pause: &AtomicBool,
         on_progress: &(dyn Fn(ProgressEvent) + Send + Sync),
+        metadata: Option<&HashMap<String, String>>,
     ) -> Result<Option<TransferCheckpoint>, FmError> {
         // Collect all files to upload (expand directories)
         let mut file_list: Vec<(PathBuf, String)> = Vec::new();
@@ -495,6 +517,7 @@ impl S3Service {
                     &cancel_arc,
                     &atomic_bytes_done,
                     &progress_cb,
+                    metadata,
                 )
                 .await?;
                 bytes_done = atomic_bytes_done.load(Ordering::Relaxed);
@@ -503,12 +526,17 @@ impl S3Service {
                 let data = std::fs::read(local_path)?;
                 let size = data.len() as u64;
 
-                self.client
+                let mut req = self.client
                     .put_object()
                     .bucket(&self.bucket)
                     .key(key)
-                    .body(data.into())
-                    .send()
+                    .body(data.into());
+                if let Some(meta) = metadata {
+                    for (mk, mv) in meta {
+                        req = req.metadata(mk, mv);
+                    }
+                }
+                req.send()
                     .await
                     .map_err(|e| s3err(e.to_string()))?;
 
@@ -530,6 +558,175 @@ impl S3Service {
         }
 
         Ok(None)
+    }
+
+    /// Encrypt local files then upload to S3 with encryption metadata.
+    pub async fn upload_encrypted(
+        &self,
+        sources: &[String],
+        dest_prefix: &str,
+        password: &str,
+        op_id: &str,
+        cancel: &AtomicBool,
+        pause: &AtomicBool,
+        on_progress: &(dyn Fn(ProgressEvent) + Send + Sync),
+    ) -> Result<Option<TransferCheckpoint>, FmError> {
+        use super::crypto;
+
+        // Collect files (same as upload)
+        let mut file_list: Vec<(PathBuf, String)> = Vec::new();
+        for source in sources {
+            let src_path = PathBuf::from(source);
+            let name = src_path
+                .file_name()
+                .map(|n| n.to_string_lossy().to_string())
+                .unwrap_or_default();
+            if src_path.is_dir() {
+                collect_local_files(&src_path, &format!("{}{}", dest_prefix, name), &mut file_list)?;
+            } else {
+                let key = format!("{}{}", dest_prefix, name);
+                file_list.push((src_path, key));
+            }
+        }
+
+        let files_total = file_list.len() as u32;
+        let bytes_total: u64 = file_list
+            .iter()
+            .map(|(p, _)| std::fs::metadata(p).map(|m| m.len()).unwrap_or(0))
+            .sum();
+        let mut bytes_done: u64 = 0;
+        let mut files_done: u32 = 0;
+        let mut completed_files: Vec<String> = Vec::new();
+        let mut temp_files: Vec<PathBuf> = Vec::new();
+
+        for (local_path, key) in &file_list {
+            if cancel.load(Ordering::Relaxed) {
+                cleanup_temp_files(&temp_files);
+                return Err(FmError::Other("Operation cancelled".into()));
+            }
+            if pause.load(Ordering::Relaxed) {
+                cleanup_temp_files(&temp_files);
+                return Ok(Some(TransferCheckpoint {
+                    files_completed: completed_files,
+                    bytes_done,
+                    bytes_total,
+                    files_done,
+                    files_total,
+                }));
+            }
+
+            let filename = local_path
+                .file_name()
+                .map(|n| n.to_string_lossy().to_string())
+                .unwrap_or_default();
+
+            on_progress(ProgressEvent {
+                id: op_id.to_string(),
+                bytes_done,
+                bytes_total,
+                current_file: format!("Encrypting {}", filename),
+                files_done,
+                files_total,
+            });
+
+            // Encrypt
+            let (enc_path, params) = match crypto::encrypt_file(local_path, password) {
+                Ok(r) => r,
+                Err(e) => {
+                    cleanup_temp_files(&temp_files);
+                    return Err(e);
+                }
+            };
+            temp_files.push(enc_path.clone());
+            let metadata = params.to_metadata();
+
+            let enc_size = std::fs::metadata(&enc_path)
+                .map(|m| m.len())
+                .unwrap_or(0);
+
+            let upload_result = if enc_size > MULTIPART_THRESHOLD {
+                let atomic_bytes_done = Arc::new(AtomicU64::new(bytes_done));
+                let cancel_arc = Arc::new(AtomicBool::new(false));
+                let op_id_c = op_id.to_string();
+                let filename_c = filename.clone();
+                let progress_cb = |new_bytes: u64| {
+                    on_progress(ProgressEvent {
+                        id: op_id_c.clone(),
+                        bytes_done: new_bytes,
+                        bytes_total,
+                        current_file: filename_c.clone(),
+                        files_done,
+                        files_total,
+                    });
+                };
+                let r = upload_file_multipart(
+                    &self.client, &self.bucket, key, &enc_path,
+                    enc_size, &cancel_arc, &atomic_bytes_done, &progress_cb,
+                    Some(&metadata),
+                ).await;
+                if r.is_ok() {
+                    bytes_done = atomic_bytes_done.load(Ordering::Relaxed);
+                }
+                r
+            } else {
+                let data = match std::fs::read(&enc_path) {
+                    Ok(d) => d,
+                    Err(e) => {
+                        cleanup_temp_files(&temp_files);
+                        return Err(FmError::Io(e));
+                    }
+                };
+                let size = data.len() as u64;
+                let mut req = self.client
+                    .put_object()
+                    .bucket(&self.bucket)
+                    .key(key)
+                    .body(data.into());
+                for (mk, mv) in &metadata {
+                    req = req.metadata(mk, mv);
+                }
+                let r = req.send().await.map_err(|e| s3err(e.to_string()));
+                if r.is_ok() {
+                    throttle(size).await;
+                    bytes_done += std::fs::metadata(local_path).map(|m| m.len()).unwrap_or(0);
+                }
+                r.map(|_| ())
+            };
+
+            if let Err(e) = upload_result {
+                cleanup_temp_files(&temp_files);
+                return Err(e);
+            }
+
+            files_done += 1;
+            completed_files.push(key.clone());
+            on_progress(ProgressEvent {
+                id: op_id.to_string(),
+                bytes_done,
+                bytes_total,
+                current_file: filename,
+                files_done,
+                files_total,
+            });
+        }
+
+        cleanup_temp_files(&temp_files);
+        Ok(None)
+    }
+
+    /// Check if an object has client-side encryption metadata.
+    pub async fn is_object_encrypted(&self, key: &str) -> Result<bool, FmError> {
+        let actual_key = strip_s3_prefix(key, &self.bucket);
+        let head = self.client
+            .head_object()
+            .bucket(&self.bucket)
+            .key(&actual_key)
+            .send()
+            .await
+            .map_err(|e| s3err(e.to_string()))?;
+
+        let meta: HashMap<String, String> = head.metadata().cloned().unwrap_or_default();
+        Ok(super::crypto::EncryptionParams::is_encrypted(&meta))
     }
 
     /// Server-side copy between S3 locations.
@@ -960,7 +1157,7 @@ impl S3Service {
     // ── File Editing & Preview ──────────────────────────────────────────
 
     /// Download a single S3 object to a temp file and return the local path.
-    pub async fn download_temp(&self, key: &str) -> Result<String, FmError> {
+    pub async fn download_temp(&self, key: &str, password: Option<&str>) -> Result<String, FmError> {
         let stripped_key = strip_s3_prefix(key, &self.bucket);
 
         // Check object size via head_object
@@ -1006,12 +1203,23 @@ impl S3Service {
             .await
             .map_err(|e| s3err(e.to_string()))?;
 
+        let obj_metadata: HashMap<String, String> = resp.metadata().cloned().unwrap_or_default();
         let body = resp
             .body
             .collect()
             .await
             .map_err(|e| s3err(e.to_string()))?;
         std::fs::write(&temp_path, body.into_bytes())?;
+
+        // Decrypt if encrypted
+        if let Some(pw) = password {
+            if let Some(enc_params) = super::crypto::EncryptionParams::from_metadata(&obj_metadata) {
+                super::crypto::decrypt_file(&temp_path, pw, &enc_params)?;
+            }
+        } else if super::crypto::EncryptionParams::is_encrypted(&obj_metadata) {
+            let _ = std::fs::remove_file(&temp_path);
+            return Err(s3err("File is encrypted — password required"));
+        }
 
         Ok(temp_path.to_string_lossy().to_string())
     }

@@ -261,6 +261,7 @@
     <InputDialog
       prompt={appState.inputPrompt}
       value={appState.inputValue}
+      inputType={appState.inputType}
       onSubmit={(val) => {
         const cb = appState.inputCallback;
         if (cb) cb(val);

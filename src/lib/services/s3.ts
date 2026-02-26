@@ -75,11 +75,12 @@ export async function s3Download(
   opId: string,
   keys: string[],
   destination: string,
-  onProgress: (e: ProgressEvent) => void
+  onProgress: (e: ProgressEvent) => void,
+  password?: string,
 ): Promise<TransferCheckpoint | null> {
   const channel = new Channel<ProgressEvent>();
   channel.onmessage = onProgress;
-  return await invoke<TransferCheckpoint | null>('s3_download', { id, opId, keys, destination, channel });
+  return await invoke<TransferCheckpoint | null>('s3_download', { id, opId, keys, destination, password: password ?? null, channel });
 }
 
 export async function s3Upload(
@@ -135,9 +136,10 @@ export async function s3PresignUrl(id: string, key: string, expiresInSecs: numbe
 
 export async function s3DownloadToTemp(
   id: string,
-  key: string
+  key: string,
+  password?: string,
 ): Promise<string> {
-  return await invoke<string>('s3_download_temp', { id, key });
+  return await invoke<string>('s3_download_temp', { id, key, password: password ?? null });
 }
 
 export async function s3PutText(id: string, key: string, content: string): Promise<void> {
@@ -443,6 +445,25 @@ export async function s3PutBucketLogging(id: string, config: import('$lib/types'
 
 export async function s3ListKmsKeys(id: string): Promise<KmsKeyInfo[]> {
   return await invoke<KmsKeyInfo[]>('s3_list_kms_keys', { id });
+}
+
+// ── Client-Side Encryption ──────────────────────────────────────────────────
+
+export async function s3UploadEncrypted(
+  id: string,
+  opId: string,
+  sources: string[],
+  destPrefix: string,
+  password: string,
+  onProgress: (e: ProgressEvent) => void,
+): Promise<TransferCheckpoint | null> {
+  const channel = new Channel<ProgressEvent>();
+  channel.onmessage = onProgress;
+  return await invoke<TransferCheckpoint | null>('s3_upload_encrypted', { id, opId, sources, destPrefix, password, channel });
+}
+
+export async function s3IsObjectEncrypted(id: string, key: string): Promise<boolean> {
+  return await invoke<boolean>('s3_is_object_encrypted', { id, key });
 }
 
 // ── Bandwidth Throttling ────────────────────────────────────────────────────

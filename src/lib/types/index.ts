@@ -335,4 +335,5 @@ export interface S3Profile {
   sessionName?: string;
   sessionDurationSecs?: number;
   useTransferAcceleration?: boolean;
+  defaultClientEncryption?: boolean;
 }

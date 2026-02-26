@@ -70,6 +70,14 @@
     return () => observer.disconnect();
   });
 
+  // Check encryption status when cursor moves on S3 panel
+  $effect(() => {
+    const entry = panel.currentEntry;
+    if (entry && !entry.is_dir && entry.name !== '..' && panel.backend === 's3') {
+      panel.checkEncryption(entry.path);
+    }
+  });
+
   // Clamp cursor when filtered list length changes
   $effect(() => {
     const len = panel.filteredSortedEntries.length;
@@ -462,6 +470,7 @@
             panelSide={side}
             {isS3}
             dirSize={entry.is_dir ? panel.dirSizeCache[entry.path] : undefined}
+            encrypted={panel.encryptionCache[entry.path] === true}
             backend={panel.backend}
             s3ConnectionId={panel.s3Connection?.connectionId}
             getSelectedPaths={() => panel.getSelectedOrCurrent()}

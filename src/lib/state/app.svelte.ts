@@ -25,6 +25,7 @@ class AppState {
   inputPrompt = $state('');
   inputValue = $state('');
   inputCallback = $state<((value: string) => void) | null>(null);
+  inputType = $state<'text' | 'password'>('text');
   menuActive = $state(false);
   iconSize = $state(48);
   startupSound = $state(true);
@@ -93,10 +94,11 @@ class AppState {
     this.modal = 'confirm';
   }
 
-  showInput(prompt: string, defaultValue: string, callback: (value: string) => void) {
+  showInput(prompt: string, defaultValue: string, callback: (value: string) => void, type: 'text' | 'password' = 'text') {
     this.inputPrompt = prompt;
     this.inputValue = defaultValue;
     this.inputCallback = callback;
+    this.inputType = type;
     this.modal = 'input';
   }
 
@@ -197,6 +199,7 @@ class AppState {
     this.inputPrompt = '';
     this.inputValue = '';
     this.inputCallback = null;
+    this.inputType = 'text';
     this.menuActive = false;
     this.s3ConnectCallback = null;
     this.searchRoot = '';

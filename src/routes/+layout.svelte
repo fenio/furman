@@ -12,7 +12,7 @@
   import { copyFiles, moveFiles, deleteFiles, renameFile, createDirectory, openFileDefault, openInEditor, checkConflicts } from '$lib/services/tauri';
   import { statusState } from '$lib/state/status.svelte';
   import { transfersState } from '$lib/state/transfers.svelte';
-  import { s3Download, s3Upload, s3CopyObjects, s3DeleteObjects, s3RenameObject, s3CreateFolder, s3PresignUrl, s3DownloadToTemp, s3BulkChangeStorageClass } from '$lib/services/s3';
+  import { s3Download, s3Upload, s3CopyObjects, s3DeleteObjects, s3RenameObject, s3CreateFolder, s3PresignUrl, s3DownloadToTemp, s3BulkChangeStorageClass, s3IsObjectEncrypted } from '$lib/services/s3';
   import { keychainGet } from '$lib/services/keychain';
   import { s3PathToPrefix } from '$lib/state/panels.svelte';
   import { error } from '$lib/services/log';
@@ -313,10 +313,23 @@
     appState.modal = 'editor';
   }
 
-  async function openS3Viewer(s3Path: string, ext: string | null, connectionId: string) {
+  async function openS3Viewer(s3Path: string, ext: string | null, connectionId: string, password?: string) {
+    // Check encryption if no password provided
+    if (!password) {
+      try {
+        const encrypted = await s3IsObjectEncrypted(connectionId, s3Path);
+        if (encrypted) {
+          promptEncryptionPassword((pw) => {
+            openS3Viewer(s3Path, ext, connectionId, pw);
+          }, 'Decryption password:');
+          return;
+        }
+      } catch { /* continue without encryption */ }
+    }
+
     statusState.setMessage('Downloading for preview...');
     try {
-      const localPath = await s3DownloadToTemp(connectionId, s3Path);
+      const localPath = await s3DownloadToTemp(connectionId, s3Path, password);
       const lower = (ext ?? '').toLowerCase();
       if (systemOpenExtensions.has(lower)) {
         await openFileDefault(localPath);
@@ -352,10 +365,23 @@
     }
   }
 
-  async function openS3Editor(s3Path: string, connectionId: string) {
+  async function openS3Editor(s3Path: string, connectionId: string, password?: string) {
+    // Check encryption if no password provided
+    if (!password) {
+      try {
+        const encrypted = await s3IsObjectEncrypted(connectionId, s3Path);
+        if (encrypted) {
+          promptEncryptionPassword((pw) => {
+            openS3Editor(s3Path, connectionId, pw);
+          }, 'Decryption password:');
+          return;
+        }
+      } catch { /* continue without encryption */ }
+    }
+
     statusState.setMessage('Downloading for editing...');
     try {
-      const localPath = await s3DownloadToTemp(connectionId, s3Path);
+      const localPath = await s3DownloadToTemp(connectionId, s3Path, password);
       appState.editorPath = localPath;
       appState.editorDirty = false;
       appState.editorS3ConnectionId = connectionId;
@@ -406,6 +432,7 @@
     dest: string,
     srcBackend: string,
     destBackend: string,
+    encryptionPassword?: string,
   ) {
     const active = panels.active;
     const inactive = panels.inactive;
@@ -441,6 +468,7 @@
         s3DestPrefix: destBackend === 's3' && inactive.s3Connection
           ? s3PathToPrefix(dest, inactive.s3Connection.bucket)
           : undefined,
+        encryptionPassword,
       });
     }
   }
@@ -450,6 +478,7 @@
     dest: string,
     srcBackend: string,
     destBackend: string,
+    encryptionPassword?: string,
   ) {
     const active = panels.active;
     const inactive = panels.inactive;
@@ -467,7 +496,28 @@
       s3DestPrefix: destBackend === 's3' && inactive.s3Connection
         ? s3PathToPrefix(dest, inactive.s3Connection.bucket)
         : undefined,
+      encryptionPassword,
     });
+  }
+
+  function findProfileForConnection(connectionId: string): import('$lib/types').S3Profile | undefined {
+    const panel = [panels.left, panels.right].find(
+      (p) => p.s3Connection?.connectionId === connectionId,
+    );
+    if (!panel?.s3Connection) return undefined;
+    return s3ProfilesState.profiles.find(
+      (p) => p.bucket === panel.s3Connection!.bucket,
+    );
+  }
+
+  function promptEncryptionPassword(
+    callback: (password: string) => void,
+    promptText = 'Encryption password:',
+  ) {
+    appState.showInput(promptText, '', (pw) => {
+      appState.closeModal();
+      if (pw) callback(pw);
+    }, 'password');
   }
 
   async function handleCopy() {
@@ -483,6 +533,45 @@
 
     appState.showConfirm(`Copy ${sources.length} item(s) to ${dest}?\n${names}`, () => {
       appState.closeModal();
+
+      // Check if we need encryption for upload (local→s3)
+      if (srcBackend === 'local' && destBackend === 's3' && inactive.s3Connection) {
+        const profile = findProfileForConnection(inactive.s3Connection.connectionId);
+        if (profile?.defaultClientEncryption) {
+          promptEncryptionPassword((pw) => {
+            withConflictCheck(sources, dest, destBackend, (finalSources) =>
+              executeCopy(finalSources, dest, srcBackend, destBackend, pw),
+            );
+          });
+          return;
+        }
+      }
+
+      // Check if we need decryption for download (s3→local)
+      if (srcBackend === 's3' && destBackend === 'local' && active.s3Connection) {
+        const firstFile = sources.find((s) => !s.endsWith('/'));
+        if (firstFile) {
+          s3IsObjectEncrypted(active.s3Connection.connectionId, firstFile).then((encrypted) => {
+            if (encrypted) {
+              promptEncryptionPassword((pw) => {
+                withConflictCheck(sources, dest, destBackend, (finalSources) =>
+                  executeCopy(finalSources, dest, srcBackend, destBackend, pw),
+                );
+              }, 'Decryption password:');
+            } else {
+              withConflictCheck(sources, dest, destBackend, (finalSources) =>
+                executeCopy(finalSources, dest, srcBackend, destBackend),
+              );
+            }
+          }).catch(() => {
+            withConflictCheck(sources, dest, destBackend, (finalSources) =>
+              executeCopy(finalSources, dest, srcBackend, destBackend),
+            );
+          });
+          return;
+        }
+      }
+
       withConflictCheck(sources, dest, destBackend, (finalSources) =>
         executeCopy(finalSources, dest, srcBackend, destBackend),
       );
@@ -502,6 +591,45 @@
 
     appState.showConfirm(`Move ${sources.length} item(s) to ${dest}?\n${names}`, () => {
       appState.closeModal();
+
+      // Check if we need encryption for upload (local→s3)
+      if (srcBackend === 'local' && destBackend === 's3' && inactive.s3Connection) {
+        const profile = findProfileForConnection(inactive.s3Connection.connectionId);
+        if (profile?.defaultClientEncryption) {
+          promptEncryptionPassword((pw) => {
+            withConflictCheck(sources, dest, destBackend, (finalSources) =>
+              executeMove(finalSources, dest, srcBackend, destBackend, pw),
+            );
+          });
+          return;
+        }
+      }
+
+      // Check if we need decryption for download (s3→local)
+      if (srcBackend === 's3' && destBackend === 'local' && active.s3Connection) {
+        const firstFile = sources.find((s) => !s.endsWith('/'));
+        if (firstFile) {
+          s3IsObjectEncrypted(active.s3Connection.connectionId, firstFile).then((encrypted) => {
+            if (encrypted) {
+              promptEncryptionPassword((pw) => {
+                withConflictCheck(sources, dest, destBackend, (finalSources) =>
+                  executeMove(finalSources, dest, srcBackend, destBackend, pw),
+                );
+              }, 'Decryption password:');
+            } else {
+              withConflictCheck(sources, dest, destBackend, (finalSources) =>
+                executeMove(finalSources, dest, srcBackend, destBackend),
+              );
+            }
+          }).catch(() => {
+            withConflictCheck(sources, dest, destBackend, (finalSources) =>
+              executeMove(finalSources, dest, srcBackend, destBackend),
+            );
+          });
+          return;
+        }
+      }
+
       withConflictCheck(sources, dest, destBackend, (finalSources) =>
         executeMove(finalSources, dest, srcBackend, destBackend),
       );

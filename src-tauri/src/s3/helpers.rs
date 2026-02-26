@@ -178,12 +178,19 @@ pub async fn upload_file_multipart(
     cancel_flag: &Arc<AtomicBool>,
     bytes_done: &Arc<AtomicU64>,
     on_progress: &(dyn Fn(u64) + Send + Sync),
+    metadata: Option<&std::collections::HashMap<String, String>>,
 ) -> Result<(), FmError> {
     // 1. Create multipart upload
-    let create_resp = client
+    let mut create_req = client
         .create_multipart_upload()
         .bucket(bucket)
-        .key(key)
+        .key(key);
+    if let Some(meta) = metadata {
+        for (k, v) in meta {
+            create_req = create_req.metadata(k, v);
+        }
+    }
+    let create_resp = create_req
         .send()
         .await
         .map_err(|e| s3err(e.to_string()))?;

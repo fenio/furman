@@ -132,6 +132,7 @@ pub async fn s3_download(
     op_id: String,
     keys: Vec<String>,
     destination: String,
+    password: Option<String>,
     channel: Channel<ProgressEvent>,
 ) -> Result<Option<TransferCheckpoint>, FmError> {
     let service = get_service(&state, &id)?;
@@ -153,6 +154,7 @@ pub async fn s3_download(
             &flags.cancel,
             &flags.pause,
             &|evt| { let _ = channel.send(evt); },
+            password.as_deref(),
         )
         .await;
 
@@ -188,6 +190,48 @@ pub async fn s3_upload(
         .upload(
             &sources,
             &dest_prefix,
+            &op_id,
+            &flags.cancel,
+            &flags.pause,
+            &|evt| { let _ = channel.send(evt); },
+            None,
+        )
+        .await;
+
+    if let Ok(mut map) = file_op_state.0.lock() {
+        map.remove(&op_id);
+    }
+
+    result
+}
+
+#[tauri::command]
+pub async fn s3_upload_encrypted(
+    state: State<'_, S3State>,
+    file_op_state: State<'_, FileOpState>,
+    id: String,
+    op_id: String,
+    sources: Vec<String>,
+    dest_prefix: String,
+    password: String,
+    channel: Channel<ProgressEvent>,
+) -> Result<Option<TransferCheckpoint>, FmError> {
+    let service = get_service(&state, &id)?;
+
+    let flags = Arc::new(crate::commands::file::OpFlags {
+        cancel: AtomicBool::new(false),
+        pause: AtomicBool::new(false),
+    });
+    {
+        let mut map = file_op_state.0.lock().map_err(|e| FmError::Other(e.to_string()))?;
+        map.insert(op_id.clone(), flags.clone());
+    }
+
+    let result = service
+        .upload_encrypted(
+            &sources,
+            &dest_prefix,
+            &password,
             &op_id,
             &flags.cancel,
             &flags.pause,
@@ -330,9 +374,20 @@ pub async fn s3_download_temp(
     state: State<'_, S3State>,
     id: String,
     key: String,
+    password: Option<String>,
 ) -> Result<String, FmError> {
     let service = get_service(&state, &id)?;
-    service.download_temp(&key).await
+    service.download_temp(&key, password.as_deref()).await
+}
+
+#[tauri::command]
+pub async fn s3_is_object_encrypted(
+    state: State<'_, S3State>,
+    id: String,
+    key: String,
+) -> Result<bool, FmError> {
+    let service = get_service(&state, &id)?;
+    service.is_object_encrypted(&key).await
 }
 
 #[tauri::command]
