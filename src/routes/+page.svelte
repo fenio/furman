@@ -180,6 +180,14 @@
   }
 
   function handleSyncExecute(entries: SyncEntry[]) {
+    // Capture sync state before closeModal() resets it
+    const sourceBackend = appState.syncSourceBackend;
+    const sourcePath = appState.syncSourcePath;
+    const sourceS3Id = appState.syncSourceS3Id;
+    const destBackend = appState.syncDestBackend;
+    const destPath = appState.syncDestPath;
+    const destS3Id = appState.syncDestS3Id;
+
     appState.closeModal();
     if (entries.length === 0) return;
     // Dispatch custom event for +layout.svelte to handle the actual transfers
@@ -187,12 +195,12 @@
       new CustomEvent('sync-execute', {
         detail: {
           entries,
-          sourceBackend: appState.syncSourceBackend,
-          sourcePath: appState.syncSourcePath,
-          sourceS3Id: appState.syncSourceS3Id,
-          destBackend: appState.syncDestBackend,
-          destPath: appState.syncDestPath,
-          destS3Id: appState.syncDestS3Id,
+          sourceBackend,
+          sourcePath,
+          sourceS3Id,
+          destBackend,
+          destPath,
+          destS3Id,
         },
       }),
     );
