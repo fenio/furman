@@ -112,6 +112,7 @@
           title: 'S3 Operations',
           shortcuts: [
             { keys: '\u2318S', desc: 'Connect / disconnect S3' },
+            { keys: '\u2318\u21E7I', desc: 'Bucket properties' },
             { keys: '\u2318D', desc: 'Bookmark S3 path' },
             { keys: '\u2318U', desc: 'Presigned URL' },
             { keys: '\u2318K', desc: 'Copy S3 URI' },

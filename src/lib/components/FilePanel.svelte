@@ -370,13 +370,30 @@
         {/if}
       </span>
     {:else if panel.backend === 's3'}
-      <span class="backend-indicator">
+      <button
+        class="backend-indicator backend-indicator-clickable"
+        title="Bucket properties (⌘⇧I)"
+        onclick={() => {
+          if (panel.s3Connection) {
+            appState.showProperties(
+              `s3://${panel.s3Connection.bucket}/`,
+              panel.backend,
+              panel.s3Connection.connectionId,
+              panel.s3Connection.capabilities,
+            );
+          }
+        }}
+      >
         <svg class="backend-logo" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
           <path d="M22 12c0-1.1-.5-2.1-1.3-2.8.3-.7.4-1.4.3-2.2-.3-1.6-1.5-2.8-3.1-3.1-.8-.1-1.5 0-2.2.3C15.1 3.5 14.1 3 13 3h-2c-1.1 0-2.1.5-2.8 1.3-.7-.3-1.4-.4-2.2-.3-1.6.3-2.8 1.5-3.1 3.1-.1.8 0 1.5.3 2.2C2.5 9.9 2 10.9 2 12s.5 2.1 1.3 2.8c-.3.7-.4 1.4-.3 2.2.3 1.6 1.5 2.8 3.1 3.1.8.1 1.5 0 2.2-.3.6.7 1.6 1.2 2.7 1.2h2c1.1 0 2.1-.5 2.8-1.3.7.3 1.4.4 2.2.3 1.6-.3 2.8-1.5 3.1-3.1.1-.8 0-1.5-.3-2.2.7-.6 1.2-1.6 1.2-2.7Z" fill="none" stroke="#FF9900" stroke-width="1.5"/>
           <path d="M8 12h8M8 9h8M8 15h8" stroke="#FF9900" stroke-width="1.5" stroke-linecap="round"/>
         </svg>
         <span class="backend-label">S3</span>
-      </span>
+        <svg class="bucket-props-icon" viewBox="0 0 16 16" width="10" height="10" fill="currentColor">
+          <path d="M8 4.754a3.246 3.246 0 1 0 0 6.492 3.246 3.246 0 0 0 0-6.492ZM5.754 8a2.246 2.246 0 1 1 4.492 0 2.246 2.246 0 0 1-4.492 0Z"/>
+          <path d="M9.796 1.343c-.527-1.79-3.065-1.79-3.592 0l-.094.319a.873.873 0 0 1-1.255.52l-.292-.16c-1.64-.892-3.433.902-2.54 2.541l.159.292a.873.873 0 0 1-.52 1.255l-.319.094c-1.79.527-1.79 3.065 0 3.592l.319.094a.873.873 0 0 1 .52 1.255l-.16.292c-.892 1.64.902 3.434 2.541 2.54l.292-.159a.873.873 0 0 1 1.255.52l.094.319c.527 1.79 3.065 1.79 3.592 0l.094-.319a.873.873 0 0 1 1.255-.52l.292.16c1.64.893 3.434-.902 2.54-2.541l-.159-.292a.873.873 0 0 1 .52-1.255l.319-.094c1.79-.527 1.79-3.065 0-3.592l-.319-.094a.873.873 0 0 1-.52-1.255l.16-.292c.893-1.64-.902-3.433-2.541-2.54l-.292.159a.873.873 0 0 1-1.255-.52l-.094-.319Zm-2.633.283c.246-.835 1.428-.835 1.674 0l.094.319a1.873 1.873 0 0 0 2.693 1.115l.291-.16c.764-.415 1.6.42 1.184 1.185l-.159.292a1.873 1.873 0 0 0 1.116 2.692l.318.094c.835.246.835 1.428 0 1.674l-.319.094a1.873 1.873 0 0 0-1.115 2.693l.16.291c.415.764-.42 1.6-1.185 1.184l-.291-.159a1.873 1.873 0 0 0-2.693 1.116l-.094.318c-.246.835-1.428.835-1.674 0l-.094-.319a1.873 1.873 0 0 0-2.692-1.115l-.292.16c-.764.415-1.6-.42-1.184-1.185l.159-.291a1.873 1.873 0 0 0-1.116-2.693l-.318-.094c-.835-.246-.835-1.428 0-1.674l.319-.094a1.873 1.873 0 0 0 1.115-2.692l-.16-.292c-.415-.764.42-1.6 1.185-1.184l.292.159a1.873 1.873 0 0 0 2.692-1.116l.094-.318Z"/>
+        </svg>
+      </button>
     {:else if panel.backend === 'archive'}
       <span class="backend-indicator">
         <svg class="backend-logo" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
@@ -614,6 +631,30 @@
   .backend-label {
     font-weight: 500;
     font-size: 11px;
+  }
+
+  button.backend-indicator-clickable {
+    background: none;
+    border: none;
+    cursor: pointer;
+    font-family: inherit;
+    padding: 2px 4px;
+    border-radius: 3px;
+    transition: opacity var(--transition-fast);
+  }
+
+  button.backend-indicator-clickable:hover {
+    opacity: 1;
+  }
+
+  .bucket-props-icon {
+    opacity: 0.5;
+    margin-left: 2px;
+    transition: opacity var(--transition-fast);
+  }
+
+  button.backend-indicator-clickable:hover .bucket-props-icon {
+    opacity: 1;
   }
 
   .git-branch-btn {

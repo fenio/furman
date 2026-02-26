@@ -811,6 +811,17 @@
     );
   }
 
+  function handleBucketProperties() {
+    const active = panels.active;
+    if (active.backend !== 's3' || !active.s3Connection) return;
+    appState.showProperties(
+      `s3://${active.s3Connection.bucket}/`,
+      active.backend,
+      active.s3Connection.connectionId,
+      active.s3Connection.capabilities,
+    );
+  }
+
   async function handleCopyS3Uri() {
     const active = panels.active;
     if (active.backend !== 's3') return;
@@ -1238,6 +1249,10 @@
         case 'j':
           e.preventDefault();
           transfersState.toggle();               // Cmd+J = Transfer panel
+          return;
+        case 'I':
+          e.preventDefault();
+          handleBucketProperties();               // Cmd+Shift+I = Bucket Properties
           return;
         case 'i':
           e.preventDefault();

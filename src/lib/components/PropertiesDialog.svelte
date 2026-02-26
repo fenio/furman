@@ -59,7 +59,7 @@
   let s3Props = $state<S3ObjectProperties | null>(null);
   let s3IsPrefix = $state(false);
   let s3IsBucketRoot = $state(false);
-  let bucketTab = $state<'general' | 'security' | 'lifecycle'>('general');
+  let bucketTab = $state<'general' | 'security' | 'cors' | 'acl' | 'lifecycle'>('general');
   let objectTab = $state<'general' | 'metadata' | 'versions'>('general');
   let loading = $state(true);
   let error = $state('');
@@ -1622,7 +1622,7 @@
                     </div>
                   {/if}
                   <div class="tag-actions">
-                    <button class="dialog-btn primary" onclick={saveObjectRetention} disabled={savingObjRetention || !objRetMode || !objRetDate}>
+                    <button class="dialog-btn apply-btn" onclick={saveObjectRetention} disabled={savingObjRetention || !objRetMode || !objRetDate}>
                       {savingObjRetention ? 'Applying...' : 'Apply'}
                     </button>
                     {#if objRetentionMessage}
@@ -1816,8 +1816,14 @@
         {#if s3IsBucketRoot}
           <div class="tab-bar">
             <button class="tab-btn" class:active={bucketTab === 'general'} onclick={() => { bucketTab = 'general'; }}>General</button>
-            {#if caps.publicAccessBlock || caps.bucketPolicy || caps.acl || caps.cors}
+            {#if caps.publicAccessBlock || caps.bucketPolicy}
               <button class="tab-btn" class:active={bucketTab === 'security'} onclick={() => { bucketTab = 'security'; }}>Security</button>
+            {/if}
+            {#if caps.cors}
+              <button class="tab-btn" class:active={bucketTab === 'cors'} onclick={() => { bucketTab = 'cors'; }}>CORS</button>
+            {/if}
+            {#if caps.acl}
+              <button class="tab-btn" class:active={bucketTab === 'acl'} onclick={() => { bucketTab = 'acl'; }}>ACL</button>
             {/if}
             {#if caps.lifecycleRules || caps.multipartUploadCleanup}
               <button class="tab-btn" class:active={bucketTab === 'lifecycle'} onclick={() => { bucketTab = 'lifecycle'; }}>Lifecycle</button>
@@ -1899,7 +1905,7 @@
                     </div>
                   {/if}
                   <div class="tag-actions">
-                    <button class="dialog-btn primary" onclick={saveObjectLockRetention} disabled={savingObjectLock}>
+                    <button class="dialog-btn apply-btn" onclick={saveObjectLockRetention} disabled={savingObjectLock}>
                       {savingObjectLock ? 'Saving...' : 'Save'}
                     </button>
                     {#if objectLockMessage}
@@ -1960,7 +1966,7 @@
                   </label>
                 </div>
                 <div class="tag-actions">
-                  <button class="dialog-btn primary" onclick={saveEncryption} disabled={savingEncryption}>
+                  <button class="dialog-btn apply-btn" onclick={saveEncryption} disabled={savingEncryption}>
                     {savingEncryption ? 'Saving...' : 'Save'}
                   </button>
                   {#if encryptionMessage}
@@ -1999,7 +2005,7 @@
                   </div>
                 {/if}
                 <div class="tag-actions">
-                  <button class="dialog-btn primary" onclick={saveWebsite} disabled={savingWebsite}>
+                  <button class="dialog-btn apply-btn" onclick={saveWebsite} disabled={savingWebsite}>
                     {savingWebsite ? 'Saving...' : 'Save'}
                   </button>
                   {#if websiteMessage}
@@ -2053,7 +2059,7 @@
                   </select>
                 </div>
                 <div class="tag-actions">
-                  <button class="dialog-btn primary" onclick={saveOwnership} disabled={savingOwnership}>
+                  <button class="dialog-btn apply-btn" onclick={saveOwnership} disabled={savingOwnership}>
                     {savingOwnership ? 'Saving...' : 'Save'}
                   </button>
                   {#if ownershipMessage}
@@ -2092,7 +2098,7 @@
                   </div>
                 {/if}
                 <div class="tag-actions">
-                  <button class="dialog-btn primary" onclick={saveLogging} disabled={savingLogging}>
+                  <button class="dialog-btn apply-btn" onclick={saveLogging} disabled={savingLogging}>
                     {savingLogging ? 'Saving...' : 'Save'}
                   </button>
                   {#if loggingMessage}
@@ -2378,7 +2384,7 @@
           {/if}
 
           <!-- CORS Configuration -->
-          {#if bucketTab === 'security' && caps.cors}
+          {#if bucketTab === 'cors' && caps.cors}
           <div class="section-title">CORS Configuration</div>
             <div class="versions-section">
               {#if corsLoading}
@@ -2521,7 +2527,7 @@
           {/if}
 
           <!-- ACL -->
-          {#if bucketTab === 'security' && caps.acl}
+          {#if bucketTab === 'acl' && caps.acl}
           <div class="section-title">ACL</div>
             <div class="versions-section">
               {#if aclLoading}
@@ -2559,7 +2565,7 @@
                     </select>
                   </div>
                   <div class="tag-actions">
-                    <button class="dialog-btn primary" onclick={saveAcl} disabled={!selectedCannedAcl || savingAcl}>
+                    <button class="dialog-btn apply-btn" onclick={saveAcl} disabled={!selectedCannedAcl || savingAcl}>
                       {savingAcl ? 'Applying...' : 'Apply ACL'}
                     </button>
                     {#if aclMessage}
