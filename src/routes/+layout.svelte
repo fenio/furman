@@ -246,6 +246,7 @@
   const systemOpenExtensions = new Set([
     'pdf', 'doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx',
     'odt', 'ods', 'odp', 'rtf',
+    'heic', 'heif', 'tiff', 'tif', 'raw', 'cr2', 'nef', 'arw', 'dng', 'psd', 'ai',
     'mp3', 'mp4', 'avi', 'mkv', 'mov', 'wav', 'flac', 'aac', 'ogg', 'wma', 'wmv',
     'dmg', 'app', 'pkg', 'deb', 'rpm',
     'pages', 'numbers', 'keynote',
