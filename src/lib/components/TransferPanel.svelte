@@ -5,7 +5,7 @@
   import { s3SetBandwidthLimit } from '$lib/services/s3';
   import { appState } from '$lib/state/app.svelte';
 
-  const visible = $derived(transfersState.panelVisible && transfersState.transfers.length > 0);
+  const visible = $derived(transfersState.panelVisible);
   const activeCount = $derived(transfersState.active.length);
   const queuedCount = $derived(transfersState.queued.length);
   const hasFinished = $derived(
@@ -113,6 +113,9 @@
     </div>
   </div>
   <div class="transfer-list">
+    {#if transfersState.transfers.length === 0}
+      <div class="transfer-empty">No transfers</div>
+    {/if}
     {#each transfersState.transfers as t (t.id)}
       <div
         class="transfer-item"
@@ -244,6 +247,14 @@
     overflow-y: auto;
     flex: 1 1 0;
     min-height: 0;
+  }
+
+  .transfer-empty {
+    padding: 12px 8px;
+    text-align: center;
+    font-size: 12px;
+    color: var(--text-secondary);
+    opacity: 0.6;
   }
 
   .transfer-item {
