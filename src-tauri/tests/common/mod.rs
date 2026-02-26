@@ -63,7 +63,7 @@ impl TestContext {
         } else {
             Some(config.endpoint.as_str())
         };
-        let client = build_s3_client(
+        let (client, _) = build_s3_client(
             &config.region,
             endpoint,
             None,

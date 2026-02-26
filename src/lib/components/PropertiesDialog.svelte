@@ -13,7 +13,7 @@
     s3GetPublicAccessBlock, s3PutPublicAccessBlock,
     s3GetBucketPolicy, s3PutBucketPolicy,
     s3GetBucketAcl, s3PutBucketAcl, s3PresignUrl,
-    s3PutBucketEncryption,
+    s3PutBucketEncryption, s3ListKmsKeys,
     s3GetBucketWebsite, s3PutBucketWebsite,
     s3GetRequestPayment, s3PutRequestPayment,
     s3GetBucketOwnership, s3PutBucketOwnership,
@@ -26,6 +26,7 @@
     S3BucketVersioning, S3BucketEncryption, S3Tag, S3MultipartUpload,
     S3ObjectMetadata, S3LifecycleRule, S3CorsRule, S3PublicAccessBlock, S3BucketAcl,
     S3ProviderCapabilities, S3BucketWebsite, S3BucketLogging, S3BucketOwnership,
+    KmsKeyInfo,
   } from '$lib/types';
 
   interface Props {
@@ -260,6 +261,10 @@
   let encEditBucketKey = $state(false);
   let savingEncryption = $state(false);
   let encryptionMessage = $state('');
+  let kmsKeys = $state<KmsKeyInfo[]>([]);
+  let kmsKeysLoading = $state(false);
+  let kmsKeysFailed = $state(false);
+  let encCustomArn = $state('');
 
   // Bucket-level: Static Website Hosting
   let bucketWebsite = $state<S3BucketWebsite | null>(null);
@@ -812,12 +817,30 @@
     }
   }
 
+  async function loadKmsKeys() {
+    if (kmsKeysLoading || kmsKeys.length > 0 || kmsKeysFailed) return;
+    kmsKeysLoading = true;
+    try {
+      kmsKeys = await s3ListKmsKeys(s3ConnectionId);
+      // If current key doesn't match any fetched key ARN, switch to custom mode
+      if (encEditKmsKeyId && encEditKmsKeyId !== '__custom__' && !kmsKeys.some(k => k.arn === encEditKmsKeyId)) {
+        encCustomArn = encEditKmsKeyId;
+        encEditKmsKeyId = '__custom__';
+      }
+    } catch {
+      kmsKeysFailed = true;
+    } finally {
+      kmsKeysLoading = false;
+    }
+  }
+
   async function saveEncryption() {
     if (savingEncryption) return;
     savingEncryption = true;
     encryptionMessage = '';
     try {
-      const kmsKey = encEditAlgorithm === 'aws:kms' ? encEditKmsKeyId || null : null;
+      const effectiveKmsKeyId = encEditKmsKeyId === '__custom__' ? encCustomArn : encEditKmsKeyId;
+      const kmsKey = encEditAlgorithm === 'aws:kms' ? effectiveKmsKeyId || null : null;
       await s3PutBucketEncryption(s3ConnectionId, encEditAlgorithm, kmsKey, encEditBucketKey);
       encryptionMessage = 'Encryption updated';
       // Reload
@@ -825,8 +848,14 @@
       if (bucketEncryption && bucketEncryption.rules.length > 0) {
         const r = bucketEncryption.rules[0];
         encEditAlgorithm = r.sse_algorithm;
-        encEditKmsKeyId = r.kms_key_id ?? '';
         encEditBucketKey = r.bucket_key_enabled;
+        const reloadedKeyId = r.kms_key_id ?? '';
+        if (!kmsKeysFailed && reloadedKeyId && !kmsKeys.some(k => k.arn === reloadedKeyId)) {
+          encCustomArn = reloadedKeyId;
+          encEditKmsKeyId = '__custom__';
+        } else {
+          encEditKmsKeyId = reloadedKeyId;
+        }
       }
     } catch (err: unknown) {
       encryptionMessage = 'Error: ' + String(err);
@@ -1061,6 +1090,7 @@
                 encEditAlgorithm = e.rules[0].sse_algorithm;
                 encEditKmsKeyId = e.rules[0].kms_key_id ?? '';
                 encEditBucketKey = e.rules[0].bucket_key_enabled;
+                if (encEditAlgorithm === 'aws:kms') loadKmsKeys();
               }
             }));
           }
@@ -1619,16 +1649,34 @@
               <div class="tag-editor">
                 <div class="meta-row">
                   <span class="meta-label">Algorithm</span>
-                  <select class="meta-input" bind:value={encEditAlgorithm}>
+                  <select class="meta-input" bind:value={encEditAlgorithm} onchange={() => { if (encEditAlgorithm === 'aws:kms') loadKmsKeys(); }}>
                     <option value="AES256">SSE-S3 (AES256)</option>
                     <option value="aws:kms">SSE-KMS (aws:kms)</option>
                   </select>
                 </div>
                 {#if encEditAlgorithm === 'aws:kms'}
                   <div class="meta-row">
-                    <span class="meta-label">KMS Key ID</span>
-                    <input type="text" class="meta-input" bind:value={encEditKmsKeyId} placeholder="Default aws/s3 key" />
+                    <span class="meta-label">KMS Key</span>
+                    {#if kmsKeysLoading}
+                      <span class="meta-input" style="color: var(--text-secondary)">Loading keys...</span>
+                    {:else if kmsKeysFailed}
+                      <input type="text" class="meta-input" bind:value={encEditKmsKeyId} placeholder="Default aws/s3 key" />
+                    {:else}
+                      <select class="meta-input" bind:value={encEditKmsKeyId}>
+                        <option value="">Default (AWS managed key)</option>
+                        {#each kmsKeys as key}
+                          <option value={key.arn}>{key.alias ? `${key.alias} (${key.key_id.slice(0, 8)}...)` : key.key_id}</option>
+                        {/each}
+                        <option value="__custom__">Custom ARN...</option>
+                      </select>
+                    {/if}
                   </div>
+                  {#if encEditKmsKeyId === '__custom__' && !kmsKeysFailed}
+                    <div class="meta-row">
+                      <span class="meta-label">Key ARN</span>
+                      <input type="text" class="meta-input" bind:value={encCustomArn} placeholder="arn:aws:kms:..." />
+                    </div>
+                  {/if}
                 {/if}
                 <div class="meta-row">
                   <span class="meta-label">Bucket Key</span>

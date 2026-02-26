@@ -131,6 +131,15 @@ pub struct FileProperties {
     pub kind: String,
 }
 
+// ── KmsKeyInfo ──────────────────────────────────────────────────────────────
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct KmsKeyInfo {
+    pub key_id: String,
+    pub arn: String,
+    pub alias: Option<String>,
+}
+
 // ── S3ObjectProperties ──────────────────────────────────────────────────────
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

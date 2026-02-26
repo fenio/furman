@@ -268,6 +268,12 @@ export interface S3BucketOwnership {
   object_ownership: string;
 }
 
+export interface KmsKeyInfo {
+  key_id: string;
+  arn: string;
+  alias: string | null;
+}
+
 export type PanelBackend = 'local' | 's3' | 'archive';
 
 export interface ArchiveInfo {

@@ -1,5 +1,5 @@
 import { invoke, Channel } from '@tauri-apps/api/core';
-import type { DirListing, ProgressEvent, S3Bucket, S3BucketAcl, S3BucketEncryption, S3BucketVersioning, S3CorsRule, S3LifecycleRule, S3MultipartUpload, S3ObjectMetadata, S3ObjectProperties, S3ObjectVersion, S3PublicAccessBlock, S3Tag, SearchEvent, TransferCheckpoint } from '$lib/types';
+import type { DirListing, KmsKeyInfo, ProgressEvent, S3Bucket, S3BucketAcl, S3BucketEncryption, S3BucketVersioning, S3CorsRule, S3LifecycleRule, S3MultipartUpload, S3ObjectMetadata, S3ObjectProperties, S3ObjectVersion, S3PublicAccessBlock, S3Tag, SearchEvent, TransferCheckpoint } from '$lib/types';
 
 export async function s3CheckCredentials(): Promise<boolean> {
   return await invoke<boolean>('s3_check_credentials');
@@ -437,6 +437,12 @@ export async function s3GetBucketLogging(id: string): Promise<import('$lib/types
 
 export async function s3PutBucketLogging(id: string, config: import('$lib/types').S3BucketLogging): Promise<void> {
   await invoke('s3_put_bucket_logging', { id, config });
+}
+
+// ── KMS Keys ────────────────────────────────────────────────────────────────
+
+export async function s3ListKmsKeys(id: string): Promise<KmsKeyInfo[]> {
+  return await invoke<KmsKeyInfo[]>('s3_list_kms_keys', { id });
 }
 
 // ── Bandwidth Throttling ────────────────────────────────────────────────────

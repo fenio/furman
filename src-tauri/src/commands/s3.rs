@@ -1,9 +1,9 @@
 use crate::commands::file::FileOpState;
 use crate::models::{
-    DirListing, FmError, ProgressEvent, S3BucketAcl, S3BucketEncryption, S3BucketLogging,
-    S3BucketOwnership, S3BucketVersioning, S3BucketWebsite, S3CorsRule, S3LifecycleRule,
-    S3MultipartUpload, S3ObjectMetadata, S3ObjectProperties, S3ObjectVersion, S3PublicAccessBlock,
-    S3Tag, SearchEvent, TransferCheckpoint,
+    DirListing, FmError, KmsKeyInfo, ProgressEvent, S3BucketAcl, S3BucketEncryption,
+    S3BucketLogging, S3BucketOwnership, S3BucketVersioning, S3BucketWebsite, S3CorsRule,
+    S3LifecycleRule, S3MultipartUpload, S3ObjectMetadata, S3ObjectProperties, S3ObjectVersion,
+    S3PublicAccessBlock, S3Tag, SearchEvent, TransferCheckpoint,
 };
 use crate::s3::{self, build_s3_client, s3err, S3State, BANDWIDTH_LIMIT};
 use crate::s3::service::{S3Bucket, S3Service};
@@ -41,7 +41,7 @@ pub async fn s3_list_buckets(
     session_name: Option<String>,
     session_duration_secs: Option<i32>,
 ) -> Result<Vec<S3Bucket>, FmError> {
-    let client = build_s3_client(
+    let (client, _) = build_s3_client(
         &region,
         endpoint.as_deref(),
         profile.as_deref(),
@@ -73,7 +73,7 @@ pub async fn s3_connect(
     session_duration_secs: Option<i32>,
     use_transfer_acceleration: Option<bool>,
 ) -> Result<(), FmError> {
-    let client = build_s3_client(
+    let (client, sdk_config) = build_s3_client(
         &region,
         endpoint.as_deref(),
         profile.as_deref(),
@@ -99,6 +99,7 @@ pub async fn s3_connect(
         client,
         bucket,
         region,
+        sdk_config,
     };
 
     let mut map = state.0.lock().map_err(|e| s3err(e.to_string()))?;
@@ -435,7 +436,7 @@ pub async fn s3_create_bucket(
     session_name: Option<String>,
     session_duration_secs: Option<i32>,
 ) -> Result<(), FmError> {
-    let client = build_s3_client(
+    let (client, _) = build_s3_client(
         &region,
         endpoint.as_deref(),
         profile.as_deref(),
@@ -464,7 +465,7 @@ pub async fn s3_delete_bucket(
     session_name: Option<String>,
     session_duration_secs: Option<i32>,
 ) -> Result<(), FmError> {
-    let client = build_s3_client(
+    let (client, _) = build_s3_client(
         &region,
         endpoint.as_deref(),
         profile.as_deref(),
@@ -803,4 +804,71 @@ pub async fn s3_put_bucket_logging(
 pub async fn s3_set_bandwidth_limit(bytes_per_sec: u64) -> Result<(), FmError> {
     BANDWIDTH_LIMIT.store(bytes_per_sec, std::sync::atomic::Ordering::Relaxed);
     Ok(())
+}
+
+#[tauri::command]
+pub async fn s3_list_kms_keys(
+    state: State<'_, S3State>,
+    id: String,
+) -> Result<Vec<KmsKeyInfo>, FmError> {
+    let sdk_config = {
+        let map = state.0.lock().map_err(|e| s3err(e.to_string()))?;
+        let conn = map.get(&id).ok_or_else(|| s3err("S3 connection not found"))?;
+        conn.sdk_config.clone()
+    };
+
+    let kms = aws_sdk_kms::Client::new(&sdk_config);
+
+    // Fetch all keys (paginated)
+    let mut keys: Vec<(String, String)> = Vec::new();
+    let mut marker: Option<String> = None;
+    loop {
+        let mut req = kms.list_keys();
+        if let Some(m) = &marker {
+            req = req.marker(m);
+        }
+        let resp = req.send().await.map_err(|e| s3err(format!("KMS ListKeys: {}", e)))?;
+        for entry in resp.keys() {
+            if let (Some(kid), Some(arn)) = (entry.key_id(), entry.key_arn()) {
+                keys.push((kid.to_string(), arn.to_string()));
+            }
+        }
+        if resp.truncated() {
+            marker = resp.next_marker().map(|s| s.to_string());
+        } else {
+            break;
+        }
+    }
+
+    // Fetch all aliases (paginated)
+    let mut alias_map: HashMap<String, String> = HashMap::new();
+    let mut alias_marker: Option<String> = None;
+    loop {
+        let mut req = kms.list_aliases();
+        if let Some(m) = &alias_marker {
+            req = req.marker(m);
+        }
+        let resp = req.send().await.map_err(|e| s3err(format!("KMS ListAliases: {}", e)))?;
+        for alias in resp.aliases() {
+            if let (Some(name), Some(kid)) = (alias.alias_name(), alias.target_key_id()) {
+                alias_map.insert(kid.to_string(), name.to_string());
+            }
+        }
+        if resp.truncated() {
+            alias_marker = resp.next_marker().map(|s| s.to_string());
+        } else {
+            break;
+        }
+    }
+
+    // Merge
+    let result: Vec<KmsKeyInfo> = keys
+        .into_iter()
+        .map(|(key_id, arn)| {
+            let alias = alias_map.get(&key_id).cloned();
+            KmsKeyInfo { key_id, arn, alias }
+        })
+        .collect();
+
+    Ok(result)
 }

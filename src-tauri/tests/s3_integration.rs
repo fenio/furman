@@ -1335,7 +1335,7 @@ async fn test_transfer_acceleration() {
         .expect("Failed to enable Transfer Acceleration");
 
     // Build a new client with acceleration enabled
-    let accel_client = build_s3_client(
+    let (accel_client, _) = build_s3_client(
         &ctx.config.region,
         None,
         None,

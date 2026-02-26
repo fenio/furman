@@ -14,6 +14,7 @@ pub struct S3Connection {
     pub client: S3Client,
     pub bucket: String,
     pub region: String,
+    pub sdk_config: aws_config::SdkConfig,
 }
 
 // ── Client Builder ──────────────────────────────────────────────────────────
@@ -30,7 +31,7 @@ pub async fn build_s3_client(
     session_name: Option<&str>,
     session_duration_secs: Option<i32>,
     use_transfer_acceleration: Option<bool>,
-) -> Result<S3Client, FmError> {
+) -> Result<(S3Client, aws_config::SdkConfig), FmError> {
     let mut loader = if let (Some(ak), Some(sk)) = (access_key, secret_key) {
         let creds = aws_credential_types::Credentials::new(
             ak.to_string(),
@@ -118,5 +119,5 @@ pub async fn build_s3_client(
     if use_transfer_acceleration.unwrap_or(false) && endpoint.is_none_or(|ep| ep.is_empty()) {
         s3_config_builder.set_accelerate(Some(true));
     }
-    Ok(S3Client::from_conf(s3_config_builder.build()))
+    Ok((S3Client::from_conf(s3_config_builder.build()), final_config))
 }

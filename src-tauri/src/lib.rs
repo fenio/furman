@@ -168,6 +168,7 @@ pub fn run() {
             commands::s3::s3_get_bucket_logging,
             commands::s3::s3_put_bucket_logging,
             commands::s3::s3_set_bandwidth_limit,
+            commands::s3::s3_list_kms_keys,
             // archive commands
             commands::archive::list_archive,
             commands::archive::extract_archive,
