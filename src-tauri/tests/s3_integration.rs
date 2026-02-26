@@ -1,5 +1,6 @@
 mod common;
 
+use app_lib::s3::client::build_s3_client;
 use app_lib::s3::service::{self, S3Service};
 use common::TestContext;
 use std::sync::atomic::AtomicBool;
@@ -1120,6 +1121,260 @@ async fn test_upload_files() {
         .head_object("uploaded/up2.txt")
         .await
         .expect("uploaded/up2.txt should exist");
+
+    ctx.cleanup().await;
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// P9 — Encryption configuration
+// ═══════════════════════════════════════════════════════════════════════════
+
+#[tokio::test]
+async fn test_encryption_roundtrip() {
+    let ctx = TestContext::new().await;
+
+    // MinIO may not support bucket encryption — skip if unsupported
+    match ctx.service.put_bucket_encryption("AES256", None, false).await {
+        Ok(()) => {
+            let enc = ctx
+                .service
+                .get_bucket_encryption()
+                .await
+                .expect("get_bucket_encryption failed");
+
+            assert!(!enc.rules.is_empty(), "Should have at least one encryption rule");
+            assert_eq!(enc.rules[0].sse_algorithm, "AES256");
+            assert!(!enc.rules[0].bucket_key_enabled);
+        }
+        Err(_) => {
+            eprintln!("Bucket encryption not supported by this S3 provider — skipping");
+        }
+    }
+
+    ctx.cleanup().await;
+}
+
+#[tokio::test]
+async fn test_encryption_bucket_key() {
+    let ctx = TestContext::new().await;
+
+    // MinIO may not support bucket encryption — skip if unsupported
+    match ctx.service.put_bucket_encryption("AES256", None, true).await {
+        Ok(()) => {
+            let enc = ctx
+                .service
+                .get_bucket_encryption()
+                .await
+                .expect("get_bucket_encryption failed");
+
+            assert_eq!(enc.rules[0].sse_algorithm, "AES256");
+            assert!(enc.rules[0].bucket_key_enabled);
+        }
+        Err(_) => {
+            eprintln!("Bucket encryption not supported by this S3 provider — skipping");
+        }
+    }
+
+    ctx.cleanup().await;
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// P10 — Storage class changes
+// ═══════════════════════════════════════════════════════════════════════════
+
+#[tokio::test]
+async fn test_change_storage_class() {
+    let ctx = TestContext::new().await;
+
+    ctx.put_object("storageclass.txt", b"test data").await;
+
+    // Verify initial storage class (STANDARD)
+    let props = ctx
+        .service
+        .head_object("storageclass.txt")
+        .await
+        .expect("head_object failed");
+    // AWS returns Some("STANDARD") or None for STANDARD; MinIO may return "STANDARD"
+    let initial = props.storage_class.as_deref().unwrap_or("STANDARD");
+    assert_eq!(initial, "STANDARD");
+
+    // On MinIO, storage class change may silently succeed but not actually change.
+    // On AWS, this performs a copy-in-place with the new storage class.
+    if ctx.config.is_aws() {
+        ctx.service
+            .change_storage_class("storageclass.txt", "STANDARD_IA")
+            .await
+            .expect("change_storage_class failed");
+
+        let props = ctx
+            .service
+            .head_object("storageclass.txt")
+            .await
+            .expect("head_object after class change failed");
+        assert_eq!(
+            props.storage_class.as_deref(),
+            Some("STANDARD_IA"),
+            "Storage class should be STANDARD_IA"
+        );
+    } else {
+        // MinIO: just verify the API call doesn't error
+        let result = ctx.service.change_storage_class("storageclass.txt", "STANDARD_IA").await;
+        if let Err(e) = result {
+            eprintln!("change_storage_class not supported on this backend — skipping: {e}");
+        }
+    }
+
+    ctx.cleanup().await;
+}
+
+#[tokio::test]
+async fn test_bulk_change_storage_class() {
+    let ctx = TestContext::new().await;
+
+    ctx.put_object("bulk1.txt", b"aaa").await;
+    ctx.put_object("bulk2.txt", b"bbb").await;
+    ctx.put_object("bulk3.txt", b"ccc").await;
+
+    let keys = vec![
+        "bulk1.txt".to_string(),
+        "bulk2.txt".to_string(),
+        "bulk3.txt".to_string(),
+    ];
+
+    if ctx.config.is_aws() {
+        let failed = ctx
+            .service
+            .bulk_change_storage_class(&keys, "STANDARD_IA")
+            .await
+            .expect("bulk_change_storage_class failed");
+
+        assert!(failed.is_empty(), "No keys should fail: {:?}", failed);
+
+        // Verify all changed
+        for key in &keys {
+            let props = ctx.service.head_object(key).await.expect("head failed");
+            assert_eq!(
+                props.storage_class.as_deref(),
+                Some("STANDARD_IA"),
+                "{key} should be STANDARD_IA"
+            );
+        }
+    } else {
+        // MinIO: just verify it returns without panic
+        let result = ctx.service.bulk_change_storage_class(&keys, "STANDARD_IA").await;
+        match result {
+            Ok(failed) => {
+                eprintln!("bulk_change_storage_class: {} failed out of {}", failed.len(), keys.len());
+            }
+            Err(e) => {
+                eprintln!("bulk_change_storage_class not supported — skipping: {e}");
+            }
+        }
+    }
+
+    ctx.cleanup().await;
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// P11 — Presigned URL fetch
+// ═══════════════════════════════════════════════════════════════════════════
+
+#[tokio::test]
+async fn test_presign_url_fetch() {
+    let ctx = TestContext::new().await;
+
+    let content = b"presigned content verification";
+    ctx.put_object("presign-fetch.txt", content).await;
+
+    let url = ctx
+        .service
+        .presign_url("presign-fetch.txt", 300)
+        .await
+        .expect("presign_url failed");
+
+    assert!(!url.is_empty());
+
+    // Actually fetch the presigned URL and verify the content matches
+    let resp = reqwest::get(&url).await.expect("HTTP GET on presigned URL failed");
+    assert!(
+        resp.status().is_success(),
+        "Presigned URL returned status {}",
+        resp.status()
+    );
+    let body = resp.bytes().await.expect("Failed to read response body");
+    assert_eq!(body.as_ref(), content, "Fetched content should match uploaded content");
+
+    ctx.cleanup().await;
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// P12 — Transfer Acceleration (AWS-only)
+// ═══════════════════════════════════════════════════════════════════════════
+
+#[tokio::test]
+async fn test_transfer_acceleration() {
+    let ctx = TestContext::new().await;
+
+    if !ctx.config.is_aws() {
+        eprintln!("Transfer Acceleration requires real AWS — skipping on MinIO");
+        ctx.cleanup().await;
+        return;
+    }
+
+    // Enable Transfer Acceleration on the bucket
+    ctx.client
+        .put_bucket_accelerate_configuration()
+        .bucket(&ctx.bucket)
+        .accelerate_configuration(
+            aws_sdk_s3::types::AccelerateConfiguration::builder()
+                .status(aws_sdk_s3::types::BucketAccelerateStatus::Enabled)
+                .build(),
+        )
+        .send()
+        .await
+        .expect("Failed to enable Transfer Acceleration");
+
+    // Build a new client with acceleration enabled
+    let accel_client = build_s3_client(
+        &ctx.config.region,
+        None,
+        None,
+        Some(&ctx.config.access_key),
+        Some(&ctx.config.secret_key),
+        None,
+        None,
+        None,
+        None,
+        Some(true),
+    )
+    .await
+    .expect("Failed to build accelerated client");
+
+    // Upload through the accelerated endpoint
+    accel_client
+        .put_object()
+        .bucket(&ctx.bucket)
+        .key("accel-test.txt")
+        .body(b"accelerated upload".to_vec().into())
+        .send()
+        .await
+        .expect("Upload via Transfer Acceleration failed");
+
+    // Download through the accelerated endpoint
+    let resp = accel_client
+        .get_object()
+        .bucket(&ctx.bucket)
+        .key("accel-test.txt")
+        .send()
+        .await
+        .expect("Download via Transfer Acceleration failed");
+
+    let body = resp
+        .body
+        .collect()
+        .await
+        .expect("Failed to read accelerated download body");
+    assert_eq!(body.into_bytes().as_ref(), b"accelerated upload");
 
     ctx.cleanup().await;
 }
