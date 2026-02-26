@@ -336,4 +336,11 @@ export interface S3Profile {
   sessionDurationSecs?: number;
   useTransferAcceleration?: boolean;
   defaultClientEncryption?: boolean;
+  encryptionCipher?: 'aes-256-gcm' | 'chacha20-poly1305';
+  kdfMemoryCost?: number;     // KiB (default: 19456)
+  kdfTimeCost?: number;       // iterations (default: 2)
+  kdfParallelism?: number;    // threads (default: 1)
+  autoEncryptMinSize?: number; // bytes; skip encryption if all files < this (0 = always)
+  autoEncryptExtensions?: string[]; // only encrypt files with these extensions (empty = all)
+  secureTempCleanup?: boolean;
 }

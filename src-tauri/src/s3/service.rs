@@ -17,11 +17,7 @@ use crate::models::{
 
 use super::helpers::*;
 
-fn cleanup_temp_files(files: &[PathBuf]) {
-    for f in files {
-        let _ = std::fs::remove_file(f);
-    }
-}
+use super::crypto::EncryptionConfig;
 
 // ── S3Bucket model ──────────────────────────────────────────────────────────
 
@@ -566,6 +562,7 @@ impl S3Service {
         sources: &[String],
         dest_prefix: &str,
         password: &str,
+        config: &EncryptionConfig,
         op_id: &str,
         cancel: &AtomicBool,
         pause: &AtomicBool,
@@ -601,11 +598,11 @@ impl S3Service {
 
         for (local_path, key) in &file_list {
             if cancel.load(Ordering::Relaxed) {
-                cleanup_temp_files(&temp_files);
+                crypto::cleanup_temp_files(&temp_files, config.secure_temp_cleanup);
                 return Err(FmError::Other("Operation cancelled".into()));
             }
             if pause.load(Ordering::Relaxed) {
-                cleanup_temp_files(&temp_files);
+                crypto::cleanup_temp_files(&temp_files, config.secure_temp_cleanup);
                 return Ok(Some(TransferCheckpoint {
                     files_completed: completed_files,
                     bytes_done,
@@ -630,10 +627,10 @@ impl S3Service {
             });
 
             // Encrypt
-            let (enc_path, params) = match crypto::encrypt_file(local_path, password) {
+            let (enc_path, params) = match crypto::encrypt_file(local_path, password, config) {
                 Ok(r) => r,
                 Err(e) => {
-                    cleanup_temp_files(&temp_files);
+                    crypto::cleanup_temp_files(&temp_files, config.secure_temp_cleanup);
                     return Err(e);
                 }
             };
@@ -672,7 +669,7 @@ impl S3Service {
                 let data = match std::fs::read(&enc_path) {
                     Ok(d) => d,
                     Err(e) => {
-                        cleanup_temp_files(&temp_files);
+                        crypto::cleanup_temp_files(&temp_files, config.secure_temp_cleanup);
                         return Err(FmError::Io(e));
                     }
                 };
@@ -694,7 +691,7 @@ impl S3Service {
             };
 
             if let Err(e) = upload_result {
-                cleanup_temp_files(&temp_files);
+                crypto::cleanup_temp_files(&temp_files, config.secure_temp_cleanup);
                 return Err(e);
             }
 
@@ -710,7 +707,7 @@ impl S3Service {
             });
         }
 
-        cleanup_temp_files(&temp_files);
+        crypto::cleanup_temp_files(&temp_files, config.secure_temp_cleanup);
         Ok(None)
     }
 

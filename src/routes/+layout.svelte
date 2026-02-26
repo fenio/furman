@@ -12,7 +12,7 @@
   import { copyFiles, moveFiles, deleteFiles, renameFile, createDirectory, openFileDefault, openInEditor, checkConflicts } from '$lib/services/tauri';
   import { statusState } from '$lib/state/status.svelte';
   import { transfersState } from '$lib/state/transfers.svelte';
-  import { s3Download, s3Upload, s3CopyObjects, s3DeleteObjects, s3RenameObject, s3CreateFolder, s3PresignUrl, s3DownloadToTemp, s3BulkChangeStorageClass, s3IsObjectEncrypted } from '$lib/services/s3';
+  import { s3Download, s3Upload, s3CopyObjects, s3DeleteObjects, s3RenameObject, s3CreateFolder, s3PresignUrl, s3DownloadToTemp, s3BulkChangeStorageClass, s3IsObjectEncrypted, type EncryptionConfig } from '$lib/services/s3';
   import { keychainGet } from '$lib/services/keychain';
   import { s3PathToPrefix } from '$lib/state/panels.svelte';
   import { error } from '$lib/services/log';
@@ -433,6 +433,7 @@
     srcBackend: string,
     destBackend: string,
     encryptionPassword?: string,
+    encryptionConfig?: EncryptionConfig,
   ) {
     const active = panels.active;
     const inactive = panels.inactive;
@@ -469,6 +470,7 @@
           ? s3PathToPrefix(dest, inactive.s3Connection.bucket)
           : undefined,
         encryptionPassword,
+        encryptionConfig,
       });
     }
   }
@@ -479,6 +481,7 @@
     srcBackend: string,
     destBackend: string,
     encryptionPassword?: string,
+    encryptionConfig?: EncryptionConfig,
   ) {
     const active = panels.active;
     const inactive = panels.inactive;
@@ -497,6 +500,7 @@
         ? s3PathToPrefix(dest, inactive.s3Connection.bucket)
         : undefined,
       encryptionPassword,
+      encryptionConfig,
     });
   }
 
@@ -508,6 +512,43 @@
     return s3ProfilesState.profiles.find(
       (p) => p.bucket === panel.s3Connection!.bucket,
     );
+  }
+
+  function buildEncryptionConfig(profile: import('$lib/types').S3Profile): EncryptionConfig {
+    return {
+      algorithm: profile.encryptionCipher ?? 'aes-256-gcm',
+      kdf_memory_cost: profile.kdfMemoryCost ?? 19456,
+      kdf_time_cost: profile.kdfTimeCost ?? 2,
+      kdf_parallelism: profile.kdfParallelism ?? 1,
+      secure_temp_cleanup: profile.secureTempCleanup ?? false,
+    };
+  }
+
+  /** Check whether auto-encrypt should be skipped based on profile thresholds. */
+  function shouldAutoEncrypt(sources: string[], profile: import('$lib/types').S3Profile): boolean {
+    // Extension filter: if set, at least one file must match
+    const exts = profile.autoEncryptExtensions;
+    if (exts && exts.length > 0) {
+      const extSet = new Set(exts.map((e) => e.toLowerCase().replace(/^\./, '')));
+      const hasMatch = sources.some((s) => {
+        const name = s.split('/').pop() ?? '';
+        const dot = name.lastIndexOf('.');
+        if (dot < 0) return false;
+        return extSet.has(name.substring(dot + 1).toLowerCase());
+      });
+      if (!hasMatch) return false;
+    }
+    // Min-size threshold: if ALL files are below the threshold, skip
+    const minSize = profile.autoEncryptMinSize;
+    if (minSize && minSize > 0) {
+      const panel = panels.active;
+      const allSmall = sources.every((s) => {
+        const entry = panel.entries.find((e) => e.path === s);
+        return entry && !entry.is_dir && entry.size < minSize;
+      });
+      if (allSmall) return false;
+    }
+    return true;
   }
 
   function promptEncryptionPassword(
@@ -537,10 +578,11 @@
       // Check if we need encryption for upload (local→s3)
       if (srcBackend === 'local' && destBackend === 's3' && inactive.s3Connection) {
         const profile = findProfileForConnection(inactive.s3Connection.connectionId);
-        if (profile?.defaultClientEncryption) {
+        if (profile?.defaultClientEncryption && shouldAutoEncrypt(sources, profile)) {
+          const config = buildEncryptionConfig(profile);
           promptEncryptionPassword((pw) => {
             withConflictCheck(sources, dest, destBackend, (finalSources) =>
-              executeCopy(finalSources, dest, srcBackend, destBackend, pw),
+              executeCopy(finalSources, dest, srcBackend, destBackend, pw, config),
             );
           });
           return;
@@ -595,10 +637,11 @@
       // Check if we need encryption for upload (local→s3)
       if (srcBackend === 'local' && destBackend === 's3' && inactive.s3Connection) {
         const profile = findProfileForConnection(inactive.s3Connection.connectionId);
-        if (profile?.defaultClientEncryption) {
+        if (profile?.defaultClientEncryption && shouldAutoEncrypt(sources, profile)) {
+          const config = buildEncryptionConfig(profile);
           promptEncryptionPassword((pw) => {
             withConflictCheck(sources, dest, destBackend, (finalSources) =>
-              executeMove(finalSources, dest, srcBackend, destBackend, pw),
+              executeMove(finalSources, dest, srcBackend, destBackend, pw, config),
             );
           });
           return;

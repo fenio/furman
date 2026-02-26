@@ -1,6 +1,6 @@
 import type { ProgressEvent, TransferCheckpoint } from '$lib/types';
 import { cancelFileOperation, pauseFileOperation, copyFiles, moveFiles, extractArchive } from '$lib/services/tauri';
-import { s3Download, s3Upload, s3CopyObjects, s3UploadEncrypted } from '$lib/services/s3';
+import { s3Download, s3Upload, s3CopyObjects, s3UploadEncrypted, type EncryptionConfig } from '$lib/services/s3';
 import { formatSize } from '$lib/utils/format';
 
 export type TransferStatus = 'queued' | 'running' | 'paused' | 'completed' | 'failed' | 'cancelled';
@@ -25,6 +25,7 @@ export interface Transfer {
   archivePath?: string;
   archiveInternalPaths?: string[];
   encryptionPassword?: string;
+  encryptionConfig?: EncryptionConfig;
   checkpoint?: TransferCheckpoint | null;
   speedBytesPerSec: number;
   /** @internal */ _lastProgressAt: number;
@@ -315,7 +316,7 @@ class TransfersState {
       }
       if (srcBackend === 'local' && destBackend === 's3') {
         if (t.encryptionPassword) {
-          return await s3UploadEncrypted(t.s3DestConnectionId!, t.id, t.sources, t.s3DestPrefix!, t.encryptionPassword, onProgress);
+          return await s3UploadEncrypted(t.s3DestConnectionId!, t.id, t.sources, t.s3DestPrefix!, t.encryptionPassword, onProgress, t.encryptionConfig);
         }
         return await s3Upload(t.s3DestConnectionId!, t.id, t.sources, t.s3DestPrefix!, onProgress);
       }
@@ -337,7 +338,7 @@ class TransfersState {
       }
       if (srcBackend === 'local' && destBackend === 's3') {
         if (t.encryptionPassword) {
-          return await s3UploadEncrypted(t.s3DestConnectionId!, t.id, t.sources, t.s3DestPrefix!, t.encryptionPassword, onProgress);
+          return await s3UploadEncrypted(t.s3DestConnectionId!, t.id, t.sources, t.s3DestPrefix!, t.encryptionPassword, onProgress, t.encryptionConfig);
         }
         return await s3Upload(t.s3DestConnectionId!, t.id, t.sources, t.s3DestPrefix!, onProgress);
       }

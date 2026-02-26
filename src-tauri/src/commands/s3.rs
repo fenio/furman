@@ -214,9 +214,11 @@ pub async fn s3_upload_encrypted(
     sources: Vec<String>,
     dest_prefix: String,
     password: String,
+    encryption_config: Option<crate::s3::crypto::EncryptionConfig>,
     channel: Channel<ProgressEvent>,
 ) -> Result<Option<TransferCheckpoint>, FmError> {
     let service = get_service(&state, &id)?;
+    let config = encryption_config.unwrap_or_default();
 
     let flags = Arc::new(crate::commands::file::OpFlags {
         cancel: AtomicBool::new(false),
@@ -232,6 +234,7 @@ pub async fn s3_upload_encrypted(
             &sources,
             &dest_prefix,
             &password,
+            &config,
             &op_id,
             &flags.cancel,
             &flags.pause,

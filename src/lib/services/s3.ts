@@ -449,6 +449,14 @@ export async function s3ListKmsKeys(id: string): Promise<KmsKeyInfo[]> {
 
 // ── Client-Side Encryption ──────────────────────────────────────────────────
 
+export interface EncryptionConfig {
+  algorithm?: string;       // "aes-256-gcm" | "chacha20-poly1305"
+  kdf_memory_cost?: number; // KiB (default: 19456)
+  kdf_time_cost?: number;   // iterations (default: 2)
+  kdf_parallelism?: number; // threads (default: 1)
+  secure_temp_cleanup?: boolean;
+}
+
 export async function s3UploadEncrypted(
   id: string,
   opId: string,
@@ -456,10 +464,15 @@ export async function s3UploadEncrypted(
   destPrefix: string,
   password: string,
   onProgress: (e: ProgressEvent) => void,
+  encryptionConfig?: EncryptionConfig,
 ): Promise<TransferCheckpoint | null> {
   const channel = new Channel<ProgressEvent>();
   channel.onmessage = onProgress;
-  return await invoke<TransferCheckpoint | null>('s3_upload_encrypted', { id, opId, sources, destPrefix, password, channel });
+  return await invoke<TransferCheckpoint | null>('s3_upload_encrypted', {
+    id, opId, sources, destPrefix, password,
+    encryptionConfig: encryptionConfig ?? null,
+    channel,
+  });
 }
 
 export async function s3IsObjectEncrypted(id: string, key: string): Promise<boolean> {

@@ -105,7 +105,7 @@ async fn test_put_text_and_download_temp() {
     // Download to temp and verify content
     let temp_path = ctx
         .service
-        .download_temp("greeting.txt")
+        .download_temp("greeting.txt", None)
         .await
         .expect("download_temp failed");
 
@@ -194,7 +194,7 @@ async fn test_rename_object() {
     // New key should exist with same content
     let temp = ctx
         .service
-        .download_temp("renamed.txt")
+        .download_temp("renamed.txt", None)
         .await
         .expect("download renamed failed");
     let content = std::fs::read(&temp).unwrap();
@@ -373,6 +373,7 @@ async fn test_upload_multipart() {
             &cancel,
             &pause,
             &|_| {},
+            None,
         )
         .await
         .expect("upload multipart failed");
@@ -522,7 +523,7 @@ async fn test_restore_version() {
         .expect("restore_version failed");
 
     // Current version should now be "original"
-    let temp = ctx.service.download_temp("restore.txt").await.unwrap();
+    let temp = ctx.service.download_temp("restore.txt", None).await.unwrap();
     let content = std::fs::read_to_string(&temp).unwrap();
     assert_eq!(content, "original");
     let _ = std::fs::remove_file(&temp);
@@ -1068,6 +1069,7 @@ async fn test_download_files() {
             &cancel,
             &pause,
             &|_| {},
+            None,
         )
         .await
         .expect("download failed");
@@ -1106,6 +1108,7 @@ async fn test_upload_files() {
             &cancel,
             &pause,
             &|_| {},
+            None,
         )
         .await
         .expect("upload failed");
