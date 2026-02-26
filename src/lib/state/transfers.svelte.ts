@@ -34,6 +34,7 @@ class TransfersState {
   transfers = $state<Transfer[]>([]);
   panelVisible = $state(false);
   maxConcurrent = $state(2);
+  bandwidthLimit = $state(0);
 
   get active(): Transfer[] {
     return this.transfers.filter((t) => t.status === 'running');

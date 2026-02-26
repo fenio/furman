@@ -1,9 +1,27 @@
 use aws_sdk_s3::Client as S3Client;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::Arc;
+use std::time::Duration;
 use tokio::sync::Semaphore;
 
 use crate::models::FmError;
+
+// ── Bandwidth throttling ───────────────────────────────────────────────────
+
+/// Global bandwidth limit in bytes per second. 0 = unlimited.
+pub static BANDWIDTH_LIMIT: AtomicU64 = AtomicU64::new(0);
+
+/// Sleep to enforce the global bandwidth limit after transferring `bytes`.
+pub async fn throttle(bytes: u64) {
+    let limit = BANDWIDTH_LIMIT.load(Ordering::Relaxed);
+    if limit == 0 || bytes == 0 {
+        return;
+    }
+    let secs = bytes as f64 / limit as f64;
+    if secs > 0.001 {
+        tokio::time::sleep(Duration::from_secs_f64(secs)).await;
+    }
+}
 
 // ── Error helper ────────────────────────────────────────────────────────────
 
@@ -128,6 +146,7 @@ pub async fn upload_part_with_retry(
                     .e_tag()
                     .ok_or_else(|| s3err("Missing ETag in upload_part response"))?
                     .to_string();
+                throttle(length).await;
                 return Ok((part_number, etag));
             }
             Err(e) => {

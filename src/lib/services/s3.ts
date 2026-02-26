@@ -12,7 +12,11 @@ export async function s3Connect(
   endpoint?: string,
   profile?: string,
   accessKey?: string,
-  secretKey?: string
+  secretKey?: string,
+  roleArn?: string,
+  externalId?: string,
+  sessionName?: string,
+  sessionDurationSecs?: number,
 ): Promise<void> {
   await invoke('s3_connect', {
     id,
@@ -22,6 +26,10 @@ export async function s3Connect(
     profile: profile || null,
     accessKey: accessKey || null,
     secretKey: secretKey || null,
+    roleArn: roleArn || null,
+    externalId: externalId || null,
+    sessionName: sessionName || null,
+    sessionDurationSecs: sessionDurationSecs ?? null,
   });
 }
 
@@ -31,6 +39,10 @@ export async function s3ListBuckets(
   profile?: string,
   accessKey?: string,
   secretKey?: string,
+  roleArn?: string,
+  externalId?: string,
+  sessionName?: string,
+  sessionDurationSecs?: number,
 ): Promise<S3Bucket[]> {
   return await invoke<S3Bucket[]>('s3_list_buckets', {
     region,
@@ -38,6 +50,10 @@ export async function s3ListBuckets(
     profile: profile || null,
     accessKey: accessKey || null,
     secretKey: secretKey || null,
+    roleArn: roleArn || null,
+    externalId: externalId || null,
+    sessionName: sessionName || null,
+    sessionDurationSecs: sessionDurationSecs ?? null,
   });
 }
 
@@ -195,6 +211,10 @@ export async function s3CreateBucket(
   profile?: string,
   accessKey?: string,
   secretKey?: string,
+  roleArn?: string,
+  externalId?: string,
+  sessionName?: string,
+  sessionDurationSecs?: number,
 ): Promise<void> {
   await invoke('s3_create_bucket', {
     region,
@@ -203,6 +223,10 @@ export async function s3CreateBucket(
     profile: profile || null,
     accessKey: accessKey || null,
     secretKey: secretKey || null,
+    roleArn: roleArn || null,
+    externalId: externalId || null,
+    sessionName: sessionName || null,
+    sessionDurationSecs: sessionDurationSecs ?? null,
   });
 }
 
@@ -213,6 +237,10 @@ export async function s3DeleteBucket(
   profile?: string,
   accessKey?: string,
   secretKey?: string,
+  roleArn?: string,
+  externalId?: string,
+  sessionName?: string,
+  sessionDurationSecs?: number,
 ): Promise<void> {
   await invoke('s3_delete_bucket', {
     region,
@@ -221,6 +249,10 @@ export async function s3DeleteBucket(
     profile: profile || null,
     accessKey: accessKey || null,
     secretKey: secretKey || null,
+    roleArn: roleArn || null,
+    externalId: externalId || null,
+    sessionName: sessionName || null,
+    sessionDurationSecs: sessionDurationSecs ?? null,
   });
 }
 
@@ -343,4 +375,10 @@ export async function s3PutBucketPolicy(id: string, policy: string): Promise<voi
 
 export async function s3GetBucketAcl(id: string): Promise<S3BucketAcl> {
   return await invoke<S3BucketAcl>('s3_get_bucket_acl', { id });
+}
+
+// ── Bandwidth Throttling ────────────────────────────────────────────────────
+
+export async function s3SetBandwidthLimit(bytesPerSec: number): Promise<void> {
+  await invoke('s3_set_bandwidth_limit', { bytesPerSec });
 }

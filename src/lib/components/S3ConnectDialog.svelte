@@ -5,7 +5,7 @@
   import type { S3Bucket, S3Profile, S3ProviderCapabilities } from '$lib/types';
 
   interface Props {
-    onConnect: (bucket: string, region: string, endpoint?: string, profile?: string, accessKey?: string, secretKey?: string, provider?: string, customCapabilities?: S3ProviderCapabilities) => void;
+    onConnect: (bucket: string, region: string, endpoint?: string, profile?: string, accessKey?: string, secretKey?: string, provider?: string, customCapabilities?: S3ProviderCapabilities, roleArn?: string, externalId?: string, sessionName?: string, sessionDurationSecs?: number) => void;
     onCancel: () => void;
     saveMode?: boolean;
     initialData?: S3Profile;
@@ -35,6 +35,12 @@
   let browseError = $state('');
   let showBucketList = $state(false);
   let showCustomCaps = $state(false);
+
+  // AssumeRole
+  let roleArn = $state(init?.roleArn ?? '');
+  let externalIdVal = $state(init?.externalId ?? '');
+  let sessionDuration = $state(init?.sessionDurationSecs ?? 3600);
+  let showAssumeRole = $state(!!(init?.roleArn));
 
   // Custom capabilities (for 'custom' provider)
   let customCaps = $state<S3ProviderCapabilities>(init?.customCapabilities ?? { ...getProvider('custom').capabilities });
@@ -101,6 +107,9 @@
       ...(credentialType === 'keychain' && accessKey.trim() ? { accessKeyId: accessKey.trim() } : {}),
       provider: selectedProvider,
       ...(selectedProvider === 'custom' ? { customCapabilities: { ...customCaps } } : {}),
+      ...(roleArn.trim() ? { roleArn: roleArn.trim() } : {}),
+      ...(externalIdVal.trim() ? { externalId: externalIdVal.trim() } : {}),
+      ...(roleArn.trim() ? { sessionDurationSecs: sessionDuration } : {}),
     };
   }
 
@@ -115,6 +124,10 @@
       !useDefaultCreds && secretKey.trim() ? secretKey.trim() : undefined,
       selectedProvider,
       selectedProvider === 'custom' ? { ...customCaps } : undefined,
+      roleArn.trim() || undefined,
+      externalIdVal.trim() || undefined,
+      roleArn.trim() ? undefined : undefined, // sessionName uses default
+      roleArn.trim() ? sessionDuration : undefined,
     );
   }
 
@@ -132,6 +145,10 @@
       !useDefaultCreds && secretKey.trim() ? secretKey.trim() : undefined,
       selectedProvider,
       selectedProvider === 'custom' ? { ...customCaps } : undefined,
+      roleArn.trim() || undefined,
+      externalIdVal.trim() || undefined,
+      roleArn.trim() ? undefined : undefined,
+      roleArn.trim() ? sessionDuration : undefined,
     );
   }
 
@@ -147,12 +164,10 @@
     browsing = true;
     browseError = '';
     try {
+      const [ep, prof, ak, sk, rArn, extId, sName, sDur] = currentCredArgs();
       buckets = await s3ListBuckets(
         region.trim() || 'us-east-1',
-        endpoint.trim() || undefined,
-        profile.trim() || undefined,
-        !useDefaultCreds && accessKey.trim() ? accessKey.trim() : undefined,
-        !useDefaultCreds && secretKey.trim() ? secretKey.trim() : undefined,
+        ep, prof, ak, sk, rArn, extId, sName, sDur,
       );
       showBucketList = true;
     } catch (e: any) {
@@ -168,12 +183,16 @@
     showBucketList = false;
   }
 
-  function currentCredArgs(): [string | undefined, string | undefined, string | undefined, string | undefined] {
+  function currentCredArgs(): [string | undefined, string | undefined, string | undefined, string | undefined, string | undefined, string | undefined, string | undefined, number | undefined] {
     return [
       endpoint.trim() || undefined,
       profile.trim() || undefined,
       !useDefaultCreds && accessKey.trim() ? accessKey.trim() : undefined,
       !useDefaultCreds && secretKey.trim() ? secretKey.trim() : undefined,
+      roleArn.trim() || undefined,
+      externalIdVal.trim() || undefined,
+      undefined, // sessionName
+      roleArn.trim() ? sessionDuration : undefined,
     ];
   }
 
@@ -183,10 +202,10 @@
     createError = '';
     try {
       const r = region.trim() || 'us-east-1';
-      const [ep, prof, ak, sk] = currentCredArgs();
-      await s3CreateBucket(r, newBucketName.trim(), ep, prof, ak, sk);
+      const [ep, prof, ak, sk, rArn, extId, sName, sDur] = currentCredArgs();
+      await s3CreateBucket(r, newBucketName.trim(), ep, prof, ak, sk, rArn, extId, sName, sDur);
       // Refresh bucket list
-      buckets = await s3ListBuckets(r, ep, prof, ak, sk);
+      buckets = await s3ListBuckets(r, ep, prof, ak, sk, rArn, extId, sName, sDur);
       showBucketList = true;
       newBucketName = '';
       showCreateForm = false;
@@ -203,8 +222,8 @@
     browseError = '';
     try {
       const r = region.trim() || 'us-east-1';
-      const [ep, prof, ak, sk] = currentCredArgs();
-      await s3DeleteBucket(r, bucketName, ep, prof, ak, sk);
+      const [ep, prof, ak, sk, rArn, extId, sName, sDur] = currentCredArgs();
+      await s3DeleteBucket(r, bucketName, ep, prof, ak, sk, rArn, extId, sName, sDur);
       buckets = buckets.filter(b => b.name !== bucketName);
       if (bucket === bucketName) bucket = '';
     } catch (e: any) {
@@ -358,6 +377,7 @@
           bind:value={profile}
           placeholder="default"
         />
+        <span class="field-hint">SSO profiles work if you've run `aws sso login`</span>
       </label>
 
       {#if !checking && hasDefaultCreds}
@@ -393,6 +413,45 @@
           disabled={useDefaultCreds && hasDefaultCreds}
         />
       </label>
+
+      <div class="caps-section">
+        <button class="caps-toggle" onclick={() => { showAssumeRole = !showAssumeRole; }}>
+          AssumeRole (optional) {showAssumeRole ? '\u25B4' : '\u25BE'}
+        </button>
+        {#if showAssumeRole}
+          <label class="field-label">
+            Role ARN
+            <input
+              type="text"
+              class="dialog-input"
+              autocomplete="off"
+              bind:value={roleArn}
+              placeholder="arn:aws:iam::123456789012:role/RoleName"
+            />
+          </label>
+          <label class="field-label">
+            External ID (optional)
+            <input
+              type="text"
+              class="dialog-input"
+              autocomplete="off"
+              bind:value={externalIdVal}
+              placeholder="External ID"
+            />
+          </label>
+          <label class="field-label">
+            Session Duration
+            <select class="dialog-input" bind:value={sessionDuration}>
+              <option value={900}>15 minutes</option>
+              <option value={1800}>30 minutes</option>
+              <option value={3600}>1 hour</option>
+              <option value={7200}>2 hours</option>
+              <option value={14400}>4 hours</option>
+              <option value={43200}>12 hours</option>
+            </select>
+          </label>
+        {/if}
+      </div>
 
       {#if selectedProvider === 'custom'}
         <div class="caps-section">

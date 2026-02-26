@@ -2,6 +2,8 @@
   import { transfersState } from '$lib/state/transfers.svelte';
   import type { TransferStatus } from '$lib/state/transfers.svelte';
   import { formatSize, formatSpeed } from '$lib/utils/format';
+  import { s3SetBandwidthLimit } from '$lib/services/s3';
+  import { appState } from '$lib/state/app.svelte';
 
   const visible = $derived(transfersState.panelVisible && transfersState.transfers.length > 0);
   const activeCount = $derived(transfersState.active.length);
@@ -73,6 +75,13 @@
       transfersState.processQueue();
     }
   }
+
+  async function handleBandwidthChange(e: Event) {
+    const val = parseInt((e.target as HTMLSelectElement).value, 10);
+    transfersState.bandwidthLimit = val;
+    await s3SetBandwidthLimit(val);
+    appState.persistConfig();
+  }
 </script>
 
 {#if visible}
@@ -87,6 +96,15 @@
         <option value={2}>2</option>
         <option value={3}>3</option>
         <option value={5}>5</option>
+      </select>
+      <select class="tp-concurrency" value={transfersState.bandwidthLimit} onchange={handleBandwidthChange} title="Bandwidth limit">
+        <option value={0}>Unlimited</option>
+        <option value={1048576}>1 MB/s</option>
+        <option value={5242880}>5 MB/s</option>
+        <option value={10485760}>10 MB/s</option>
+        <option value={26214400}>25 MB/s</option>
+        <option value={52428800}>50 MB/s</option>
+        <option value={104857600}>100 MB/s</option>
       </select>
       {#if hasFinished}
         <button class="tp-btn" onclick={() => transfersState.dismissCompleted()}>Clear done</button>

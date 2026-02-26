@@ -296,4 +296,8 @@ export interface S3Profile {
   accessKeyId?: string;
   provider?: string;
   customCapabilities?: S3ProviderCapabilities;
+  roleArn?: string;
+  externalId?: string;
+  sessionName?: string;
+  sessionDurationSecs?: number;
 }

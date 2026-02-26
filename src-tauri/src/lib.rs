@@ -156,6 +156,7 @@ pub fn run() {
             commands::s3::s3_get_bucket_policy,
             commands::s3::s3_put_bucket_policy,
             commands::s3::s3_get_bucket_acl,
+            commands::s3::s3_set_bandwidth_limit,
             // archive commands
             commands::archive::list_archive,
             commands::archive::extract_archive,

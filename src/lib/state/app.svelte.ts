@@ -4,6 +4,8 @@ import { saveConfig, type Config } from '$lib/services/config';
 import { sidebarState } from '$lib/state/sidebar.svelte';
 import { workspacesState } from '$lib/state/workspaces.svelte';
 import { s3ProfilesState } from '$lib/state/s3profiles.svelte';
+import { transfersState } from '$lib/state/transfers.svelte';
+import { s3SetBandwidthLimit } from '$lib/services/s3';
 
 class AppState {
   theme = $state<'dark' | 'light'>('dark');
@@ -147,6 +149,8 @@ class AppState {
     this.showHidden = config.showHidden;
     this.externalEditor = config.externalEditor;
     this.calculateDirSizes = config.calculateDirSizes;
+    transfersState.bandwidthLimit = config.bandwidthLimit ?? 0;
+    s3SetBandwidthLimit(transfersState.bandwidthLimit).catch(() => {});
   }
 
   toggleTheme() {
@@ -166,6 +170,7 @@ class AppState {
       favorites: sidebarState.favorites,
       workspaces: workspacesState.workspaces,
       s3Profiles: s3ProfilesState.profiles,
+      bandwidthLimit: transfersState.bandwidthLimit,
     });
   }
 

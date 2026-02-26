@@ -4,7 +4,7 @@ use crate::models::{
     S3CorsRule, S3LifecycleRule, S3MultipartUpload, S3ObjectMetadata, S3ObjectProperties,
     S3ObjectVersion, S3PublicAccessBlock, S3Tag, SearchEvent, TransferCheckpoint,
 };
-use crate::s3::{self, build_s3_client, s3err, S3State};
+use crate::s3::{self, build_s3_client, s3err, S3State, BANDWIDTH_LIMIT};
 use crate::s3::service::{S3Bucket, S3Service};
 use std::collections::HashMap;
 use std::sync::atomic::AtomicBool;
@@ -35,6 +35,10 @@ pub async fn s3_list_buckets(
     profile: Option<String>,
     access_key: Option<String>,
     secret_key: Option<String>,
+    role_arn: Option<String>,
+    external_id: Option<String>,
+    session_name: Option<String>,
+    session_duration_secs: Option<i32>,
 ) -> Result<Vec<S3Bucket>, FmError> {
     let client = build_s3_client(
         &region,
@@ -42,6 +46,10 @@ pub async fn s3_list_buckets(
         profile.as_deref(),
         access_key.as_deref(),
         secret_key.as_deref(),
+        role_arn.as_deref(),
+        external_id.as_deref(),
+        session_name.as_deref(),
+        session_duration_secs,
     )
     .await?;
     s3::service::list_buckets(&client).await
@@ -57,6 +65,10 @@ pub async fn s3_connect(
     profile: Option<String>,
     access_key: Option<String>,
     secret_key: Option<String>,
+    role_arn: Option<String>,
+    external_id: Option<String>,
+    session_name: Option<String>,
+    session_duration_secs: Option<i32>,
 ) -> Result<(), FmError> {
     let client = build_s3_client(
         &region,
@@ -64,6 +76,10 @@ pub async fn s3_connect(
         profile.as_deref(),
         access_key.as_deref(),
         secret_key.as_deref(),
+        role_arn.as_deref(),
+        external_id.as_deref(),
+        session_name.as_deref(),
+        session_duration_secs,
     )
     .await?;
 
@@ -410,6 +426,10 @@ pub async fn s3_create_bucket(
     profile: Option<String>,
     access_key: Option<String>,
     secret_key: Option<String>,
+    role_arn: Option<String>,
+    external_id: Option<String>,
+    session_name: Option<String>,
+    session_duration_secs: Option<i32>,
 ) -> Result<(), FmError> {
     let client = build_s3_client(
         &region,
@@ -417,6 +437,10 @@ pub async fn s3_create_bucket(
         profile.as_deref(),
         access_key.as_deref(),
         secret_key.as_deref(),
+        role_arn.as_deref(),
+        external_id.as_deref(),
+        session_name.as_deref(),
+        session_duration_secs,
     )
     .await?;
     s3::service::create_bucket(&client, &bucket_name, &region).await
@@ -430,6 +454,10 @@ pub async fn s3_delete_bucket(
     profile: Option<String>,
     access_key: Option<String>,
     secret_key: Option<String>,
+    role_arn: Option<String>,
+    external_id: Option<String>,
+    session_name: Option<String>,
+    session_duration_secs: Option<i32>,
 ) -> Result<(), FmError> {
     let client = build_s3_client(
         &region,
@@ -437,6 +465,10 @@ pub async fn s3_delete_bucket(
         profile.as_deref(),
         access_key.as_deref(),
         secret_key.as_deref(),
+        role_arn.as_deref(),
+        external_id.as_deref(),
+        session_name.as_deref(),
+        session_duration_secs,
     )
     .await?;
     s3::service::delete_bucket(&client, &bucket_name).await
@@ -659,4 +691,10 @@ pub async fn s3_get_bucket_acl(
 ) -> Result<S3BucketAcl, FmError> {
     let service = get_service(&state, &id)?;
     service.get_bucket_acl().await
+}
+
+#[tauri::command]
+pub async fn s3_set_bandwidth_limit(bytes_per_sec: u64) -> Result<(), FmError> {
+    BANDWIDTH_LIMIT.store(bytes_per_sec, std::sync::atomic::Ordering::Relaxed);
+    Ok(())
 }

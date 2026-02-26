@@ -14,6 +14,7 @@ export interface Config {
   favorites: FavoriteItem[];
   workspaces: Workspace[];
   s3Profiles: S3Profile[];
+  bandwidthLimit: number;
 }
 
 export const DEFAULT_CONFIG: Config = {
@@ -26,6 +27,7 @@ export const DEFAULT_CONFIG: Config = {
   favorites: [],
   workspaces: [],
   s3Profiles: [],
+  bandwidthLimit: 0,
 };
 
 let configPath = '';

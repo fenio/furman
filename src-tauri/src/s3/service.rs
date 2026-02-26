@@ -5,6 +5,7 @@ use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::Arc;
+use tokio::io::AsyncWriteExt;
 
 use crate::models::{
     DirListing, FileEntry, FmError, ProgressEvent, S3AclGrant, S3BucketAcl, S3BucketEncryption,
@@ -331,15 +332,66 @@ impl S3Service {
                 .await
                 .map_err(|e| s3err(e.to_string()))?;
 
-            let body = resp
-                .body
-                .collect()
-                .await
-                .map_err(|e| s3err(e.to_string()))?;
-            std::fs::write(&local_path, body.into_bytes())?;
+            let etag = resp.e_tag().map(|s| s.trim_matches('"').to_string());
+            let expected_size = *_size;
+            let mut body = resp.body;
+            let mut file = tokio::fs::File::create(&local_path).await.map_err(FmError::Io)?;
+            let mut hasher = md5::Context::new();
+            let mut file_bytes: u64 = 0;
+            let bytes_done_base = bytes_done;
 
-            let file_size = std::fs::metadata(&local_path).map(|m| m.len()).unwrap_or(0);
-            bytes_done += file_size;
+            loop {
+                match body.try_next().await {
+                    Ok(Some(chunk)) => {
+                        hasher.consume(&chunk);
+                        file.write_all(&chunk).await.map_err(FmError::Io)?;
+                        file_bytes += chunk.len() as u64;
+                        bytes_done = bytes_done_base + file_bytes;
+                        throttle(chunk.len() as u64).await;
+                        on_progress(ProgressEvent {
+                            id: op_id.to_string(),
+                            bytes_done,
+                            bytes_total,
+                            current_file: filename.to_string(),
+                            files_done,
+                            files_total,
+                        });
+                    }
+                    Ok(None) => break,
+                    Err(e) => {
+                        drop(file);
+                        let _ = tokio::fs::remove_file(&local_path).await;
+                        return Err(s3err(e.to_string()));
+                    }
+                }
+            }
+            file.flush().await.map_err(FmError::Io)?;
+            drop(file);
+
+            // Verify checksum against ETag
+            if let Some(ref etag_val) = etag {
+                if !etag_val.contains('-') {
+                    // Single-part upload: ETag is the MD5 hex digest
+                    let computed = format!("{:x}", hasher.compute());
+                    if computed != *etag_val {
+                        let _ = tokio::fs::remove_file(&local_path).await;
+                        return Err(s3err(format!(
+                            "Checksum mismatch for '{}': expected {} got {}",
+                            key, etag_val, computed
+                        )));
+                    }
+                } else {
+                    // Multipart upload: verify file size matches
+                    if expected_size > 0 && file_bytes != expected_size {
+                        let _ = tokio::fs::remove_file(&local_path).await;
+                        return Err(s3err(format!(
+                            "Size mismatch for '{}': expected {} got {}",
+                            key, expected_size, file_bytes
+                        )));
+                    }
+                }
+            }
+
             files_done += 1;
             completed_files.push(key.clone());
 
@@ -459,6 +511,7 @@ impl S3Service {
                     .await
                     .map_err(|e| s3err(e.to_string()))?;
 
+                throttle(size).await;
                 bytes_done += size;
             }
 

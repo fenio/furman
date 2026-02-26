@@ -11,7 +11,7 @@
   interface Props {
     onClose: () => void;
     initialTab?: 'saved' | 'connect';
-    onConnect?: (bucket: string, region: string, endpoint?: string, profile?: string, accessKey?: string, secretKey?: string, provider?: string, customCapabilities?: S3ProviderCapabilities) => void;
+    onConnect?: (bucket: string, region: string, endpoint?: string, profile?: string, accessKey?: string, secretKey?: string, provider?: string, customCapabilities?: S3ProviderCapabilities, roleArn?: string, externalId?: string, sessionName?: string, sessionDurationSecs?: number) => void;
   }
 
   let { onClose, initialTab = 'saved', onConnect: onConnectProp }: Props = $props();
@@ -48,6 +48,10 @@
     secretKey?: string,
     provider?: string,
     customCapabilities?: S3ProviderCapabilities,
+    roleArn?: string,
+    externalId?: string,
+    sessionName?: string,
+    sessionDurationSecs?: number,
   ) {
     connectError = '';
     const panel = panels.active;
@@ -57,7 +61,7 @@
     if (endpoint) info.endpoint = endpoint;
     if (profile) info.profile = profile;
     try {
-      await panel.connectS3(info, endpoint, profile, accessKey, secretKey);
+      await panel.connectS3(info, endpoint, profile, accessKey, secretKey, roleArn, externalId, sessionName, sessionDurationSecs);
       onClose();
     } catch (err: unknown) {
       connectError = err instanceof Error ? err.message : String(err);
@@ -92,6 +96,10 @@
       secretKey,
       p.provider,
       p.customCapabilities,
+      p.roleArn,
+      p.externalId,
+      p.sessionName,
+      p.sessionDurationSecs,
     );
   }
 

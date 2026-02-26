@@ -32,7 +32,9 @@ dirs = "5"
 
 aws-config = { version = "1", features = ["behavior-version-latest"] }
 aws-sdk-s3 = "1"
+aws-sdk-sts = "1"
 aws-credential-types = "1"
+md5 = "0.7"
 keyring = { version = "3", features = ["apple-native"] }
 tokio = { version = "1", features = ["sync", "fs", "io-util", "time"] }
 urlencoding = "2"
