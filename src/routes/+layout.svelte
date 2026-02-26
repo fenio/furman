@@ -338,7 +338,12 @@
     if (panel.backend === 's3' && panel.s3Connection) {
       openS3Viewer(entry.path, entry.extension, panel.s3Connection.connectionId);
     } else {
-      openViewer(entry.path, entry.extension);
+      const lower = (entry.extension ?? '').toLowerCase();
+      if (systemOpenExtensions.has(lower)) {
+        openFileDefault(entry.path).catch((err: unknown) => error(String(err)));
+      } else {
+        openViewer(entry.path, entry.extension);
+      }
     }
   }
 
@@ -1112,7 +1117,13 @@
         break;
       case ' ':
         e.preventDefault();
-        quickLook();
+        {
+          const entry = active.currentEntry;
+          if (entry && entry.name !== '..') {
+            active.toggleSelection(entry.path);
+          }
+          active.moveCursor(1);
+        }
         break;
       case 'F2':
         e.preventDefault();
@@ -1120,16 +1131,7 @@
         break;
       case 'F3':
         e.preventDefault();
-        {
-          const entry = active.currentEntry;
-          if (entry && !entry.is_dir && entry.name !== '..') {
-            if (active.backend === 's3' && active.s3Connection) {
-              openS3Viewer(entry.path, entry.extension, active.s3Connection.connectionId);
-            } else {
-              openViewer(entry.path, entry.extension);
-            }
-          }
-        }
+        quickLook();
         break;
       case 'F4':
         e.preventDefault();

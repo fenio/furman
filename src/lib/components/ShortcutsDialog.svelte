@@ -36,7 +36,7 @@
             { keys: 'Enter', desc: 'Open file or enter directory' },
             { keys: 'Backspace', desc: 'Go to parent directory' },
             { keys: 'Tab', desc: 'Switch active panel' },
-            { keys: 'Space', desc: 'Quick look' },
+            { keys: 'Space', desc: 'Toggle select and move down' },
           ],
         },
         {
