@@ -409,7 +409,7 @@ async fn test_enable_suspend_versioning() {
 
     // Enable
     ctx.service
-        .put_bucket_versioning(true)
+        .put_bucket_versioning(true, None, None)
         .await
         .expect("enable versioning failed");
 
@@ -422,7 +422,7 @@ async fn test_enable_suspend_versioning() {
 
     // Suspend
     ctx.service
-        .put_bucket_versioning(false)
+        .put_bucket_versioning(false, None, None)
         .await
         .expect("suspend versioning failed");
 
@@ -441,7 +441,7 @@ async fn test_list_versions() {
     let ctx = TestContext::new().await;
 
     // Enable versioning
-    ctx.service.put_bucket_versioning(true).await.unwrap();
+    ctx.service.put_bucket_versioning(true, None, None).await.unwrap();
 
     // Upload same key 3 times
     ctx.put_object("versioned.txt", b"version1").await;
@@ -472,7 +472,7 @@ async fn test_download_version() {
     let ctx = TestContext::new().await;
 
     // Enable versioning
-    ctx.service.put_bucket_versioning(true).await.unwrap();
+    ctx.service.put_bucket_versioning(true, None, None).await.unwrap();
 
     // Upload 2 versions
     ctx.put_object("vdl.txt", b"old content").await;
@@ -504,7 +504,7 @@ async fn test_download_version() {
 async fn test_restore_version() {
     let ctx = TestContext::new().await;
 
-    ctx.service.put_bucket_versioning(true).await.unwrap();
+    ctx.service.put_bucket_versioning(true, None, None).await.unwrap();
 
     ctx.put_object("restore.txt", b"original").await;
     ctx.put_object("restore.txt", b"modified").await;
@@ -535,7 +535,7 @@ async fn test_restore_version() {
 async fn test_delete_version() {
     let ctx = TestContext::new().await;
 
-    ctx.service.put_bucket_versioning(true).await.unwrap();
+    ctx.service.put_bucket_versioning(true, None, None).await.unwrap();
 
     ctx.put_object("delver.txt", b"v1").await;
     ctx.put_object("delver.txt", b"v2").await;
@@ -549,7 +549,7 @@ async fn test_delete_version() {
 
     // Delete the older version
     ctx.service
-        .delete_version("delver.txt", &versions[1].version_id)
+        .delete_version("delver.txt", &versions[1].version_id, None)
         .await
         .expect("delete_version failed");
 

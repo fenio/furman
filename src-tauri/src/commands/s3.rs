@@ -479,9 +479,10 @@ pub async fn s3_delete_version(
     id: String,
     key: String,
     version_id: String,
+    mfa: Option<String>,
 ) -> Result<(), FmError> {
     let service = get_service(&state, &id)?;
-    service.delete_version(&key, &version_id).await
+    service.delete_version(&key, &version_id, mfa.as_deref()).await
 }
 
 #[tauri::command]
@@ -569,9 +570,11 @@ pub async fn s3_put_bucket_versioning(
     state: State<'_, S3State>,
     id: String,
     enabled: bool,
+    mfa_delete: Option<bool>,
+    mfa: Option<String>,
 ) -> Result<(), FmError> {
     let service = get_service(&state, &id)?;
-    service.put_bucket_versioning(enabled).await
+    service.put_bucket_versioning(enabled, mfa_delete, mfa.as_deref()).await
 }
 
 #[tauri::command]

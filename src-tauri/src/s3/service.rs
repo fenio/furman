@@ -1524,17 +1524,22 @@ impl S3Service {
         &self,
         key: &str,
         version_id: &str,
+        mfa: Option<&str>,
     ) -> Result<(), FmError> {
         let actual_key = strip_s3_prefix(key, &self.bucket);
 
-        self.client
+        let mut req = self
+            .client
             .delete_object()
             .bucket(&self.bucket)
             .key(&actual_key)
-            .version_id(version_id)
-            .send()
-            .await
-            .map_err(|e| s3err(e.to_string()))?;
+            .version_id(version_id);
+
+        if let Some(val) = mfa {
+            req = req.mfa(val);
+        }
+
+        req.send().await.map_err(|e| s3err(e.to_string()))?;
 
         Ok(())
     }
@@ -1592,24 +1597,38 @@ impl S3Service {
     }
 
     /// Enable or suspend versioning on the bucket.
-    pub async fn put_bucket_versioning(&self, enabled: bool) -> Result<(), FmError> {
+    pub async fn put_bucket_versioning(
+        &self,
+        enabled: bool,
+        mfa_delete: Option<bool>,
+        mfa: Option<&str>,
+    ) -> Result<(), FmError> {
         let status = if enabled {
             aws_sdk_s3::types::BucketVersioningStatus::Enabled
         } else {
             aws_sdk_s3::types::BucketVersioningStatus::Suspended
         };
 
-        let config = aws_sdk_s3::types::VersioningConfiguration::builder()
-            .status(status)
-            .build();
+        let mut config_builder = aws_sdk_s3::types::VersioningConfiguration::builder()
+            .status(status);
 
-        self.client
+        if let Some(true) = mfa_delete {
+            config_builder = config_builder.mfa_delete(aws_sdk_s3::types::MfaDelete::Enabled);
+        } else if let Some(false) = mfa_delete {
+            config_builder = config_builder.mfa_delete(aws_sdk_s3::types::MfaDelete::Disabled);
+        }
+
+        let mut req = self
+            .client
             .put_bucket_versioning()
             .bucket(&self.bucket)
-            .versioning_configuration(config)
-            .send()
-            .await
-            .map_err(|e| s3err(e.to_string()))?;
+            .versioning_configuration(config_builder.build());
+
+        if let Some(val) = mfa {
+            req = req.mfa(val);
+        }
+
+        req.send().await.map_err(|e| s3err(e.to_string()))?;
 
         Ok(())
     }

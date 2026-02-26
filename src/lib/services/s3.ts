@@ -192,8 +192,9 @@ export async function s3DeleteVersion(
   id: string,
   key: string,
   versionId: string,
+  mfa?: string,
 ): Promise<void> {
-  await invoke('s3_delete_version', { id, key, versionId });
+  await invoke('s3_delete_version', { id, key, versionId, mfa: mfa ?? null });
 }
 
 export async function s3SearchObjects(
@@ -266,8 +267,18 @@ export async function s3GetBucketVersioning(id: string): Promise<S3BucketVersion
   return await invoke<S3BucketVersioning>('s3_get_bucket_versioning', { id });
 }
 
-export async function s3PutBucketVersioning(id: string, enabled: boolean): Promise<void> {
-  await invoke('s3_put_bucket_versioning', { id, enabled });
+export async function s3PutBucketVersioning(
+  id: string,
+  enabled: boolean,
+  mfaDelete?: boolean,
+  mfa?: string,
+): Promise<void> {
+  await invoke('s3_put_bucket_versioning', {
+    id,
+    enabled,
+    mfaDelete: mfaDelete ?? null,
+    mfa: mfa ?? null,
+  });
 }
 
 export async function s3GetBucketEncryption(id: string): Promise<S3BucketEncryption> {

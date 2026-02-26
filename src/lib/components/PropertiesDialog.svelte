@@ -2,6 +2,7 @@
   import { onMount, untrack } from 'svelte';
   import { appState } from '$lib/state/app.svelte';
   import { getFileProperties, getDirectorySize } from '$lib/services/tauri';
+  import MfaDialog from './MfaDialog.svelte';
   import {
     s3HeadObject, s3ChangeStorageClass, s3RestoreObject, s3ListObjectVersions,
     s3DownloadVersion, s3RestoreVersion, s3DeleteVersion,
@@ -176,6 +177,10 @@
   let bucketVersioningLoading = $state(false);
   let applyingVersioning = $state(false);
   let versioningMessage = $state('');
+
+  // MFA Delete dialog
+  let showMfaDialog = $state<null | 'toggle_mfa' | 'delete_version'>(null);
+  let pendingDeleteVersionId = $state<string | null>(null);
 
   // Bucket-level: Encryption
   let bucketEncryption = $state<S3BucketEncryption | null>(null);
@@ -430,6 +435,11 @@
   }
 
   async function handleDeleteVersion(vid: string) {
+    if (bucketVersioning?.mfa_delete === 'Enabled') {
+      pendingDeleteVersionId = vid;
+      showMfaDialog = 'delete_version';
+      return;
+    }
     if (!confirm(`Permanently delete this version? This cannot be undone.`)) return;
     versionActionLoading = vid;
     try {
@@ -439,6 +449,37 @@
       versionsError = String(err);
     } finally {
       versionActionLoading = null;
+    }
+  }
+
+  async function handleMfaSubmit(mfa: string) {
+    const mode = showMfaDialog;
+    showMfaDialog = null;
+    if (mode === 'delete_version' && pendingDeleteVersionId) {
+      const vid = pendingDeleteVersionId;
+      pendingDeleteVersionId = null;
+      versionActionLoading = vid;
+      try {
+        await s3DeleteVersion(s3ConnectionId, path, vid, mfa);
+        versions = versions.filter(v => v.version_id !== vid);
+      } catch (err: unknown) {
+        versionsError = String(err);
+      } finally {
+        versionActionLoading = null;
+      }
+    } else if (mode === 'toggle_mfa' && bucketVersioning) {
+      const currentlyEnabled = bucketVersioning.mfa_delete === 'Enabled';
+      applyingVersioning = true;
+      versioningMessage = '';
+      try {
+        await s3PutBucketVersioning(s3ConnectionId, true, !currentlyEnabled, mfa);
+        bucketVersioning = await s3GetBucketVersioning(s3ConnectionId);
+        versioningMessage = currentlyEnabled ? 'MFA Delete disabled' : 'MFA Delete enabled';
+      } catch (err: unknown) {
+        versioningMessage = 'Error: ' + String(err);
+      } finally {
+        applyingVersioning = false;
+      }
     }
   }
 
@@ -1847,9 +1888,18 @@
                   {applyingVersioning ? 'Applying...' : bucketVersioning.status === 'Enabled' ? 'Suspend' : 'Enable'}
                 </button>
               </div>
-              {#if bucketVersioning.mfa_delete === 'Enabled'}
-                <div class="restore-status">MFA Delete: Enabled</div>
-              {/if}
+              <div class="sc-row">
+                <span class="meta-label">MFA Delete: <strong>{bucketVersioning.mfa_delete === 'Enabled' ? 'Enabled' : 'Disabled'}</strong></span>
+                {#if bucketVersioning.status === 'Enabled' || bucketVersioning.mfa_delete === 'Enabled'}
+                  <button
+                    class="dialog-btn apply-btn"
+                    onclick={() => { showMfaDialog = 'toggle_mfa'; }}
+                    disabled={applyingVersioning}
+                  >
+                    {bucketVersioning.mfa_delete === 'Enabled' ? 'Disable' : 'Enable'}
+                  </button>
+                {/if}
+              </div>
               {#if versioningMessage}
                 <div class="sc-message" class:sc-error={versioningMessage.startsWith('Error')}>{versioningMessage}</div>
               {/if}
@@ -2585,6 +2635,16 @@
     </div>
   </div>
 </div>
+
+{#if showMfaDialog}
+  <MfaDialog
+    title={showMfaDialog === 'toggle_mfa'
+      ? (bucketVersioning?.mfa_delete === 'Enabled' ? 'Disable MFA Delete' : 'Enable MFA Delete')
+      : 'MFA Required to Delete Version'}
+    onSubmit={handleMfaSubmit}
+    onCancel={() => { showMfaDialog = null; pendingDeleteVersionId = null; }}
+  />
+{/if}
 
 <style>
   .dialog-overlay {
