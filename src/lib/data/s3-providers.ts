@@ -10,6 +10,14 @@ import wasabiIcon from '$lib/assets/providers/wasabi.svg?url';
 import gcsIcon from '$lib/assets/providers/gcs.svg?url';
 import genericIcon from '$lib/assets/providers/generic.svg?url';
 
+// Auto-discover PNG icons for imported providers (Vite glob import)
+const pngIconModules = import.meta.glob<string>('../assets/providers/*.png', { eager: true, query: '?url', import: 'default' });
+const pngIcons: Record<string, string> = {};
+for (const [path, url] of Object.entries(pngIconModules)) {
+  const id = path.split('/').pop()!.replace('.png', '');
+  pngIcons[id] = url;
+}
+
 // S3 provider data includes entries derived from Cyberduck connection profiles
 // https://github.com/iterate-ch/profiles
 // Copyright (c) iterate GmbH. Licensed under the GNU General Public License.
@@ -308,7 +316,7 @@ function buildProviderList(): S3ProviderProfile[] {
     result.push({
       id: cp.id,
       name: cp.name,
-      icon: genericIcon,
+      icon: pngIcons[cp.id] ?? genericIcon,
       endpointHint: cp.endpointHint,
       regionHint: cp.regionHint,
       ...(cp.regions ? { regions: cp.regions } : {}),
@@ -405,6 +413,7 @@ const iconMap: Record<string, string> = {
   wasabi: wasabiIcon,
   gcs: gcsIcon,
   custom: genericIcon,
+  ...pngIcons,
 };
 
 export function getProviderIcon(id: string): string {
