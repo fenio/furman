@@ -1,0 +1,94 @@
+name: S3 Integration Tests (SeaweedFS)
+
+on:
+  push:
+    branches: [main]
+    paths: ['src-tauri/**']
+  pull_request:
+    branches: [main]
+    paths: ['src-tauri/**']
+
+jobs:
+  s3-seaweedfs-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Start SeaweedFS
+        run: |
+          docker run -d --name seaweedfs \
+            -p 8333:8333 -p 9333:9333 \
+            chrislusf/seaweedfs:latest \
+            server -s3 -dir=/data
+
+          # Wait for SeaweedFS S3 endpoint to be ready
+          for i in $(seq 1 30); do
+            if curl -sf http://localhost:8333/ 2>/dev/null; then
+              echo "SeaweedFS S3 is ready"
+              break
+            fi
+            echo "Waiting for SeaweedFS... ($i/30)"
+            sleep 1
+          done
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Rust dependencies
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf libglib2.0-dev libgtk-3-dev libjavascriptcoregtk-4.1-dev libsoup-3.0-dev
+
+      - name: Run S3 integration tests against SeaweedFS
+        working-directory: src-tauri
+        env:
+          S3_TEST_ENDPOINT: http://localhost:8333
+          S3_TEST_ACCESS_KEY: ''
+          S3_TEST_SECRET_KEY: ''
+          S3_TEST_REGION: us-east-1
+        run: |
+          cargo test --test s3_integration -- --test-threads=4 \
+            --exact \
+            test_create_and_delete_bucket \
+            test_list_objects \
+            test_create_folder \
+            test_put_text_and_download_temp \
+            test_head_object \
+            test_delete_objects \
+            test_rename_object \
+            test_copy_same_bucket \
+            test_copy_cross_bucket \
+            test_copy_prefix \
+            test_upload_multipart \
+            test_enable_suspend_versioning \
+            test_list_versions \
+            test_download_version \
+            test_restore_version \
+            test_delete_version \
+            test_object_tags_roundtrip \
+            test_bucket_tags_roundtrip \
+            test_object_metadata_roundtrip \
+            test_object_metadata_content_type \
+            test_lifecycle_rules_roundtrip \
+            test_cors_roundtrip \
+            test_bucket_policy_roundtrip \
+            test_presign_url \
+            test_presign_url_fetch \
+            test_search_objects \
+            test_list_and_abort_multipart \
+            test_head_nonexistent_object \
+            test_delete_nonempty_bucket \
+            test_list_empty_bucket \
+            test_download_files \
+            test_upload_files \
+            test_encryption_roundtrip \
+            test_encryption_bucket_key
+
+      - name: Stop SeaweedFS
+        if: always()
+        run: docker rm -f seaweedfs || true

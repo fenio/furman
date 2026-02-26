@@ -1,0 +1,125 @@
+name: S3 Integration Tests (Garage)
+
+on:
+  push:
+    branches: [main]
+    paths: ['src-tauri/**']
+  pull_request:
+    branches: [main]
+    paths: ['src-tauri/**']
+
+jobs:
+  s3-garage-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Start Garage
+        run: |
+          mkdir -p /tmp/garage/data /tmp/garage/meta
+
+          cat > /tmp/garage/garage.toml << 'TOML'
+          metadata_dir = "/tmp/garage/meta"
+          data_dir = "/tmp/garage/data"
+          db_engine = "sqlite"
+          replication_factor = 1
+
+          [s3_api]
+          s3_region = "us-east-1"
+          api_bind_addr = "[::]:3900"
+          root_domain = ".s3.garage.localhost"
+
+          [s3_web]
+          bind_addr = "[::]:3902"
+          root_domain = ".web.garage.localhost"
+
+          [admin]
+          api_bind_addr = "[::]:3903"
+
+          [rpc]
+          bind_addr = "[::]:3901"
+          secret = "$(openssl rand -hex 32)"
+          TOML
+
+          docker run -d --name garage \
+            -p 3900:3900 -p 3901:3901 -p 3903:3903 \
+            -v /tmp/garage/garage.toml:/etc/garage.toml \
+            -v /tmp/garage/data:/tmp/garage/data \
+            -v /tmp/garage/meta:/tmp/garage/meta \
+            dxflrs/garage:v1.1.0
+
+          # Wait for Garage to be ready
+          for i in $(seq 1 30); do
+            if docker exec garage /garage status 2>/dev/null; then
+              echo "Garage is ready"
+              break
+            fi
+            echo "Waiting for Garage... ($i/30)"
+            sleep 1
+          done
+
+          # Get node ID and configure layout
+          NODE_ID=$(docker exec garage /garage status 2>&1 | grep -oP '[0-9a-f]{16}' | head -1)
+          docker exec garage /garage layout assign -z dc1 -c 1G "$NODE_ID"
+          docker exec garage /garage layout apply --version 1
+
+          # Create API key and capture credentials
+          KEY_OUTPUT=$(docker exec garage /garage key create garage-test-key 2>&1)
+          echo "Key output: $KEY_OUTPUT"
+
+          ACCESS_KEY=$(echo "$KEY_OUTPUT" | grep -oP 'GK[0-9a-f]+' | head -1)
+          SECRET_KEY=$(echo "$KEY_OUTPUT" | grep -i 'secret' | grep -oP '[0-9a-f]{64}' | head -1)
+
+          echo "GARAGE_ACCESS_KEY=$ACCESS_KEY" >> $GITHUB_ENV
+          echo "GARAGE_SECRET_KEY=$SECRET_KEY" >> $GITHUB_ENV
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Rust dependencies
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf libglib2.0-dev libgtk-3-dev libjavascriptcoregtk-4.1-dev libsoup-3.0-dev
+
+      - name: Run S3 integration tests against Garage
+        working-directory: src-tauri
+        env:
+          S3_TEST_ENDPOINT: http://localhost:3900
+          S3_TEST_ACCESS_KEY: ${{ env.GARAGE_ACCESS_KEY }}
+          S3_TEST_SECRET_KEY: ${{ env.GARAGE_SECRET_KEY }}
+          S3_TEST_REGION: us-east-1
+        run: |
+          cargo test --test s3_integration -- --test-threads=4 \
+            --exact \
+            test_create_and_delete_bucket \
+            test_list_objects \
+            test_create_folder \
+            test_put_text_and_download_temp \
+            test_head_object \
+            test_delete_objects \
+            test_rename_object \
+            test_copy_same_bucket \
+            test_copy_cross_bucket \
+            test_copy_prefix \
+            test_upload_multipart \
+            test_object_metadata_roundtrip \
+            test_object_metadata_content_type \
+            test_cors_roundtrip \
+            test_presign_url \
+            test_presign_url_fetch \
+            test_search_objects \
+            test_list_and_abort_multipart \
+            test_head_nonexistent_object \
+            test_delete_nonempty_bucket \
+            test_list_empty_bucket \
+            test_download_files \
+            test_upload_files
+
+      - name: Stop Garage
+        if: always()
+        run: docker rm -f garage || true
