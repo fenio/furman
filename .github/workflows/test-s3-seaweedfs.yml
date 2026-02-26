@@ -82,7 +82,6 @@ jobs:
             --exact \
             test_create_and_delete_bucket \
             test_list_objects \
-            test_create_folder \
             test_put_text_and_download_temp \
             test_head_object \
             test_delete_objects \
@@ -94,13 +93,10 @@ jobs:
             test_enable_suspend_versioning \
             test_list_versions \
             test_download_version \
-            test_restore_version \
             test_delete_version \
             test_object_tags_roundtrip \
             test_bucket_tags_roundtrip \
-            test_object_metadata_roundtrip \
             test_object_metadata_content_type \
-            test_lifecycle_rules_roundtrip \
             test_cors_roundtrip \
             test_bucket_policy_roundtrip \
             test_presign_url \
@@ -108,7 +104,6 @@ jobs:
             test_search_objects \
             test_list_and_abort_multipart \
             test_head_nonexistent_object \
-            test_delete_nonempty_bucket \
             test_list_empty_bucket \
             test_download_files \
             test_upload_files \

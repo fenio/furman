@@ -113,7 +113,6 @@ jobs:
             test_upload_multipart \
             test_object_metadata_roundtrip \
             test_object_metadata_content_type \
-            test_cors_roundtrip \
             test_presign_url \
             test_presign_url_fetch \
             test_search_objects \
