@@ -64,12 +64,15 @@ jobs:
           docker exec garage /garage layout assign -z dc1 -c 1G "$NODE_ID"
           docker exec garage /garage layout apply --version 1
 
-          # Create API key and capture credentials
+          # Create API key with bucket-creation permission and capture credentials
           KEY_OUTPUT=$(docker exec garage /garage key create garage-test-key 2>&1)
           echo "Key output: $KEY_OUTPUT"
 
           ACCESS_KEY=$(echo "$KEY_OUTPUT" | grep -oP 'GK[0-9a-f]+' | head -1)
           SECRET_KEY=$(echo "$KEY_OUTPUT" | grep -i 'secret' | grep -oP '[0-9a-f]{64}' | head -1)
+
+          # Grant the key permission to create buckets
+          docker exec garage /garage key allow "$ACCESS_KEY" --create-bucket
 
           echo "GARAGE_ACCESS_KEY=$ACCESS_KEY" >> $GITHUB_ENV
           echo "GARAGE_SECRET_KEY=$SECRET_KEY" >> $GITHUB_ENV

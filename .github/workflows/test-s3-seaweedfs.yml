@@ -16,10 +16,36 @@ jobs:
 
       - name: Start SeaweedFS
         run: |
+          # Configure IAM credentials for SeaweedFS
+          mkdir -p /tmp/seaweedfs
+          cat > /tmp/seaweedfs/s3.json <<'JSON'
+          {
+            "identities": [
+              {
+                "name": "test",
+                "credentials": [
+                  {
+                    "accessKey": "testkey",
+                    "secretKey": "testsecretkey0123456789"
+                  }
+                ],
+                "actions": [
+                  "Admin",
+                  "Read",
+                  "List",
+                  "Tagging",
+                  "Write"
+                ]
+              }
+            ]
+          }
+          JSON
+
           docker run -d --name seaweedfs \
             -p 8333:8333 -p 9333:9333 \
+            -v /tmp/seaweedfs/s3.json:/etc/seaweedfs/s3.json \
             chrislusf/seaweedfs:latest \
-            server -s3 -dir=/data
+            server -s3 -s3.config=/etc/seaweedfs/s3.json -dir=/data
 
           # Wait for SeaweedFS S3 endpoint to be ready
           for i in $(seq 1 30); do
@@ -48,8 +74,8 @@ jobs:
         working-directory: src-tauri
         env:
           S3_TEST_ENDPOINT: http://localhost:8333
-          S3_TEST_ACCESS_KEY: anonymous
-          S3_TEST_SECRET_KEY: anonymous
+          S3_TEST_ACCESS_KEY: testkey
+          S3_TEST_SECRET_KEY: testsecretkey0123456789
           S3_TEST_REGION: us-east-1
         run: |
           cargo test --test s3_integration -- --test-threads=4 \
