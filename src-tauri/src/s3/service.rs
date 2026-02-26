@@ -332,16 +332,19 @@ impl S3Service {
                 .get_object()
                 .bucket(&self.bucket)
                 .key(key)
+                .checksum_mode(aws_sdk_s3::types::ChecksumMode::Enabled)
                 .send()
                 .await
                 .map_err(|e| s3err(e.to_string()))?;
 
             let etag = resp.e_tag().map(|s| s.trim_matches('"').to_string());
+            let expected_crc32c = resp.checksum_crc32_c().map(|s| s.to_string());
             let obj_metadata: HashMap<String, String> = resp.metadata().cloned().unwrap_or_default();
             let expected_size = *_size;
             let mut body = resp.body;
             let mut file = tokio::fs::File::create(&local_path).await.map_err(FmError::Io)?;
             let mut hasher = md5::Context::new();
+            let mut crc_state: u32 = 0;
             let mut file_bytes: u64 = 0;
             let bytes_done_base = bytes_done;
 
@@ -349,6 +352,7 @@ impl S3Service {
                 match body.try_next().await {
                     Ok(Some(chunk)) => {
                         hasher.consume(&chunk);
+                        crc_state = crc32c::crc32c_append(crc_state, &chunk);
                         file.write_all(&chunk).await.map_err(FmError::Io)?;
                         file_bytes += chunk.len() as u64;
                         bytes_done = bytes_done_base + file_bytes;
@@ -373,10 +377,33 @@ impl S3Service {
             file.flush().await.map_err(FmError::Io)?;
             drop(file);
 
-            // Verify checksum against ETag
-            if let Some(ref etag_val) = etag {
+            // Verify integrity: prefer CRC32C, fall back to MD5/ETag, then size
+            if let Some(ref expected) = expected_crc32c {
+                if !expected.contains('-') {
+                    // Single-part CRC32C: compare base64-encoded value
+                    use base64::Engine;
+                    let computed = base64::engine::general_purpose::STANDARD
+                        .encode(crc_state.to_be_bytes());
+                    if computed != *expected {
+                        let _ = tokio::fs::remove_file(&local_path).await;
+                        return Err(s3err(format!(
+                            "CRC32C mismatch for '{}': expected {} got {}",
+                            key, expected, computed
+                        )));
+                    }
+                } else {
+                    // Composite multipart CRC32C (has -N suffix): size check only
+                    if expected_size > 0 && file_bytes != expected_size {
+                        let _ = tokio::fs::remove_file(&local_path).await;
+                        return Err(s3err(format!(
+                            "Size mismatch for '{}': expected {} got {}",
+                            key, expected_size, file_bytes
+                        )));
+                    }
+                }
+            } else if let Some(ref etag_val) = etag {
                 if !etag_val.contains('-') {
-                    // Single-part upload: ETag is the MD5 hex digest
+                    // No CRC32C available: fall back to MD5/ETag
                     let computed = format!("{:x}", hasher.compute());
                     if computed != *etag_val {
                         let _ = tokio::fs::remove_file(&local_path).await;
@@ -386,7 +413,7 @@ impl S3Service {
                         )));
                     }
                 } else {
-                    // Multipart upload: verify file size matches
+                    // Multipart without CRC32C: size check
                     if expected_size > 0 && file_bytes != expected_size {
                         let _ = tokio::fs::remove_file(&local_path).await;
                         return Err(s3err(format!(
@@ -526,6 +553,7 @@ impl S3Service {
                     .put_object()
                     .bucket(&self.bucket)
                     .key(key)
+                    .checksum_algorithm(aws_sdk_s3::types::ChecksumAlgorithm::Crc32C)
                     .body(data.into());
                 if let Some(meta) = metadata {
                     for (mk, mv) in meta {
@@ -678,6 +706,7 @@ impl S3Service {
                     .put_object()
                     .bucket(&self.bucket)
                     .key(key)
+                    .checksum_algorithm(aws_sdk_s3::types::ChecksumAlgorithm::Crc32C)
                     .body(data.into());
                 for (mk, mv) in &metadata {
                     req = req.metadata(mk, mv);

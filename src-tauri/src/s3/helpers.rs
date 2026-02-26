@@ -114,7 +114,7 @@ pub async fn upload_part_with_retry(
     offset: u64,
     length: u64,
     cancel_flag: &AtomicBool,
-) -> Result<(i32, String), FmError> {
+) -> Result<(i32, String, Option<String>), FmError> {
     use tokio::io::{AsyncReadExt, AsyncSeekExt};
 
     for attempt in 0..=PART_RETRIES {
@@ -136,6 +136,7 @@ pub async fn upload_part_with_retry(
             .key(key)
             .upload_id(upload_id)
             .part_number(part_number)
+            .checksum_algorithm(aws_sdk_s3::types::ChecksumAlgorithm::Crc32C)
             .body(buf.into())
             .send()
             .await;
@@ -146,8 +147,9 @@ pub async fn upload_part_with_retry(
                     .e_tag()
                     .ok_or_else(|| s3err("Missing ETag in upload_part response"))?
                     .to_string();
+                let crc32c = resp.checksum_crc32_c().map(|s| s.to_string());
                 throttle(length).await;
-                return Ok((part_number, etag));
+                return Ok((part_number, etag, crc32c));
             }
             Err(e) => {
                 if attempt < PART_RETRIES {
@@ -184,7 +186,8 @@ pub async fn upload_file_multipart(
     let mut create_req = client
         .create_multipart_upload()
         .bucket(bucket)
-        .key(key);
+        .key(key)
+        .checksum_algorithm(aws_sdk_s3::types::ChecksumAlgorithm::Crc32C);
     if let Some(meta) = metadata {
         for (k, v) in meta {
             create_req = create_req.metadata(k, v);
@@ -244,14 +247,14 @@ pub async fn upload_file_multipart(
             // Update progress atomically
             let new_bytes = bytes_done.fetch_add(length, Ordering::Relaxed) + length;
 
-            Ok::<((i32, String), u64), FmError>((result, new_bytes))
+            Ok::<((i32, String, Option<String>), u64), FmError>((result, new_bytes))
         });
 
         handles.push(handle);
     }
 
     // 4. Join all handles, collect results
-    let mut completed_parts: Vec<(i32, String)> = Vec::with_capacity(num_parts as usize);
+    let mut completed_parts: Vec<(i32, String, Option<String>)> = Vec::with_capacity(num_parts as usize);
     let mut first_error: Option<FmError> = None;
 
     for handle in handles {
@@ -286,15 +289,18 @@ pub async fn upload_file_multipart(
     }
 
     // 6. Sort parts by number → complete multipart upload
-    completed_parts.sort_by_key(|(num, _)| *num);
+    completed_parts.sort_by_key(|(num, _, _)| *num);
 
     let parts: Vec<_> = completed_parts
         .iter()
-        .map(|(num, etag)| {
-            aws_sdk_s3::types::CompletedPart::builder()
+        .map(|(num, etag, crc)| {
+            let mut b = aws_sdk_s3::types::CompletedPart::builder()
                 .part_number(*num)
-                .e_tag(etag)
-                .build()
+                .e_tag(etag);
+            if let Some(c) = crc {
+                b = b.checksum_crc32_c(c);
+            }
+            b.build()
         })
         .collect();
 
