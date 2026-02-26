@@ -17,13 +17,12 @@
   let { onClose, initialTab = 'saved', onConnect: onConnectProp }: Props = $props();
 
   let activeTab = $state(untrack(() => initialTab));
-  let view = $state<'list' | 'add' | 'edit'>('list');
+  let view = $state<'list' | 'edit'>('list');
   let editingProfile = $state<S3Profile | undefined>(undefined);
   let connectError = $state('');
 
   function handleAddNew() {
-    editingProfile = undefined;
-    view = 'add';
+    activeTab = 'connect';
   }
 
   function handleEdit(profile: S3Profile) {
@@ -134,14 +133,7 @@
   }
 </script>
 
-{#if view === 'add'}
-  <S3ConnectDialog
-    saveMode={true}
-    onConnect={handleConnect}
-    onCancel={handleDialogCancel}
-    onSave={handleSave}
-  />
-{:else if view === 'edit' && editingProfile}
+{#if view === 'edit' && editingProfile}
   <S3ConnectDialog
     saveMode={true}
     initialData={editingProfile}

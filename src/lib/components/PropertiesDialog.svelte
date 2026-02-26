@@ -12,7 +12,7 @@
     s3GetBucketCors, s3PutBucketCors,
     s3GetPublicAccessBlock, s3PutPublicAccessBlock,
     s3GetBucketPolicy, s3PutBucketPolicy,
-    s3GetBucketAcl,
+    s3GetBucketAcl, s3PresignUrl,
   } from '$lib/services/s3';
   import { invoke } from '@tauri-apps/api/core';
   import { formatSize, formatDate, formatPermissions } from '$lib/utils/format';
@@ -124,6 +124,33 @@
   let restoreTier = $state('Standard');
   let restoringGlacier = $state(false);
   let restoreMessage = $state('');
+
+  // Presigned URL
+  let presignExpiry = $state(3600);
+  let presignUrl = $state('');
+  let presignLoading = $state(false);
+  let presignCopied = $state(false);
+
+  async function generatePresignUrl() {
+    if (!s3Props) return;
+    presignLoading = true;
+    presignUrl = '';
+    presignCopied = false;
+    try {
+      presignUrl = await s3PresignUrl(s3ConnectionId, s3Props.key, presignExpiry);
+    } catch (err: unknown) {
+      presignUrl = `Error: ${err instanceof Error ? err.message : String(err)}`;
+    } finally {
+      presignLoading = false;
+    }
+  }
+
+  async function copyPresignUrl() {
+    if (!presignUrl || presignUrl.startsWith('Error')) return;
+    await navigator.clipboard.writeText(presignUrl);
+    presignCopied = true;
+    setTimeout(() => { presignCopied = false; }, 2000);
+  }
 
   // Versioning (object-level)
   let versionsExpanded = $state(false);
@@ -1072,9 +1099,9 @@
         </div>
 
         {#if objectTab === 'general'}
-          <!-- Storage Class editor -->
-          {#if storageClasses.length > 1}
+          <!-- Storage Class -->
           <div class="section-title">Storage Class</div>
+          {#if storageClasses.length > 1}
           <div class="storage-class-section">
             <div class="sc-row">
               <select class="sc-select" bind:value={selectedStorageClass}>
@@ -1094,6 +1121,8 @@
               <div class="sc-message" class:sc-error={classMessage.startsWith('Error')}>{classMessage}</div>
             {/if}
           </div>
+          {:else}
+          <div class="readonly-value">{s3Props.storage_class ?? 'STANDARD'}</div>
           {/if}
 
           <!-- Glacier restore (only for glacier classes) -->
@@ -1122,6 +1151,40 @@
               </div>
               {#if restoreMessage}
                 <div class="sc-message" class:sc-error={restoreMessage.startsWith('Error')}>{restoreMessage}</div>
+              {/if}
+            </div>
+          {/if}
+
+          <!-- Presigned URL -->
+          {#if caps.presignedUrls}
+            <div class="section-title">Presigned URL</div>
+            <div class="presign-section">
+              <div class="presign-row">
+                <label class="presign-label">
+                  Expires in:
+                  <select class="presign-select" bind:value={presignExpiry}>
+                    <option value={900}>15 minutes</option>
+                    <option value={3600}>1 hour</option>
+                    <option value={43200}>12 hours</option>
+                    <option value={86400}>24 hours</option>
+                    <option value={604800}>7 days</option>
+                  </select>
+                </label>
+                <button class="dialog-btn apply-btn" onclick={generatePresignUrl} disabled={presignLoading}>
+                  {presignLoading ? 'Generating...' : 'Generate'}
+                </button>
+              </div>
+              {#if presignUrl}
+                <div class="presign-result" class:sc-error={presignUrl.startsWith('Error')}>
+                  {#if !presignUrl.startsWith('Error')}
+                    <input class="presign-url" type="text" readonly value={presignUrl} onclick={(e) => (e.target as HTMLInputElement).select()} />
+                    <button class="dialog-btn copy-btn" onclick={copyPresignUrl}>
+                      {presignCopied ? 'Copied!' : 'Copy'}
+                    </button>
+                  {:else}
+                    <span class="sc-message sc-error">{presignUrl}</span>
+                  {/if}
+                </div>
               {/if}
             </div>
           {/if}
@@ -2142,6 +2205,72 @@
     font-size: 12px;
     color: var(--text-secondary);
     font-style: italic;
+  }
+
+  .readonly-value {
+    font-size: 12px;
+    color: var(--text-secondary);
+    padding: 2px 0 4px;
+  }
+
+  /* Presigned URL section */
+  .presign-section {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+
+  .presign-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .presign-label {
+    font-size: 12px;
+    color: var(--text-secondary);
+    display: flex;
+    align-items: center;
+    gap: 4px;
+  }
+
+  .presign-select {
+    padding: 4px 6px;
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--radius-sm);
+    background: var(--bg-surface);
+    color: var(--text-primary);
+    font-size: 12px;
+    font-family: inherit;
+  }
+
+  .presign-result {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+
+  .presign-url {
+    flex: 1;
+    padding: 4px 6px;
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--radius-sm);
+    background: var(--bg-surface);
+    color: var(--text-primary);
+    font-size: 11px;
+    font-family: var(--font-mono, monospace);
+    cursor: text;
+  }
+
+  .presign-url:focus {
+    outline: none;
+    border-color: var(--border-active);
+  }
+
+  .copy-btn {
+    padding: 4px 10px;
+    font-size: 11px;
+    white-space: nowrap;
   }
 
   /* Versions section */
