@@ -45,6 +45,7 @@ base64 = "0.22"
 keyring = { version = "3", features = ["apple-native"] }
 tokio = { version = "1", features = ["sync", "fs", "io-util", "time"] }
 urlencoding = "2"
+glob-match = "0.2"
 
 [dev-dependencies]
 tokio = { version = "1", features = ["full"] }

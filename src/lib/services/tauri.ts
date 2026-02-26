@@ -172,6 +172,8 @@ export async function syncDiff(
   destBackend: string,
   destPath: string,
   destS3Id: string,
+  excludePatterns: string[],
+  compareMode: string,
   onEvent: (e: SyncEvent) => void
 ): Promise<void> {
   const channel = new Channel<SyncEvent>();
@@ -184,6 +186,8 @@ export async function syncDiff(
     destBackend,
     destPath,
     destS3Id,
+    excludePatterns,
+    compareMode,
     channel,
   });
 }

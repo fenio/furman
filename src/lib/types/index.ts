@@ -97,6 +97,8 @@ export interface SyncEntry {
   dest_size: number;
   source_modified: number;
   dest_modified: number;
+  source_etag: string;
+  dest_etag: string;
 }
 
 export type SyncEvent =

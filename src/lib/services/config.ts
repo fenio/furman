@@ -21,6 +21,7 @@ export interface Config {
   secureTempCleanup: boolean;
   sortField: SortField;
   sortDirection: SortDirection;
+  syncExcludePatterns: string;
 }
 
 export const DEFAULT_CONFIG: Config = {
@@ -40,6 +41,7 @@ export const DEFAULT_CONFIG: Config = {
   secureTempCleanup: false,
   sortField: 'name',
   sortDirection: 'asc',
+  syncExcludePatterns: '.DS_Store, Thumbs.db, .git/**',
 };
 
 let configPath = '';

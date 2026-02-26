@@ -52,6 +52,7 @@ class AppState {
   syncDestPath = $state('');
   syncDestS3Id = $state('');
   secureTempCleanup = $state(false);
+  syncExcludePatterns = $state('.DS_Store, Thumbs.db, .git/**');
 
   showSearch(root: string, backend: PanelBackend = 'local', s3ConnectionId: string = '') {
     this.searchRoot = root;
@@ -183,6 +184,7 @@ class AppState {
     transfersState.bandwidthLimit = config.bandwidthLimit ?? 0;
     transfersState.maxConcurrent = config.maxConcurrent ?? 2;
     this.secureTempCleanup = config.secureTempCleanup ?? false;
+    this.syncExcludePatterns = config.syncExcludePatterns ?? '.DS_Store, Thumbs.db, .git/**';
     s3SetBandwidthLimit(transfersState.bandwidthLimit).catch(() => {});
   }
 
@@ -210,6 +212,7 @@ class AppState {
       secureTempCleanup: this.secureTempCleanup,
       sortField: this.sortField,
       sortDirection: this.sortDirection,
+      syncExcludePatterns: this.syncExcludePatterns,
     });
   }
 

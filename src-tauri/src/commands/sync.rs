@@ -1,7 +1,9 @@
 use crate::s3::S3State;
 use crate::models::{FmError, SyncEntry, SyncEvent};
+use glob_match::glob_match;
 use std::collections::HashMap;
 use std::fs;
+use std::io::Read;
 use std::path::Path;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
@@ -12,6 +14,9 @@ use tauri::State;
 // ── Managed state ───────────────────────────────────────────────────────
 
 pub struct SyncState(pub Mutex<HashMap<String, Arc<AtomicBool>>>);
+
+/// File info: (size, modified_ms, optional etag/md5)
+type FileInfo = (u64, i64, Option<String>);
 
 // ── Commands ────────────────────────────────────────────────────────────
 
@@ -24,6 +29,8 @@ pub async fn sync_diff(
     dest_backend: String,
     dest_path: String,
     dest_s3_id: String,
+    exclude_patterns: Vec<String>,
+    compare_mode: String,    // "size_mtime" | "checksum"
     channel: Channel<SyncEvent>,
     s3_state: State<'_, S3State>,
     sync_state: State<'_, SyncState>,
@@ -37,11 +44,14 @@ pub async fn sync_diff(
         map.insert(id.clone(), cancel_flag.clone());
     }
 
+    let use_checksum = compare_mode == "checksum";
+
     // Collect source files
-    let source_files = collect_files(
+    let mut source_files = collect_files(
         &source_backend,
         &source_path,
         &source_s3_id,
+        use_checksum,
         &s3_state,
     )
     .await?;
@@ -52,10 +62,11 @@ pub async fn sync_diff(
     }
 
     // Collect dest files
-    let dest_files = collect_files(
+    let mut dest_files = collect_files(
         &dest_backend,
         &dest_path,
         &dest_s3_id,
+        use_checksum,
         &s3_state,
     )
     .await?;
@@ -63,6 +74,12 @@ pub async fn sync_diff(
     if cancel_flag.load(Ordering::Relaxed) {
         cleanup(&sync_state, &id);
         return Ok(());
+    }
+
+    // Apply exclude filters
+    if !exclude_patterns.is_empty() {
+        apply_excludes(&mut source_files, &exclude_patterns);
+        apply_excludes(&mut dest_files, &exclude_patterns);
     }
 
     // Compare and stream entries
@@ -73,14 +90,23 @@ pub async fn sync_diff(
     let mut same_count: u32 = 0;
 
     // Keys in source
-    for (rel_path, (src_size, src_modified)) in &source_files {
+    for (rel_path, (src_size, src_modified, ref src_etag)) in &source_files {
         if cancel_flag.load(Ordering::Relaxed) {
             cleanup(&sync_state, &id);
             return Ok(());
         }
 
-        let entry = if let Some((dst_size, dst_modified)) = dest_files.get(rel_path) {
-            if src_size != dst_size || *src_modified > *dst_modified {
+        let entry = if let Some((dst_size, dst_modified, ref dst_etag)) = dest_files.get(rel_path) {
+            let is_modified = if use_checksum {
+                files_differ_checksum(
+                    *src_size, src_etag.as_deref(),
+                    *dst_size, dst_etag.as_deref(),
+                )
+            } else {
+                src_size != dst_size || *src_modified > *dst_modified
+            };
+
+            if is_modified {
                 modified += 1;
                 SyncEntry {
                     relative_path: rel_path.clone(),
@@ -89,6 +115,8 @@ pub async fn sync_diff(
                     dest_size: *dst_size,
                     source_modified: *src_modified,
                     dest_modified: *dst_modified,
+                    source_etag: src_etag.clone().unwrap_or_default(),
+                    dest_etag: dst_etag.clone().unwrap_or_default(),
                 }
             } else {
                 same_count += 1;
@@ -99,6 +127,8 @@ pub async fn sync_diff(
                     dest_size: *dst_size,
                     source_modified: *src_modified,
                     dest_modified: *dst_modified,
+                    source_etag: src_etag.clone().unwrap_or_default(),
+                    dest_etag: dst_etag.clone().unwrap_or_default(),
                 }
             }
         } else {
@@ -110,6 +140,8 @@ pub async fn sync_diff(
                 dest_size: 0,
                 source_modified: *src_modified,
                 dest_modified: 0,
+                source_etag: src_etag.clone().unwrap_or_default(),
+                dest_etag: String::new(),
             }
         };
 
@@ -122,7 +154,7 @@ pub async fn sync_diff(
     }
 
     // Keys only in dest (deleted from source perspective)
-    for (rel_path, (dst_size, dst_modified)) in &dest_files {
+    for (rel_path, (dst_size, dst_modified, ref dst_etag)) in &dest_files {
         if cancel_flag.load(Ordering::Relaxed) {
             cleanup(&sync_state, &id);
             return Ok(());
@@ -137,6 +169,8 @@ pub async fn sync_diff(
                 dest_size: *dst_size,
                 source_modified: 0,
                 dest_modified: *dst_modified,
+                source_etag: String::new(),
+                dest_etag: dst_etag.clone().unwrap_or_default(),
             };
             let _ = channel.send(SyncEvent::Entry(entry));
             scanned += 1;
@@ -179,34 +213,86 @@ fn cleanup(sync_state: &State<'_, SyncState>, id: &str) {
     }
 }
 
-/// Collect files from a backend into a HashMap of relative_path → (size, modified_ms).
+/// Remove entries whose relative paths match any exclude pattern.
+fn apply_excludes(files: &mut HashMap<String, FileInfo>, patterns: &[String]) {
+    files.retain(|rel_path, _| {
+        !patterns.iter().any(|pat| {
+            let pat = pat.trim();
+            if pat.is_empty() {
+                return false;
+            }
+            // Match against the full relative path
+            if glob_match(pat, rel_path) {
+                return true;
+            }
+            // Also match against just the filename component
+            if let Some(filename) = rel_path.rsplit('/').next() {
+                if glob_match(pat, filename) {
+                    return true;
+                }
+            }
+            false
+        })
+    });
+}
+
+/// Compare files in checksum mode. Handles S3 multipart ETags (contain '-')
+/// by falling back to size comparison.
+fn files_differ_checksum(
+    src_size: u64, src_etag: Option<&str>,
+    dst_size: u64, dst_etag: Option<&str>,
+) -> bool {
+    let src_tag = src_etag.unwrap_or("");
+    let dst_tag = dst_etag.unwrap_or("");
+
+    // If either tag is empty, fall back to size comparison
+    if src_tag.is_empty() || dst_tag.is_empty() {
+        return src_size != dst_size;
+    }
+
+    // S3 multipart ETags contain '-' (e.g. "abc123-5"), can't compare to local MD5
+    if src_tag.contains('-') || dst_tag.contains('-') {
+        return src_size != dst_size;
+    }
+
+    // Normalize: strip surrounding quotes that S3 adds to ETags
+    let src_clean = src_tag.trim_matches('"');
+    let dst_clean = dst_tag.trim_matches('"');
+
+    src_clean != dst_clean
+}
+
+/// Collect files from a backend into a HashMap of relative_path → (size, modified_ms, etag).
 async fn collect_files(
     backend: &str,
     path: &str,
     s3_id: &str,
+    use_checksum: bool,
     s3_state: &State<'_, S3State>,
-) -> Result<HashMap<String, (u64, i64)>, FmError> {
+) -> Result<HashMap<String, FileInfo>, FmError> {
     match backend {
-        "local" => collect_local_files_recursive(Path::new(path)),
+        "local" => collect_local_files_recursive(Path::new(path), use_checksum),
         "s3" => collect_s3_files(s3_id, path, s3_state).await,
         _ => Err(FmError::Other(format!("Unknown backend: {}", backend))),
     }
 }
 
-/// Recursively walk a local directory, returning relative paths with size and mtime.
+/// Recursively walk a local directory, returning relative paths with size, mtime, and optional MD5.
 fn collect_local_files_recursive(
     root: &Path,
-) -> Result<HashMap<String, (u64, i64)>, FmError> {
+    use_checksum: bool,
+) -> Result<HashMap<String, FileInfo>, FmError> {
     let mut result = HashMap::new();
     let root_str = root.to_string_lossy().to_string();
-    walk_local(root, &root_str, &mut result)?;
+    walk_local(root, &root_str, use_checksum, &mut result)?;
     Ok(result)
 }
 
 fn walk_local(
     dir: &Path,
     root: &str,
-    out: &mut HashMap<String, (u64, i64)>,
+    use_checksum: bool,
+    out: &mut HashMap<String, FileInfo>,
 ) -> Result<(), FmError> {
     let entries = match fs::read_dir(dir) {
         Ok(rd) => rd,
@@ -227,7 +313,7 @@ fn walk_local(
         }
 
         if metadata.is_dir() {
-            walk_local(&path, root, out)?;
+            walk_local(&path, root, use_checksum, out)?;
         } else {
             let full = path.to_string_lossy().to_string();
             // Build relative path by stripping root prefix
@@ -239,7 +325,7 @@ fn walk_local(
                     r.to_string()
                 }
             } else {
-                full
+                full.clone()
             };
 
             let size = metadata.len();
@@ -250,19 +336,43 @@ fn walk_local(
                 .map(|d| d.as_millis() as i64)
                 .unwrap_or(0);
 
-            out.insert(rel, (size, modified));
+            let md5_hex = if use_checksum {
+                compute_file_md5(&path).ok()
+            } else {
+                None
+            };
+
+            out.insert(rel, (size, modified, md5_hex));
         }
     }
 
     Ok(())
 }
 
-/// Collect S3 objects under a prefix, returning relative paths with size and mtime.
+/// Compute MD5 hex digest of a file using streaming 8KB reads.
+fn compute_file_md5(path: &Path) -> Result<String, FmError> {
+    let mut file = fs::File::open(path)?;
+    let mut context = md5::Context::new();
+    let mut buffer = [0u8; 8192];
+
+    loop {
+        let bytes_read = file.read(&mut buffer)?;
+        if bytes_read == 0 {
+            break;
+        }
+        context.consume(&buffer[..bytes_read]);
+    }
+
+    let digest = context.compute();
+    Ok(format!("{:x}", digest))
+}
+
+/// Collect S3 objects under a prefix, returning relative paths with size, mtime, and ETag.
 async fn collect_s3_files(
     s3_id: &str,
     path: &str,
     s3_state: &State<'_, S3State>,
-) -> Result<HashMap<String, (u64, i64)>, FmError> {
+) -> Result<HashMap<String, FileInfo>, FmError> {
     use aws_sdk_s3::Client as S3Client;
 
     // Extract bucket and prefix from s3://bucket/prefix/ path
@@ -291,7 +401,7 @@ async fn collect_s3_files(
     let objects = list_all_objects(&client, actual_bucket, &prefix).await?;
 
     let mut result = HashMap::new();
-    for (key, size, modified) in objects {
+    for (key, size, modified, etag) in objects {
         // Skip "directory" markers
         if key.ends_with('/') {
             continue;
@@ -308,7 +418,7 @@ async fn collect_s3_files(
             key
         };
         if !rel.is_empty() {
-            result.insert(rel, (size, modified));
+            result.insert(rel, (size, modified, etag));
         }
     }
 
@@ -333,11 +443,12 @@ fn parse_s3_path(path: &str) -> Result<(String, String), FmError> {
 }
 
 /// List ALL objects under a prefix (handles pagination).
+/// Returns (key, size, modified_ms, etag).
 async fn list_all_objects(
     client: &aws_sdk_s3::Client,
     bucket: &str,
     prefix: &str,
-) -> Result<Vec<(String, u64, i64)>, FmError> {
+) -> Result<Vec<(String, u64, i64, Option<String>)>, FmError> {
     let mut results = Vec::new();
     let mut continuation_token: Option<String> = None;
 
@@ -363,7 +474,8 @@ async fn list_all_objects(
                 .last_modified()
                 .and_then(|t| t.to_millis().ok())
                 .unwrap_or(0);
-            results.push((key, size, modified));
+            let etag = obj.e_tag().map(|s| s.to_string());
+            results.push((key, size, modified, etag));
         }
 
         if resp.is_truncated() == Some(true) {

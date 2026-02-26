@@ -1,6 +1,7 @@
 <script lang="ts">
   import { onMount, onDestroy } from 'svelte';
   import { syncDiff, cancelSync } from '$lib/services/tauri';
+  import { appState } from '$lib/state/app.svelte';
   import type { SyncEntry, SyncEvent, PanelBackend } from '$lib/types';
 
   interface Props {
@@ -33,6 +34,11 @@
   let cursorIndex = $state(0);
   let currentSyncId = $state('');
   let listEl: HTMLDivElement | undefined = $state(undefined);
+  let excludeInput: HTMLInputElement | undefined = $state(undefined);
+
+  // Options
+  let excludeText = $state(appState.syncExcludePatterns);
+  let compareMode = $state<'size_mtime' | 'checksum'>('size_mtime');
 
   // Summary counts
   let newCount = $state(0);
@@ -54,8 +60,21 @@
     }
   });
 
+  function parseExcludePatterns(): string[] {
+    return excludeText
+      .split(',')
+      .map((s) => s.trim())
+      .filter((s) => s.length > 0);
+  }
+
   function startScan() {
     const id = `sync-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+
+    // Cancel any existing scan
+    if (currentSyncId) {
+      cancelSync(currentSyncId).catch(() => {});
+    }
+
     currentSyncId = id;
     allEntries = [];
     selectedPaths = new Set();
@@ -65,6 +84,12 @@
     newCount = 0;
     modifiedCount = 0;
     deletedCount = 0;
+
+    // Persist exclude patterns
+    if (appState.syncExcludePatterns !== excludeText) {
+      appState.syncExcludePatterns = excludeText;
+      appState.persistConfig();
+    }
 
     const handleEvent = (event: SyncEvent) => {
       if (id !== currentSyncId) return;
@@ -92,6 +117,8 @@
       destBackend,
       destPath,
       destS3Id,
+      parseExcludePatterns(),
+      compareMode,
       handleEvent,
     ).catch(() => {
       if (id === currentSyncId) {
@@ -133,6 +160,15 @@
   }
 
   function handleKeydown(e: KeyboardEvent) {
+    // Don't intercept keys when typing in the exclude input
+    if (excludeInput && document.activeElement === excludeInput) {
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        excludeInput.blur();
+      }
+      return;
+    }
+
     if (e.key === 'Escape') {
       e.preventDefault();
       e.stopPropagation();
@@ -245,6 +281,33 @@
   <div class="dialog-box">
     <div class="dialog-title">Sync: {sourcePath} &rarr; {destPath}</div>
     <div class="dialog-body">
+      <!-- Options row -->
+      <div class="options-row">
+        <div class="option-group">
+          <label class="option-label" for="sync-exclude">Exclude:</label>
+          <input
+            id="sync-exclude"
+            type="text"
+            class="exclude-input"
+            bind:this={excludeInput}
+            bind:value={excludeText}
+            placeholder=".DS_Store, node_modules/**, *.tmp"
+          />
+        </div>
+        <div class="option-group">
+          <span class="option-label">Compare:</span>
+          <label class="radio-label">
+            <input type="radio" bind:group={compareMode} value="size_mtime" />
+            Size + Date
+          </label>
+          <label class="radio-label">
+            <input type="radio" bind:group={compareMode} value="checksum" />
+            Checksum <span class="hint">(slower)</span>
+          </label>
+        </div>
+        <button class="rescan-btn" onclick={startScan} disabled={scanning}>Rescan</button>
+      </div>
+
       <!-- Filter buttons -->
       <div class="filter-row">
         <button
@@ -317,7 +380,7 @@
     <div class="dialog-footer">
       <span class="status-text">
         {#if scanning}
-          Scanning... ({allEntries.length} files)
+          Scanning{compareMode === 'checksum' ? ' (checksumming)' : ''}... ({allEntries.length} files)
         {:else if scanComplete}
           {filterCount('new')} new, {filterCount('modified')} modified, {filterCount('deleted')} deleted &mdash; {selectedPaths.size} selected
         {/if}
@@ -385,6 +448,91 @@
     flex: 1;
     min-height: 0;
     overflow-y: auto;
+  }
+
+  /* Options row */
+  .options-row {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    padding: 10px 12px;
+    background: var(--bg-surface);
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--radius-sm);
+  }
+
+  .option-group {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .option-label {
+    font-size: 12px;
+    color: var(--text-secondary);
+    flex-shrink: 0;
+    min-width: 60px;
+  }
+
+  .exclude-input {
+    flex: 1;
+    padding: 4px 8px;
+    font-size: 12px;
+    font-family: inherit;
+    background: var(--bg-primary);
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--radius-sm);
+    color: var(--text-primary);
+    outline: none;
+  }
+
+  .exclude-input:focus {
+    border-color: var(--text-accent);
+  }
+
+  .exclude-input::placeholder {
+    color: var(--text-secondary);
+    opacity: 0.5;
+  }
+
+  .radio-label {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    font-size: 12px;
+    color: var(--text-primary);
+    cursor: pointer;
+  }
+
+  .radio-label input[type="radio"] {
+    cursor: pointer;
+  }
+
+  .hint {
+    color: var(--text-secondary);
+    font-size: 11px;
+  }
+
+  .rescan-btn {
+    align-self: flex-end;
+    padding: 4px 14px;
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--radius-sm);
+    background: var(--bg-surface);
+    color: var(--text-accent);
+    cursor: pointer;
+    font-size: 12px;
+    font-family: inherit;
+  }
+
+  .rescan-btn:hover:not(:disabled) {
+    background: var(--bg-hover);
+    border-color: var(--text-accent);
+  }
+
+  .rescan-btn:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
   }
 
   /* Filter row */
