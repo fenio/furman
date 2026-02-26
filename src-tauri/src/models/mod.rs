@@ -352,6 +352,31 @@ pub struct S3BucketAcl {
     pub grants: Vec<S3AclGrant>,
 }
 
+// ── S3BucketWebsite ───────────────────────────────────────────────────
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct S3BucketWebsite {
+    pub enabled: bool,
+    pub index_document: String,
+    pub error_document: Option<String>,
+}
+
+// ── S3BucketLogging ──────────────────────────────────────────────────
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct S3BucketLogging {
+    pub enabled: bool,
+    pub target_bucket: Option<String>,
+    pub target_prefix: Option<String>,
+}
+
+// ── S3BucketOwnership ────────────────────────────────────────────────
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct S3BucketOwnership {
+    pub object_ownership: String, // "BucketOwnerEnforced" | "BucketOwnerPreferred" | "ObjectWriter"
+}
+
 // ── Display impls ───────────────────────────────────────────────────────────
 
 impl fmt::Display for ProgressEvent {

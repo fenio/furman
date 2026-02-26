@@ -487,6 +487,10 @@
               <label class="caps-checkbox"><input type="checkbox" bind:checked={customCaps.objectTags} /> Object Tags</label>
               <label class="caps-checkbox"><input type="checkbox" bind:checked={customCaps.bucketTags} /> Bucket Tags</label>
               <label class="caps-checkbox"><input type="checkbox" bind:checked={customCaps.multipartUploadCleanup} /> Multipart Cleanup</label>
+              <label class="caps-checkbox"><input type="checkbox" bind:checked={customCaps.websiteHosting} /> Website Hosting</label>
+              <label class="caps-checkbox"><input type="checkbox" bind:checked={customCaps.requesterPays} /> Requester Pays</label>
+              <label class="caps-checkbox"><input type="checkbox" bind:checked={customCaps.objectOwnership} /> Object Ownership</label>
+              <label class="caps-checkbox"><input type="checkbox" bind:checked={customCaps.serverAccessLogging} /> Access Logging</label>
             </div>
           {/if}
         </div>

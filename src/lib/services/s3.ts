@@ -399,6 +399,46 @@ export async function s3PutBucketEncryption(
   });
 }
 
+// ── Static Website Hosting ──────────────────────────────────────────────
+
+export async function s3GetBucketWebsite(id: string): Promise<import('$lib/types').S3BucketWebsite> {
+  return await invoke<import('$lib/types').S3BucketWebsite>('s3_get_bucket_website', { id });
+}
+
+export async function s3PutBucketWebsite(id: string, config: import('$lib/types').S3BucketWebsite): Promise<void> {
+  await invoke('s3_put_bucket_website', { id, config });
+}
+
+// ── Requester Pays ─────────────────────────────────────────────────────
+
+export async function s3GetRequestPayment(id: string): Promise<boolean> {
+  return await invoke<boolean>('s3_get_request_payment', { id });
+}
+
+export async function s3PutRequestPayment(id: string, requesterPays: boolean): Promise<void> {
+  await invoke('s3_put_request_payment', { id, requesterPays });
+}
+
+// ── Object Ownership ───────────────────────────────────────────────────
+
+export async function s3GetBucketOwnership(id: string): Promise<import('$lib/types').S3BucketOwnership> {
+  return await invoke<import('$lib/types').S3BucketOwnership>('s3_get_bucket_ownership', { id });
+}
+
+export async function s3PutBucketOwnership(id: string, ownership: string): Promise<void> {
+  await invoke('s3_put_bucket_ownership', { id, ownership });
+}
+
+// ── Server Access Logging ──────────────────────────────────────────────
+
+export async function s3GetBucketLogging(id: string): Promise<import('$lib/types').S3BucketLogging> {
+  return await invoke<import('$lib/types').S3BucketLogging>('s3_get_bucket_logging', { id });
+}
+
+export async function s3PutBucketLogging(id: string, config: import('$lib/types').S3BucketLogging): Promise<void> {
+  await invoke('s3_put_bucket_logging', { id, config });
+}
+
 // ── Bandwidth Throttling ────────────────────────────────────────────────────
 
 export async function s3SetBandwidthLimit(bytesPerSec: number): Promise<void> {

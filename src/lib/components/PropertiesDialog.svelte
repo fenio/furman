@@ -14,6 +14,10 @@
     s3GetBucketPolicy, s3PutBucketPolicy,
     s3GetBucketAcl, s3PutBucketAcl, s3PresignUrl,
     s3PutBucketEncryption,
+    s3GetBucketWebsite, s3PutBucketWebsite,
+    s3GetRequestPayment, s3PutRequestPayment,
+    s3GetBucketOwnership, s3PutBucketOwnership,
+    s3GetBucketLogging, s3PutBucketLogging,
   } from '$lib/services/s3';
   import { invoke } from '@tauri-apps/api/core';
   import { formatSize, formatDate, formatPermissions } from '$lib/utils/format';
@@ -21,7 +25,7 @@
     FileProperties, S3ObjectProperties, S3ObjectVersion, PanelBackend,
     S3BucketVersioning, S3BucketEncryption, S3Tag, S3MultipartUpload,
     S3ObjectMetadata, S3LifecycleRule, S3CorsRule, S3PublicAccessBlock, S3BucketAcl,
-    S3ProviderCapabilities,
+    S3ProviderCapabilities, S3BucketWebsite, S3BucketLogging, S3BucketOwnership,
   } from '$lib/types';
 
   interface Props {
@@ -42,6 +46,7 @@
     storageClasses: ALL_CLASSES,
     glacierRestore: true, presignedUrls: true, objectMetadata: true,
     objectTags: true, bucketTags: true, multipartUploadCleanup: true,
+    websiteHosting: true, requesterPays: true, objectOwnership: true, serverAccessLogging: true,
   };
 
   let fileProps = $state<FileProperties | null>(null);
@@ -255,6 +260,37 @@
   let encEditBucketKey = $state(false);
   let savingEncryption = $state(false);
   let encryptionMessage = $state('');
+
+  // Bucket-level: Static Website Hosting
+  let bucketWebsite = $state<S3BucketWebsite | null>(null);
+  let websiteLoading = $state(false);
+  let websiteMessage = $state('');
+  let savingWebsite = $state(false);
+  let wsEnabled = $state(false);
+  let wsIndexDoc = $state('index.html');
+  let wsErrorDoc = $state('');
+
+  // Bucket-level: Requester Pays
+  let requesterPays = $state(false);
+  let requesterPaysLoading = $state(false);
+  let requesterPaysMessage = $state('');
+  let savingRequesterPays = $state(false);
+
+  // Bucket-level: Object Ownership
+  let bucketOwnership = $state<S3BucketOwnership | null>(null);
+  let ownershipLoading = $state(false);
+  let ownershipMessage = $state('');
+  let savingOwnership = $state(false);
+  let selectedOwnership = $state('BucketOwnerEnforced');
+
+  // Bucket-level: Server Access Logging
+  let bucketLogging = $state<S3BucketLogging | null>(null);
+  let loggingLoading = $state(false);
+  let loggingMessage = $state('');
+  let savingLogging = $state(false);
+  let logEnabled = $state(false);
+  let logTargetBucket = $state('');
+  let logTargetPrefix = $state('');
 
   // Object-level: Metadata
   let metadataExpanded = $state(false);
@@ -799,6 +835,88 @@
     }
   }
 
+  // ── Bucket-level: Website Hosting ────────────────────────────────────
+
+  async function saveWebsite() {
+    if (savingWebsite) return;
+    savingWebsite = true;
+    websiteMessage = '';
+    try {
+      await s3PutBucketWebsite(s3ConnectionId, {
+        enabled: wsEnabled,
+        index_document: wsIndexDoc || 'index.html',
+        error_document: wsErrorDoc || null,
+      });
+      websiteMessage = wsEnabled ? 'Website hosting enabled' : 'Website hosting disabled';
+      bucketWebsite = await s3GetBucketWebsite(s3ConnectionId);
+      wsEnabled = bucketWebsite.enabled;
+      wsIndexDoc = bucketWebsite.index_document || 'index.html';
+      wsErrorDoc = bucketWebsite.error_document ?? '';
+    } catch (err: unknown) {
+      websiteMessage = 'Error: ' + String(err);
+    } finally {
+      savingWebsite = false;
+    }
+  }
+
+  // ── Bucket-level: Requester Pays ───────────────────────────────────
+
+  async function saveRequesterPays() {
+    if (savingRequesterPays) return;
+    savingRequesterPays = true;
+    requesterPaysMessage = '';
+    try {
+      await s3PutRequestPayment(s3ConnectionId, requesterPays);
+      requesterPaysMessage = requesterPays ? 'Requester pays enabled' : 'Requester pays disabled';
+    } catch (err: unknown) {
+      requesterPaysMessage = 'Error: ' + String(err);
+    } finally {
+      savingRequesterPays = false;
+    }
+  }
+
+  // ── Bucket-level: Object Ownership ─────────────────────────────────
+
+  async function saveOwnership() {
+    if (savingOwnership) return;
+    savingOwnership = true;
+    ownershipMessage = '';
+    try {
+      await s3PutBucketOwnership(s3ConnectionId, selectedOwnership);
+      ownershipMessage = 'Ownership updated';
+      bucketOwnership = await s3GetBucketOwnership(s3ConnectionId);
+      selectedOwnership = bucketOwnership.object_ownership;
+    } catch (err: unknown) {
+      ownershipMessage = 'Error: ' + String(err);
+    } finally {
+      savingOwnership = false;
+    }
+  }
+
+  // ── Bucket-level: Server Access Logging ────────────────────────────
+
+  async function saveLogging() {
+    if (savingLogging) return;
+    savingLogging = true;
+    loggingMessage = '';
+    try {
+      await s3PutBucketLogging(s3ConnectionId, {
+        enabled: logEnabled,
+        target_bucket: logEnabled ? (logTargetBucket || null) : null,
+        target_prefix: logEnabled ? (logTargetPrefix || null) : null,
+      });
+      loggingMessage = logEnabled ? 'Logging enabled' : 'Logging disabled';
+      bucketLogging = await s3GetBucketLogging(s3ConnectionId);
+      logEnabled = bucketLogging.enabled;
+      logTargetBucket = bucketLogging.target_bucket ?? '';
+      logTargetPrefix = bucketLogging.target_prefix ?? '';
+    } catch (err: unknown) {
+      loggingMessage = 'Error: ' + String(err);
+    } finally {
+      savingLogging = false;
+    }
+  }
+
   // ── Object-level: Metadata functions ────────────────────────────────────
 
   async function loadMetadata() {
@@ -1010,6 +1128,55 @@
                 .then(a => { bucketAcl = a; })
                 .catch(err => { aclError = String(err); })
                 .finally(() => { aclLoading = false; })
+            );
+          }
+          if (caps.websiteHosting) {
+            websiteLoading = true;
+            bucketLoads.push(
+              s3GetBucketWebsite(s3ConnectionId)
+                .then(w => {
+                  bucketWebsite = w;
+                  wsEnabled = w.enabled;
+                  wsIndexDoc = w.index_document || 'index.html';
+                  wsErrorDoc = w.error_document ?? '';
+                })
+                .catch(err => { websiteMessage = 'Error: ' + String(err); })
+                .finally(() => { websiteLoading = false; })
+            );
+          }
+          if (caps.requesterPays) {
+            requesterPaysLoading = true;
+            bucketLoads.push(
+              s3GetRequestPayment(s3ConnectionId)
+                .then(rp => { requesterPays = rp; })
+                .catch(err => { requesterPaysMessage = 'Error: ' + String(err); })
+                .finally(() => { requesterPaysLoading = false; })
+            );
+          }
+          if (caps.objectOwnership) {
+            ownershipLoading = true;
+            bucketLoads.push(
+              s3GetBucketOwnership(s3ConnectionId)
+                .then(o => {
+                  bucketOwnership = o;
+                  selectedOwnership = o.object_ownership;
+                })
+                .catch(err => { ownershipMessage = 'Error: ' + String(err); })
+                .finally(() => { ownershipLoading = false; })
+            );
+          }
+          if (caps.serverAccessLogging) {
+            loggingLoading = true;
+            bucketLoads.push(
+              s3GetBucketLogging(s3ConnectionId)
+                .then(l => {
+                  bucketLogging = l;
+                  logEnabled = l.enabled;
+                  logTargetBucket = l.target_bucket ?? '';
+                  logTargetPrefix = l.target_prefix ?? '';
+                })
+                .catch(err => { loggingMessage = 'Error: ' + String(err); })
+                .finally(() => { loggingLoading = false; })
             );
           }
           Promise.all(bucketLoads).catch(() => {}).finally(() => {
@@ -1476,6 +1643,138 @@
                   </button>
                   {#if encryptionMessage}
                     <span class="sc-message" class:sc-error={encryptionMessage.startsWith('Error')}>{encryptionMessage}</span>
+                  {/if}
+                </div>
+              </div>
+            {/if}
+          </div>
+
+          {/if}
+
+          <!-- Static Website Hosting -->
+          {#if bucketTab === 'general' && caps.websiteHosting}
+          <div class="section-title">Static Website Hosting</div>
+          <div class="storage-class-section">
+            {#if websiteLoading}
+              <div class="loading">Loading...</div>
+            {:else}
+              <div class="tag-editor">
+                <div class="meta-row">
+                  <span class="meta-label">Hosting</span>
+                  <label class="pab-toggle">
+                    <input type="checkbox" bind:checked={wsEnabled} />
+                    <span>{wsEnabled ? 'Enabled' : 'Disabled'}</span>
+                  </label>
+                </div>
+                {#if wsEnabled}
+                  <div class="meta-row">
+                    <span class="meta-label">Index Document</span>
+                    <input type="text" class="meta-input" bind:value={wsIndexDoc} placeholder="index.html" />
+                  </div>
+                  <div class="meta-row">
+                    <span class="meta-label">Error Document</span>
+                    <input type="text" class="meta-input" bind:value={wsErrorDoc} placeholder="error.html (optional)" />
+                  </div>
+                {/if}
+                <div class="tag-actions">
+                  <button class="dialog-btn primary" onclick={saveWebsite} disabled={savingWebsite}>
+                    {savingWebsite ? 'Saving...' : 'Save'}
+                  </button>
+                  {#if websiteMessage}
+                    <span class="sc-message" class:sc-error={websiteMessage.startsWith('Error')}>{websiteMessage}</span>
+                  {/if}
+                </div>
+              </div>
+            {/if}
+          </div>
+
+          {/if}
+
+          <!-- Requester Pays -->
+          {#if bucketTab === 'general' && caps.requesterPays}
+          <div class="section-title">Requester Pays</div>
+          <div class="storage-class-section">
+            {#if requesterPaysLoading}
+              <div class="loading">Loading...</div>
+            {:else}
+              <div class="sc-row">
+                <label class="pab-toggle">
+                  <input type="checkbox" bind:checked={requesterPays} />
+                  <span>{requesterPays ? 'Enabled — requesters pay for requests and data transfer' : 'Disabled — bucket owner pays'}</span>
+                </label>
+                <button class="dialog-btn apply-btn" onclick={saveRequesterPays} disabled={savingRequesterPays}>
+                  {savingRequesterPays ? 'Saving...' : 'Save'}
+                </button>
+              </div>
+              {#if requesterPaysMessage}
+                <div class="sc-message" class:sc-error={requesterPaysMessage.startsWith('Error')}>{requesterPaysMessage}</div>
+              {/if}
+            {/if}
+          </div>
+
+          {/if}
+
+          <!-- Object Ownership -->
+          {#if bucketTab === 'security' && caps.objectOwnership}
+          <div class="section-title">Object Ownership</div>
+          <div class="storage-class-section">
+            {#if ownershipLoading}
+              <div class="loading">Loading...</div>
+            {:else}
+              <div class="tag-editor">
+                <div class="meta-row">
+                  <span class="meta-label">Ownership</span>
+                  <select class="meta-input" bind:value={selectedOwnership}>
+                    <option value="BucketOwnerEnforced">Bucket owner enforced (ACLs disabled)</option>
+                    <option value="BucketOwnerPreferred">Bucket owner preferred</option>
+                    <option value="ObjectWriter">Object writer</option>
+                  </select>
+                </div>
+                <div class="tag-actions">
+                  <button class="dialog-btn primary" onclick={saveOwnership} disabled={savingOwnership}>
+                    {savingOwnership ? 'Saving...' : 'Save'}
+                  </button>
+                  {#if ownershipMessage}
+                    <span class="sc-message" class:sc-error={ownershipMessage.startsWith('Error')}>{ownershipMessage}</span>
+                  {/if}
+                </div>
+              </div>
+            {/if}
+          </div>
+
+          {/if}
+
+          <!-- Server Access Logging -->
+          {#if bucketTab === 'general' && caps.serverAccessLogging}
+          <div class="section-title">Server Access Logging</div>
+          <div class="storage-class-section">
+            {#if loggingLoading}
+              <div class="loading">Loading...</div>
+            {:else}
+              <div class="tag-editor">
+                <div class="meta-row">
+                  <span class="meta-label">Logging</span>
+                  <label class="pab-toggle">
+                    <input type="checkbox" bind:checked={logEnabled} />
+                    <span>{logEnabled ? 'Enabled' : 'Disabled'}</span>
+                  </label>
+                </div>
+                {#if logEnabled}
+                  <div class="meta-row">
+                    <span class="meta-label">Target Bucket</span>
+                    <input type="text" class="meta-input" bind:value={logTargetBucket} placeholder="my-log-bucket" />
+                  </div>
+                  <div class="meta-row">
+                    <span class="meta-label">Target Prefix</span>
+                    <input type="text" class="meta-input" bind:value={logTargetPrefix} placeholder="logs/ (optional)" />
+                  </div>
+                {/if}
+                <div class="tag-actions">
+                  <button class="dialog-btn primary" onclick={saveLogging} disabled={savingLogging}>
+                    {savingLogging ? 'Saving...' : 'Save'}
+                  </button>
+                  {#if loggingMessage}
+                    <span class="sc-message" class:sc-error={loggingMessage.startsWith('Error')}>{loggingMessage}</span>
                   {/if}
                 </div>
               </div>

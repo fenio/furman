@@ -9,9 +9,10 @@ use tokio::io::AsyncWriteExt;
 
 use crate::models::{
     DirListing, FileEntry, FmError, ProgressEvent, S3AclGrant, S3BucketAcl, S3BucketEncryption,
-    S3BucketVersioning, S3CorsRule, S3EncryptionRule, S3LifecycleRule, S3LifecycleTransition,
-    S3MultipartUpload, S3ObjectMetadata, S3ObjectProperties, S3ObjectVersion, S3PublicAccessBlock,
-    S3Tag, SearchDone, SearchEvent, SearchResult, TransferCheckpoint,
+    S3BucketLogging, S3BucketOwnership, S3BucketVersioning, S3BucketWebsite, S3CorsRule,
+    S3EncryptionRule, S3LifecycleRule, S3LifecycleTransition, S3MultipartUpload, S3ObjectMetadata,
+    S3ObjectProperties, S3ObjectVersion, S3PublicAccessBlock, S3Tag, SearchDone, SearchEvent,
+    SearchResult, TransferCheckpoint,
 };
 
 use super::helpers::*;
@@ -2221,6 +2222,263 @@ impl S3Service {
             .send()
             .await
             .map_err(|e| s3err(e.to_string()))?;
+        Ok(())
+    }
+
+    // ── Static Website Hosting ──────────────────────────────────────────
+
+    /// Get static website hosting configuration.
+    pub async fn get_bucket_website(&self) -> Result<S3BucketWebsite, FmError> {
+        let resp = self.client.get_bucket_website().bucket(&self.bucket).send().await;
+
+        match resp {
+            Ok(r) => {
+                let index = r
+                    .index_document()
+                    .map(|d| d.suffix().to_string())
+                    .unwrap_or_else(|| "index.html".to_string());
+                let error_doc = r
+                    .error_document()
+                    .map(|d| d.key().to_string());
+                Ok(S3BucketWebsite {
+                    enabled: true,
+                    index_document: index,
+                    error_document: error_doc,
+                })
+            }
+            Err(e) => {
+                let err_str = e.to_string();
+                let err_dbg = format!("{e:?}");
+                if err_str.contains("NoSuchWebsiteConfiguration")
+                    || err_dbg.contains("NoSuchWebsiteConfiguration")
+                    || err_dbg.contains("StatusCode(404)")
+                {
+                    Ok(S3BucketWebsite {
+                        enabled: false,
+                        index_document: String::new(),
+                        error_document: None,
+                    })
+                } else {
+                    Err(s3err(err_str))
+                }
+            }
+        }
+    }
+
+    /// Set or delete static website hosting configuration.
+    pub async fn put_bucket_website(&self, config: &S3BucketWebsite) -> Result<(), FmError> {
+        if !config.enabled {
+            self.client
+                .delete_bucket_website()
+                .bucket(&self.bucket)
+                .send()
+                .await
+                .map_err(|e| s3err(e.to_string()))?;
+            return Ok(());
+        }
+
+        let index_doc = aws_sdk_s3::types::IndexDocument::builder()
+            .suffix(&config.index_document)
+            .build()
+            .map_err(|e| s3err(e.to_string()))?;
+
+        let mut website_builder =
+            aws_sdk_s3::types::WebsiteConfiguration::builder().index_document(index_doc);
+
+        if let Some(error_key) = &config.error_document {
+            if !error_key.is_empty() {
+                let error_doc = aws_sdk_s3::types::ErrorDocument::builder()
+                    .key(error_key)
+                    .build()
+                    .map_err(|e| s3err(e.to_string()))?;
+                website_builder = website_builder.error_document(error_doc);
+            }
+        }
+
+        let website_config = website_builder.build();
+
+        self.client
+            .put_bucket_website()
+            .bucket(&self.bucket)
+            .website_configuration(website_config)
+            .send()
+            .await
+            .map_err(|e| s3err(e.to_string()))?;
+
+        Ok(())
+    }
+
+    // ── Requester Pays ───────────────────────────────────────────────────
+
+    /// Get requester pays configuration.
+    pub async fn get_request_payment(&self) -> Result<bool, FmError> {
+        let resp = self
+            .client
+            .get_bucket_request_payment()
+            .bucket(&self.bucket)
+            .send()
+            .await
+            .map_err(|e| s3err(e.to_string()))?;
+
+        Ok(resp.payer() == Some(&aws_sdk_s3::types::Payer::Requester))
+    }
+
+    /// Set requester pays configuration.
+    pub async fn put_request_payment(&self, requester_pays: bool) -> Result<(), FmError> {
+        let payer = if requester_pays {
+            aws_sdk_s3::types::Payer::Requester
+        } else {
+            aws_sdk_s3::types::Payer::BucketOwner
+        };
+
+        let config = aws_sdk_s3::types::RequestPaymentConfiguration::builder()
+            .payer(payer)
+            .build()
+            .map_err(|e| s3err(e.to_string()))?;
+
+        self.client
+            .put_bucket_request_payment()
+            .bucket(&self.bucket)
+            .request_payment_configuration(config)
+            .send()
+            .await
+            .map_err(|e| s3err(e.to_string()))?;
+
+        Ok(())
+    }
+
+    // ── Object Ownership ──────────────────────────────────────────────────
+
+    /// Get bucket ownership controls.
+    pub async fn get_bucket_ownership(&self) -> Result<S3BucketOwnership, FmError> {
+        let resp = self
+            .client
+            .get_bucket_ownership_controls()
+            .bucket(&self.bucket)
+            .send()
+            .await;
+
+        match resp {
+            Ok(r) => {
+                let ownership = r
+                    .ownership_controls()
+                    .and_then(|oc| oc.rules().first())
+                    .map(|rule| rule.object_ownership().as_str().to_string())
+                    .unwrap_or_else(|| "BucketOwnerEnforced".to_string());
+                Ok(S3BucketOwnership {
+                    object_ownership: ownership,
+                })
+            }
+            Err(e) => {
+                let err_str = e.to_string();
+                let err_dbg = format!("{e:?}");
+                if err_str.contains("OwnershipControlsNotFoundError")
+                    || err_dbg.contains("OwnershipControlsNotFoundError")
+                    || err_dbg.contains("StatusCode(404)")
+                {
+                    Ok(S3BucketOwnership {
+                        object_ownership: "BucketOwnerEnforced".to_string(),
+                    })
+                } else {
+                    Err(s3err(err_str))
+                }
+            }
+        }
+    }
+
+    /// Set bucket ownership controls.
+    pub async fn put_bucket_ownership(&self, ownership: &str) -> Result<(), FmError> {
+        use aws_sdk_s3::types::ObjectOwnership;
+
+        let oo = match ownership {
+            "BucketOwnerEnforced" => ObjectOwnership::BucketOwnerEnforced,
+            "BucketOwnerPreferred" => ObjectOwnership::BucketOwnerPreferred,
+            "ObjectWriter" => ObjectOwnership::ObjectWriter,
+            other => return Err(s3err(format!("Unknown ownership: {}", other))),
+        };
+
+        let rule = aws_sdk_s3::types::OwnershipControlsRule::builder()
+            .object_ownership(oo)
+            .build()
+            .map_err(|e| s3err(e.to_string()))?;
+
+        let controls = aws_sdk_s3::types::OwnershipControls::builder()
+            .rules(rule)
+            .build()
+            .map_err(|e| s3err(e.to_string()))?;
+
+        self.client
+            .put_bucket_ownership_controls()
+            .bucket(&self.bucket)
+            .ownership_controls(controls)
+            .send()
+            .await
+            .map_err(|e| s3err(e.to_string()))?;
+
+        Ok(())
+    }
+
+    // ── Server Access Logging ─────────────────────────────────────────────
+
+    /// Get server access logging configuration.
+    pub async fn get_bucket_logging(&self) -> Result<S3BucketLogging, FmError> {
+        let resp = self
+            .client
+            .get_bucket_logging()
+            .bucket(&self.bucket)
+            .send()
+            .await
+            .map_err(|e| s3err(e.to_string()))?;
+
+        if let Some(le) = resp.logging_enabled() {
+            let tb = le.target_bucket().to_string();
+            let tp = le.target_prefix().to_string();
+            Ok(S3BucketLogging {
+                enabled: true,
+                target_bucket: if tb.is_empty() { None } else { Some(tb) },
+                target_prefix: if tp.is_empty() { None } else { Some(tp) },
+            })
+        } else {
+            Ok(S3BucketLogging {
+                enabled: false,
+                target_bucket: None,
+                target_prefix: None,
+            })
+        }
+    }
+
+    /// Set or disable server access logging.
+    pub async fn put_bucket_logging(&self, config: &S3BucketLogging) -> Result<(), FmError> {
+        let mut status_builder = aws_sdk_s3::types::BucketLoggingStatus::builder();
+
+        if config.enabled {
+            let target_bucket = config
+                .target_bucket
+                .as_deref()
+                .ok_or_else(|| s3err("Target bucket is required when enabling logging"))?;
+
+            let mut logging = aws_sdk_s3::types::LoggingEnabled::builder()
+                .target_bucket(target_bucket);
+
+            if let Some(prefix) = &config.target_prefix {
+                logging = logging.target_prefix(prefix);
+            }
+
+            status_builder = status_builder.logging_enabled(
+                logging.build().map_err(|e| s3err(e.to_string()))?,
+            );
+        }
+
+        let status = status_builder.build();
+
+        self.client
+            .put_bucket_logging()
+            .bucket(&self.bucket)
+            .bucket_logging_status(status)
+            .send()
+            .await
+            .map_err(|e| s3err(e.to_string()))?;
+
         Ok(())
     }
 

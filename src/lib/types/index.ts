@@ -251,6 +251,22 @@ export interface S3BucketAcl {
   grants: S3AclGrant[];
 }
 
+export interface S3BucketWebsite {
+  enabled: boolean;
+  index_document: string;
+  error_document: string | null;
+}
+
+export interface S3BucketLogging {
+  enabled: boolean;
+  target_bucket: string | null;
+  target_prefix: string | null;
+}
+
+export interface S3BucketOwnership {
+  object_ownership: string;
+}
+
 export type PanelBackend = 'local' | 's3' | 'archive';
 
 export interface ArchiveInfo {
@@ -273,6 +289,10 @@ export interface S3ProviderCapabilities {
   objectTags: boolean;
   bucketTags: boolean;
   multipartUploadCleanup: boolean;
+  websiteHosting: boolean;
+  requesterPays: boolean;
+  objectOwnership: boolean;
+  serverAccessLogging: boolean;
 }
 
 export interface S3ConnectionInfo {

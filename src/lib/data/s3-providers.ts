@@ -39,6 +39,10 @@ const ALL_TRUE: S3ProviderCapabilities = {
   objectTags: true,
   bucketTags: true,
   multipartUploadCleanup: true,
+  websiteHosting: true,
+  requesterPays: true,
+  objectOwnership: true,
+  serverAccessLogging: true,
 };
 
 export const S3_PROVIDERS: S3ProviderProfile[] = [
@@ -71,6 +75,10 @@ export const S3_PROVIDERS: S3ProviderProfile[] = [
       objectTags: true,
       bucketTags: true,
       multipartUploadCleanup: true,
+      websiteHosting: false,
+      requesterPays: false,
+      objectOwnership: false,
+      serverAccessLogging: false,
     },
   },
   {
@@ -94,6 +102,10 @@ export const S3_PROVIDERS: S3ProviderProfile[] = [
       objectTags: false,
       bucketTags: false,
       multipartUploadCleanup: true,
+      websiteHosting: false,
+      requesterPays: false,
+      objectOwnership: false,
+      serverAccessLogging: false,
     },
   },
   {
@@ -117,6 +129,10 @@ export const S3_PROVIDERS: S3ProviderProfile[] = [
       objectTags: false,
       bucketTags: false,
       multipartUploadCleanup: true,
+      websiteHosting: false,
+      requesterPays: false,
+      objectOwnership: false,
+      serverAccessLogging: false,
     },
   },
   {
@@ -140,6 +156,10 @@ export const S3_PROVIDERS: S3ProviderProfile[] = [
       objectTags: false,
       bucketTags: false,
       multipartUploadCleanup: true,
+      websiteHosting: false,
+      requesterPays: false,
+      objectOwnership: false,
+      serverAccessLogging: false,
     },
   },
   {
@@ -163,6 +183,10 @@ export const S3_PROVIDERS: S3ProviderProfile[] = [
       objectTags: false,
       bucketTags: false,
       multipartUploadCleanup: true,
+      websiteHosting: false,
+      requesterPays: false,
+      objectOwnership: false,
+      serverAccessLogging: false,
     },
   },
   {
@@ -186,6 +210,10 @@ export const S3_PROVIDERS: S3ProviderProfile[] = [
       objectTags: true,
       bucketTags: true,
       multipartUploadCleanup: true,
+      websiteHosting: false,
+      requesterPays: false,
+      objectOwnership: false,
+      serverAccessLogging: false,
     },
   },
   {
@@ -209,6 +237,10 @@ export const S3_PROVIDERS: S3ProviderProfile[] = [
       objectTags: false,
       bucketTags: true,
       multipartUploadCleanup: true,
+      websiteHosting: false,
+      requesterPays: false,
+      objectOwnership: false,
+      serverAccessLogging: false,
     },
   },
   {

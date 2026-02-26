@@ -1,8 +1,9 @@
 use crate::commands::file::FileOpState;
 use crate::models::{
-    DirListing, FmError, ProgressEvent, S3BucketAcl, S3BucketEncryption, S3BucketVersioning,
-    S3CorsRule, S3LifecycleRule, S3MultipartUpload, S3ObjectMetadata, S3ObjectProperties,
-    S3ObjectVersion, S3PublicAccessBlock, S3Tag, SearchEvent, TransferCheckpoint,
+    DirListing, FmError, ProgressEvent, S3BucketAcl, S3BucketEncryption, S3BucketLogging,
+    S3BucketOwnership, S3BucketVersioning, S3BucketWebsite, S3CorsRule, S3LifecycleRule,
+    S3MultipartUpload, S3ObjectMetadata, S3ObjectProperties, S3ObjectVersion, S3PublicAccessBlock,
+    S3Tag, SearchEvent, TransferCheckpoint,
 };
 use crate::s3::{self, build_s3_client, s3err, S3State, BANDWIDTH_LIMIT};
 use crate::s3::service::{S3Bucket, S3Service};
@@ -720,6 +721,82 @@ pub async fn s3_put_bucket_encryption(
     service
         .put_bucket_encryption(&sse_algorithm, kms_key_id.as_deref(), bucket_key_enabled)
         .await
+}
+
+#[tauri::command]
+pub async fn s3_get_bucket_website(
+    state: State<'_, S3State>,
+    id: String,
+) -> Result<S3BucketWebsite, FmError> {
+    let service = get_service(&state, &id)?;
+    service.get_bucket_website().await
+}
+
+#[tauri::command]
+pub async fn s3_put_bucket_website(
+    state: State<'_, S3State>,
+    id: String,
+    config: S3BucketWebsite,
+) -> Result<(), FmError> {
+    let service = get_service(&state, &id)?;
+    service.put_bucket_website(&config).await
+}
+
+#[tauri::command]
+pub async fn s3_get_request_payment(
+    state: State<'_, S3State>,
+    id: String,
+) -> Result<bool, FmError> {
+    let service = get_service(&state, &id)?;
+    service.get_request_payment().await
+}
+
+#[tauri::command]
+pub async fn s3_put_request_payment(
+    state: State<'_, S3State>,
+    id: String,
+    requester_pays: bool,
+) -> Result<(), FmError> {
+    let service = get_service(&state, &id)?;
+    service.put_request_payment(requester_pays).await
+}
+
+#[tauri::command]
+pub async fn s3_get_bucket_ownership(
+    state: State<'_, S3State>,
+    id: String,
+) -> Result<S3BucketOwnership, FmError> {
+    let service = get_service(&state, &id)?;
+    service.get_bucket_ownership().await
+}
+
+#[tauri::command]
+pub async fn s3_put_bucket_ownership(
+    state: State<'_, S3State>,
+    id: String,
+    ownership: String,
+) -> Result<(), FmError> {
+    let service = get_service(&state, &id)?;
+    service.put_bucket_ownership(&ownership).await
+}
+
+#[tauri::command]
+pub async fn s3_get_bucket_logging(
+    state: State<'_, S3State>,
+    id: String,
+) -> Result<S3BucketLogging, FmError> {
+    let service = get_service(&state, &id)?;
+    service.get_bucket_logging().await
+}
+
+#[tauri::command]
+pub async fn s3_put_bucket_logging(
+    state: State<'_, S3State>,
+    id: String,
+    config: S3BucketLogging,
+) -> Result<(), FmError> {
+    let service = get_service(&state, &id)?;
+    service.put_bucket_logging(&config).await
 }
 
 #[tauri::command]
