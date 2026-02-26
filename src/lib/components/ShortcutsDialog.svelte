@@ -65,7 +65,7 @@
             { keys: 'F6 / \u2318M', desc: 'Move to other panel' },
             { keys: 'Shift+F6', desc: 'Rename (alt)' },
             { keys: 'F7 / \u2318N', desc: 'Create directory' },
-            { keys: 'F8 / \u2318D', desc: 'Delete' },
+            { keys: 'F8 / \u2318\u232B', desc: 'Delete' },
             { keys: 'F9 / \u2318I', desc: 'Properties' },
             { keys: 'F10 / \u2318Q', desc: 'Quit' },
           ],
@@ -112,6 +112,7 @@
           title: 'S3 Operations',
           shortcuts: [
             { keys: '\u2318S', desc: 'Connect / disconnect S3' },
+            { keys: '\u2318D', desc: 'Bookmark S3 path' },
             { keys: '\u2318U', desc: 'Presigned URL' },
             { keys: '\u2318K', desc: 'Copy S3 URI' },
             { keys: '\u2318L', desc: 'Bulk storage class change' },

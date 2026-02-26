@@ -4,6 +4,7 @@ import { saveConfig, type Config } from '$lib/services/config';
 import { sidebarState } from '$lib/state/sidebar.svelte';
 import { workspacesState } from '$lib/state/workspaces.svelte';
 import { s3ProfilesState } from '$lib/state/s3profiles.svelte';
+import { s3BookmarksState } from '$lib/state/s3bookmarks.svelte';
 import { transfersState } from '$lib/state/transfers.svelte';
 import { s3SetBandwidthLimit } from '$lib/services/s3';
 
@@ -182,6 +183,7 @@ class AppState {
       favorites: sidebarState.favorites,
       workspaces: workspacesState.workspaces,
       s3Profiles: s3ProfilesState.profiles,
+      s3Bookmarks: s3BookmarksState.bookmarks,
       bandwidthLimit: transfersState.bandwidthLimit,
       sortField: this.sortField,
       sortDirection: this.sortDirection,

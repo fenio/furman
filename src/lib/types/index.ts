@@ -312,6 +312,13 @@ export interface S3ConnectionInfo {
   capabilities?: S3ProviderCapabilities;
 }
 
+export interface S3Bookmark {
+  id: string;
+  name: string;
+  profileId: string;
+  path: string; // e.g. "s3://mybucket/data/reports/"
+}
+
 export interface S3Profile {
   id: string;
   name: string;

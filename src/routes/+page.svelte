@@ -28,6 +28,7 @@
   import SyncDialog from '$lib/components/SyncDialog.svelte';
   import ShortcutsDialog from '$lib/components/ShortcutsDialog.svelte';
   import { s3ProfilesState } from '$lib/state/s3profiles.svelte';
+  import { s3BookmarksState } from '$lib/state/s3bookmarks.svelte';
   import type { SyncEntry } from '$lib/types';
 
   let bottomResizing = $state(false);
@@ -57,6 +58,7 @@
       sidebarState.loadFavorites(homePath, config.favorites);
       workspacesState.load(config.workspaces);
       s3ProfilesState.load(config.s3Profiles);
+      s3BookmarksState.load(config.s3Bookmarks);
       await Promise.all([
         panels.left.loadDirectory(homePath),
         panels.right.loadDirectory(homePath)

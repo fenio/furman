@@ -3,6 +3,13 @@
   import { panels } from '$lib/state/panels.svelte';
   import { appState } from '$lib/state/app.svelte';
   import { workspacesState } from '$lib/state/workspaces.svelte';
+  import { s3BookmarksState } from '$lib/state/s3bookmarks.svelte';
+  import { s3ProfilesState } from '$lib/state/s3profiles.svelte';
+  import { keychainGet } from '$lib/services/keychain';
+  import { resolveCapabilities } from '$lib/data/s3-providers';
+  import { statusState } from '$lib/state/status.svelte';
+  import { error } from '$lib/services/log';
+  import type { S3ConnectionInfo } from '$lib/types';
 
   // Compute base offsets for each section so we can derive flat indices in the template
   const favCount = $derived(sidebarState.favorites.length);
@@ -10,7 +17,9 @@
   const wsBase = $derived(favCount + 1);
   const wsCount = $derived(workspacesState.workspaces.length);
   // workspaces: wsBase..wsBase+wsCount-1, then "save current" at wsBase+wsCount
-  const volBase = $derived(wsBase + wsCount + 1);
+  const bmBase = $derived(wsBase + wsCount + 1);
+  const bmCount = $derived(s3BookmarksState.bookmarks.length);
+  const volBase = $derived(bmBase + bmCount);
   const volCount = $derived(sidebarState.volumes.length);
 
   const s3Base = $derived(volBase + volCount);
@@ -93,6 +102,57 @@
     });
   }
 
+  async function navigateBookmark(bm: { id: string; name: string; profileId: string; path: string }) {
+    sidebarState.blur();
+    const profile = s3ProfilesState.profiles.find((p) => p.id === bm.profileId);
+    if (!profile) {
+      statusState.setMessage('S3 profile not found — save the connection as a profile first');
+      return;
+    }
+
+    const panel = panels.active;
+
+    // Extract bucket from bookmark path (s3://bucket/...)
+    const bmBucket = bm.path.replace(/^s3:\/\//, '').split('/')[0];
+
+    // If already connected to the same bucket, just navigate
+    if (panel.backend === 's3' && panel.s3Connection && panel.s3Connection.bucket === bmBucket) {
+      await panel.loadDirectory(bm.path);
+      return;
+    }
+
+    // Connect using the profile
+    let secretKey: string | undefined;
+    let accessKey: string | undefined = profile.accessKeyId;
+    if (profile.credentialType === 'keychain' && profile.accessKeyId) {
+      try {
+        const secret = await keychainGet(profile.id);
+        if (secret) secretKey = secret;
+      } catch (err: unknown) {
+        error(String(err));
+        statusState.setMessage('Failed to retrieve credentials from keychain');
+        return;
+      }
+    }
+
+    const connectionId = `s3-${Date.now()}`;
+    const caps = resolveCapabilities({ provider: profile.provider, customCapabilities: profile.customCapabilities });
+    const info: S3ConnectionInfo = { bucket: profile.bucket, region: profile.region, connectionId, provider: profile.provider, capabilities: caps };
+    if (profile.endpoint) info.endpoint = profile.endpoint;
+    if (profile.profile) info.profile = profile.profile;
+
+    try {
+      await panel.connectS3(info, profile.endpoint, profile.profile, accessKey, secretKey, profile.roleArn, profile.externalId, profile.sessionName, profile.sessionDurationSecs, profile.useTransferAcceleration);
+      // connectS3 loads the bucket root; now navigate to the bookmarked path
+      if (bm.path !== `s3://${profile.bucket}/`) {
+        await panel.loadDirectory(bm.path);
+      }
+    } catch (err: unknown) {
+      error(String(err));
+      statusState.setMessage('Failed to connect: ' + String(err));
+    }
+  }
+
   function isFocused(idx: number): boolean {
     return sidebarState.focused && sidebarState.focusIndex === idx;
   }
@@ -137,6 +197,24 @@
         + Save Current
       </button>
     </div>
+
+    <!-- S3 Bookmarks -->
+    {#if s3BookmarksState.bookmarks.length > 0}
+      <div class="section">
+        <div class="section-header">S3 BOOKMARKS</div>
+        {#each s3BookmarksState.bookmarks as bm, i (bm.id)}
+          <!-- svelte-ignore a11y_click_events_have_key_events -->
+          <div class="sidebar-item" class:focused={isFocused(bmBase + i)} onclick={() => navigateBookmark(bm)} role="button" tabindex="-1">
+            <span class="item-name">{bm.name}</span>
+            <button
+              class="remove-btn"
+              onclick={(e) => { e.stopPropagation(); s3BookmarksState.remove(bm.id); }}
+              title="Remove bookmark"
+            >&times;</button>
+          </div>
+        {/each}
+      </div>
+    {/if}
 
     <!-- Devices -->
     <div class="section">

@@ -7,13 +7,17 @@
   import { terminalState } from '$lib/state/terminal.svelte';
   import { sidebarState } from '$lib/state/sidebar.svelte';
   import { workspacesState } from '$lib/state/workspaces.svelte';
+  import { s3BookmarksState } from '$lib/state/s3bookmarks.svelte';
+  import { s3ProfilesState } from '$lib/state/s3profiles.svelte';
   import { copyFiles, moveFiles, deleteFiles, renameFile, createDirectory, openFileDefault, openInEditor, checkConflicts } from '$lib/services/tauri';
   import { statusState } from '$lib/state/status.svelte';
   import { transfersState } from '$lib/state/transfers.svelte';
   import { s3Download, s3Upload, s3CopyObjects, s3DeleteObjects, s3RenameObject, s3CreateFolder, s3PresignUrl, s3DownloadToTemp, s3BulkChangeStorageClass } from '$lib/services/s3';
+  import { keychainGet } from '$lib/services/keychain';
   import { s3PathToPrefix } from '$lib/state/panels.svelte';
   import { error } from '$lib/services/log';
   import { resolveCapabilities } from '$lib/data/s3-providers';
+  import type { S3Bookmark } from '$lib/types';
   import { dragState } from '$lib/services/drag';
   import type { PanelData } from '$lib/state/panels.svelte';
   import type { ProgressEvent, S3ConnectionInfo, S3ProviderCapabilities, SyncEntry } from '$lib/types';
@@ -677,6 +681,40 @@
     });
   }
 
+  function handleBookmarkS3() {
+    const active = panels.active;
+    if (active.backend !== 's3' || !active.s3Connection) return;
+
+    const conn = active.s3Connection;
+    // Find a saved profile matching this connection
+    const profile = s3ProfilesState.profiles.find((p) =>
+      p.bucket === conn.bucket &&
+      p.region === conn.region &&
+      (p.endpoint ?? '') === (conn.endpoint ?? ''),
+    );
+
+    if (!profile) {
+      statusState.setMessage('Save this connection as a profile first');
+      return;
+    }
+
+    // Default name: last path segment or bucket name
+    const pathSegments = active.path.replace(/\/+$/, '').split('/');
+    const defaultName = pathSegments[pathSegments.length - 1] || conn.bucket;
+
+    appState.showInput('Bookmark name:', defaultName, (name) => {
+      appState.closeModal();
+      if (!name) return;
+      s3BookmarksState.add({
+        id: Date.now().toString(36),
+        name,
+        profileId: profile.id,
+        path: active.path,
+      });
+      statusState.setMessage(`Bookmarked: ${name}`);
+    });
+  }
+
   function handleQuit() {
     appState.showConfirm('Quit Furman?', async () => {
       try {
@@ -694,6 +732,7 @@
     | { type: 'add-favorite' }
     | { type: 'workspace'; name: string; leftPath: string; rightPath: string; activePanel: 'left' | 'right' }
     | { type: 'save-workspace' }
+    | { type: 's3-bookmark'; id: string; name: string; profileId: string; path: string }
     | { type: 'volume'; mountPoint: string }
     | { type: 's3'; panel: 'left' | 'right'; bucket: string }
     | { type: 'theme' };
@@ -708,6 +747,9 @@
       list.push({ type: 'workspace', name: ws.name, leftPath: ws.leftPath, rightPath: ws.rightPath, activePanel: ws.activePanel });
     }
     list.push({ type: 'save-workspace' });
+    for (const bm of s3BookmarksState.bookmarks) {
+      list.push({ type: 's3-bookmark', id: bm.id, name: bm.name, profileId: bm.profileId, path: bm.path });
+    }
     for (const vol of sidebarState.volumes) {
       list.push({ type: 'volume', mountPoint: vol.mount_point });
     }
@@ -719,6 +761,54 @@
     }
     list.push({ type: 'theme' });
     return list;
+  }
+
+  async function navigateBookmark(bm: S3Bookmark) {
+    sidebarState.blur();
+    const profile = s3ProfilesState.profiles.find((p) => p.id === bm.profileId);
+    if (!profile) {
+      statusState.setMessage('S3 profile not found — save the connection as a profile first');
+      return;
+    }
+
+    const panel = panels.active;
+    const bmBucket = bm.path.replace(/^s3:\/\//, '').split('/')[0];
+
+    // Already connected to this bucket — just navigate
+    if (panel.backend === 's3' && panel.s3Connection && panel.s3Connection.bucket === bmBucket) {
+      await panel.loadDirectory(bm.path);
+      return;
+    }
+
+    // Connect using the profile
+    let secretKey: string | undefined;
+    let accessKey: string | undefined = profile.accessKeyId;
+    if (profile.credentialType === 'keychain' && profile.accessKeyId) {
+      try {
+        const secret = await keychainGet(profile.id);
+        if (secret) secretKey = secret;
+      } catch (err: unknown) {
+        error(String(err));
+        statusState.setMessage('Failed to retrieve credentials from keychain');
+        return;
+      }
+    }
+
+    const connectionId = `s3-${Date.now()}`;
+    const caps = resolveCapabilities({ provider: profile.provider, customCapabilities: profile.customCapabilities });
+    const info: S3ConnectionInfo = { bucket: profile.bucket, region: profile.region, connectionId, provider: profile.provider, capabilities: caps };
+    if (profile.endpoint) info.endpoint = profile.endpoint;
+    if (profile.profile) info.profile = profile.profile;
+
+    try {
+      await panel.connectS3(info, profile.endpoint, profile.profile, accessKey, secretKey, profile.roleArn, profile.externalId, profile.sessionName, profile.sessionDurationSecs, profile.useTransferAcceleration);
+      if (bm.path !== `s3://${profile.bucket}/`) {
+        await panel.loadDirectory(bm.path);
+      }
+    } catch (err: unknown) {
+      error(String(err));
+      statusState.setMessage('Failed to connect: ' + String(err));
+    }
   }
 
   function activateSidebarItem(action: SidebarAction) {
@@ -754,6 +844,9 @@
             activePanel: panels.activePanel,
           });
         });
+        break;
+      case 's3-bookmark':
+        navigateBookmark({ id: action.id, name: action.name, profileId: action.profileId, path: action.path });
         break;
       case 'volume':
         sidebarState.blur();
@@ -853,6 +946,9 @@
           } else if (item && item.type === 'workspace') {
             e.preventDefault();
             workspacesState.remove(item.name);
+          } else if (item && item.type === 's3-bookmark') {
+            e.preventDefault();
+            s3BookmarksState.remove(item.id);
           }
           return;
         }
@@ -909,9 +1005,16 @@
           handleMkDir();                         // Cmd+N = MkDir (F7)
           return;
         case 'Backspace':
+          e.preventDefault();
+          handleDelete();                        // Cmd+Delete = Delete (F8)
+          return;
         case 'd':
           e.preventDefault();
-          handleDelete();                        // Cmd+Delete or Cmd+D = Delete (F8)
+          if (active.backend === 's3') {
+            handleBookmarkS3();                  // Cmd+D = Bookmark S3 path
+          } else {
+            handleDelete();                      // Cmd+D = Delete (F8)
+          }
           return;
         case 's':
           e.preventDefault();

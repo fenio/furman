@@ -1,7 +1,7 @@
 import { readFileText, writeFileText } from '$lib/services/tauri';
 import type { FavoriteItem } from '$lib/state/sidebar.svelte';
 import type { Workspace } from '$lib/state/workspaces.svelte';
-import type { S3Profile, SortField, SortDirection } from '$lib/types';
+import type { S3Bookmark, S3Profile, SortField, SortDirection } from '$lib/types';
 import { inferProviderFromEndpoint } from '$lib/data/s3-providers';
 
 export interface Config {
@@ -15,6 +15,7 @@ export interface Config {
   favorites: FavoriteItem[];
   workspaces: Workspace[];
   s3Profiles: S3Profile[];
+  s3Bookmarks: S3Bookmark[];
   bandwidthLimit: number;
   sortField: SortField;
   sortDirection: SortDirection;
@@ -31,6 +32,7 @@ export const DEFAULT_CONFIG: Config = {
   favorites: [],
   workspaces: [],
   s3Profiles: [],
+  s3Bookmarks: [],
   bandwidthLimit: 0,
   sortField: 'name',
   sortDirection: 'asc',
