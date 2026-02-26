@@ -31,8 +31,13 @@ pub async fn build_s3_client(
     session_name: Option<&str>,
     session_duration_secs: Option<i32>,
     use_transfer_acceleration: Option<bool>,
+    anonymous: Option<bool>,
 ) -> Result<(S3Client, aws_config::SdkConfig), FmError> {
-    let mut loader = if let (Some(ak), Some(sk)) = (access_key, secret_key) {
+    let mut loader = if anonymous.unwrap_or(false) {
+        aws_config::defaults(BehaviorVersion::latest())
+            .region(aws_config::Region::new(region.to_string()))
+            .no_credentials()
+    } else if let (Some(ak), Some(sk)) = (access_key, secret_key) {
         let creds = aws_credential_types::Credentials::new(
             ak.to_string(),
             sk.to_string(),

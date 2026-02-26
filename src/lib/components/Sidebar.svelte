@@ -124,7 +124,8 @@
     // Connect using the profile
     let secretKey: string | undefined;
     let accessKey: string | undefined = profile.accessKeyId;
-    if (profile.credentialType === 'keychain' && profile.accessKeyId) {
+    const isAnonymous = profile.credentialType === 'anonymous';
+    if (!isAnonymous && profile.credentialType === 'keychain' && profile.accessKeyId) {
       try {
         const secret = await keychainGet(profile.id);
         if (secret) secretKey = secret;
@@ -142,7 +143,19 @@
     if (profile.profile) info.profile = profile.profile;
 
     try {
-      await panel.connectS3(info, profile.endpoint, profile.profile, accessKey, secretKey, profile.roleArn, profile.externalId, profile.sessionName, profile.sessionDurationSecs, profile.useTransferAcceleration);
+      await panel.connectS3(
+        info,
+        profile.endpoint,
+        isAnonymous ? undefined : profile.profile,
+        isAnonymous ? undefined : accessKey,
+        isAnonymous ? undefined : secretKey,
+        isAnonymous ? undefined : profile.roleArn,
+        isAnonymous ? undefined : profile.externalId,
+        isAnonymous ? undefined : profile.sessionName,
+        isAnonymous ? undefined : profile.sessionDurationSecs,
+        isAnonymous ? undefined : profile.useTransferAcceleration,
+        isAnonymous || undefined,
+      );
       // connectS3 loads the bucket root; now navigate to the bookmarked path
       if (bm.path !== `s3://${profile.bucket}/`) {
         await panel.loadDirectory(bm.path);

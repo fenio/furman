@@ -18,6 +18,7 @@ export async function s3Connect(
   sessionName?: string,
   sessionDurationSecs?: number,
   useTransferAcceleration?: boolean,
+  anonymous?: boolean,
 ): Promise<void> {
   await invoke('s3_connect', {
     id,
@@ -32,6 +33,7 @@ export async function s3Connect(
     sessionName: sessionName || null,
     sessionDurationSecs: sessionDurationSecs ?? null,
     useTransferAcceleration: useTransferAcceleration ?? null,
+    anonymous: anonymous ?? null,
   });
 }
 

@@ -343,7 +343,7 @@ export interface S3Profile {
   region: string;
   endpoint?: string;
   profile?: string;
-  credentialType: 'keychain' | 'aws-profile' | 'default';
+  credentialType: 'keychain' | 'aws-profile' | 'default' | 'anonymous';
   accessKeyId?: string;
   provider?: string;
   customCapabilities?: S3ProviderCapabilities;

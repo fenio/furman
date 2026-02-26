@@ -6,7 +6,7 @@
   import type { S3Bucket, S3Profile, S3ProviderCapabilities } from '$lib/types';
 
   interface Props {
-    onConnect: (bucket: string, region: string, endpoint?: string, profile?: string, accessKey?: string, secretKey?: string, provider?: string, customCapabilities?: S3ProviderCapabilities, roleArn?: string, externalId?: string, sessionName?: string, sessionDurationSecs?: number, useTransferAcceleration?: boolean) => void;
+    onConnect: (bucket: string, region: string, endpoint?: string, profile?: string, accessKey?: string, secretKey?: string, provider?: string, customCapabilities?: S3ProviderCapabilities, roleArn?: string, externalId?: string, sessionName?: string, sessionDurationSecs?: number, useTransferAcceleration?: boolean, anonymous?: boolean) => void;
     onCancel: () => void;
     saveMode?: boolean;
     initialData?: S3Profile;
@@ -26,7 +26,8 @@
   let accessKey = $state(init?.accessKeyId ?? '');
   let secretKey = $state('');
   let selectedProvider = $state(init?.provider ?? 'aws');
-  let useDefaultCreds = $state(init?.credentialType !== 'keychain');
+  let useAnonymous = $state(init?.credentialType === 'anonymous');
+  let useDefaultCreds = $state(init?.credentialType !== 'keychain' && init?.credentialType !== 'anonymous');
   let hasDefaultCreds = $state(true);
   let checking = $state(true);
   let bucketEl: HTMLInputElement | undefined = $state(undefined);
@@ -194,7 +195,7 @@
   });
 
   function buildProfile(): Omit<S3Profile, 'id'> & { id?: string } {
-    const credentialType = !useDefaultCreds && accessKey.trim() ? 'keychain' as const : profile.trim() ? 'aws-profile' as const : 'default' as const;
+    const credentialType = useAnonymous ? 'anonymous' as const : !useDefaultCreds && accessKey.trim() ? 'keychain' as const : profile.trim() ? 'aws-profile' as const : 'default' as const;
     return {
       ...(init ? { id: init.id } : {}),
       name: name.trim(),
@@ -226,38 +227,40 @@
       bucket.trim(),
       region.trim() || 'us-east-1',
       endpoint.trim() || undefined,
-      profile.trim() || undefined,
-      !useDefaultCreds && accessKey.trim() ? accessKey.trim() : undefined,
-      !useDefaultCreds && secretKey.trim() ? secretKey.trim() : undefined,
+      useAnonymous ? undefined : (profile.trim() || undefined),
+      useAnonymous ? undefined : (!useDefaultCreds && accessKey.trim() ? accessKey.trim() : undefined),
+      useAnonymous ? undefined : (!useDefaultCreds && secretKey.trim() ? secretKey.trim() : undefined),
       selectedProvider,
       selectedProvider === 'custom' ? { ...customCaps } : undefined,
-      roleArn.trim() || undefined,
-      externalIdVal.trim() || undefined,
-      roleArn.trim() ? undefined : undefined, // sessionName uses default
-      roleArn.trim() ? sessionDuration : undefined,
-      useAcceleration || undefined,
+      useAnonymous ? undefined : (roleArn.trim() || undefined),
+      useAnonymous ? undefined : (externalIdVal.trim() || undefined),
+      useAnonymous ? undefined : (roleArn.trim() ? undefined : undefined),
+      useAnonymous ? undefined : (roleArn.trim() ? sessionDuration : undefined),
+      useAnonymous ? undefined : (useAcceleration || undefined),
+      useAnonymous || undefined,
     );
   }
 
   function handleSaveAndConnect() {
     if (!bucket.trim() || !name.trim()) return;
     const p = buildProfile();
-    const sk = !useDefaultCreds && secretKey.trim() ? secretKey.trim() : undefined;
+    const sk = useAnonymous ? undefined : (!useDefaultCreds && secretKey.trim() ? secretKey.trim() : undefined);
     onSave?.(p, sk);
     onConnect(
       bucket.trim(),
       region.trim() || 'us-east-1',
       endpoint.trim() || undefined,
-      profile.trim() || undefined,
-      !useDefaultCreds && accessKey.trim() ? accessKey.trim() : undefined,
-      !useDefaultCreds && secretKey.trim() ? secretKey.trim() : undefined,
+      useAnonymous ? undefined : (profile.trim() || undefined),
+      useAnonymous ? undefined : (!useDefaultCreds && accessKey.trim() ? accessKey.trim() : undefined),
+      useAnonymous ? undefined : (!useDefaultCreds && secretKey.trim() ? secretKey.trim() : undefined),
       selectedProvider,
       selectedProvider === 'custom' ? { ...customCaps } : undefined,
-      roleArn.trim() || undefined,
-      externalIdVal.trim() || undefined,
-      roleArn.trim() ? undefined : undefined,
-      roleArn.trim() ? sessionDuration : undefined,
-      useAcceleration || undefined,
+      useAnonymous ? undefined : (roleArn.trim() || undefined),
+      useAnonymous ? undefined : (externalIdVal.trim() || undefined),
+      useAnonymous ? undefined : (roleArn.trim() ? undefined : undefined),
+      useAnonymous ? undefined : (roleArn.trim() ? sessionDuration : undefined),
+      useAnonymous ? undefined : (useAcceleration || undefined),
+      useAnonymous || undefined,
     );
   }
 
@@ -518,179 +521,191 @@
         <span class="field-hint">Leave empty for AWS. Provider is auto-detected from endpoint.</span>
       </label>
 
-      <label class="field-label">
-        Profile (optional)
-        <input
-          type="text"
-          class="dialog-input"
-          autocomplete="off"
-          bind:value={profile}
-          placeholder="default"
-        />
-        <span class="field-hint">SSO profiles work if you've run `aws sso login`</span>
-      </label>
-
-      {#if !checking && hasDefaultCreds}
-        <div class="creds-toggle">
-          <label class="checkbox-label">
-            <input type="checkbox" bind:checked={useDefaultCreds} />
-            Use default credentials
-          </label>
-          <span class="creds-status ok">Default credentials found</span>
-        </div>
-      {/if}
-
-      <label class="field-label">
-        Access Key
-        <input
-          type="text"
-          class="dialog-input"
-          autocomplete="off"
-          bind:value={accessKey}
-          placeholder="AKIA..."
-          disabled={useDefaultCreds && hasDefaultCreds}
-        />
-      </label>
-
-      <label class="field-label">
-        Secret Key
-        <input
-          type="password"
-          class="dialog-input"
-          autocomplete="off"
-          bind:value={secretKey}
-          placeholder={isEditing ? 'Leave empty to keep current' : 'secret'}
-          disabled={useDefaultCreds && hasDefaultCreds}
-        />
-      </label>
-
-      {#if !endpoint.trim()}
-        <div class="creds-toggle">
-          <label class="checkbox-label">
-            <input type="checkbox" bind:checked={useAcceleration} />
-            Transfer Acceleration
-          </label>
-          <span class="field-hint">Route transfers through CloudFront edge locations</span>
-        </div>
-      {/if}
-
       <div class="creds-toggle">
         <label class="checkbox-label">
-          <input type="checkbox" bind:checked={defaultEncryption} />
-          Client-side encryption by default
+          <input type="checkbox" bind:checked={useAnonymous} />
+          Anonymous (public bucket)
         </label>
-        <span class="field-hint">Prompt for password when uploading to this bucket</span>
+        <span class="field-hint">Browse a public bucket without credentials (read-only)</span>
       </div>
 
-      {#if defaultEncryption}
-        <div class="caps-section">
-          <button class="caps-toggle" onclick={() => { showEncryptionSettings = !showEncryptionSettings; }}>
-            Encryption Settings {showEncryptionSettings ? '\u25B4' : '\u25BE'}
-          </button>
-          {#if showEncryptionSettings}
-            <div class="encryption-settings">
-              <label class="field-label">
-                Cipher
-                <select class="dialog-input" bind:value={encryptionCipher}>
-                  <option value="aes-256-gcm">AES-256-GCM (default)</option>
-                  <option value="chacha20-poly1305">ChaCha20-Poly1305</option>
-                </select>
-              </label>
+      {#if !useAnonymous}
+        <label class="field-label">
+          Profile (optional)
+          <input
+            type="text"
+            class="dialog-input"
+            autocomplete="off"
+            bind:value={profile}
+            placeholder="default"
+          />
+          <span class="field-hint">SSO profiles work if you've run `aws sso login`</span>
+        </label>
 
-              <div class="kdf-grid">
+        {#if !checking && hasDefaultCreds}
+          <div class="creds-toggle">
+            <label class="checkbox-label">
+              <input type="checkbox" bind:checked={useDefaultCreds} />
+              Use default credentials
+            </label>
+            <span class="creds-status ok">Default credentials found</span>
+          </div>
+        {/if}
+
+        <label class="field-label">
+          Access Key
+          <input
+            type="text"
+            class="dialog-input"
+            autocomplete="off"
+            bind:value={accessKey}
+            placeholder="AKIA..."
+            disabled={useDefaultCreds && hasDefaultCreds}
+          />
+        </label>
+
+        <label class="field-label">
+          Secret Key
+          <input
+            type="password"
+            class="dialog-input"
+            autocomplete="off"
+            bind:value={secretKey}
+            placeholder={isEditing ? 'Leave empty to keep current' : 'secret'}
+            disabled={useDefaultCreds && hasDefaultCreds}
+          />
+        </label>
+
+        {#if !endpoint.trim()}
+          <div class="creds-toggle">
+            <label class="checkbox-label">
+              <input type="checkbox" bind:checked={useAcceleration} />
+              Transfer Acceleration
+            </label>
+            <span class="field-hint">Route transfers through CloudFront edge locations</span>
+          </div>
+        {/if}
+      {/if}
+
+      {#if !useAnonymous}
+        <div class="creds-toggle">
+          <label class="checkbox-label">
+            <input type="checkbox" bind:checked={defaultEncryption} />
+            Client-side encryption by default
+          </label>
+          <span class="field-hint">Prompt for password when uploading to this bucket</span>
+        </div>
+
+        {#if defaultEncryption}
+          <div class="caps-section">
+            <button class="caps-toggle" onclick={() => { showEncryptionSettings = !showEncryptionSettings; }}>
+              Encryption Settings {showEncryptionSettings ? '\u25B4' : '\u25BE'}
+            </button>
+            {#if showEncryptionSettings}
+              <div class="encryption-settings">
                 <label class="field-label">
-                  KDF Memory (KiB)
-                  <select class="dialog-input" bind:value={kdfMemoryCost}>
-                    <option value={8192}>8 MiB (faster)</option>
-                    <option value={19456}>19 MiB (default)</option>
-                    <option value={65536}>64 MiB</option>
-                    <option value={131072}>128 MiB (stronger)</option>
+                  Cipher
+                  <select class="dialog-input" bind:value={encryptionCipher}>
+                    <option value="aes-256-gcm">AES-256-GCM (default)</option>
+                    <option value="chacha20-poly1305">ChaCha20-Poly1305</option>
                   </select>
                 </label>
+
+                <div class="kdf-grid">
+                  <label class="field-label">
+                    KDF Memory (KiB)
+                    <select class="dialog-input" bind:value={kdfMemoryCost}>
+                      <option value={8192}>8 MiB (faster)</option>
+                      <option value={19456}>19 MiB (default)</option>
+                      <option value={65536}>64 MiB</option>
+                      <option value={131072}>128 MiB (stronger)</option>
+                    </select>
+                  </label>
+                  <label class="field-label">
+                    KDF Iterations
+                    <select class="dialog-input" bind:value={kdfTimeCost}>
+                      <option value={1}>1 (faster)</option>
+                      <option value={2}>2 (default)</option>
+                      <option value={4}>4</option>
+                      <option value={8}>8 (stronger)</option>
+                    </select>
+                  </label>
+                  <label class="field-label">
+                    KDF Parallelism
+                    <select class="dialog-input" bind:value={kdfParallelism}>
+                      <option value={1}>1 (default)</option>
+                      <option value={2}>2</option>
+                      <option value={4}>4</option>
+                    </select>
+                  </label>
+                </div>
+                <span class="field-hint">Higher KDF values = slower but more resistant to brute force</span>
+
                 <label class="field-label">
-                  KDF Iterations
-                  <select class="dialog-input" bind:value={kdfTimeCost}>
-                    <option value={1}>1 (faster)</option>
-                    <option value={2}>2 (default)</option>
-                    <option value={4}>4</option>
-                    <option value={8}>8 (stronger)</option>
+                  Auto-encrypt min size
+                  <select class="dialog-input" bind:value={autoEncryptMinSize}>
+                    <option value={0}>Always encrypt (default)</option>
+                    <option value={1024}>Skip if all files &lt; 1 KB</option>
+                    <option value={10240}>Skip if all files &lt; 10 KB</option>
+                    <option value={102400}>Skip if all files &lt; 100 KB</option>
+                    <option value={1048576}>Skip if all files &lt; 1 MB</option>
                   </select>
                 </label>
+
                 <label class="field-label">
-                  KDF Parallelism
-                  <select class="dialog-input" bind:value={kdfParallelism}>
-                    <option value={1}>1 (default)</option>
-                    <option value={2}>2</option>
-                    <option value={4}>4</option>
-                  </select>
+                  Encrypt only extensions (comma-separated)
+                  <input
+                    type="text"
+                    class="dialog-input"
+                    bind:value={autoEncryptExtensions}
+                    placeholder="e.g. pdf, docx, xlsx (empty = all)"
+                  />
+                  <span class="field-hint">Only trigger encryption when files match these extensions</span>
                 </label>
               </div>
-              <span class="field-hint">Higher KDF values = slower but more resistant to brute force</span>
+            {/if}
+          </div>
+        {/if}
 
-              <label class="field-label">
-                Auto-encrypt min size
-                <select class="dialog-input" bind:value={autoEncryptMinSize}>
-                  <option value={0}>Always encrypt (default)</option>
-                  <option value={1024}>Skip if all files &lt; 1 KB</option>
-                  <option value={10240}>Skip if all files &lt; 10 KB</option>
-                  <option value={102400}>Skip if all files &lt; 100 KB</option>
-                  <option value={1048576}>Skip if all files &lt; 1 MB</option>
-                </select>
-              </label>
-
-              <label class="field-label">
-                Encrypt only extensions (comma-separated)
-                <input
-                  type="text"
-                  class="dialog-input"
-                  bind:value={autoEncryptExtensions}
-                  placeholder="e.g. pdf, docx, xlsx (empty = all)"
-                />
-                <span class="field-hint">Only trigger encryption when files match these extensions</span>
-              </label>
-            </div>
+        <div class="caps-section">
+          <button class="caps-toggle" onclick={() => { showAssumeRole = !showAssumeRole; }}>
+            AssumeRole (optional) {showAssumeRole ? '\u25B4' : '\u25BE'}
+          </button>
+          {#if showAssumeRole}
+            <label class="field-label">
+              Role ARN
+              <input
+                type="text"
+                class="dialog-input"
+                autocomplete="off"
+                bind:value={roleArn}
+                placeholder="arn:aws:iam::123456789012:role/RoleName"
+              />
+            </label>
+            <label class="field-label">
+              External ID (optional)
+              <input
+                type="text"
+                class="dialog-input"
+                autocomplete="off"
+                bind:value={externalIdVal}
+                placeholder="External ID"
+              />
+            </label>
+            <label class="field-label">
+              Session Duration
+              <select class="dialog-input" bind:value={sessionDuration}>
+                <option value={900}>15 minutes</option>
+                <option value={1800}>30 minutes</option>
+                <option value={3600}>1 hour</option>
+                <option value={7200}>2 hours</option>
+                <option value={14400}>4 hours</option>
+                <option value={43200}>12 hours</option>
+              </select>
+            </label>
           {/if}
         </div>
       {/if}
-
-      <div class="caps-section">
-        <button class="caps-toggle" onclick={() => { showAssumeRole = !showAssumeRole; }}>
-          AssumeRole (optional) {showAssumeRole ? '\u25B4' : '\u25BE'}
-        </button>
-        {#if showAssumeRole}
-          <label class="field-label">
-            Role ARN
-            <input
-              type="text"
-              class="dialog-input"
-              autocomplete="off"
-              bind:value={roleArn}
-              placeholder="arn:aws:iam::123456789012:role/RoleName"
-            />
-          </label>
-          <label class="field-label">
-            External ID (optional)
-            <input
-              type="text"
-              class="dialog-input"
-              autocomplete="off"
-              bind:value={externalIdVal}
-              placeholder="External ID"
-            />
-          </label>
-          <label class="field-label">
-            Session Duration
-            <select class="dialog-input" bind:value={sessionDuration}>
-              <option value={900}>15 minutes</option>
-              <option value={1800}>30 minutes</option>
-              <option value={3600}>1 hour</option>
-              <option value={7200}>2 hours</option>
-              <option value={14400}>4 hours</option>
-              <option value={43200}>12 hours</option>
-            </select>
-          </label>
-        {/if}
-      </div>
 
       {#if selectedProvider === 'custom'}
         <div class="caps-section">

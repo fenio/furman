@@ -11,7 +11,7 @@
   interface Props {
     onClose: () => void;
     initialTab?: 'saved' | 'connect';
-    onConnect?: (bucket: string, region: string, endpoint?: string, profile?: string, accessKey?: string, secretKey?: string, provider?: string, customCapabilities?: S3ProviderCapabilities, roleArn?: string, externalId?: string, sessionName?: string, sessionDurationSecs?: number, useTransferAcceleration?: boolean) => void;
+    onConnect?: (bucket: string, region: string, endpoint?: string, profile?: string, accessKey?: string, secretKey?: string, provider?: string, customCapabilities?: S3ProviderCapabilities, roleArn?: string, externalId?: string, sessionName?: string, sessionDurationSecs?: number, useTransferAcceleration?: boolean, anonymous?: boolean) => void;
   }
 
   let { onClose, initialTab = 'saved', onConnect: onConnectProp }: Props = $props();
@@ -53,6 +53,7 @@
     sessionName?: string,
     sessionDurationSecs?: number,
     useTransferAcceleration?: boolean,
+    anonymous?: boolean,
   ) {
     connectError = '';
     const panel = panels.active;
@@ -62,7 +63,7 @@
     if (endpoint) info.endpoint = endpoint;
     if (profile) info.profile = profile;
     try {
-      await panel.connectS3(info, endpoint, profile, accessKey, secretKey, roleArn, externalId, sessionName, sessionDurationSecs, useTransferAcceleration);
+      await panel.connectS3(info, endpoint, profile, accessKey, secretKey, roleArn, externalId, sessionName, sessionDurationSecs, useTransferAcceleration, anonymous);
       onClose();
     } catch (err: unknown) {
       connectError = err instanceof Error ? err.message : String(err);
@@ -74,6 +75,17 @@
     connectError = '';
     let secretKey: string | undefined;
     let accessKey: string | undefined = p.accessKeyId;
+
+    if (p.credentialType === 'anonymous') {
+      await handleConnect(
+        p.bucket, p.region, p.endpoint,
+        undefined, undefined, undefined,
+        p.provider, p.customCapabilities,
+        undefined, undefined, undefined, undefined, undefined,
+        true,
+      );
+      return;
+    }
 
     if (p.credentialType === 'keychain' && p.accessKeyId) {
       try {
