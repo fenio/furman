@@ -793,13 +793,22 @@ async fn test_cors_roundtrip() {
 async fn test_bucket_policy_roundtrip() {
     let ctx = TestContext::new().await;
 
+    // Use a non-public policy to avoid conflicts with AWS Block Public Access.
+    // On real AWS, "Principal": "*" is rejected when Block Public Access is enabled.
+    // A Deny statement with a wildcard principal works on both MinIO and AWS.
     let policy = serde_json::json!({
         "Version": "2012-10-17",
         "Statement": [{
-            "Effect": "Allow",
+            "Sid": "DenyUnencryptedUploads",
+            "Effect": "Deny",
             "Principal": "*",
-            "Action": "s3:GetObject",
-            "Resource": format!("arn:aws:s3:::{}/*", ctx.bucket)
+            "Action": "s3:PutObject",
+            "Resource": format!("arn:aws:s3:::{}/*", ctx.bucket),
+            "Condition": {
+                "StringNotEquals": {
+                    "s3:x-amz-server-side-encryption": "AES256"
+                }
+            }
         }]
     })
     .to_string();
