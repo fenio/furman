@@ -185,7 +185,9 @@
     border: 1px solid var(--dialog-border);
     border-radius: var(--radius-lg);
     width: 72ch;
+    height: 85vh;
     max-width: 90vw;
+    max-height: 900px;
     box-shadow: var(--shadow-dialog);
     overflow: hidden;
     display: flex;
@@ -237,7 +239,9 @@
     display: flex;
     flex-direction: column;
     gap: 6px;
-    height: 420px;
+    overflow-y: auto;
+    flex: 1 1 0;
+    min-height: 0;
   }
 
   .section-title {
