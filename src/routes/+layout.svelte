@@ -759,7 +759,9 @@
           await createDirectory(newPath);
         }
       } catch (err: unknown) {
-        error(String(err));
+        const msg = String(err);
+        statusState.setMessage(msg.includes('Already exists') ? 'Directory already exists' : msg);
+        error(msg);
       } finally {
         await active.loadDirectory(active.path);
       }
