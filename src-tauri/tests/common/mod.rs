@@ -1,9 +1,15 @@
 use app_lib::s3::client::build_s3_client;
-use app_lib::s3::service::S3Service;
+use app_lib::s3::service::{self, S3Service};
 use aws_sdk_s3::Client as S3Client;
 use uuid::Uuid;
 
-/// Configuration for connecting to MinIO (or any S3-compatible endpoint).
+/// Configuration for connecting to MinIO or real AWS.
+///
+/// Supports two sets of env vars (first match wins):
+///   S3_TEST_ENDPOINT / MINIO_ENDPOINT    — empty or unset = real AWS
+///   S3_TEST_ACCESS_KEY / MINIO_ACCESS_KEY
+///   S3_TEST_SECRET_KEY / MINIO_SECRET_KEY
+///   S3_TEST_REGION / MINIO_REGION
 pub struct MinioConfig {
     pub endpoint: String,
     pub access_key: String,
@@ -15,15 +21,25 @@ impl MinioConfig {
     /// Read config from environment with sensible defaults for local MinIO.
     pub fn from_env() -> Self {
         Self {
-            endpoint: std::env::var("MINIO_ENDPOINT")
-                .unwrap_or_else(|_| "http://localhost:9000".to_string()),
-            access_key: std::env::var("MINIO_ACCESS_KEY")
+            endpoint: std::env::var("S3_TEST_ENDPOINT")
+                .or_else(|_| std::env::var("MINIO_ENDPOINT"))
+                .unwrap_or_default(),
+            access_key: std::env::var("S3_TEST_ACCESS_KEY")
+                .or_else(|_| std::env::var("MINIO_ACCESS_KEY"))
                 .unwrap_or_else(|_| "minioadmin".to_string()),
-            secret_key: std::env::var("MINIO_SECRET_KEY")
+            secret_key: std::env::var("S3_TEST_SECRET_KEY")
+                .or_else(|_| std::env::var("MINIO_SECRET_KEY"))
                 .unwrap_or_else(|_| "minioadmin".to_string()),
-            region: std::env::var("MINIO_REGION")
+            region: std::env::var("S3_TEST_REGION")
+                .or_else(|_| std::env::var("MINIO_REGION"))
                 .unwrap_or_else(|_| "us-east-1".to_string()),
         }
+    }
+
+    /// True when running against real AWS (no custom endpoint).
+    #[allow(dead_code)]
+    pub fn is_aws(&self) -> bool {
+        self.endpoint.is_empty()
     }
 }
 
@@ -42,9 +58,14 @@ impl TestContext {
     /// Create a new test context with a unique bucket.
     pub async fn new() -> Self {
         let config = MinioConfig::from_env();
+        let endpoint = if config.endpoint.is_empty() {
+            None
+        } else {
+            Some(config.endpoint.as_str())
+        };
         let client = build_s3_client(
             &config.region,
-            Some(&config.endpoint),
+            endpoint,
             None,
             Some(&config.access_key),
             Some(&config.secret_key),
@@ -59,11 +80,8 @@ impl TestContext {
 
         let bucket = format!("test-{}", Uuid::new_v4());
 
-        // Create the test bucket
-        client
-            .create_bucket()
-            .bucket(&bucket)
-            .send()
+        // Create the test bucket (uses service helper to handle LocationConstraint)
+        service::create_bucket(&client, &bucket, &config.region)
             .await
             .expect("Failed to create test bucket");
 
@@ -81,10 +99,7 @@ impl TestContext {
     /// Create an additional bucket (for cross-bucket tests). Returns the bucket name.
     pub async fn create_extra_bucket(&mut self) -> String {
         let bucket = format!("test-extra-{}", Uuid::new_v4());
-        self.client
-            .create_bucket()
-            .bucket(&bucket)
-            .send()
+        service::create_bucket(&self.client, &bucket, &self.config.region)
             .await
             .expect("Failed to create extra test bucket");
         self.extra_buckets.push(bucket.clone());

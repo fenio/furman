@@ -1,0 +1,125 @@
+name: S3 Integration Tests (AWS)
+
+# Manual-only — run before releases to validate against real AWS.
+# Requires repository secrets: AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY
+#
+# Recommended IAM policy (scope to test-* buckets):
+#
+#   {
+#     "Version": "2012-10-17",
+#     "Statement": [
+#       {
+#         "Effect": "Allow",
+#         "Action": [
+#           "s3:CreateBucket", "s3:DeleteBucket", "s3:ListBucket",
+#           "s3:ListAllMyBuckets", "s3:HeadBucket",
+#           "s3:GetObject", "s3:PutObject", "s3:DeleteObject",
+#           "s3:GetBucketVersioning", "s3:PutBucketVersioning",
+#           "s3:ListBucketVersions", "s3:DeleteObjectVersion",
+#           "s3:GetBucketTagging", "s3:PutBucketTagging",
+#           "s3:GetObjectTagging", "s3:PutObjectTagging",
+#           "s3:GetBucketLifecycleConfiguration", "s3:PutBucketLifecycleConfiguration",
+#           "s3:GetBucketCors", "s3:PutBucketCors",
+#           "s3:GetBucketPolicy", "s3:PutBucketPolicy", "s3:DeleteBucketPolicy",
+#           "s3:GetPublicAccessBlock", "s3:PutPublicAccessBlock",
+#           "s3:GetEncryptionConfiguration", "s3:PutEncryptionConfiguration",
+#           "s3:GetBucketAcl", "s3:PutBucketAcl",
+#           "s3:CreateMultipartUpload", "s3:AbortMultipartUpload",
+#           "s3:ListMultipartUploadParts", "s3:ListBucketMultipartUploads"
+#         ],
+#         "Resource": [
+#           "arn:aws:s3:::test-*",
+#           "arn:aws:s3:::test-*/*"
+#         ]
+#       },
+#       {
+#         "Effect": "Allow",
+#         "Action": "s3:ListAllMyBuckets",
+#         "Resource": "*"
+#       }
+#     ]
+#   }
+
+on:
+  workflow_dispatch:
+    inputs:
+      region:
+        description: 'AWS region for test buckets'
+        required: false
+        default: 'us-east-1'
+      test_filter:
+        description: 'Test name filter (empty = all tests)'
+        required: false
+        default: ''
+
+jobs:
+  s3-aws-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Rust dependencies
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf libglib2.0-dev libgtk-3-dev libjavascriptcoregtk-4.1-dev libsoup-3.0-dev
+
+      - name: Run S3 integration tests against AWS
+        working-directory: src-tauri
+        env:
+          S3_TEST_ENDPOINT: ''
+          S3_TEST_ACCESS_KEY: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          S3_TEST_SECRET_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          S3_TEST_REGION: ${{ inputs.region }}
+        run: |
+          FILTER="${{ inputs.test_filter }}"
+          if [ -n "$FILTER" ]; then
+            cargo test --test s3_integration "$FILTER" -- --test-threads=4
+          else
+            cargo test --test s3_integration -- --test-threads=4
+          fi
+
+      - name: Emergency cleanup (delete leaked test-* buckets)
+        if: always()
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          AWS_DEFAULT_REGION: ${{ inputs.region }}
+        run: |
+          # Install AWS CLI if not present
+          which aws || pip install awscli
+
+          echo "Checking for leaked test buckets..."
+          BUCKETS=$(aws s3api list-buckets --query 'Buckets[?starts_with(Name, `test-`)].Name' --output text 2>/dev/null || true)
+          for BUCKET in $BUCKETS; do
+            echo "Cleaning up leaked bucket: $BUCKET"
+            # Delete all object versions
+            aws s3api list-object-versions --bucket "$BUCKET" --output json 2>/dev/null | \
+              python3 -c "
+          import sys, json
+          data = json.load(sys.stdin)
+          objects = []
+          for v in data.get('Versions', []):
+              objects.append({'Key': v['Key'], 'VersionId': v['VersionId']})
+          for dm in data.get('DeleteMarkers', []):
+              objects.append({'Key': dm['Key'], 'VersionId': dm['VersionId']})
+          if objects:
+              for i in range(0, len(objects), 1000):
+                  chunk = objects[i:i+1000]
+                  print(json.dumps({'Objects': chunk, 'Quiet': True}))
+          " 2>/dev/null | while read -r DELETE_JSON; do
+              aws s3api delete-objects --bucket "$BUCKET" --delete "$DELETE_JSON" 2>/dev/null || true
+            done
+            # Delete remaining objects (non-versioned)
+            aws s3 rm "s3://$BUCKET" --recursive 2>/dev/null || true
+            # Delete the bucket
+            aws s3api delete-bucket --bucket "$BUCKET" 2>/dev/null || true
+          done
+          echo "Cleanup complete."
