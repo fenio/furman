@@ -749,6 +749,7 @@
     appState.showInput('Create directory:', '', async (name: string) => {
       appState.closeModal();
       if (!name) return;
+      let mkdirError = '';
       try {
         if (active.backend === 's3' && active.s3Connection) {
           const prefix = s3PathToPrefix(active.path, active.s3Connection.bucket);
@@ -759,11 +760,13 @@
           await createDirectory(newPath);
         }
       } catch (err: unknown) {
-        const msg = String(err);
-        statusState.setMessage(msg.includes('Already exists') ? 'Directory already exists' : msg);
-        error(msg);
-      } finally {
-        await active.loadDirectory(active.path);
+        const raw = err instanceof Error ? err.message : String(err);
+        mkdirError = raw.includes('Already exists') ? 'Directory already exists' : raw;
+        error(String(err));
+      }
+      await active.loadDirectory(active.path);
+      if (mkdirError) {
+        statusState.setMessage(mkdirError);
       }
     });
   }
