@@ -535,6 +535,47 @@ export async function s3BulkPutObjectRetention(
   });
 }
 
+// ── Batch Metadata & Tags ────────────────────────────────────────────────────
+
+export async function s3BatchPutObjectMetadata(
+  id: string,
+  opId: string,
+  keys: string[],
+  contentType: string | null,
+  contentDisposition: string | null,
+  cacheControl: string | null,
+  contentEncoding: string | null,
+  custom: Record<string, string>,
+  onProgress: (e: ProgressEvent) => void,
+): Promise<string[]> {
+  const channel = new Channel<ProgressEvent>();
+  channel.onmessage = onProgress;
+  return await invoke<string[]>('s3_batch_put_object_metadata', {
+    id, opId, keys,
+    contentType: contentType || null,
+    contentDisposition: contentDisposition || null,
+    cacheControl: cacheControl || null,
+    contentEncoding: contentEncoding || null,
+    custom,
+    channel,
+  });
+}
+
+export async function s3BatchPutObjectTags(
+  id: string,
+  opId: string,
+  keys: string[],
+  tags: S3Tag[],
+  merge: boolean,
+  onProgress: (e: ProgressEvent) => void,
+): Promise<string[]> {
+  const channel = new Channel<ProgressEvent>();
+  channel.onmessage = onProgress;
+  return await invoke<string[]>('s3_batch_put_object_tags', {
+    id, opId, keys, tags, merge, channel,
+  });
+}
+
 // ── Bandwidth Throttling ────────────────────────────────────────────────────
 
 export async function s3SetBandwidthLimit(bytesPerSec: number): Promise<void> {

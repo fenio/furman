@@ -178,6 +178,8 @@ pub fn run() {
             commands::s3::s3_get_object_legal_hold,
             commands::s3::s3_put_object_legal_hold,
             commands::s3::s3_bulk_put_object_retention,
+            commands::s3::s3_batch_put_object_metadata,
+            commands::s3::s3_batch_put_object_tags,
             // archive commands
             commands::archive::list_archive,
             commands::archive::extract_archive,

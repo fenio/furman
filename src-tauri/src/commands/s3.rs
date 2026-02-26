@@ -1032,3 +1032,89 @@ pub async fn s3_bulk_put_object_retention(
         .bulk_put_object_retention(&keys, &mode, &retain_until_date, bypass_governance)
         .await
 }
+
+#[tauri::command]
+pub async fn s3_batch_put_object_metadata(
+    state: State<'_, S3State>,
+    file_op_state: State<'_, FileOpState>,
+    id: String,
+    op_id: String,
+    keys: Vec<String>,
+    content_type: Option<String>,
+    content_disposition: Option<String>,
+    cache_control: Option<String>,
+    content_encoding: Option<String>,
+    custom: HashMap<String, String>,
+    channel: Channel<ProgressEvent>,
+) -> Result<Vec<String>, FmError> {
+    let service = get_service(&state, &id)?;
+
+    let flags = Arc::new(crate::commands::file::OpFlags {
+        cancel: AtomicBool::new(false),
+        pause: AtomicBool::new(false),
+    });
+    {
+        let mut map = file_op_state.0.lock().map_err(|e| FmError::Other(e.to_string()))?;
+        map.insert(op_id.clone(), flags.clone());
+    }
+
+    let result = service
+        .batch_put_object_metadata(
+            &keys,
+            content_type.as_deref(),
+            content_disposition.as_deref(),
+            cache_control.as_deref(),
+            content_encoding.as_deref(),
+            &custom,
+            &flags.cancel,
+            &|evt| { let _ = channel.send(evt); },
+            &op_id,
+        )
+        .await;
+
+    if let Ok(mut map) = file_op_state.0.lock() {
+        map.remove(&op_id);
+    }
+
+    result
+}
+
+#[tauri::command]
+pub async fn s3_batch_put_object_tags(
+    state: State<'_, S3State>,
+    file_op_state: State<'_, FileOpState>,
+    id: String,
+    op_id: String,
+    keys: Vec<String>,
+    tags: Vec<S3Tag>,
+    merge: bool,
+    channel: Channel<ProgressEvent>,
+) -> Result<Vec<String>, FmError> {
+    let service = get_service(&state, &id)?;
+
+    let flags = Arc::new(crate::commands::file::OpFlags {
+        cancel: AtomicBool::new(false),
+        pause: AtomicBool::new(false),
+    });
+    {
+        let mut map = file_op_state.0.lock().map_err(|e| FmError::Other(e.to_string()))?;
+        map.insert(op_id.clone(), flags.clone());
+    }
+
+    let result = service
+        .batch_put_object_tags(
+            &keys,
+            &tags,
+            merge,
+            &flags.cancel,
+            &|evt| { let _ = channel.send(evt); },
+            &op_id,
+        )
+        .await;
+
+    if let Ok(mut map) = file_op_state.0.lock() {
+        map.remove(&op_id);
+    }
+
+    result
+}

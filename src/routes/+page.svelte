@@ -27,6 +27,7 @@
   import PropertiesDialog from '$lib/components/PropertiesDialog.svelte';
   import SyncDialog from '$lib/components/SyncDialog.svelte';
   import ShortcutsDialog from '$lib/components/ShortcutsDialog.svelte';
+  import S3BatchEditDialog from '$lib/components/S3BatchEditDialog.svelte';
   import { s3ProfilesState } from '$lib/state/s3profiles.svelte';
   import { s3BookmarksState } from '$lib/state/s3bookmarks.svelte';
   import type { SyncEntry } from '$lib/types';
@@ -342,6 +343,15 @@
       backend={appState.propertiesBackend}
       s3ConnectionId={appState.propertiesS3ConnectionId}
       capabilities={appState.propertiesCapabilities}
+      onClose={() => appState.closeModal()}
+    />
+  {/if}
+
+  {#if appState.modal === 'batch-edit'}
+    <S3BatchEditDialog
+      keys={appState.batchEditKeys}
+      s3ConnectionId={appState.batchEditS3ConnectionId}
+      capabilities={appState.batchEditCapabilities}
       onClose={() => appState.closeModal()}
     />
   {/if}

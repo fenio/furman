@@ -803,6 +803,18 @@
       }
       return;
     }
+    // Multi-selection: batch edit (S3 only, skip folders)
+    if (active.backend === 's3' && active.s3Connection && active.selectedPaths.size > 1) {
+      const keys = [...active.selectedPaths].filter(p => !p.endsWith('/'));
+      if (keys.length > 0) {
+        appState.showBatchEdit(
+          keys,
+          active.s3Connection.connectionId,
+          active.s3Connection.capabilities,
+        );
+        return;
+      }
+    }
     appState.showProperties(
       entry.path,
       active.backend,

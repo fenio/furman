@@ -3053,4 +3053,135 @@ impl S3Service {
 
         Ok(failed)
     }
+
+    /// Batch update metadata on multiple objects. Returns list of failed keys.
+    pub async fn batch_put_object_metadata(
+        &self,
+        keys: &[String],
+        content_type: Option<&str>,
+        content_disposition: Option<&str>,
+        cache_control: Option<&str>,
+        content_encoding: Option<&str>,
+        custom: &HashMap<String, String>,
+        cancel: &AtomicBool,
+        on_progress: &(dyn Fn(ProgressEvent) + Send + Sync),
+        op_id: &str,
+    ) -> Result<Vec<String>, FmError> {
+        let total = keys.len() as u32;
+        let mut failed: Vec<String> = Vec::new();
+
+        for (i, key) in keys.iter().enumerate() {
+            if cancel.load(Ordering::Relaxed) {
+                break;
+            }
+
+            on_progress(ProgressEvent {
+                id: op_id.to_string(),
+                bytes_done: 0,
+                bytes_total: 0,
+                current_file: key.clone(),
+                files_done: i as u32,
+                files_total: total,
+            });
+
+            if self
+                .put_object_metadata(
+                    key,
+                    content_type,
+                    content_disposition,
+                    cache_control,
+                    content_encoding,
+                    custom,
+                )
+                .await
+                .is_err()
+            {
+                failed.push(key.clone());
+            }
+        }
+
+        on_progress(ProgressEvent {
+            id: op_id.to_string(),
+            bytes_done: 0,
+            bytes_total: 0,
+            current_file: String::new(),
+            files_done: total,
+            files_total: total,
+        });
+
+        Ok(failed)
+    }
+
+    /// Batch update tags on multiple objects. If merge is true, existing tags are
+    /// preserved and new tags override by key. Returns list of failed keys.
+    pub async fn batch_put_object_tags(
+        &self,
+        keys: &[String],
+        tags: &[S3Tag],
+        merge: bool,
+        cancel: &AtomicBool,
+        on_progress: &(dyn Fn(ProgressEvent) + Send + Sync),
+        op_id: &str,
+    ) -> Result<Vec<String>, FmError> {
+        let total = keys.len() as u32;
+        let mut failed: Vec<String> = Vec::new();
+
+        for (i, key) in keys.iter().enumerate() {
+            if cancel.load(Ordering::Relaxed) {
+                break;
+            }
+
+            on_progress(ProgressEvent {
+                id: op_id.to_string(),
+                bytes_done: 0,
+                bytes_total: 0,
+                current_file: key.clone(),
+                files_done: i as u32,
+                files_total: total,
+            });
+
+            let final_tags = if merge {
+                match self.get_object_tags(key).await {
+                    Ok(existing) => {
+                        let mut merged: HashMap<String, String> = existing
+                            .into_iter()
+                            .map(|t| (t.key, t.value))
+                            .collect();
+                        for t in tags {
+                            merged.insert(t.key.clone(), t.value.clone());
+                        }
+                        if merged.len() > 10 {
+                            failed.push(key.clone());
+                            continue;
+                        }
+                        merged
+                            .into_iter()
+                            .map(|(k, v)| S3Tag { key: k, value: v })
+                            .collect::<Vec<_>>()
+                    }
+                    Err(_) => {
+                        failed.push(key.clone());
+                        continue;
+                    }
+                }
+            } else {
+                tags.to_vec()
+            };
+
+            if self.put_object_tags(key, &final_tags).await.is_err() {
+                failed.push(key.clone());
+            }
+        }
+
+        on_progress(ProgressEvent {
+            id: op_id.to_string(),
+            bytes_done: 0,
+            bytes_total: 0,
+            current_file: String::new(),
+            files_done: total,
+            files_total: total,
+        });
+
+        Ok(failed)
+    }
 }

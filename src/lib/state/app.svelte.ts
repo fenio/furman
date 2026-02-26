@@ -53,6 +53,9 @@ class AppState {
   syncDestS3Id = $state('');
   secureTempCleanup = $state(false);
   syncExcludePatterns = $state('.DS_Store, Thumbs.db, .git/**');
+  batchEditKeys = $state<string[]>([]);
+  batchEditS3ConnectionId = $state('');
+  batchEditCapabilities = $state<S3ProviderCapabilities | undefined>(undefined);
 
   showSearch(root: string, backend: PanelBackend = 'local', s3ConnectionId: string = '') {
     this.searchRoot = root;
@@ -137,6 +140,13 @@ class AppState {
     this.propertiesS3ConnectionId = s3ConnectionId ?? '';
     this.propertiesCapabilities = capabilities;
     this.modal = 'properties';
+  }
+
+  showBatchEdit(keys: string[], s3ConnectionId: string, capabilities?: S3ProviderCapabilities) {
+    this.batchEditKeys = keys;
+    this.batchEditS3ConnectionId = s3ConnectionId;
+    this.batchEditCapabilities = capabilities;
+    this.modal = 'batch-edit';
   }
 
   showOverwrite(files: string[], callback: (action: 'overwrite' | 'skip') => void) {
@@ -235,6 +245,9 @@ class AppState {
     this.propertiesBackend = 'local';
     this.propertiesS3ConnectionId = '';
     this.propertiesCapabilities = undefined;
+    this.batchEditKeys = [];
+    this.batchEditS3ConnectionId = '';
+    this.batchEditCapabilities = undefined;
     this.syncSourceBackend = 'local';
     this.syncSourcePath = '';
     this.syncSourceS3Id = '';

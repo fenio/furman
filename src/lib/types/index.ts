@@ -68,6 +68,7 @@ export type ModalType =
   | 'sync'
   | 'preferences'
   | 'properties'
+  | 'batch-edit'
   | 'shortcuts';
 
 export type SearchMode = 'name' | 'content';
