@@ -65,6 +65,7 @@ const ALL_TRUE: S3ProviderCapabilities = {
   objectOwnership: true,
   serverAccessLogging: true,
   objectLock: true,
+  listBuckets: true,
 };
 
 // ── Curated providers (manually maintained, with specific capabilities) ────
@@ -104,6 +105,7 @@ const CURATED_PROVIDERS: S3ProviderProfile[] = [
       objectOwnership: false,
       serverAccessLogging: false,
       objectLock: true,
+      listBuckets: true,
     },
   },
   {
@@ -132,6 +134,7 @@ const CURATED_PROVIDERS: S3ProviderProfile[] = [
       objectOwnership: false,
       serverAccessLogging: false,
       objectLock: false,
+      listBuckets: true,
     },
   },
   {
@@ -160,6 +163,7 @@ const CURATED_PROVIDERS: S3ProviderProfile[] = [
       objectOwnership: false,
       serverAccessLogging: false,
       objectLock: false,
+      listBuckets: true,
     },
   },
   {
@@ -188,6 +192,7 @@ const CURATED_PROVIDERS: S3ProviderProfile[] = [
       objectOwnership: false,
       serverAccessLogging: false,
       objectLock: false,
+      listBuckets: true,
     },
   },
   {
@@ -216,6 +221,7 @@ const CURATED_PROVIDERS: S3ProviderProfile[] = [
       objectOwnership: false,
       serverAccessLogging: false,
       objectLock: false,
+      listBuckets: false,
     },
   },
   {
@@ -244,6 +250,7 @@ const CURATED_PROVIDERS: S3ProviderProfile[] = [
       objectOwnership: false,
       serverAccessLogging: false,
       objectLock: true,
+      listBuckets: true,
     },
   },
   {
@@ -272,6 +279,7 @@ const CURATED_PROVIDERS: S3ProviderProfile[] = [
       objectOwnership: false,
       serverAccessLogging: false,
       objectLock: false,
+      listBuckets: true,
     },
   },
 ];

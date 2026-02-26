@@ -52,7 +52,7 @@
     glacierRestore: true, presignedUrls: true, objectMetadata: true,
     objectTags: true, bucketTags: true, multipartUploadCleanup: true,
     websiteHosting: true, requesterPays: true, objectOwnership: true, serverAccessLogging: true,
-    objectLock: true,
+    objectLock: true, listBuckets: true,
   };
 
   let fileProps = $state<FileProperties | null>(null);

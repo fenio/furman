@@ -320,6 +320,7 @@ export interface S3ProviderCapabilities {
   objectOwnership: boolean;
   serverAccessLogging: boolean;
   objectLock: boolean;
+  listBuckets: boolean;
 }
 
 export interface S3ConnectionInfo {

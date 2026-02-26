@@ -78,6 +78,7 @@
 
   const currentProvider = $derived(getProvider(selectedProvider));
   const providerRegions = $derived(currentProvider.regions ?? []);
+  const canListBuckets = $derived(selectedProvider === 'custom' ? (customCaps.listBuckets ?? true) : (currentProvider.capabilities.listBuckets ?? true));
 
   const filteredProviders = $derived.by(() => {
     const q = providerQuery.toLowerCase().trim();
@@ -450,9 +451,11 @@
             bind:this={bucketEl}
             placeholder="my-bucket-name"
           />
-          <button class="dialog-btn browse-btn" onclick={handleBrowse} disabled={browsing}>
-            {browsing ? 'Loading...' : 'Browse'}
-          </button>
+          {#if canListBuckets}
+            <button class="dialog-btn browse-btn" onclick={handleBrowse} disabled={browsing}>
+              {browsing ? 'Loading...' : 'Browse'}
+            </button>
+          {/if}
         </div>
         {#if showBucketList && buckets.length > 0}
           <div class="bucket-list">
@@ -739,6 +742,7 @@
               <label class="caps-checkbox"><input type="checkbox" bind:checked={customCaps.requesterPays} /> Requester Pays</label>
               <label class="caps-checkbox"><input type="checkbox" bind:checked={customCaps.objectOwnership} /> Object Ownership</label>
               <label class="caps-checkbox"><input type="checkbox" bind:checked={customCaps.serverAccessLogging} /> Access Logging</label>
+              <label class="caps-checkbox"><input type="checkbox" bind:checked={customCaps.listBuckets} /> List Buckets</label>
             </div>
           {/if}
         </div>
