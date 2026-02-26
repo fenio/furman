@@ -20,7 +20,7 @@
 ## Features
 
 - **Dual-pane navigation** with Tab to switch between panes
-- **[S3 support](S3.md)** — full-featured S3 client for any S3-compatible storage (AWS, MinIO, Backblaze B2, etc.) with transfers, versioning, lifecycle rules, CORS, bucket policies, and more
+- **[S3 support](S3.md)** — full-featured S3 client for any S3-compatible storage (AWS, MinIO, Backblaze B2, etc.) with transfers, versioning, lifecycle rules, CORS, bucket policies, client-side encryption, and more
 - **Integrated terminal** — bottom panel (Cmd+T), Quake-style drop-down (Cmd+\`), or in-pane mode (Cmd+Shift+T)
 - **Git integration** — panel header shows repo indicator with branch name, ahead/behind status, dirty flag, pull button, and branch switcher
 - **File viewer** (F3) — text with line numbers, image preview, hex dump
