@@ -1349,6 +1349,7 @@ async fn test_transfer_acceleration() {
         None,
         None,
         Some(true),
+        None,
     )
     .await
     .expect("Failed to build accelerated client");
