@@ -947,6 +947,10 @@
           e.preventDefault();
           handleBulkStorageClassChange();         // Cmd+L = Bulk Storage Class
           return;
+        case 'p':
+          e.preventDefault();
+          appState.toggleLayout();               // Cmd+P = Toggle single/dual pane
+          return;
         case 'j':
           e.preventDefault();
           transfersState.toggle();               // Cmd+J = Transfer panel

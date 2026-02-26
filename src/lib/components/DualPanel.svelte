@@ -1,5 +1,6 @@
 <script lang="ts">
   import { panels } from '$lib/state/panels.svelte';
+  import { appState } from '$lib/state/app.svelte';
   import { terminalState } from '$lib/state/terminal.svelte';
   import FilePanel from './FilePanel.svelte';
   import TerminalPanel from './TerminalPanel.svelte';
@@ -11,39 +12,74 @@
 
   let { onEntryActivate, onDrop }: Props = $props();
 
+  const isSingle = $derived(appState.layoutMode === 'single');
   const isInPane = $derived(terminalState.displayMode === 'in-pane');
   const replaceLeft = $derived(isInPane && terminalState.inPaneSlot === 'left');
   const replaceRight = $derived(isInPane && terminalState.inPaneSlot === 'right');
 </script>
 
 <div class="dual-panel no-select">
-  {#if replaceLeft}
-    <div class="in-pane-terminal">
-      <TerminalPanel />
-    </div>
+  {#if isSingle}
+    {#if panels.activePanel === 'left'}
+      {#if replaceLeft}
+        <div class="in-pane-terminal">
+          <TerminalPanel />
+        </div>
+      {:else}
+        <FilePanel
+          panel={panels.left}
+          isActive={true}
+          side="left"
+          onActivate={() => { panels.activePanel = 'left'; }}
+          {onEntryActivate}
+          {onDrop}
+        />
+      {/if}
+    {:else}
+      {#if replaceRight}
+        <div class="in-pane-terminal">
+          <TerminalPanel />
+        </div>
+      {:else}
+        <FilePanel
+          panel={panels.right}
+          isActive={true}
+          side="right"
+          onActivate={() => { panels.activePanel = 'right'; }}
+          {onEntryActivate}
+          {onDrop}
+        />
+      {/if}
+    {/if}
   {:else}
-    <FilePanel
-      panel={panels.left}
-      isActive={panels.activePanel === 'left'}
-      side="left"
-      onActivate={() => { panels.activePanel = 'left'; }}
-      {onEntryActivate}
-      {onDrop}
-    />
-  {/if}
-  {#if replaceRight}
-    <div class="in-pane-terminal">
-      <TerminalPanel />
-    </div>
-  {:else}
-    <FilePanel
-      panel={panels.right}
-      isActive={panels.activePanel === 'right'}
-      side="right"
-      onActivate={() => { panels.activePanel = 'right'; }}
-      {onEntryActivate}
-      {onDrop}
-    />
+    {#if replaceLeft}
+      <div class="in-pane-terminal">
+        <TerminalPanel />
+      </div>
+    {:else}
+      <FilePanel
+        panel={panels.left}
+        isActive={panels.activePanel === 'left'}
+        side="left"
+        onActivate={() => { panels.activePanel = 'left'; }}
+        {onEntryActivate}
+        {onDrop}
+      />
+    {/if}
+    {#if replaceRight}
+      <div class="in-pane-terminal">
+        <TerminalPanel />
+      </div>
+    {:else}
+      <FilePanel
+        panel={panels.right}
+        isActive={panels.activePanel === 'right'}
+        side="right"
+        onActivate={() => { panels.activePanel = 'right'; }}
+        {onEntryActivate}
+        {onDrop}
+      />
+    {/if}
   {/if}
 </div>
 

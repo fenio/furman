@@ -9,6 +9,7 @@ import { s3SetBandwidthLimit } from '$lib/services/s3';
 
 class AppState {
   theme = $state<'dark' | 'light'>('dark');
+  layoutMode = $state<'dual' | 'single'>('dual');
   modal = $state<ModalType>('none');
   viewerPath = $state('');
   viewerMode = $state<ViewerMode>('text');
@@ -78,6 +79,11 @@ class AppState {
     this.persistConfig();
   }
 
+  toggleLayout() {
+    this.layoutMode = this.layoutMode === 'dual' ? 'single' : 'dual';
+    this.persistConfig();
+  }
+
   showConfirm(message: string, callback: () => void) {
     this.confirmMessage = message;
     this.confirmCallback = callback;
@@ -143,6 +149,7 @@ class AppState {
 
   initSettings(config: Config) {
     this.theme = config.theme;
+    this.layoutMode = config.layoutMode;
     this.applyTheme();
     this.iconSize = config.iconSize;
     this.startupSound = config.startupSound;
@@ -162,6 +169,7 @@ class AppState {
   persistConfig() {
     saveConfig({
       theme: this.theme,
+      layoutMode: this.layoutMode,
       iconSize: this.iconSize,
       startupSound: this.startupSound,
       showHidden: this.showHidden,

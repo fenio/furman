@@ -28,18 +28,29 @@
     const activePath = panels.active.path;
     panels.inactive.loadDirectory(activePath);
   }
+
+  const isSingle = $derived(appState.layoutMode === 'single');
 </script>
 
 <div class="menu-bar no-select">
   <button class="menu-item" onclick={() => sidebarState.toggle()}>
     {sidebarState.visible ? 'Hide Sidebar' : 'Sidebar'}
   </button>
-  <button class="menu-item" onclick={switchToLeft}> Left </button>
+  {#if !isSingle}
+    <button class="menu-item" onclick={switchToLeft}> Left </button>
+  {/if}
   <button class="menu-item" onclick={refreshPanels}> Refresh </button>
-  <button class="menu-item" onclick={swapPanels}> Swap </button>
-  <button class="menu-item" onclick={equalPanels}> Equal </button>
+  {#if !isSingle}
+    <button class="menu-item" onclick={swapPanels}> Swap </button>
+    <button class="menu-item" onclick={equalPanels}> Equal </button>
+  {/if}
+  <button class="menu-item" onclick={() => appState.toggleLayout()}>
+    {isSingle ? 'Dual' : 'Single'}
+  </button>
   <button class="menu-item" onclick={handleS3Click}> S3 </button>
-  <button class="menu-item" onclick={switchToRight}> Right </button>
+  {#if !isSingle}
+    <button class="menu-item" onclick={switchToRight}> Right </button>
+  {/if}
   <div class="spacer"></div>
   <button class="menu-item" onclick={() => { appState.menuActive = !appState.menuActive; }}> Menu </button>
 </div>

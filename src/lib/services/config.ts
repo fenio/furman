@@ -6,6 +6,7 @@ import { inferProviderFromEndpoint } from '$lib/data/s3-providers';
 
 export interface Config {
   theme: 'dark' | 'light';
+  layoutMode: 'dual' | 'single';
   iconSize: number;
   startupSound: boolean;
   showHidden: boolean;
@@ -19,6 +20,7 @@ export interface Config {
 
 export const DEFAULT_CONFIG: Config = {
   theme: 'dark',
+  layoutMode: 'dual',
   iconSize: 48,
   startupSound: true,
   showHidden: false,
