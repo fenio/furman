@@ -1,6 +1,7 @@
 <script lang="ts">
   import { onMount, untrack } from 'svelte';
   import { s3CheckCredentials, s3ListBuckets, s3CreateBucket, s3DeleteBucket } from '$lib/services/s3';
+  import { s3ProfilesState } from '$lib/state/s3profiles.svelte';
   import { S3_PROVIDERS, getProvider, inferProviderFromEndpoint } from '$lib/data/s3-providers';
   import type { S3ProviderProfile, S3ProviderRegion } from '$lib/data/s3-providers';
   import type { S3Bucket, S3Profile, S3ProviderCapabilities } from '$lib/types';
@@ -186,6 +187,13 @@
       hasDefaultCreds = false;
     } finally {
       checking = false;
+    }
+    // Load secret key from keychain when editing a saved profile
+    if (init?.credentialType === 'keychain' && init.id) {
+      try {
+        const secret = await s3ProfilesState.getSecret(init.id);
+        if (secret) secretKey = secret;
+      } catch { /* ignore — user can re-enter manually */ }
     }
     if (saveMode && nameEl) {
       nameEl.focus();
