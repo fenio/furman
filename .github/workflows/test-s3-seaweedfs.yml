@@ -3,10 +3,10 @@ name: S3 Integration Tests (SeaweedFS)
 on:
   push:
     branches: [main]
-    paths: ['src-tauri/**']
+    paths: ['src-tauri/**', '.github/workflows/test-s3-seaweedfs.yml']
   pull_request:
     branches: [main]
-    paths: ['src-tauri/**']
+    paths: ['src-tauri/**', '.github/workflows/test-s3-seaweedfs.yml']
 
 jobs:
   s3-seaweedfs-tests:

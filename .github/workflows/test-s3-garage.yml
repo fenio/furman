@@ -3,10 +3,10 @@ name: S3 Integration Tests (Garage)
 on:
   push:
     branches: [main]
-    paths: ['src-tauri/**']
+    paths: ['src-tauri/**', '.github/workflows/test-s3-garage.yml']
   pull_request:
     branches: [main]
-    paths: ['src-tauri/**']
+    paths: ['src-tauri/**', '.github/workflows/test-s3-garage.yml']
 
 jobs:
   s3-garage-tests:
