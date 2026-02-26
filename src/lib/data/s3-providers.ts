@@ -10,12 +10,25 @@ import wasabiIcon from '$lib/assets/providers/wasabi.svg?url';
 import gcsIcon from '$lib/assets/providers/gcs.svg?url';
 import genericIcon from '$lib/assets/providers/generic.svg?url';
 
+// S3 provider data includes entries derived from Cyberduck connection profiles
+// https://github.com/iterate-ch/profiles
+// Copyright (c) iterate GmbH. Licensed under the GNU General Public License.
+import cyberduckData from './cyberduck-s3-providers.json';
+
+export interface S3ProviderRegion {
+  id: string;        // region code: "ca-central-1"
+  name: string;      // display name: "Canada (Toronto)"
+  endpoint: string;  // region-specific endpoint (empty = endpoint doesn't change per-region)
+}
+
 export interface S3ProviderProfile {
   id: string;
   name: string;
   icon: string;
   endpointHint: string;
   regionHint: string;
+  regions?: S3ProviderRegion[];
+  website?: string;
   capabilities: S3ProviderCapabilities;
 }
 
@@ -43,9 +56,12 @@ const ALL_TRUE: S3ProviderCapabilities = {
   requesterPays: true,
   objectOwnership: true,
   serverAccessLogging: true,
+  objectLock: true,
 };
 
-export const S3_PROVIDERS: S3ProviderProfile[] = [
+// ── Curated providers (manually maintained, with specific capabilities) ────
+
+const CURATED_PROVIDERS: S3ProviderProfile[] = [
   {
     id: 'aws',
     name: 'Amazon S3',
@@ -79,6 +95,7 @@ export const S3_PROVIDERS: S3ProviderProfile[] = [
       requesterPays: false,
       objectOwnership: false,
       serverAccessLogging: false,
+      objectLock: true,
     },
   },
   {
@@ -106,6 +123,7 @@ export const S3_PROVIDERS: S3ProviderProfile[] = [
       requesterPays: false,
       objectOwnership: false,
       serverAccessLogging: false,
+      objectLock: false,
     },
   },
   {
@@ -133,6 +151,7 @@ export const S3_PROVIDERS: S3ProviderProfile[] = [
       requesterPays: false,
       objectOwnership: false,
       serverAccessLogging: false,
+      objectLock: false,
     },
   },
   {
@@ -160,6 +179,7 @@ export const S3_PROVIDERS: S3ProviderProfile[] = [
       requesterPays: false,
       objectOwnership: false,
       serverAccessLogging: false,
+      objectLock: false,
     },
   },
   {
@@ -187,6 +207,7 @@ export const S3_PROVIDERS: S3ProviderProfile[] = [
       requesterPays: false,
       objectOwnership: false,
       serverAccessLogging: false,
+      objectLock: false,
     },
   },
   {
@@ -214,6 +235,7 @@ export const S3_PROVIDERS: S3ProviderProfile[] = [
       requesterPays: false,
       objectOwnership: false,
       serverAccessLogging: false,
+      objectLock: true,
     },
   },
   {
@@ -241,17 +263,74 @@ export const S3_PROVIDERS: S3ProviderProfile[] = [
       requesterPays: false,
       objectOwnership: false,
       serverAccessLogging: false,
+      objectLock: false,
     },
   },
-  {
+];
+
+// ── Merge Cyberduck-imported providers ─────────────────────────────────────
+
+// Map curated provider ids to their Cyberduck counterpart ids for merging regions
+const CYBERDUCK_ID_MAP: Record<string, string> = {
+  b2: 'backblaze',
+  do: 'digitalocean',
+};
+
+function buildProviderList(): S3ProviderProfile[] {
+  const cyberduckProviders = cyberduckData.providers as Array<{
+    id: string;
+    name: string;
+    endpointHint: string;
+    regionHint: string;
+    regions?: S3ProviderRegion[];
+    website?: string;
+  }>;
+
+  // Build a map of Cyberduck providers by id
+  const cyberduckMap = new Map(cyberduckProviders.map(p => [p.id, p]));
+
+  // Start with curated providers, enriching with Cyberduck region data
+  const result: S3ProviderProfile[] = CURATED_PROVIDERS.map(curated => {
+    const cyberduckId = CYBERDUCK_ID_MAP[curated.id] ?? curated.id;
+    const cyberduck = cyberduckMap.get(cyberduckId);
+    if (cyberduck?.regions) {
+      cyberduckMap.delete(cyberduckId); // consumed — don't duplicate
+      return { ...curated, regions: cyberduck.regions, website: cyberduck.website };
+    }
+    if (cyberduck) {
+      cyberduckMap.delete(cyberduckId);
+    }
+    return curated;
+  });
+
+  // Add remaining Cyberduck providers that aren't already curated
+  for (const [, cp] of cyberduckMap) {
+    result.push({
+      id: cp.id,
+      name: cp.name,
+      icon: genericIcon,
+      endpointHint: cp.endpointHint,
+      regionHint: cp.regionHint,
+      ...(cp.regions ? { regions: cp.regions } : {}),
+      ...(cp.website ? { website: cp.website } : {}),
+      capabilities: { ...ALL_TRUE },
+    });
+  }
+
+  // Always have Custom / Other at the end
+  result.push({
     id: 'custom',
     name: 'Custom / Other',
     icon: genericIcon,
     endpointHint: 'https://...',
     regionHint: 'us-east-1',
     capabilities: { ...ALL_TRUE },
-  },
-];
+  });
+
+  return result;
+}
+
+export const S3_PROVIDERS: S3ProviderProfile[] = buildProviderList();
 
 const providerMap = new Map(S3_PROVIDERS.map(p => [p.id, p]));
 
@@ -267,6 +346,7 @@ export function resolveCapabilities(profile: { provider?: string; customCapabili
 }
 
 const endpointPatterns: [RegExp, string][] = [
+  // Curated providers
   [/\.backblazeb2\.com/i, 'b2'],
   [/\.r2\.cloudflarestorage\.com/i, 'r2'],
   [/\.digitaloceanspaces\.com/i, 'do'],
@@ -274,6 +354,37 @@ const endpointPatterns: [RegExp, string][] = [
   [/\.wasabisys\.com/i, 'wasabi'],
   [/storage\.googleapis\.com/i, 'gcs'],
   [/localhost|127\.0\.0\.1|\.local[:/]/, 'minio'],
+  // Cyberduck-imported providers
+  [/\.aliyuncs\.com/i, 'alibaba'],
+  [/\.byteark\.com/i, 'byteark'],
+  [/\.contabostorage\.com/i, 'contabo'],
+  [/cwobject\.com/i, 'coreweave'],
+  [/\.dinaserver\.com/i, 'dinahosting'],
+  [/\.dream\.io/i, 'dreamhost'],
+  [/\.dunkel\.de/i, 'dunkel'],
+  [/\.fastlystorage\.app/i, 'fastly'],
+  [/\.filebase\.com/i, 'filebase'],
+  [/\.fornex\.io/i, 'fornex'],
+  [/\.your-objectstorage\.com/i, 'hetzner'],
+  [/cloud-object-storage\.appdomain\.cloud/i, 'ibm-cos'],
+  [/\.impossibleapi\.net/i, 'impossiblecloud'],
+  [/\.infomaniak\.(cloud|com)/i, 'infomaniak'],
+  [/\.ionoscloud\.com/i, 'ionos'],
+  [/\.katapultobjects\.com/i, 'katapult'],
+  [/\.s4\.mega\.io/i, 'mega'],
+  [/\.myqnapcloud\.io/i, 'myqnapcloud'],
+  [/\.io\.cloud\.ovh\.net/i, 'ovh'],
+  [/\.pilw\.io/i, 'pilvio'],
+  [/\.psychz\.net/i, 'psychz'],
+  [/\.scw\.cloud/i, 'scaleway'],
+  [/\.storadera\.com/i, 'storadera'],
+  [/\.storjshare\.io/i, 'storj'],
+  [/\.swisscom\.com/i, 'swisscom'],
+  [/\.synologyc2\.net/i, 'synology'],
+  [/\.tigris\.dev/i, 'tigris'],
+  [/\.vitanium\.com/i, 'vitanium'],
+  [/\.z1storage\.com/i, 'z1'],
+  [/\.zeroservices\.eu/i, 'zero'],
 ];
 
 export function inferProviderFromEndpoint(endpoint?: string): string {

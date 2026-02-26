@@ -2,6 +2,7 @@
   import { onMount, untrack } from 'svelte';
   import { s3CheckCredentials, s3ListBuckets, s3CreateBucket, s3DeleteBucket } from '$lib/services/s3';
   import { S3_PROVIDERS, getProvider, inferProviderFromEndpoint } from '$lib/data/s3-providers';
+  import type { S3ProviderProfile, S3ProviderRegion } from '$lib/data/s3-providers';
   import type { S3Bucket, S3Profile, S3ProviderCapabilities } from '$lib/types';
 
   interface Props {
@@ -61,19 +62,106 @@
   let createError = $state('');
   let deletingBucket = $state<string | null>(null);
 
+  // Provider search combobox
+  let providerQuery = $state('');
+  let providerDropdownOpen = $state(false);
+  let providerHighlight = $state(-1);
+  let providerInputEl: HTMLInputElement | undefined = $state(undefined);
+  let providerListEl: HTMLDivElement | undefined = $state(undefined);
+
+  // Region selector
+  let selectedRegionId = $state('_custom');
+
   const isEditing = !!init;
 
   const currentProvider = $derived(getProvider(selectedProvider));
+  const providerRegions = $derived(currentProvider.regions ?? []);
 
-  function handleProviderChange(e: Event) {
-    const id = (e.target as HTMLSelectElement).value;
-    selectedProvider = id;
-    const p = getProvider(id);
+  const filteredProviders = $derived.by(() => {
+    const q = providerQuery.toLowerCase().trim();
+    if (!q) return S3_PROVIDERS;
+    return S3_PROVIDERS.filter(p => p.name.toLowerCase().includes(q) || p.id.toLowerCase().includes(q));
+  });
+
+  function selectProvider(p: S3ProviderProfile) {
+    selectedProvider = p.id;
+    providerQuery = '';
+    providerDropdownOpen = false;
+    providerHighlight = -1;
     if (p.regionHint && !region.trim()) {
       region = p.regionHint;
     }
-    if (id === 'custom') {
+    if (p.id === 'custom') {
       customCaps = { ...getProvider('custom').capabilities };
+    }
+    // Reset region selector when switching providers
+    selectedRegionId = '_custom';
+  }
+
+  function handleProviderInputFocus() {
+    providerDropdownOpen = true;
+    providerHighlight = -1;
+  }
+
+  function handleProviderInputBlur(e: FocusEvent) {
+    // Don't close if clicking within the dropdown
+    const related = e.relatedTarget as HTMLElement | null;
+    if (related && providerListEl?.contains(related)) return;
+    providerDropdownOpen = false;
+    providerQuery = '';
+    providerHighlight = -1;
+  }
+
+  function handleProviderInputKeydown(e: KeyboardEvent) {
+    if (e.key === 'ArrowDown') {
+      e.preventDefault();
+      if (!providerDropdownOpen) {
+        providerDropdownOpen = true;
+      }
+      providerHighlight = Math.min(providerHighlight + 1, filteredProviders.length - 1);
+      scrollHighlightIntoView();
+    } else if (e.key === 'ArrowUp') {
+      e.preventDefault();
+      providerHighlight = Math.max(providerHighlight - 1, 0);
+      scrollHighlightIntoView();
+    } else if (e.key === 'Enter') {
+      e.preventDefault();
+      e.stopPropagation();
+      if (providerDropdownOpen && providerHighlight >= 0 && providerHighlight < filteredProviders.length) {
+        selectProvider(filteredProviders[providerHighlight]);
+      } else if (providerDropdownOpen && filteredProviders.length === 1) {
+        selectProvider(filteredProviders[0]);
+      }
+    } else if (e.key === 'Escape') {
+      if (providerDropdownOpen) {
+        e.preventDefault();
+        e.stopPropagation();
+        providerDropdownOpen = false;
+        providerQuery = '';
+        providerHighlight = -1;
+      }
+    }
+  }
+
+  function scrollHighlightIntoView() {
+    requestAnimationFrame(() => {
+      const el = providerListEl?.querySelector('.provider-option.highlighted');
+      el?.scrollIntoView({ block: 'nearest' });
+    });
+  }
+
+  function handleRegionChange(e: Event) {
+    const value = (e.target as HTMLSelectElement).value;
+    selectedRegionId = value;
+    if (value === '_custom') return; // user will type manually
+
+    const r = providerRegions.find(r => r.id === value || `${r.id}::${r.name}` === value);
+    if (!r) return;
+    if (r.endpoint) {
+      endpoint = r.endpoint;
+    }
+    if (r.id) {
+      region = r.id;
     }
   }
 
@@ -81,6 +169,8 @@
     const inferred = inferProviderFromEndpoint(endpoint.trim() || undefined);
     if (inferred !== selectedProvider && inferred !== 'custom') {
       selectedProvider = inferred;
+      providerQuery = '';
+      selectedRegionId = '_custom';
       const p = getProvider(inferred);
       if (p.regionHint && (!region.trim() || region === 'us-east-1')) {
         region = p.regionHint;
@@ -273,15 +363,56 @@
     <div class="dialog-body">
       <div class="field-label">
         Provider
+        <!-- svelte-ignore a11y_no_static_element_interactions -->
         <div class="provider-row">
           <img class="provider-icon" src={currentProvider.icon} alt={currentProvider.name} />
-          <select class="dialog-input provider-select" value={selectedProvider} onchange={handleProviderChange}>
-            {#each S3_PROVIDERS as p}
-              <option value={p.id}>{p.name}</option>
-            {/each}
-          </select>
+          <div class="provider-combobox" onkeydown={handleProviderInputKeydown}>
+            <input
+              type="text"
+              class="dialog-input provider-search"
+              autocomplete="off"
+              placeholder={currentProvider.name}
+              bind:value={providerQuery}
+              bind:this={providerInputEl}
+              onfocus={handleProviderInputFocus}
+              onblur={handleProviderInputBlur}
+            />
+            {#if providerDropdownOpen}
+              <div class="provider-dropdown" bind:this={providerListEl}>
+                {#each filteredProviders as p, i}
+                  <button
+                    class="provider-option"
+                    class:highlighted={i === providerHighlight}
+                    class:selected={p.id === selectedProvider}
+                    onmousedown={(e) => { e.preventDefault(); selectProvider(p); }}
+                    onmouseenter={() => { providerHighlight = i; }}
+                  >
+                    <img class="provider-option-icon" src={p.icon} alt="" />
+                    <span class="provider-option-name">{p.name}</span>
+                  </button>
+                {:else}
+                  <div class="provider-option-empty">No matching providers</div>
+                {/each}
+              </div>
+            {/if}
+          </div>
         </div>
       </div>
+
+      {#if providerRegions.length > 0}
+        <label class="field-label">
+          Region Preset
+          <select class="dialog-input" value={selectedRegionId} onchange={handleRegionChange}>
+            <option value="_custom">(Custom / manual entry)</option>
+            {#each providerRegions as r}
+              <option value={r.id === '' ? `${r.id}::${r.name}` : r.id}>
+                {r.name}{r.id ? ` (${r.id})` : ''}
+              </option>
+            {/each}
+          </select>
+          <span class="field-hint">Pick a region to auto-fill endpoint and region, or choose Custom to enter your own.</span>
+        </label>
+      {/if}
 
       {#if saveMode}
         <label class="field-label">
@@ -917,9 +1048,71 @@
     flex-shrink: 0;
   }
 
-  .provider-select {
+  .provider-combobox {
     flex: 1;
+    position: relative;
+  }
+
+  .provider-search {
+    cursor: text;
+  }
+
+  .provider-dropdown {
+    position: absolute;
+    top: 100%;
+    left: 0;
+    right: 0;
+    max-height: 260px;
+    overflow-y: auto;
+    background: var(--dialog-bg);
+    border: 1px solid var(--border-active);
+    border-radius: var(--radius-sm);
+    box-shadow: var(--shadow-dialog);
+    z-index: 10;
+    display: flex;
+    flex-direction: column;
+  }
+
+  .provider-option {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 10px;
+    background: none;
+    border: none;
+    color: var(--text-primary);
+    font-size: 13px;
     cursor: pointer;
+    text-align: left;
+    font-family: inherit;
+  }
+
+  .provider-option:hover,
+  .provider-option.highlighted {
+    background: var(--bg-hover);
+  }
+
+  .provider-option.selected {
+    color: var(--text-accent);
+  }
+
+  .provider-option-icon {
+    width: 18px;
+    height: 18px;
+    flex-shrink: 0;
+  }
+
+  .provider-option-name {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .provider-option-empty {
+    padding: 8px 10px;
+    color: var(--text-secondary);
+    font-size: 12px;
+    text-align: center;
   }
 
   .caps-section {

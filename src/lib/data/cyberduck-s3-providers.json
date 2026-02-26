@@ -1,0 +1,1171 @@
+{
+  "_attribution": "Provider data derived from Cyberduck connection profiles (https://github.com/iterate-ch/profiles). Copyright iterate GmbH. Licensed GPL-3.0.",
+  "_generated": "2026-02-26",
+  "providers": [
+    {
+      "id": "alibaba",
+      "name": "Alibaba Cloud OSS",
+      "endpointHint": "https://cn-beijing.oss.aliyuncs.com",
+      "regionHint": "oss-cn-beijing",
+      "regions": [
+        {
+          "id": "oss-cn-beijing",
+          "name": "Beijing",
+          "endpoint": "https://cn-beijing.oss.aliyuncs.com"
+        },
+        {
+          "id": "oss-cn-chengdu",
+          "name": "Chengdu",
+          "endpoint": "https://cn-chengdu.oss.aliyuncs.com"
+        },
+        {
+          "id": "oss-me-east-1",
+          "name": "Dubai",
+          "endpoint": "https://oss-me-east-1.aliyuncs.com"
+        },
+        {
+          "id": "oss-eu-central-1",
+          "name": "Frankfurt",
+          "endpoint": "https://oss-eu-central-1.aliyuncs.com"
+        },
+        {
+          "id": "oss-cn-guangzhou",
+          "name": "Guangzhou",
+          "endpoint": "https://cn-guangzhou.oss.aliyuncs.com"
+        },
+        {
+          "id": "oss-cn-hangzhou",
+          "name": "Hangzhou",
+          "endpoint": "https://cn-hangzhou.oss.aliyuncs.com"
+        },
+        {
+          "id": "oss-cn-heyuan",
+          "name": "Heyuan",
+          "endpoint": "https://cn-heyuan.oss.aliyuncs.com"
+        },
+        {
+          "id": "oss-cn-huhehaote",
+          "name": "Hohhot",
+          "endpoint": "https://cn-huhehaote.oss.aliyuncs.com"
+        },
+        {
+          "id": "oss-cn-hongkong",
+          "name": "Hong Kong",
+          "endpoint": "https://cn-hongkong.oss.aliyuncs.com"
+        },
+        {
+          "id": "oss-ap-southeast-5",
+          "name": "Jakarta",
+          "endpoint": "https://oss-ap-southeast-5.aliyuncs.com"
+        },
+        {
+          "id": "oss-ap-southeast-3",
+          "name": "Kuala Lumpur",
+          "endpoint": "https://oss-ap-southeast-3.aliyuncs.com"
+        },
+        {
+          "id": "oss-eu-west-1",
+          "name": "London",
+          "endpoint": "https://oss-eu-west-1.aliyuncs.com"
+        },
+        {
+          "id": "oss-ap-southeast-6",
+          "name": "Manila",
+          "endpoint": "https://oss-ap-southeast-6.aliyuncs.com"
+        },
+        {
+          "id": "oss-ap-south-1",
+          "name": "Mumbai",
+          "endpoint": "https://oss-ap-south-1.aliyuncs.com"
+        },
+        {
+          "id": "oss-cn-qingdao",
+          "name": "Qingdao",
+          "endpoint": "https://cn-qingdao.oss.aliyuncs.com"
+        },
+        {
+          "id": "oss-cn-shanghai",
+          "name": "Shanghai",
+          "endpoint": "https://cn-shanghai.oss.aliyuncs.com"
+        },
+        {
+          "id": "oss-cn-shenzhen",
+          "name": "Shenzhen",
+          "endpoint": "https://cn-shenzhen.oss.aliyuncs.com"
+        },
+        {
+          "id": "oss-ap-southeast-1",
+          "name": "Singapore",
+          "endpoint": "https://oss-ap-southeast-1.aliyuncs.com"
+        },
+        {
+          "id": "oss-ap-southeast-2",
+          "name": "Sydney",
+          "endpoint": "https://oss-ap-southeast-2.aliyuncs.com"
+        },
+        {
+          "id": "oss-ap-northeast-1",
+          "name": "Tokyo",
+          "endpoint": "https://oss-ap-northeast-1.aliyuncs.com"
+        },
+        {
+          "id": "oss-cn-wulanchabu",
+          "name": "Ulanqab",
+          "endpoint": "https://cn-wulanchabu.oss.aliyuncs.com"
+        },
+        {
+          "id": "oss-us-east-1",
+          "name": "Virginia",
+          "endpoint": "https://oss-us-east-1.aliyuncs.com"
+        },
+        {
+          "id": "oss-cn-zhangjiakou",
+          "name": "Zhangjiakou",
+          "endpoint": "https://cn-zhangjiakou.oss.aliyuncs.com"
+        }
+      ]
+    },
+    {
+      "id": "backblaze",
+      "name": "Backblaze B2",
+      "endpointHint": "https://s3.eu-central-003.backblazeb2.com:443",
+      "regionHint": "us-east-1",
+      "regions": [
+        {
+          "id": "s3-compatible-api-eu-central-003",
+          "name": "S3 compatible API eu-central-003",
+          "endpoint": "https://s3.eu-central-003.backblazeb2.com:443"
+        },
+        {
+          "id": "s3-compatible-api-us-east-005",
+          "name": "S3 compatible API us-east-005",
+          "endpoint": "https://s3.us-east-005.backblazeb2.com:443"
+        },
+        {
+          "id": "s3-compatible-api-us-west-000",
+          "name": "S3 compatible API us-west-000",
+          "endpoint": "https://s3.us-west-000.backblazeb2.com:443"
+        },
+        {
+          "id": "s3-compatible-api-us-west-001",
+          "name": "S3 compatible API us-west-001",
+          "endpoint": "https://s3.us-west-001.backblazeb2.com:443"
+        },
+        {
+          "id": "s3-compatible-api-us-west-002",
+          "name": "S3 compatible API us-west-002",
+          "endpoint": "https://s3.us-west-002.backblazeb2.com:443"
+        }
+      ]
+    },
+    {
+      "id": "byteark",
+      "name": "ByteArk Storage",
+      "endpointHint": "https://st-th.byteark.com",
+      "regionHint": "st-th",
+      "regions": [
+        {
+          "id": "st-th",
+          "name": "st-th multiregion",
+          "endpoint": "https://st-th.byteark.com"
+        },
+        {
+          "id": "st-th-1",
+          "name": "st-th-1",
+          "endpoint": "https://st-th-1.byteark.com"
+        },
+        {
+          "id": "st-th-2",
+          "name": "st-th-2",
+          "endpoint": "https://st-th-2.byteark.com"
+        },
+        {
+          "id": "st-th-archive",
+          "name": "st-th-archive",
+          "endpoint": "https://st-th-archive.byteark.com"
+        }
+      ]
+    },
+    {
+      "id": "contabo",
+      "name": "Contabo Object Storage",
+      "endpointHint": "https://eu2.contabostorage.com",
+      "regionHint": "default"
+    },
+    {
+      "id": "coreweave",
+      "name": "CoreWeave Object Storage",
+      "endpointHint": "https://cwobject.com",
+      "regionHint": "us-east-1"
+    },
+    {
+      "id": "digitalocean",
+      "name": "DigitalOcean Spaces",
+      "endpointHint": "https://ams3.digitaloceanspaces.com",
+      "regionHint": "ams3",
+      "regions": [
+        {
+          "id": "ams3",
+          "name": "ams3",
+          "endpoint": "https://ams3.digitaloceanspaces.com"
+        },
+        {
+          "id": "blr1",
+          "name": "blr1",
+          "endpoint": "https://blr1.digitaloceanspaces.com"
+        },
+        {
+          "id": "fra1",
+          "name": "fra1",
+          "endpoint": "https://fra1.digitaloceanspaces.com"
+        },
+        {
+          "id": "nyc3",
+          "name": "nyc3",
+          "endpoint": "https://nyc3.digitaloceanspaces.com"
+        },
+        {
+          "id": "sfo2",
+          "name": "sfo2",
+          "endpoint": "https://sfo2.digitaloceanspaces.com"
+        },
+        {
+          "id": "sfo3",
+          "name": "sfo3",
+          "endpoint": "https://sfo3.digitaloceanspaces.com"
+        },
+        {
+          "id": "sgp1",
+          "name": "sgp1",
+          "endpoint": "https://sgp1.digitaloceanspaces.com"
+        },
+        {
+          "id": "syd1",
+          "name": "syd1",
+          "endpoint": "https://syd1.digitaloceanspaces.com"
+        }
+      ]
+    },
+    {
+      "id": "dinahosting",
+      "name": "Dinahosting S3",
+      "endpointHint": "https://objects.dinaserver.com:443",
+      "regionHint": "default"
+    },
+    {
+      "id": "dreamhost",
+      "name": "DreamObjects",
+      "endpointHint": "https://s3.us-east-005.dream.io",
+      "regionHint": "us-east-1"
+    },
+    {
+      "id": "dunkel",
+      "name": "Dunkel Cloud Storage",
+      "endpointHint": "https://dcs.dunkel.de:443",
+      "regionHint": "us-east-1"
+    },
+    {
+      "id": "fastly",
+      "name": "Fastly Object Storage",
+      "endpointHint": "https://eu-central.object.fastlystorage.app:443",
+      "regionHint": "eu-central",
+      "regions": [
+        {
+          "id": "eu-central",
+          "name": "eu-central",
+          "endpoint": "https://eu-central.object.fastlystorage.app:443"
+        },
+        {
+          "id": "us-east",
+          "name": "us-east",
+          "endpoint": "https://us-east.object.fastlystorage.app:443"
+        },
+        {
+          "id": "us-west",
+          "name": "us-west",
+          "endpoint": "https://us-west.object.fastlystorage.app:443"
+        }
+      ]
+    },
+    {
+      "id": "filebase",
+      "name": "Filebase",
+      "endpointHint": "https://s3.filebase.com",
+      "regionHint": "us-east-1"
+    },
+    {
+      "id": "fornex",
+      "name": "Fornex Cold Storage",
+      "endpointHint": "https://c1.de.fornex.io:443",
+      "regionHint": "us-east-1",
+      "regions": [
+        {
+          "id": "us-east-1",
+          "name": "c1.de",
+          "endpoint": "https://c1.de.fornex.io:443"
+        },
+        {
+          "id": "us-east-1",
+          "name": "c1.nl",
+          "endpoint": "https://c1.nl.fornex.io:443"
+        }
+      ]
+    },
+    {
+      "id": "garage",
+      "name": "Garage S3",
+      "endpointHint": "",
+      "regionHint": "garage"
+    },
+    {
+      "id": "hetzner",
+      "name": "Hetzner Object Storage",
+      "endpointHint": "https://fsn1.your-objectstorage.com",
+      "regionHint": "fsn1",
+      "regions": [
+        {
+          "id": "fsn1",
+          "name": "Falkenstein",
+          "endpoint": "https://fsn1.your-objectstorage.com"
+        },
+        {
+          "id": "hel1",
+          "name": "Helsinki",
+          "endpoint": "https://hel1.your-objectstorage.com"
+        },
+        {
+          "id": "nbg1",
+          "name": "Nürnberg",
+          "endpoint": "https://nbg1.your-objectstorage.com"
+        }
+      ]
+    },
+    {
+      "id": "ibm-cos",
+      "name": "IBM Cloud Object Storage",
+      "endpointHint": "https://s3.ap.cloud-object-storage.appdomain.cloud",
+      "regionHint": "ap-standard",
+      "regions": [
+        {
+          "id": "ap-standard",
+          "name": "ap-geo",
+          "endpoint": "https://s3.ap.cloud-object-storage.appdomain.cloud"
+        },
+        {
+          "id": "ap-standard",
+          "name": "eu-geo",
+          "endpoint": "https://s3.eu.cloud-object-storage.appdomain.cloud"
+        },
+        {
+          "id": "ap-standard",
+          "name": "us-geo",
+          "endpoint": "https://s3.us.cloud-object-storage.appdomain.cloud"
+        }
+      ]
+    },
+    {
+      "id": "impossiblecloud",
+      "name": "Impossible Cloud",
+      "endpointHint": "https://eu-central-2.storage.impossibleapi.net:443",
+      "regionHint": "eu-central-2",
+      "regions": [
+        {
+          "id": "eu-central-2",
+          "name": "Frankfurt",
+          "endpoint": "https://eu-central-2.storage.impossibleapi.net:443"
+        },
+        {
+          "id": "eu-east-1",
+          "name": "Poznań",
+          "endpoint": "https://eu-east-1.storage.impossibleapi.net:443"
+        },
+        {
+          "id": "eu-north-1",
+          "name": "Copenhagen",
+          "endpoint": "https://eu-north-1.storage.impossibleapi.net:443"
+        },
+        {
+          "id": "eu-west-1",
+          "name": "Amsterdam",
+          "endpoint": "https://eu-west-1.storage.impossibleapi.net:443"
+        },
+        {
+          "id": "eu-west-2",
+          "name": "London",
+          "endpoint": "https://eu-west-2.storage.impossibleapi.net:443"
+        },
+        {
+          "id": "us-east-1",
+          "name": "New York",
+          "endpoint": "https://us-east-1.storage.impossibleapi.net:443"
+        }
+      ]
+    },
+    {
+      "id": "infomaniak",
+      "name": "Infomaniak Public Cloud",
+      "endpointHint": "https://s3.pub1.infomaniak.cloud",
+      "regionHint": "us-east-1",
+      "regions": [
+        {
+          "id": "us-east-1",
+          "name": "dc3-a",
+          "endpoint": "https://s3.pub1.infomaniak.cloud"
+        },
+        {
+          "id": "us-east-1",
+          "name": "dc4-a",
+          "endpoint": "https://s3.pub2.infomaniak.cloud"
+        },
+        {
+          "id": "us-east-1",
+          "name": "S3",
+          "endpoint": "https://s3.swiss-backup01.infomaniak.com"
+        },
+        {
+          "id": "us-east-1",
+          "name": "S3",
+          "endpoint": "https://s3.swiss-backup02.infomaniak.com"
+        },
+        {
+          "id": "us-east-1",
+          "name": "S3",
+          "endpoint": "https://s3.swiss-backup03.infomaniak.com"
+        },
+        {
+          "id": "us-east-1",
+          "name": "S3",
+          "endpoint": "https://s3.swiss-backup04.infomaniak.com"
+        }
+      ]
+    },
+    {
+      "id": "ionos",
+      "name": "IONOS Cloud Object Storage",
+      "endpointHint": "https://s3-eu-central-2.ionoscloud.com:443",
+      "regionHint": "eu-central-2",
+      "regions": [
+        {
+          "id": "eu-central-2",
+          "name": "Berlin, Germany",
+          "endpoint": "https://s3-eu-central-2.ionoscloud.com:443"
+        },
+        {
+          "id": "de",
+          "name": "Frankfurt, Germany",
+          "endpoint": "https://s3-eu-central-1.ionoscloud.com:443"
+        },
+        {
+          "id": "us-central-1",
+          "name": "Lenexa, USA",
+          "endpoint": "https://s3.us-central-1.ionoscloud.com:443"
+        },
+        {
+          "id": "eu-south-2",
+          "name": "Logrono, Spain",
+          "endpoint": "https://s3-eu-south-2.ionoscloud.com:443"
+        }
+      ]
+    },
+    {
+      "id": "katapult",
+      "name": "Katapult Object Storage",
+      "endpointHint": "https://uk-lon-1.katapultobjects.com",
+      "regionHint": "uk-lon-1"
+    },
+    {
+      "id": "linode",
+      "name": "Linode Object Storage",
+      "endpointHint": "https://ap-south-1.linodeobjects.com",
+      "regionHint": "ap-south-1",
+      "regions": [
+        {
+          "id": "ap-south-1",
+          "name": "Singapore, SG",
+          "endpoint": "https://ap-south-1.linodeobjects.com"
+        },
+        {
+          "id": "au-mel-1",
+          "name": "Melbourne, AU",
+          "endpoint": "https://au-mel-1.linodeobjects.com"
+        },
+        {
+          "id": "br-gru-1",
+          "name": "Sao Paulo, BR",
+          "endpoint": "https://br-gru-1.linodeobjects.com"
+        },
+        {
+          "id": "de-fra-1",
+          "name": "Frankfurt 2, DE",
+          "endpoint": "https://de-fra-1.linodeobjects.com"
+        },
+        {
+          "id": "es-mad-1",
+          "name": "Madrid, ES",
+          "endpoint": "https://es-mad-1.linodeobjects.com"
+        },
+        {
+          "id": "eu-central-1",
+          "name": "Frankfurt, DE",
+          "endpoint": "https://eu-central-1.linodeobjects.com"
+        },
+        {
+          "id": "fr-par-1",
+          "name": "Paris, FR",
+          "endpoint": "https://fr-par-1.linodeobjects.com"
+        },
+        {
+          "id": "fr-par-13",
+          "name": "Paris 2, FR",
+          "endpoint": "https://fr-par-13.linodeobjects.com"
+        },
+        {
+          "id": "gb-lon-1",
+          "name": "London 2, UK",
+          "endpoint": "https://gb-lon-1.linodeobjects.com"
+        },
+        {
+          "id": "id-cgk-1",
+          "name": "Jakarta, ID",
+          "endpoint": "https://id-cgk-1.linodeobjects.com"
+        },
+        {
+          "id": "in-bom-1",
+          "name": "Mumbai 2, IN",
+          "endpoint": "https://in-bom-1.linodeobjects.com"
+        },
+        {
+          "id": "in-maa-1",
+          "name": "Chennai, IN",
+          "endpoint": "https://in-maa-1.linodeobjects.com"
+        },
+        {
+          "id": "it-mil-1",
+          "name": "Milan, IT",
+          "endpoint": "https://it-mil-1.linodeobjects.com"
+        },
+        {
+          "id": "jp-osa-1",
+          "name": "Osaka, JP",
+          "endpoint": "https://jp-osa-1.linodeobjects.com"
+        },
+        {
+          "id": "jp-tyo-1",
+          "name": "Tokyo 3, JP",
+          "endpoint": "https://jp-tyo-1.linodeobjects.com"
+        },
+        {
+          "id": "nl-ams-1",
+          "name": "Amsterdam, NL",
+          "endpoint": "https://nl-ams-1.linodeobjects.com"
+        },
+        {
+          "id": "se-sto-1",
+          "name": "Stockholm, SE",
+          "endpoint": "https://se-sto-1.linodeobjects.com"
+        },
+        {
+          "id": "sg-sin-1",
+          "name": "Singapore 2, SG",
+          "endpoint": "https://sg-sin-1.linodeobjects.com"
+        },
+        {
+          "id": "us-east-1",
+          "name": "Newark, NJ, US",
+          "endpoint": "https://us-east-1.linodeobjects.com"
+        },
+        {
+          "id": "us-iad-1",
+          "name": "Washington, DC, US",
+          "endpoint": "https://us-iad-1.linodeobjects.com"
+        },
+        {
+          "id": "us-iad-10",
+          "name": "Washington, DC, US",
+          "endpoint": "https://us-iad-10.linodeobjects.com"
+        },
+        {
+          "id": "us-lax-1",
+          "name": "Los Angeles, CA, US",
+          "endpoint": "https://us-lax-1.linodeobjects.com"
+        },
+        {
+          "id": "us-lax-4",
+          "name": "Los Angeles, CA, US",
+          "endpoint": "https://us-lax-4.linodeobjects.com"
+        },
+        {
+          "id": "us-mia-1",
+          "name": "Miami, FL, US",
+          "endpoint": "https://us-mia-1.linodeobjects.com"
+        },
+        {
+          "id": "us-ord-1",
+          "name": "Chicago, IL, US",
+          "endpoint": "https://us-ord-1.linodeobjects.com"
+        },
+        {
+          "id": "us-ord-10",
+          "name": "Chicago, IL, US",
+          "endpoint": "https://us-ord-10.linodeobjects.com"
+        },
+        {
+          "id": "us-sea-1",
+          "name": "Seattle, WA, US",
+          "endpoint": "https://us-sea-1.linodeobjects.com"
+        },
+        {
+          "id": "us-sea-9",
+          "name": "Seattle, WA, US",
+          "endpoint": "https://us-sea-9.linodeobjects.com"
+        },
+        {
+          "id": "us-southeast-1",
+          "name": "Atlanta, GA, US",
+          "endpoint": "https://us-southeast-1.linodeobjects.com"
+        }
+      ]
+    },
+    {
+      "id": "mega",
+      "name": "MEGA S4",
+      "endpointHint": "https://s3.ca-central-1.s4.mega.io:443",
+      "regionHint": "ca-central-1",
+      "regions": [
+        {
+          "id": "ca-central-1",
+          "name": "Montreal",
+          "endpoint": "https://s3.ca-central-1.s4.mega.io:443"
+        },
+        {
+          "id": "ca-west-1",
+          "name": "Vancouver",
+          "endpoint": "https://s3.ca-west-1.s4.mega.io:443"
+        },
+        {
+          "id": "eu-central-1",
+          "name": "Amsterdam",
+          "endpoint": "https://s3.eu-central-1.s4.mega.io:443"
+        },
+        {
+          "id": "eu-central-2",
+          "name": "Luxembourg",
+          "endpoint": "https://s3.eu-central-2.s4.mega.io:443"
+        }
+      ]
+    },
+    {
+      "id": "myqnapcloud",
+      "name": "myQNAPcloud Object Storage",
+      "endpointHint": "https://s3.ap-northeast-1.myqnapcloud.io:443",
+      "regionHint": "ap-northeast-1",
+      "regions": [
+        {
+          "id": "ap-northeast-1",
+          "name": "Tokyo",
+          "endpoint": "https://s3.ap-northeast-1.myqnapcloud.io:443"
+        },
+        {
+          "id": "ap-northeast-2",
+          "name": "Osaka",
+          "endpoint": "https://s3.ap-northeast-2.myqnapcloud.io:443"
+        },
+        {
+          "id": "ap-southeast-1",
+          "name": "Singapore",
+          "endpoint": "https://s3.ap-southeast-1.myqnapcloud.io:443"
+        },
+        {
+          "id": "ap-southeast-2",
+          "name": "Sydney",
+          "endpoint": "https://s3.ap-southeast-2.myqnapcloud.io:443"
+        },
+        {
+          "id": "ca-central-1",
+          "name": "Toronto",
+          "endpoint": "https://s3.ca-central-1.myqnapcloud.io:443"
+        },
+        {
+          "id": "eu-central-1",
+          "name": "Amsterdam",
+          "endpoint": "https://s3.eu-central-1.myqnapcloud.io:443"
+        },
+        {
+          "id": "eu-central-2",
+          "name": "Frankfurt",
+          "endpoint": "https://s3.eu-central-2.myqnapcloud.io:443"
+        },
+        {
+          "id": "eu-south-1",
+          "name": "Milan",
+          "endpoint": "https://s3.eu-south-1.myqnapcloud.io:443"
+        },
+        {
+          "id": "eu-west-1",
+          "name": "London",
+          "endpoint": "https://s3.eu-west-1.myqnapcloud.io:443"
+        },
+        {
+          "id": "eu-west-2",
+          "name": "Paris",
+          "endpoint": "https://s3.eu-west-2.myqnapcloud.io:443"
+        },
+        {
+          "id": "us-central-1",
+          "name": "Texas",
+          "endpoint": "https://s3.us-central-1.myqnapcloud.io:443"
+        },
+        {
+          "id": "us-east-1",
+          "name": "N. Virginia",
+          "endpoint": "https://s3.us-east-1.myqnapcloud.io:443"
+        },
+        {
+          "id": "us-west-1",
+          "name": "Oregon",
+          "endpoint": "https://s3.us-west-1.myqnapcloud.io:443"
+        }
+      ]
+    },
+    {
+      "id": "oracle",
+      "name": "Oracle Cloud Infrastructure Object Storage",
+      "endpointHint": "",
+      "regionHint": "ap-chuncheon-1",
+      "regions": [
+        {
+          "id": "ap-chuncheon-1",
+          "name": "ap-chuncheon-1",
+          "endpoint": ""
+        },
+        {
+          "id": "ap-hyderabad-1",
+          "name": "ap-hyderabad-1",
+          "endpoint": ""
+        },
+        {
+          "id": "ap-melbourne-1",
+          "name": "ap-melbourne-1",
+          "endpoint": ""
+        },
+        {
+          "id": "ap-mumbai-1",
+          "name": "ap-mumbai-1",
+          "endpoint": ""
+        },
+        {
+          "id": "ap-osaka-1",
+          "name": "ap-osaka-1",
+          "endpoint": ""
+        },
+        {
+          "id": "ap-seoul-1",
+          "name": "ap-seoul-1",
+          "endpoint": ""
+        },
+        {
+          "id": "ap-singapore-1",
+          "name": "ap-singapore-1",
+          "endpoint": ""
+        },
+        {
+          "id": "ap-sydney-1",
+          "name": "ap-sydney-1",
+          "endpoint": ""
+        },
+        {
+          "id": "ap-tokyo-1",
+          "name": "ap-tokyo-1",
+          "endpoint": ""
+        },
+        {
+          "id": "ca-montreal-1",
+          "name": "ca-montreal-1",
+          "endpoint": ""
+        },
+        {
+          "id": "ca-toronto-1",
+          "name": "ca-toronto-1",
+          "endpoint": ""
+        },
+        {
+          "id": "eu-amsterdam-1",
+          "name": "eu-amsterdam-1",
+          "endpoint": ""
+        },
+        {
+          "id": "eu-frankfurt-1",
+          "name": "eu-frankfurt-1",
+          "endpoint": ""
+        },
+        {
+          "id": "eu-marseille-1",
+          "name": "eu-marseille-1",
+          "endpoint": ""
+        },
+        {
+          "id": "eu-milan-1",
+          "name": "eu-milan-1",
+          "endpoint": ""
+        },
+        {
+          "id": "eu-stockholm-1",
+          "name": "eu-stockholm-1",
+          "endpoint": ""
+        },
+        {
+          "id": "eu-zurich-1",
+          "name": "eu-zurich-1",
+          "endpoint": ""
+        },
+        {
+          "id": "il-jerusalem-1",
+          "name": "il-jerusalem-1",
+          "endpoint": ""
+        },
+        {
+          "id": "me-abudhabi-1",
+          "name": "me-abudhabi-1",
+          "endpoint": ""
+        },
+        {
+          "id": "me-dubai-1",
+          "name": "me-dubai-1",
+          "endpoint": ""
+        },
+        {
+          "id": "me-jeddah-1",
+          "name": "me-jeddah-1",
+          "endpoint": ""
+        },
+        {
+          "id": "sa-santiago-1",
+          "name": "sa-santiago-1",
+          "endpoint": ""
+        },
+        {
+          "id": "sa-saopaulo-1",
+          "name": "sa-saopaulo-1",
+          "endpoint": ""
+        },
+        {
+          "id": "sa-vinhedo-1",
+          "name": "sa-vinhedo-1",
+          "endpoint": ""
+        },
+        {
+          "id": "uk-cardiff-1",
+          "name": "uk-cardiff-1",
+          "endpoint": ""
+        },
+        {
+          "id": "uk-london-1",
+          "name": "uk-london-1",
+          "endpoint": ""
+        },
+        {
+          "id": "us-ashburn-1",
+          "name": "us-ashburn-1",
+          "endpoint": ""
+        },
+        {
+          "id": "us-chicago-1",
+          "name": "us-chicago-1",
+          "endpoint": ""
+        },
+        {
+          "id": "us-phoenix-1",
+          "name": "us-phoenix-1",
+          "endpoint": ""
+        },
+        {
+          "id": "us-sanjose-1",
+          "name": "us-sanjose-1",
+          "endpoint": ""
+        }
+      ]
+    },
+    {
+      "id": "ovh",
+      "name": "OVHcloud Object Storage",
+      "endpointHint": "https://s3.bhs.io.cloud.ovh.net",
+      "regionHint": "bhs",
+      "regions": [
+        {
+          "id": "bhs",
+          "name": "Beauharnois",
+          "endpoint": "https://s3.bhs.io.cloud.ovh.net"
+        },
+        {
+          "id": "gra",
+          "name": "Gravelines",
+          "endpoint": "https://s3.gra.io.cloud.ovh.net"
+        },
+        {
+          "id": "rbx",
+          "name": "Roubaix",
+          "endpoint": "https://s3.rbx.io.cloud.ovh.net"
+        },
+        {
+          "id": "sbg",
+          "name": "Strasbourg",
+          "endpoint": "https://s3.sbg.io.cloud.ovh.net"
+        },
+        {
+          "id": "uk",
+          "name": "London",
+          "endpoint": "https://s3.uk.io.cloud.ovh.net"
+        },
+        {
+          "id": "waw",
+          "name": "Warsaw",
+          "endpoint": "https://s3.waw.io.cloud.ovh.net"
+        }
+      ]
+    },
+    {
+      "id": "pilvio",
+      "name": "Pilvio S3",
+      "endpointHint": "https://s3.pilw.io",
+      "regionHint": "us-east-1"
+    },
+    {
+      "id": "psychz",
+      "name": "Psychz sObject",
+      "endpointHint": "https://sobject.uswest1.psychz.net:443",
+      "regionHint": "us-east-1"
+    },
+    {
+      "id": "qumulo",
+      "name": "Qumulo S3",
+      "endpointHint": "",
+      "regionHint": "us-east-1"
+    },
+    {
+      "id": "scaleway",
+      "name": "Scaleway Object Storage",
+      "endpointHint": "https://s3.fr-par.scw.cloud:443",
+      "regionHint": "fr-par",
+      "regions": [
+        {
+          "id": "fr-par",
+          "name": "FR-PAR",
+          "endpoint": "https://s3.fr-par.scw.cloud:443"
+        },
+        {
+          "id": "nl-ams",
+          "name": "NL-AMS",
+          "endpoint": "https://s3.nl-ams.scw.cloud:443"
+        },
+        {
+          "id": "pl-waw",
+          "name": "PL-WAW",
+          "endpoint": "https://s3.pl-waw.scw.cloud:443"
+        }
+      ]
+    },
+    {
+      "id": "storadera",
+      "name": "Storadera",
+      "endpointHint": "https://eu-central-1.s3.storadera.com",
+      "regionHint": "us-east-1",
+      "regions": [
+        {
+          "id": "eu-central-1",
+          "name": "eu-central-1",
+          "endpoint": "https://eu-central-1.s3.storadera.com"
+        },
+        {
+          "id": "eu-east-1",
+          "name": "eu-east-1",
+          "endpoint": "https://eu-east-1.s3.storadera.com"
+        }
+      ]
+    },
+    {
+      "id": "storj",
+      "name": "Storj DCS",
+      "endpointHint": "https://gateway.storjshare.io:443",
+      "regionHint": "auto"
+    },
+    {
+      "id": "swisscom",
+      "name": "Swisscom S3 Dynamic Storage",
+      "endpointHint": "https://ds11s3.swisscom.com",
+      "regionHint": "us-east-1"
+    },
+    {
+      "id": "synology",
+      "name": "Synology C2 Object Storage",
+      "endpointHint": "https://eu-001.s3.synologyc2.net",
+      "regionHint": "eu-001",
+      "regions": [
+        {
+          "id": "eu-001",
+          "name": "eu-001",
+          "endpoint": "https://eu-001.s3.synologyc2.net"
+        },
+        {
+          "id": "eu-002",
+          "name": "eu-002",
+          "endpoint": "https://eu-002.s3.synologyc2.net"
+        },
+        {
+          "id": "eu-003",
+          "name": "eu-003",
+          "endpoint": "https://eu-003.s3.synologyc2.net"
+        },
+        {
+          "id": "eu-004",
+          "name": "eu-004",
+          "endpoint": "https://eu-004.s3.synologyc2.net"
+        },
+        {
+          "id": "tw-001",
+          "name": "tw-001",
+          "endpoint": "https://tw-001.s3.synologyc2.net"
+        },
+        {
+          "id": "us-001",
+          "name": "us-001",
+          "endpoint": "https://us-001.s3.synologyc2.net"
+        },
+        {
+          "id": "us-002",
+          "name": "us-002",
+          "endpoint": "https://us-002.s3.synologyc2.net"
+        },
+        {
+          "id": "us-003",
+          "name": "us-003",
+          "endpoint": "https://us-003.s3.synologyc2.net"
+        }
+      ]
+    },
+    {
+      "id": "tigris",
+      "name": "Tigris Object Storage",
+      "endpointHint": "https://fly.storage.tigris.dev:443",
+      "regionHint": "auto"
+    },
+    {
+      "id": "upcloud",
+      "name": "UpCloud Object Storage",
+      "endpointHint": "",
+      "regionHint": "us-east-1"
+    },
+    {
+      "id": "vitanium",
+      "name": "Vitanium Object Storage",
+      "endpointHint": "https://s3.vitanium.com:443",
+      "regionHint": "eu-west-2"
+    },
+    {
+      "id": "wasabi",
+      "name": "Wasabi",
+      "endpointHint": "https://s3.ap-northeast-1.wasabisys.com:443",
+      "regionHint": "ap-northeast-1",
+      "regions": [
+        {
+          "id": "ap-northeast-1",
+          "name": "Tokyo",
+          "endpoint": "https://s3.ap-northeast-1.wasabisys.com:443"
+        },
+        {
+          "id": "ap-northeast-2",
+          "name": "Osaka",
+          "endpoint": "https://s3.ap-northeast-2.wasabisys.com:443"
+        },
+        {
+          "id": "ap-southeast-1",
+          "name": "Singapore",
+          "endpoint": "https://s3.ap-southeast-1.wasabisys.com:443"
+        },
+        {
+          "id": "ap-southeast-2",
+          "name": "Sydney",
+          "endpoint": "https://s3.ap-southeast-2.wasabisys.com:443"
+        },
+        {
+          "id": "ca-central-1",
+          "name": "Toronto",
+          "endpoint": "https://s3.ca-central-1.wasabisys.com:443"
+        },
+        {
+          "id": "eu-central-1",
+          "name": "Amsterdam",
+          "endpoint": "https://s3.eu-central-1.wasabisys.com:443"
+        },
+        {
+          "id": "eu-central-2",
+          "name": "Frankfurt",
+          "endpoint": "https://s3.eu-central-2.wasabisys.com:443"
+        },
+        {
+          "id": "eu-west-1",
+          "name": "London",
+          "endpoint": "https://s3.eu-west-1.wasabisys.com:443"
+        },
+        {
+          "id": "eu-west-2",
+          "name": "Paris",
+          "endpoint": "https://s3.eu-west-2.wasabisys.com:443"
+        },
+        {
+          "id": "us-central-1",
+          "name": "Texas",
+          "endpoint": "https://s3.us-central-1.wasabisys.com:443"
+        },
+        {
+          "id": "us-east-1",
+          "name": "N. Virginia",
+          "endpoint": "https://s3.us-east-1.wasabisys.com:443"
+        },
+        {
+          "id": "us-east-2",
+          "name": "N. Virginia",
+          "endpoint": "https://s3.us-east-2.wasabisys.com:443"
+        },
+        {
+          "id": "us-west-1",
+          "name": "Oregon",
+          "endpoint": "https://s3.us-west-1.wasabisys.com:443"
+        },
+        {
+          "id": "us-west-2",
+          "name": "San Jose",
+          "endpoint": "https://s3.us-west-2.wasabisys.com:443"
+        }
+      ]
+    },
+    {
+      "id": "z1",
+      "name": "Z1 Storage",
+      "endpointHint": "https://s3.z1storage.com",
+      "regionHint": "us-east-1"
+    },
+    {
+      "id": "zero",
+      "name": "ZERO-Z3",
+      "endpointHint": "https://eyl.s3.zeroservices.eu:443",
+      "regionHint": "zero-eyl1",
+      "regions": [
+        {
+          "id": "zero-eyl1",
+          "name": "eyl1",
+          "endpoint": "https://eyl.s3.zeroservices.eu:443"
+        },
+        {
+          "id": "zero-fra2",
+          "name": "fra2",
+          "endpoint": "https://fra.s3.zeroservices.eu:443"
+        },
+        {
+          "id": "zero-hel1",
+          "name": "hel1",
+          "endpoint": "https://hel.s3.zeroservices.eu:443"
+        }
+      ]
+    }
+  ]
+}
