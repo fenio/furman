@@ -1,5 +1,5 @@
 import { invoke, Channel } from '@tauri-apps/api/core';
-import type { DirListing, KmsKeyInfo, ProgressEvent, S3Bucket, S3BucketAcl, S3BucketEncryption, S3BucketVersioning, S3CorsRule, S3InventoryConfiguration, S3LifecycleRule, S3MultipartUpload, S3NotificationConfiguration, S3ObjectLegalHold, S3ObjectLockConfig, S3ObjectMetadata, S3ObjectProperties, S3ObjectRetention, S3ObjectVersion, S3PublicAccessBlock, S3ReplicationConfiguration, S3Tag, SearchEvent, TransferCheckpoint } from '$lib/types';
+import type { DirListing, KmsKeyInfo, ProgressEvent, S3AccessPoint, S3AccessPointDetail, S3Bucket, S3BucketAcl, S3BucketEncryption, S3BucketVersioning, S3CorsRule, S3InventoryConfiguration, S3LifecycleRule, S3MultipartUpload, S3NotificationConfiguration, S3ObjectLegalHold, S3ObjectLockConfig, S3ObjectMetadata, S3ObjectProperties, S3ObjectRetention, S3ObjectVersion, S3PublicAccessBlock, S3ReplicationConfiguration, S3Tag, SearchEvent, TransferCheckpoint } from '$lib/types';
 
 export async function s3CheckCredentials(): Promise<boolean> {
   return await invoke<boolean>('s3_check_credentials');
@@ -661,6 +661,46 @@ export async function s3GetNotificationConfiguration(id: string): Promise<S3Noti
 
 export async function s3PutNotificationConfiguration(id: string, config: S3NotificationConfiguration): Promise<void> {
   await invoke('s3_put_notification_configuration', { id, config });
+}
+
+// ── Access Points (S3 Control API) ───────────────────────────────────────────
+
+export async function s3ListAccessPoints(id: string): Promise<S3AccessPoint[]> {
+  return await invoke<S3AccessPoint[]>('s3_list_access_points', { id });
+}
+
+export async function s3GetAccessPoint(id: string, name: string): Promise<S3AccessPointDetail> {
+  return await invoke<S3AccessPointDetail>('s3_get_access_point', { id, name });
+}
+
+export async function s3CreateAccessPoint(
+  id: string,
+  name: string,
+  vpcId?: string,
+  publicAccessBlock?: S3PublicAccessBlock,
+): Promise<void> {
+  await invoke('s3_create_access_point', {
+    id,
+    name,
+    vpcId: vpcId || null,
+    publicAccessBlock: publicAccessBlock ?? null,
+  });
+}
+
+export async function s3DeleteAccessPoint(id: string, name: string): Promise<void> {
+  await invoke('s3_delete_access_point', { id, name });
+}
+
+export async function s3GetAccessPointPolicy(id: string, name: string): Promise<string> {
+  return await invoke<string>('s3_get_access_point_policy', { id, name });
+}
+
+export async function s3PutAccessPointPolicy(id: string, name: string, policy: string): Promise<void> {
+  await invoke('s3_put_access_point_policy', { id, name, policy });
+}
+
+export async function s3DeleteAccessPointPolicy(id: string, name: string): Promise<void> {
+  await invoke('s3_delete_access_point_policy', { id, name });
 }
 
 // ── OIDC Authentication ─────────────────────────────────────────────────────

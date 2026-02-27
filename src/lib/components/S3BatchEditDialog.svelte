@@ -26,6 +26,7 @@
     inventory: true,
     replication: true,
     eventNotifications: true,
+    accessPoints: true,
   };
 
   type TabType = 'metadata' | 'tags';

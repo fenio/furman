@@ -8,7 +8,8 @@ use std::sync::Arc;
 use tokio::io::AsyncWriteExt;
 
 use crate::models::{
-    DirListing, FileEntry, FmError, ProgressEvent, S3AclGrant, S3BucketAcl, S3BucketEncryption,
+    DirListing, FileEntry, FmError, ProgressEvent, S3AccessPoint, S3AccessPointDetail,
+    S3AclGrant, S3BucketAcl, S3BucketEncryption,
     S3BucketLogging, S3BucketOwnership, S3BucketVersioning, S3BucketWebsite, S3CorsRule,
     S3EncryptionRule, S3InventoryConfiguration, S3InventoryDestination, S3LifecycleRule,
     S3LifecycleTransition, S3MultipartUpload, S3ObjectLegalHold, S3ObjectLockConfig,
@@ -3882,4 +3883,211 @@ fn build_notification_filter(
             .key(key_filter)
             .build(),
     )
+}
+
+// ── S3 Access Points (S3 Control API) ───────────────────────────────────────
+
+use aws_sdk_s3control::Client as S3ControlClient;
+
+pub async fn list_access_points(
+    client: &S3ControlClient,
+    account_id: &str,
+    bucket: &str,
+) -> Result<Vec<S3AccessPoint>, FmError> {
+    let mut results = Vec::new();
+    let mut next_token: Option<String> = None;
+
+    loop {
+        let mut req = client
+            .list_access_points()
+            .account_id(account_id)
+            .bucket(bucket);
+        if let Some(token) = &next_token {
+            req = req.next_token(token);
+        }
+        let resp = req
+            .send()
+            .await
+            .map_err(|e| s3err(format!("ListAccessPoints: {e}")))?;
+
+        for ap in resp.access_point_list() {
+            let vpc_id = ap
+                .vpc_configuration()
+                .map(|v| v.vpc_id().to_string());
+            let network = if vpc_id.is_some() { "VPC" } else { "Internet" };
+            results.push(S3AccessPoint {
+                name: ap.name().to_string(),
+                access_point_arn: ap.access_point_arn().unwrap_or_default().to_string(),
+                alias: ap.alias().unwrap_or_default().to_string(),
+                bucket: ap.bucket().to_string(),
+                network_origin: network.to_string(),
+                vpc_id,
+            });
+        }
+
+        next_token = resp.next_token().map(|s| s.to_string());
+        if next_token.is_none() {
+            break;
+        }
+    }
+
+    Ok(results)
+}
+
+pub async fn get_access_point(
+    client: &S3ControlClient,
+    account_id: &str,
+    name: &str,
+) -> Result<S3AccessPointDetail, FmError> {
+    let resp = client
+        .get_access_point()
+        .account_id(account_id)
+        .name(name)
+        .send()
+        .await
+        .map_err(|e| s3err(format!("GetAccessPoint: {e}")))?;
+
+    let vpc_id = resp
+        .vpc_configuration()
+        .map(|v| v.vpc_id().to_string());
+    let network = if vpc_id.is_some() { "VPC" } else { "Internet" };
+
+    let pab = resp.public_access_block_configuration().map(|b| S3PublicAccessBlock {
+        block_public_acls: b.block_public_acls().unwrap_or(false),
+        ignore_public_acls: b.ignore_public_acls().unwrap_or(false),
+        block_public_policy: b.block_public_policy().unwrap_or(false),
+        restrict_public_buckets: b.restrict_public_buckets().unwrap_or(false),
+    });
+
+    let creation_date = resp
+        .creation_date()
+        .map(|d| d.to_string());
+
+    let endpoints = resp
+        .endpoints()
+        .map(|m| m.iter().map(|(k, v)| (k.clone(), v.clone())).collect())
+        .unwrap_or_default();
+
+    Ok(S3AccessPointDetail {
+        name: resp.name().unwrap_or_default().to_string(),
+        access_point_arn: resp.access_point_arn().unwrap_or_default().to_string(),
+        alias: resp.alias().unwrap_or_default().to_string(),
+        bucket: resp.bucket().unwrap_or_default().to_string(),
+        network_origin: network.to_string(),
+        vpc_id,
+        public_access_block: pab,
+        creation_date,
+        endpoints,
+    })
+}
+
+pub async fn create_access_point(
+    client: &S3ControlClient,
+    account_id: &str,
+    name: &str,
+    bucket: &str,
+    vpc_id: Option<&str>,
+    public_access_block: Option<&S3PublicAccessBlock>,
+) -> Result<(), FmError> {
+    let mut req = client
+        .create_access_point()
+        .account_id(account_id)
+        .name(name)
+        .bucket(bucket);
+
+    if let Some(vid) = vpc_id {
+        let vpc_config = aws_sdk_s3control::types::VpcConfiguration::builder()
+            .vpc_id(vid)
+            .build()
+            .map_err(|e| s3err(format!("VpcConfiguration build: {e}")))?;
+        req = req.vpc_configuration(vpc_config);
+    }
+
+    if let Some(pab) = public_access_block {
+        let pab_config = aws_sdk_s3control::types::PublicAccessBlockConfiguration::builder()
+            .block_public_acls(pab.block_public_acls)
+            .ignore_public_acls(pab.ignore_public_acls)
+            .block_public_policy(pab.block_public_policy)
+            .restrict_public_buckets(pab.restrict_public_buckets)
+            .build();
+        req = req.public_access_block_configuration(pab_config);
+    }
+
+    req.send()
+        .await
+        .map_err(|e| s3err(format!("CreateAccessPoint: {e}")))?;
+
+    Ok(())
+}
+
+pub async fn delete_access_point(
+    client: &S3ControlClient,
+    account_id: &str,
+    name: &str,
+) -> Result<(), FmError> {
+    client
+        .delete_access_point()
+        .account_id(account_id)
+        .name(name)
+        .send()
+        .await
+        .map_err(|e| s3err(format!("DeleteAccessPoint: {e}")))?;
+    Ok(())
+}
+
+pub async fn get_access_point_policy(
+    client: &S3ControlClient,
+    account_id: &str,
+    name: &str,
+) -> Result<String, FmError> {
+    match client
+        .get_access_point_policy()
+        .account_id(account_id)
+        .name(name)
+        .send()
+        .await
+    {
+        Ok(resp) => Ok(resp.policy().unwrap_or_default().to_string()),
+        Err(e) => {
+            let svc_err = e.into_service_error();
+            let code = svc_err.meta().code().unwrap_or_default();
+            if code == "NoSuchAccessPointPolicy" {
+                Ok(String::new())
+            } else {
+                Err(s3err(format!("GetAccessPointPolicy: {svc_err}")))
+            }
+        }
+    }
+}
+
+pub async fn put_access_point_policy(
+    client: &S3ControlClient,
+    account_id: &str,
+    name: &str,
+    policy: &str,
+) -> Result<(), FmError> {
+    client
+        .put_access_point_policy()
+        .account_id(account_id)
+        .name(name)
+        .policy(policy)
+        .send()
+        .await
+        .map_err(|e| s3err(format!("PutAccessPointPolicy: {e}")))?;
+    Ok(())
+}
+
+pub async fn delete_access_point_policy(
+    client: &S3ControlClient,
+    account_id: &str,
+    name: &str,
+) -> Result<(), FmError> {
+    client
+        .delete_access_point_policy()
+        .account_id(account_id)
+        .name(name)
+        .send()
+        .await
+        .map_err(|e| s3err(format!("DeleteAccessPointPolicy: {e}")))?;
+    Ok(())
 }

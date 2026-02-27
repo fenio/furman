@@ -51,6 +51,7 @@ pub struct TestContext {
     pub bucket: String,
     pub client: S3Client,
     pub config: MinioConfig,
+    pub sdk_config: aws_config::SdkConfig,
     extra_buckets: Vec<String>,
 }
 
@@ -63,7 +64,7 @@ impl TestContext {
         } else {
             Some(config.endpoint.as_str())
         };
-        let (client, _) = build_s3_client(
+        let (client, sdk_config) = build_s3_client(
             &config.region,
             endpoint,
             None,
@@ -97,6 +98,7 @@ impl TestContext {
             bucket,
             client,
             config,
+            sdk_config,
             extra_buckets: Vec::new(),
         }
     }
@@ -110,7 +112,7 @@ impl TestContext {
         } else {
             Some(config.endpoint.as_str())
         };
-        let (client, _) = build_s3_client(
+        let (client, sdk_config) = build_s3_client(
             &config.region,
             endpoint,
             None,
@@ -155,6 +157,7 @@ impl TestContext {
             bucket,
             client,
             config,
+            sdk_config,
             extra_buckets: Vec::new(),
         }
     }

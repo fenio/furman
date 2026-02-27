@@ -474,6 +474,31 @@ pub struct S3NotificationConfiguration {
     pub event_bridge_enabled: bool,
 }
 
+// ── S3 Access Points ────────────────────────────────────────────────────────
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct S3AccessPoint {
+    pub name: String,
+    pub access_point_arn: String,
+    pub alias: String,
+    pub bucket: String,
+    pub network_origin: String, // "Internet" | "VPC"
+    pub vpc_id: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct S3AccessPointDetail {
+    pub name: String,
+    pub access_point_arn: String,
+    pub alias: String,
+    pub bucket: String,
+    pub network_origin: String,
+    pub vpc_id: Option<String>,
+    pub public_access_block: Option<S3PublicAccessBlock>,
+    pub creation_date: Option<String>,
+    pub endpoints: HashMap<String, String>,
+}
+
 // ── CloudFront Types ────────────────────────────────────────────────────────
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

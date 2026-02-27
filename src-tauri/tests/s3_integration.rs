@@ -1,5 +1,6 @@
 mod common;
 
+use app_lib::models::S3PublicAccessBlock;
 use app_lib::s3::client::build_s3_client;
 use app_lib::s3::service::{self, S3Service};
 use common::TestContext;
@@ -1651,6 +1652,115 @@ async fn test_notification_configuration_roundtrip() {
         .await
         .expect("get_notification_configuration after clear failed");
     assert!(!cleared.event_bridge_enabled, "EventBridge should be disabled after clear");
+
+    ctx.cleanup().await;
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Access Points (S3 Control API — AWS only)
+// ═══════════════════════════════════════════════════════════════════════════
+
+#[tokio::test]
+async fn test_access_point_roundtrip() {
+    let ctx = TestContext::new().await;
+
+    // Access Points are AWS-only; skip on MinIO
+    if !ctx.config.is_aws() {
+        eprintln!("Skipping test_access_point_roundtrip (not AWS)");
+        ctx.cleanup().await;
+        return;
+    }
+
+    // Get account ID via STS
+    let sts = aws_sdk_sts::Client::new(&ctx.sdk_config);
+    let identity = sts
+        .get_caller_identity()
+        .send()
+        .await
+        .expect("STS GetCallerIdentity failed");
+    let account_id = identity.account().expect("No account ID from STS");
+
+    // Build S3Control client
+    let s3control = aws_sdk_s3control::Client::new(&ctx.sdk_config);
+
+    let ap_name = format!("furman-test-{}", &ctx.bucket[5..13]); // short unique name from bucket uuid
+
+    // List — our name should not exist yet
+    let before = service::list_access_points(&s3control, account_id, &ctx.bucket)
+        .await
+        .expect("list_access_points failed");
+    assert!(
+        !before.iter().any(|ap| ap.name == ap_name),
+        "access point should not exist before creation"
+    );
+
+    // Create with PAB
+    let pab = S3PublicAccessBlock {
+        block_public_acls: true,
+        ignore_public_acls: true,
+        block_public_policy: true,
+        restrict_public_buckets: true,
+    };
+    service::create_access_point(&s3control, account_id, &ap_name, &ctx.bucket, None, Some(&pab))
+        .await
+        .expect("create_access_point failed");
+
+    // Get detail — verify fields
+    let detail = service::get_access_point(&s3control, account_id, &ap_name)
+        .await
+        .expect("get_access_point failed");
+    assert_eq!(detail.name, ap_name);
+    assert_eq!(detail.network_origin, "Internet");
+    assert!(detail.vpc_id.is_none());
+    if let Some(ref pab_result) = detail.public_access_block {
+        assert!(pab_result.block_public_acls);
+        assert!(pab_result.ignore_public_acls);
+        assert!(pab_result.block_public_policy);
+        assert!(pab_result.restrict_public_buckets);
+    }
+
+    // Policy roundtrip: get (empty), put, get (non-empty), delete, get (empty)
+    let empty_policy = service::get_access_point_policy(&s3control, account_id, &ap_name)
+        .await
+        .expect("get_access_point_policy (initial) failed");
+    assert!(empty_policy.is_empty(), "policy should be empty initially");
+
+    let policy_json = format!(
+        r#"{{"Version":"2012-10-17","Statement":[{{"Sid":"AllowGetObject","Effect":"Allow","Principal":{{"AWS":"{}"}},"Action":"s3:GetObject","Resource":"{}/object/*"}}]}}"#,
+        identity.arn().unwrap_or("*"),
+        detail.access_point_arn,
+    );
+    service::put_access_point_policy(&s3control, account_id, &ap_name, &policy_json)
+        .await
+        .expect("put_access_point_policy failed");
+
+    let got_policy = service::get_access_point_policy(&s3control, account_id, &ap_name)
+        .await
+        .expect("get_access_point_policy (after put) failed");
+    assert!(!got_policy.is_empty(), "policy should be non-empty after put");
+
+    service::delete_access_point_policy(&s3control, account_id, &ap_name)
+        .await
+        .expect("delete_access_point_policy failed");
+
+    let cleared_policy = service::get_access_point_policy(&s3control, account_id, &ap_name)
+        .await
+        .expect("get_access_point_policy (after delete) failed");
+    assert!(cleared_policy.is_empty(), "policy should be empty after delete");
+
+    // Delete access point
+    service::delete_access_point(&s3control, account_id, &ap_name)
+        .await
+        .expect("delete_access_point failed");
+
+    // Verify gone from list
+    let after = service::list_access_points(&s3control, account_id, &ctx.bucket)
+        .await
+        .expect("list_access_points (after delete) failed");
+    assert!(
+        !after.iter().any(|ap| ap.name == ap_name),
+        "access point should not exist after deletion"
+    );
 
     ctx.cleanup().await;
 }

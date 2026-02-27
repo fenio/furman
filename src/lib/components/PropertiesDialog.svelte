@@ -7,6 +7,7 @@
   import S3InventoryTab from './S3InventoryTab.svelte';
   import S3ReplicationTab from './S3ReplicationTab.svelte';
   import S3NotificationsTab from './S3NotificationsTab.svelte';
+  import S3AccessPointsTab from './S3AccessPointsTab.svelte';
   import {
     s3HeadObject, s3ChangeStorageClass, s3RestoreObject, s3ListObjectVersions,
     s3DownloadVersion, s3RestoreVersion, s3DeleteVersion,
@@ -57,14 +58,14 @@
     glacierRestore: true, presignedUrls: true, objectMetadata: true,
     objectTags: true, bucketTags: true, multipartUploadCleanup: true,
     websiteHosting: true, requesterPays: true, objectOwnership: true, serverAccessLogging: true,
-    objectLock: true, listBuckets: true, cloudfront: true, inventory: true, replication: true, eventNotifications: true,
+    objectLock: true, listBuckets: true, cloudfront: true, inventory: true, replication: true, eventNotifications: true, accessPoints: true,
   };
 
   let fileProps = $state<FileProperties | null>(null);
   let s3Props = $state<S3ObjectProperties | null>(null);
   let s3IsPrefix = $state(false);
   let s3IsBucketRoot = $state(false);
-  let bucketTab = $state<'general' | 'security' | 'cors' | 'acl' | 'lifecycle' | 'cdn' | 'inventory' | 'replication' | 'notifications'>('general');
+  let bucketTab = $state<'general' | 'security' | 'cors' | 'acl' | 'lifecycle' | 'cdn' | 'inventory' | 'replication' | 'notifications' | 'accesspoints'>('general');
   let objectTab = $state<'general' | 'metadata' | 'versions'>('general');
   let loading = $state(true);
   let error = $state('');
@@ -1885,6 +1886,9 @@
             {#if caps.eventNotifications}
               <button class="tab-btn" class:active={bucketTab === 'notifications'} onclick={() => { bucketTab = 'notifications'; }}>Notifications</button>
             {/if}
+            {#if caps.accessPoints}
+              <button class="tab-btn" class:active={bucketTab === 'accesspoints'} onclick={() => { bucketTab = 'accesspoints'; }}>Access Points</button>
+            {/if}
           </div>
 
           <!-- Bucket Versioning -->
@@ -2657,6 +2661,10 @@
 
           {#if bucketTab === 'notifications' && caps.eventNotifications}
             <S3NotificationsTab s3ConnectionId={s3ConnectionId} />
+          {/if}
+
+          {#if bucketTab === 'accesspoints' && caps.accessPoints}
+            <S3AccessPointsTab s3ConnectionId={s3ConnectionId} />
           {/if}
         {/if}
       {/if}

@@ -15,6 +15,7 @@ pub struct S3Connection {
     pub bucket: String,
     pub region: String,
     pub sdk_config: aws_config::SdkConfig,
+    pub account_id: Option<String>,
 }
 
 // ── Client Builder ──────────────────────────────────────────────────────────

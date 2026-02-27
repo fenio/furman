@@ -1,6 +1,7 @@
 use crate::commands::file::FileOpState;
 use crate::models::{
-    DirListing, FmError, KmsKeyInfo, ProgressEvent, S3BucketAcl, S3BucketEncryption,
+    DirListing, FmError, KmsKeyInfo, ProgressEvent, S3AccessPoint, S3AccessPointDetail,
+    S3BucketAcl, S3BucketEncryption,
     S3BucketLogging, S3BucketOwnership, S3BucketVersioning, S3BucketWebsite, S3CorsRule,
     S3InventoryConfiguration, S3LifecycleRule, S3MultipartUpload, S3NotificationConfiguration,
     S3ObjectLegalHold, S3ObjectLockConfig, S3ObjectMetadata, S3ObjectProperties, S3ObjectRetention,
@@ -131,6 +132,7 @@ pub async fn s3_connect(
         bucket,
         region,
         sdk_config,
+        account_id: None,
     };
 
     let mut map = state.0.lock().map_err(|e| s3err(e.to_string()))?;
@@ -1233,4 +1235,148 @@ pub async fn s3_put_notification_configuration(
 ) -> Result<(), FmError> {
     let service = get_service(&state, &id)?;
     service.put_notification_configuration(&config).await
+}
+
+// ── Access Points (S3 Control API) ──────────────────────────────────────────
+
+/// Lazily fetch and cache the AWS account ID via STS GetCallerIdentity.
+async fn get_account_id(state: &State<'_, S3State>, id: &str) -> Result<String, FmError> {
+    // Check cache first
+    {
+        let map = state.0.lock().map_err(|e| s3err(e.to_string()))?;
+        let conn = map.get(id).ok_or_else(|| s3err("S3 connection not found"))?;
+        if let Some(ref acct) = conn.account_id {
+            return Ok(acct.clone());
+        }
+    }
+
+    // Fetch via STS
+    let sdk_config = {
+        let map = state.0.lock().map_err(|e| s3err(e.to_string()))?;
+        let conn = map.get(id).ok_or_else(|| s3err("S3 connection not found"))?;
+        conn.sdk_config.clone()
+    };
+    let sts = aws_sdk_sts::Client::new(&sdk_config);
+    let resp = sts
+        .get_caller_identity()
+        .send()
+        .await
+        .map_err(|e| s3err(format!("STS GetCallerIdentity: {e}")))?;
+    let account = resp
+        .account()
+        .ok_or_else(|| s3err("STS GetCallerIdentity returned no account ID"))?
+        .to_string();
+
+    // Cache it
+    {
+        let mut map = state.0.lock().map_err(|e| s3err(e.to_string()))?;
+        if let Some(conn) = map.get_mut(id) {
+            conn.account_id = Some(account.clone());
+        }
+    }
+
+    Ok(account)
+}
+
+/// Build an S3ControlClient from the stored sdk_config.
+fn get_s3control_client(state: &State<'_, S3State>, id: &str) -> Result<aws_sdk_s3control::Client, FmError> {
+    let map = state.0.lock().map_err(|e| s3err(e.to_string()))?;
+    let conn = map.get(id).ok_or_else(|| s3err("S3 connection not found"))?;
+    Ok(aws_sdk_s3control::Client::new(&conn.sdk_config))
+}
+
+/// Get the bucket name from the connection.
+fn get_bucket(state: &State<'_, S3State>, id: &str) -> Result<String, FmError> {
+    let map = state.0.lock().map_err(|e| s3err(e.to_string()))?;
+    let conn = map.get(id).ok_or_else(|| s3err("S3 connection not found"))?;
+    Ok(conn.bucket.clone())
+}
+
+#[tauri::command]
+pub async fn s3_list_access_points(
+    state: State<'_, S3State>,
+    id: String,
+) -> Result<Vec<S3AccessPoint>, FmError> {
+    let account_id = get_account_id(&state, &id).await?;
+    let client = get_s3control_client(&state, &id)?;
+    let bucket = get_bucket(&state, &id)?;
+    s3::service::list_access_points(&client, &account_id, &bucket).await
+}
+
+#[tauri::command]
+pub async fn s3_get_access_point(
+    state: State<'_, S3State>,
+    id: String,
+    name: String,
+) -> Result<S3AccessPointDetail, FmError> {
+    let account_id = get_account_id(&state, &id).await?;
+    let client = get_s3control_client(&state, &id)?;
+    s3::service::get_access_point(&client, &account_id, &name).await
+}
+
+#[tauri::command]
+pub async fn s3_create_access_point(
+    state: State<'_, S3State>,
+    id: String,
+    name: String,
+    vpc_id: Option<String>,
+    public_access_block: Option<S3PublicAccessBlock>,
+) -> Result<(), FmError> {
+    let account_id = get_account_id(&state, &id).await?;
+    let client = get_s3control_client(&state, &id)?;
+    let bucket = get_bucket(&state, &id)?;
+    s3::service::create_access_point(
+        &client,
+        &account_id,
+        &name,
+        &bucket,
+        vpc_id.as_deref(),
+        public_access_block.as_ref(),
+    )
+    .await
+}
+
+#[tauri::command]
+pub async fn s3_delete_access_point(
+    state: State<'_, S3State>,
+    id: String,
+    name: String,
+) -> Result<(), FmError> {
+    let account_id = get_account_id(&state, &id).await?;
+    let client = get_s3control_client(&state, &id)?;
+    s3::service::delete_access_point(&client, &account_id, &name).await
+}
+
+#[tauri::command]
+pub async fn s3_get_access_point_policy(
+    state: State<'_, S3State>,
+    id: String,
+    name: String,
+) -> Result<String, FmError> {
+    let account_id = get_account_id(&state, &id).await?;
+    let client = get_s3control_client(&state, &id)?;
+    s3::service::get_access_point_policy(&client, &account_id, &name).await
+}
+
+#[tauri::command]
+pub async fn s3_put_access_point_policy(
+    state: State<'_, S3State>,
+    id: String,
+    name: String,
+    policy: String,
+) -> Result<(), FmError> {
+    let account_id = get_account_id(&state, &id).await?;
+    let client = get_s3control_client(&state, &id)?;
+    s3::service::put_access_point_policy(&client, &account_id, &name, &policy).await
+}
+
+#[tauri::command]
+pub async fn s3_delete_access_point_policy(
+    state: State<'_, S3State>,
+    id: String,
+    name: String,
+) -> Result<(), FmError> {
+    let account_id = get_account_id(&state, &id).await?;
+    let client = get_s3control_client(&state, &id)?;
+    s3::service::delete_access_point_policy(&client, &account_id, &name).await
 }

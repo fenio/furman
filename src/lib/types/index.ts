@@ -351,6 +351,29 @@ export interface S3NotificationConfiguration {
   event_bridge_enabled: boolean;
 }
 
+// ── S3 Access Point Types ────────────────────────────────────────────────────
+
+export interface S3AccessPoint {
+  name: string;
+  access_point_arn: string;
+  alias: string;
+  bucket: string;
+  network_origin: string; // "Internet" | "VPC"
+  vpc_id: string | null;
+}
+
+export interface S3AccessPointDetail {
+  name: string;
+  access_point_arn: string;
+  alias: string;
+  bucket: string;
+  network_origin: string;
+  vpc_id: string | null;
+  public_access_block: S3PublicAccessBlock | null;
+  creation_date: string | null;
+  endpoints: Record<string, string>;
+}
+
 // ── CloudFront Types ────────────────────────────────────────────────────────
 
 export interface CfDistributionSummary {
@@ -430,6 +453,7 @@ export interface S3ProviderCapabilities {
   inventory: boolean;
   replication: boolean;
   eventNotifications: boolean;
+  accessPoints: boolean;
 }
 
 export interface S3ConnectionInfo {

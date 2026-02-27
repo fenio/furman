@@ -193,6 +193,14 @@ pub fn run() {
             // notification commands
             commands::s3::s3_get_notification_configuration,
             commands::s3::s3_put_notification_configuration,
+            // access point commands
+            commands::s3::s3_list_access_points,
+            commands::s3::s3_get_access_point,
+            commands::s3::s3_create_access_point,
+            commands::s3::s3_delete_access_point,
+            commands::s3::s3_get_access_point_policy,
+            commands::s3::s3_put_access_point_policy,
+            commands::s3::s3_delete_access_point_policy,
             // cloudfront commands
             commands::cloudfront::cf_list_distributions,
             commands::cloudfront::cf_get_distribution,
