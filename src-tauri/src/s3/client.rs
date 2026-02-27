@@ -32,6 +32,7 @@ pub async fn build_s3_client(
     session_duration_secs: Option<i32>,
     use_transfer_acceleration: Option<bool>,
     anonymous: Option<bool>,
+    web_identity_token: Option<&str>,
 ) -> Result<(S3Client, aws_config::SdkConfig), FmError> {
     let mut loader = if anonymous.unwrap_or(false) {
         aws_config::defaults(BehaviorVersion::latest())
@@ -65,8 +66,45 @@ pub async fn build_s3_client(
 
     let base_config = loader.load().await;
 
-    // If a role ARN is provided, assume the role via STS
-    let final_config = if let Some(arn) = role_arn {
+    // OIDC: use AssumeRoleWithWebIdentity
+    let final_config = if let Some(token) = web_identity_token {
+        let sts_client = aws_sdk_sts::Client::new(&base_config);
+        let arn = role_arn.ok_or_else(|| s3err("Role ARN required for OIDC"))?;
+        let sess = session_name.unwrap_or("furman-oidc");
+        let mut req = sts_client
+            .assume_role_with_web_identity()
+            .role_arn(arn)
+            .role_session_name(sess)
+            .web_identity_token(token);
+        if let Some(duration) = session_duration_secs {
+            req = req.duration_seconds(duration);
+        }
+        let resp = req
+            .send()
+            .await
+            .map_err(|e| s3err(format!("AssumeRoleWithWebIdentity failed: {e}")))?;
+        let creds = resp
+            .credentials()
+            .ok_or_else(|| s3err("No credentials returned from AssumeRoleWithWebIdentity"))?;
+        let expiry = std::time::SystemTime::try_from(creds.expiration().clone()).ok();
+        let aws_creds = aws_credential_types::Credentials::new(
+            creds.access_key_id(),
+            creds.secret_access_key(),
+            Some(creds.session_token().to_string()),
+            expiry,
+            "furman-oidc",
+        );
+        let mut assumed_loader = aws_config::defaults(BehaviorVersion::latest())
+            .region(aws_config::Region::new(region.to_string()))
+            .credentials_provider(aws_creds);
+        if let Some(ep) = endpoint {
+            if !ep.is_empty() {
+                assumed_loader = assumed_loader.endpoint_url(ep);
+            }
+        }
+        assumed_loader.load().await
+    } else if let Some(arn) = role_arn {
+        // If a role ARN is provided, assume the role via STS
         let sts_client = aws_sdk_sts::Client::new(&base_config);
         let mut assume_req = sts_client
             .assume_role()

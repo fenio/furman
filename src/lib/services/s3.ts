@@ -19,6 +19,7 @@ export async function s3Connect(
   sessionDurationSecs?: number,
   useTransferAcceleration?: boolean,
   anonymous?: boolean,
+  webIdentityToken?: string,
 ): Promise<void> {
   await invoke('s3_connect', {
     id,
@@ -34,6 +35,7 @@ export async function s3Connect(
     sessionDurationSecs: sessionDurationSecs ?? null,
     useTransferAcceleration: useTransferAcceleration ?? null,
     anonymous: anonymous ?? null,
+    webIdentityToken: webIdentityToken || null,
   });
 }
 
@@ -47,6 +49,7 @@ export async function s3ListBuckets(
   externalId?: string,
   sessionName?: string,
   sessionDurationSecs?: number,
+  webIdentityToken?: string,
 ): Promise<S3Bucket[]> {
   return await invoke<S3Bucket[]>('s3_list_buckets', {
     region,
@@ -58,6 +61,7 @@ export async function s3ListBuckets(
     externalId: externalId || null,
     sessionName: sessionName || null,
     sessionDurationSecs: sessionDurationSecs ?? null,
+    webIdentityToken: webIdentityToken || null,
   });
 }
 
@@ -222,6 +226,7 @@ export async function s3CreateBucket(
   externalId?: string,
   sessionName?: string,
   sessionDurationSecs?: number,
+  webIdentityToken?: string,
 ): Promise<void> {
   await invoke('s3_create_bucket', {
     region,
@@ -234,6 +239,7 @@ export async function s3CreateBucket(
     externalId: externalId || null,
     sessionName: sessionName || null,
     sessionDurationSecs: sessionDurationSecs ?? null,
+    webIdentityToken: webIdentityToken || null,
   });
 }
 
@@ -248,6 +254,7 @@ export async function s3DeleteBucket(
   externalId?: string,
   sessionName?: string,
   sessionDurationSecs?: number,
+  webIdentityToken?: string,
 ): Promise<void> {
   await invoke('s3_delete_bucket', {
     region,
@@ -260,6 +267,7 @@ export async function s3DeleteBucket(
     externalId: externalId || null,
     sessionName: sessionName || null,
     sessionDurationSecs: sessionDurationSecs ?? null,
+    webIdentityToken: webIdentityToken || null,
   });
 }
 
@@ -591,4 +599,35 @@ export async function s3BatchPutObjectTags(
 
 export async function s3SetBandwidthLimit(bytesPerSec: number): Promise<void> {
   await invoke('s3_set_bandwidth_limit', { bytesPerSec });
+}
+
+// ── OIDC Authentication ─────────────────────────────────────────────────────
+
+export interface OidcAuthResult {
+  id_token: string;
+  refresh_token: string | null;
+}
+
+export async function oidcStartAuth(
+  issuerUrl: string,
+  clientId: string,
+  scopes?: string,
+): Promise<OidcAuthResult> {
+  return await invoke<OidcAuthResult>('oidc_start_auth', {
+    issuerUrl,
+    clientId,
+    scopes: scopes || null,
+  });
+}
+
+export async function oidcRefresh(
+  issuerUrl: string,
+  clientId: string,
+  refreshToken: string,
+): Promise<OidcAuthResult> {
+  return await invoke<OidcAuthResult>('oidc_refresh', {
+    issuerUrl,
+    clientId,
+    refreshToken,
+  });
 }

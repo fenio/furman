@@ -5,6 +5,7 @@ pub mod file;
 pub mod git;
 pub mod keychain;
 pub mod metadata;
+pub mod oidc;
 pub mod s3;
 pub mod search;
 pub mod sync;

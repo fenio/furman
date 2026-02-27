@@ -6,12 +6,13 @@
   import S3ConnectDialog from '$lib/components/S3ConnectDialog.svelte';
   import { resolveCapabilities, getProviderIcon } from '$lib/data/s3-providers';
   import { error } from '$lib/services/log';
+  import { oidcRefresh } from '$lib/services/s3';
   import type { S3Profile, S3ConnectionInfo, S3ProviderCapabilities } from '$lib/types';
 
   interface Props {
     onClose: () => void;
     initialTab?: 'saved' | 'connect';
-    onConnect?: (bucket: string, region: string, endpoint?: string, profile?: string, accessKey?: string, secretKey?: string, provider?: string, customCapabilities?: S3ProviderCapabilities, roleArn?: string, externalId?: string, sessionName?: string, sessionDurationSecs?: number, useTransferAcceleration?: boolean, anonymous?: boolean) => void;
+    onConnect?: (bucket: string, region: string, endpoint?: string, profile?: string, accessKey?: string, secretKey?: string, provider?: string, customCapabilities?: S3ProviderCapabilities, roleArn?: string, externalId?: string, sessionName?: string, sessionDurationSecs?: number, useTransferAcceleration?: boolean, anonymous?: boolean, webIdentityToken?: string) => void;
   }
 
   let { onClose, initialTab = 'saved', onConnect: onConnectProp }: Props = $props();
@@ -54,6 +55,7 @@
     sessionDurationSecs?: number,
     useTransferAcceleration?: boolean,
     anonymous?: boolean,
+    webIdentityToken?: string,
   ) {
     connectError = '';
     const panel = panels.active;
@@ -63,7 +65,7 @@
     if (endpoint) info.endpoint = endpoint;
     if (profile) info.profile = profile;
     try {
-      await panel.connectS3(info, endpoint, profile, accessKey, secretKey, roleArn, externalId, sessionName, sessionDurationSecs, useTransferAcceleration, anonymous);
+      await panel.connectS3(info, endpoint, profile, accessKey, secretKey, roleArn, externalId, sessionName, sessionDurationSecs, useTransferAcceleration, anonymous, webIdentityToken);
       onClose();
     } catch (err: unknown) {
       connectError = err instanceof Error ? err.message : String(err);
@@ -84,6 +86,39 @@
         undefined, undefined, undefined, undefined, undefined,
         true,
       );
+      return;
+    }
+
+    if (p.credentialType === 'oidc') {
+      // Try silent refresh first
+      try {
+        const refreshToken = await s3ProfilesState.getSecret(p.id + ':oidc-refresh');
+        if (refreshToken && p.oidcIssuerUrl && p.oidcClientId) {
+          try {
+            const result = await oidcRefresh(p.oidcIssuerUrl, p.oidcClientId, refreshToken);
+            // Store new refresh token
+            if (result.refresh_token) {
+              await s3ProfilesState.saveSecret(p.id + ':oidc-refresh', result.refresh_token);
+            }
+            await handleConnect(
+              p.bucket, p.region, p.endpoint,
+              undefined, undefined, undefined,
+              p.provider, p.customCapabilities,
+              p.roleArn, p.externalId, p.sessionName, p.sessionDurationSecs,
+              undefined, false,
+              result.id_token,
+            );
+            return;
+          } catch {
+            // Silent refresh failed — fall through to edit for re-auth
+          }
+        }
+      } catch {
+        // No stored refresh token
+      }
+      // Interactive: open edit dialog for re-authentication
+      editingProfile = p;
+      view = 'edit';
       return;
     }
 

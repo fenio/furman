@@ -1,6 +1,7 @@
 mod commands;
 pub mod cloudfront;
 pub mod models;
+pub mod oidc;
 pub mod s3;
 
 use commands::file::FileOpState;
@@ -189,6 +190,9 @@ pub fn run() {
             commands::cloudfront::cf_delete_distribution,
             commands::cloudfront::cf_create_invalidation,
             commands::cloudfront::cf_list_invalidations,
+            // oidc commands
+            commands::oidc::oidc_start_auth,
+            commands::oidc::oidc_refresh,
             // archive commands
             commands::archive::list_archive,
             commands::archive::extract_archive,

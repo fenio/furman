@@ -1,13 +1,13 @@
 <script lang="ts">
   import { onMount, untrack } from 'svelte';
-  import { s3CheckCredentials, s3ListBuckets, s3CreateBucket, s3DeleteBucket } from '$lib/services/s3';
+  import { s3CheckCredentials, s3ListBuckets, s3CreateBucket, s3DeleteBucket, oidcStartAuth } from '$lib/services/s3';
   import { s3ProfilesState } from '$lib/state/s3profiles.svelte';
   import { S3_PROVIDERS, getProvider, inferProviderFromEndpoint } from '$lib/data/s3-providers';
   import type { S3ProviderProfile, S3ProviderRegion } from '$lib/data/s3-providers';
   import type { S3Bucket, S3Profile, S3ProviderCapabilities } from '$lib/types';
 
   interface Props {
-    onConnect: (bucket: string, region: string, endpoint?: string, profile?: string, accessKey?: string, secretKey?: string, provider?: string, customCapabilities?: S3ProviderCapabilities, roleArn?: string, externalId?: string, sessionName?: string, sessionDurationSecs?: number, useTransferAcceleration?: boolean, anonymous?: boolean) => void;
+    onConnect: (bucket: string, region: string, endpoint?: string, profile?: string, accessKey?: string, secretKey?: string, provider?: string, customCapabilities?: S3ProviderCapabilities, roleArn?: string, externalId?: string, sessionName?: string, sessionDurationSecs?: number, useTransferAcceleration?: boolean, anonymous?: boolean, webIdentityToken?: string) => void;
     onCancel: () => void;
     saveMode?: boolean;
     initialData?: S3Profile;
@@ -28,7 +28,13 @@
   let secretKey = $state('');
   let selectedProvider = $state(init?.provider ?? 'aws');
   let useAnonymous = $state(init?.credentialType === 'anonymous');
-  let useDefaultCreds = $state(init?.credentialType !== 'keychain' && init?.credentialType !== 'anonymous');
+  let useOidc = $state(init?.credentialType === 'oidc');
+  let oidcIssuerUrl = $state(init?.oidcIssuerUrl ?? '');
+  let oidcClientId = $state(init?.oidcClientId ?? '');
+  let oidcScopes = $state(init?.oidcScopes ?? 'openid');
+  let oidcAuthenticating = $state(false);
+  let oidcError = $state('');
+  let useDefaultCreds = $state(init?.credentialType !== 'keychain' && init?.credentialType !== 'anonymous' && init?.credentialType !== 'oidc');
   let hasDefaultCreds = $state(true);
   let checking = $state(true);
   let bucketEl: HTMLInputElement | undefined = $state(undefined);
@@ -204,7 +210,7 @@
   });
 
   function buildProfile(): Omit<S3Profile, 'id'> & { id?: string } {
-    const credentialType = useAnonymous ? 'anonymous' as const : !useDefaultCreds && accessKey.trim() ? 'keychain' as const : profile.trim() ? 'aws-profile' as const : 'default' as const;
+    const credentialType = useOidc ? 'oidc' as const : useAnonymous ? 'anonymous' as const : !useDefaultCreds && accessKey.trim() ? 'keychain' as const : profile.trim() ? 'aws-profile' as const : 'default' as const;
     return {
       ...(init ? { id: init.id } : {}),
       name: name.trim(),
@@ -218,8 +224,11 @@
       ...(selectedProvider === 'custom' ? { customCapabilities: { ...customCaps } } : {}),
       ...(roleArn.trim() ? { roleArn: roleArn.trim() } : {}),
       ...(externalIdVal.trim() ? { externalId: externalIdVal.trim() } : {}),
-      ...(roleArn.trim() ? { sessionDurationSecs: sessionDuration } : {}),
+      ...(roleArn.trim() || useOidc ? { sessionDurationSecs: sessionDuration } : {}),
       ...(useAcceleration ? { useTransferAcceleration: true } : {}),
+      ...(useOidc && oidcIssuerUrl.trim() ? { oidcIssuerUrl: oidcIssuerUrl.trim() } : {}),
+      ...(useOidc && oidcClientId.trim() ? { oidcClientId: oidcClientId.trim() } : {}),
+      ...(useOidc && oidcScopes.trim() && oidcScopes.trim() !== 'openid' ? { oidcScopes: oidcScopes.trim() } : {}),
       ...(defaultEncryption ? { defaultClientEncryption: true } : {}),
       ...(defaultEncryption && encryptionCipher !== 'aes-256-gcm' ? { encryptionCipher } : {}),
       ...(defaultEncryption && kdfMemoryCost !== 19456 ? { kdfMemoryCost } : {}),
@@ -230,8 +239,35 @@
     };
   }
 
-  function handleConnect() {
+  async function handleConnect() {
     if (!bucket.trim()) return;
+    if (useOidc) {
+      if (!oidcIssuerUrl.trim() || !oidcClientId.trim() || !roleArn.trim()) return;
+      oidcAuthenticating = true;
+      oidcError = '';
+      try {
+        const result = await oidcStartAuth(oidcIssuerUrl.trim(), oidcClientId.trim(), oidcScopes.trim() || undefined);
+        onConnect(
+          bucket.trim(),
+          region.trim() || 'us-east-1',
+          endpoint.trim() || undefined,
+          undefined, undefined, undefined,
+          selectedProvider,
+          selectedProvider === 'custom' ? { ...customCaps } : undefined,
+          roleArn.trim(),
+          externalIdVal.trim() || undefined,
+          undefined,
+          sessionDuration,
+          undefined, false,
+          result.id_token,
+        );
+      } catch (e: any) {
+        oidcError = e?.message ?? String(e);
+      } finally {
+        oidcAuthenticating = false;
+      }
+      return;
+    }
     onConnect(
       bucket.trim(),
       region.trim() || 'us-east-1',
@@ -250,11 +286,38 @@
     );
   }
 
-  function handleSaveAndConnect() {
+  async function handleSaveAndConnect() {
     if (!bucket.trim() || !name.trim()) return;
     const p = buildProfile();
     const sk = useAnonymous ? undefined : (!useDefaultCreds && secretKey.trim() ? secretKey.trim() : undefined);
     onSave?.(p, sk);
+    if (useOidc) {
+      if (!oidcIssuerUrl.trim() || !oidcClientId.trim() || !roleArn.trim()) return;
+      oidcAuthenticating = true;
+      oidcError = '';
+      try {
+        const result = await oidcStartAuth(oidcIssuerUrl.trim(), oidcClientId.trim(), oidcScopes.trim() || undefined);
+        onConnect(
+          bucket.trim(),
+          region.trim() || 'us-east-1',
+          endpoint.trim() || undefined,
+          undefined, undefined, undefined,
+          selectedProvider,
+          selectedProvider === 'custom' ? { ...customCaps } : undefined,
+          roleArn.trim(),
+          externalIdVal.trim() || undefined,
+          undefined,
+          sessionDuration,
+          undefined, false,
+          result.id_token,
+        );
+      } catch (e: any) {
+        oidcError = e?.message ?? String(e);
+      } finally {
+        oidcAuthenticating = false;
+      }
+      return;
+    }
     onConnect(
       bucket.trim(),
       region.trim() || 'us-east-1',
@@ -354,14 +417,14 @@
     }
   }
 
-  function handleKeydown(e: KeyboardEvent) {
+  async function handleKeydown(e: KeyboardEvent) {
     if (e.key === 'Enter') {
       e.preventDefault();
       e.stopPropagation();
       if (saveMode) {
-        handleSaveAndConnect();
+        await handleSaveAndConnect();
       } else {
-        handleConnect();
+        await handleConnect();
       }
     } else if (e.key === 'Escape') {
       e.preventDefault();
@@ -534,13 +597,60 @@
 
       <div class="creds-toggle">
         <label class="checkbox-label">
-          <input type="checkbox" bind:checked={useAnonymous} />
+          <input type="checkbox" bind:checked={useAnonymous} onchange={() => { if (useAnonymous) { useOidc = false; } }} />
           Anonymous (public bucket)
         </label>
         <span class="field-hint">Browse a public bucket without credentials (read-only)</span>
       </div>
 
-      {#if !useAnonymous}
+      <div class="creds-toggle">
+        <label class="checkbox-label">
+          <input type="checkbox" bind:checked={useOidc} onchange={() => { if (useOidc) { useAnonymous = false; useDefaultCreds = false; accessKey = ''; secretKey = ''; profile = ''; } }} />
+          Sign in with Identity Provider (OIDC)
+        </label>
+        <span class="field-hint">Authenticate via Okta, Auth0, Entra ID, Keycloak, etc.</span>
+      </div>
+
+      {#if useOidc}
+        <label class="field-label">
+          Issuer URL
+          <input type="text" class="dialog-input" autocomplete="off" bind:value={oidcIssuerUrl} placeholder="https://login.example.com" />
+          <span class="field-hint">Your identity provider's base URL</span>
+        </label>
+        <label class="field-label">
+          Client ID
+          <input type="text" class="dialog-input" autocomplete="off" bind:value={oidcClientId} placeholder="your-client-id" />
+        </label>
+        <label class="field-label">
+          Scopes
+          <input type="text" class="dialog-input" autocomplete="off" bind:value={oidcScopes} placeholder="openid" />
+          <span class="field-hint">Space-separated OIDC scopes (default: openid)</span>
+        </label>
+        <label class="field-label">
+          Role ARN
+          <input type="text" class="dialog-input" autocomplete="off" bind:value={roleArn} placeholder="arn:aws:iam::123456789012:role/MyRole" />
+          <span class="field-hint">AWS role to assume with the OIDC token</span>
+        </label>
+        <label class="field-label">
+          Session Duration
+          <select class="dialog-input" bind:value={sessionDuration}>
+            <option value={900}>15 minutes</option>
+            <option value={1800}>30 minutes</option>
+            <option value={3600}>1 hour</option>
+            <option value={7200}>2 hours</option>
+            <option value={14400}>4 hours</option>
+            <option value={43200}>12 hours</option>
+          </select>
+        </label>
+        {#if oidcError}
+          <span class="browse-error">{oidcError}</span>
+        {/if}
+        {#if oidcAuthenticating}
+          <span class="field-hint">Waiting for browser authentication...</span>
+        {/if}
+      {/if}
+
+      {#if !useAnonymous && !useOidc}
         <label class="field-label">
           Profile (optional)
           <input
@@ -598,7 +708,7 @@
         {/if}
       {/if}
 
-      {#if !useAnonymous}
+      {#if !useAnonymous && !useOidc}
         <div class="creds-toggle">
           <label class="checkbox-label">
             <input type="checkbox" bind:checked={defaultEncryption} />
@@ -755,14 +865,20 @@
 {#snippet formButtons()}
     <div class="dialog-footer">
       {#if saveMode}
-        <button class="dialog-btn primary" onclick={handleSaveAndConnect} disabled={!bucket.trim() || !name.trim()}>Save & Connect</button>
+        <button class="dialog-btn primary" onclick={handleSaveAndConnect} disabled={!bucket.trim() || !name.trim() || oidcAuthenticating}>
+          {oidcAuthenticating ? 'Authenticating...' : 'Save & Connect'}
+        </button>
         {#if !isEditing}
-          <button class="dialog-btn" onclick={handleConnect} disabled={!bucket.trim()}>Connect Without Saving</button>
+          <button class="dialog-btn" onclick={handleConnect} disabled={!bucket.trim() || oidcAuthenticating}>
+            {oidcAuthenticating ? 'Authenticating...' : 'Connect Without Saving'}
+          </button>
         {:else}
           <button class="dialog-btn" onclick={handleSave} disabled={!bucket.trim() || !name.trim()}>Save</button>
         {/if}
       {:else}
-        <button class="dialog-btn primary" onclick={handleConnect} disabled={!bucket.trim()}>Connect</button>
+        <button class="dialog-btn primary" onclick={handleConnect} disabled={!bucket.trim() || oidcAuthenticating}>
+          {oidcAuthenticating ? 'Authenticating...' : 'Connect'}
+        </button>
       {/if}
       <button class="dialog-btn" onclick={onCancel}>Cancel</button>
     </div>

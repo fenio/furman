@@ -395,7 +395,7 @@ export interface S3Profile {
   region: string;
   endpoint?: string;
   profile?: string;
-  credentialType: 'keychain' | 'aws-profile' | 'default' | 'anonymous';
+  credentialType: 'keychain' | 'aws-profile' | 'default' | 'anonymous' | 'oidc';
   accessKeyId?: string;
   provider?: string;
   customCapabilities?: S3ProviderCapabilities;
@@ -404,6 +404,9 @@ export interface S3Profile {
   sessionName?: string;
   sessionDurationSecs?: number;
   useTransferAcceleration?: boolean;
+  oidcIssuerUrl?: string;
+  oidcClientId?: string;
+  oidcScopes?: string;
   defaultClientEncryption?: boolean;
   encryptionCipher?: 'aes-256-gcm' | 'chacha20-poly1305';
   kdfMemoryCost?: number;     // KiB (default: 19456)
