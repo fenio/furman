@@ -44,6 +44,7 @@
   let browseError = $state('');
   let showBucketList = $state(false);
   let showCustomCaps = $state(false);
+  let activeTab = $state<'connection' | 'security' | 'encryption'>('connection');
 
   // AssumeRole
   let roleArn = $state(init?.roleArn ?? '');
@@ -493,6 +494,16 @@
 
 {#snippet formBody()}
     <div class="dialog-body">
+      <div class="conn-tab-bar">
+        <button class="conn-tab-btn" class:active={activeTab === 'connection'}
+          onclick={() => { activeTab = 'connection'; }}>Connection</button>
+        <button class="conn-tab-btn" class:active={activeTab === 'security'}
+          onclick={() => { activeTab = 'security'; }}>Security</button>
+        <button class="conn-tab-btn" class:active={activeTab === 'encryption'}
+          onclick={() => { activeTab = 'encryption'; }}>Encryption</button>
+      </div>
+
+      {#if activeTab === 'connection'}
       <div class="field-label">
         Provider
         <!-- svelte-ignore a11y_no_static_element_interactions -->
@@ -754,190 +765,7 @@
           />
         </label>
 
-        {#if !endpoint.trim()}
-          <div class="creds-toggle">
-            <label class="checkbox-label">
-              <input type="checkbox" bind:checked={useAcceleration} />
-              Transfer Acceleration
-            </label>
-            <span class="field-hint">Route transfers through CloudFront edge locations</span>
-          </div>
-        {/if}
       {/if}
-
-      {#if !useAnonymous && !useOidc}
-        <div class="creds-toggle">
-          <label class="checkbox-label">
-            <input type="checkbox" bind:checked={defaultEncryption} />
-            Client-side encryption by default
-          </label>
-          <span class="field-hint">Prompt for password when uploading to this bucket</span>
-        </div>
-
-        {#if defaultEncryption}
-          <div class="caps-section">
-            <button class="caps-toggle" onclick={() => { showEncryptionSettings = !showEncryptionSettings; }}>
-              Encryption Settings {showEncryptionSettings ? '\u25B4' : '\u25BE'}
-            </button>
-            {#if showEncryptionSettings}
-              <div class="encryption-settings">
-                <label class="field-label">
-                  Cipher
-                  <select class="dialog-input" bind:value={encryptionCipher}>
-                    <option value="aes-256-gcm">AES-256-GCM (default)</option>
-                    <option value="chacha20-poly1305">ChaCha20-Poly1305</option>
-                  </select>
-                </label>
-
-                <div class="kdf-grid">
-                  <label class="field-label">
-                    KDF Memory (KiB)
-                    <select class="dialog-input" bind:value={kdfMemoryCost}>
-                      <option value={8192}>8 MiB (faster)</option>
-                      <option value={19456}>19 MiB (default)</option>
-                      <option value={65536}>64 MiB</option>
-                      <option value={131072}>128 MiB (stronger)</option>
-                    </select>
-                  </label>
-                  <label class="field-label">
-                    KDF Iterations
-                    <select class="dialog-input" bind:value={kdfTimeCost}>
-                      <option value={1}>1 (faster)</option>
-                      <option value={2}>2 (default)</option>
-                      <option value={4}>4</option>
-                      <option value={8}>8 (stronger)</option>
-                    </select>
-                  </label>
-                  <label class="field-label">
-                    KDF Parallelism
-                    <select class="dialog-input" bind:value={kdfParallelism}>
-                      <option value={1}>1 (default)</option>
-                      <option value={2}>2</option>
-                      <option value={4}>4</option>
-                    </select>
-                  </label>
-                </div>
-                <span class="field-hint">Higher KDF values = slower but more resistant to brute force</span>
-
-                <label class="field-label">
-                  Auto-encrypt min size
-                  <select class="dialog-input" bind:value={autoEncryptMinSize}>
-                    <option value={0}>Always encrypt (default)</option>
-                    <option value={1024}>Skip if all files &lt; 1 KB</option>
-                    <option value={10240}>Skip if all files &lt; 10 KB</option>
-                    <option value={102400}>Skip if all files &lt; 100 KB</option>
-                    <option value={1048576}>Skip if all files &lt; 1 MB</option>
-                  </select>
-                </label>
-
-                <label class="field-label">
-                  Encrypt only extensions (comma-separated)
-                  <input
-                    type="text"
-                    class="dialog-input"
-                    bind:value={autoEncryptExtensions}
-                    placeholder="e.g. pdf, docx, xlsx (empty = all)"
-                  />
-                  <span class="field-hint">Only trigger encryption when files match these extensions</span>
-                </label>
-              </div>
-            {/if}
-          </div>
-        {/if}
-
-        <div class="caps-section">
-          <button class="caps-toggle" onclick={() => { showAssumeRole = !showAssumeRole; }}>
-            AssumeRole (optional) {showAssumeRole ? '\u25B4' : '\u25BE'}
-          </button>
-          {#if showAssumeRole}
-            <label class="field-label">
-              Role ARN
-              <input
-                type="text"
-                class="dialog-input"
-                autocomplete="off"
-                bind:value={roleArn}
-                placeholder="arn:aws:iam::123456789012:role/RoleName"
-              />
-            </label>
-            <label class="field-label">
-              External ID (optional)
-              <input
-                type="text"
-                class="dialog-input"
-                autocomplete="off"
-                bind:value={externalIdVal}
-                placeholder="External ID"
-              />
-            </label>
-            <label class="field-label">
-              Session Duration
-              <select class="dialog-input" bind:value={sessionDuration}>
-                <option value={900}>15 minutes</option>
-                <option value={1800}>30 minutes</option>
-                <option value={3600}>1 hour</option>
-                <option value={7200}>2 hours</option>
-                <option value={14400}>4 hours</option>
-                <option value={43200}>12 hours</option>
-              </select>
-            </label>
-          {/if}
-        </div>
-      {/if}
-
-      <div class="caps-section">
-        <button class="caps-toggle" onclick={() => { useProxy = !useProxy; }}>
-          Proxy Settings {useProxy ? '\u25B4' : '\u25BE'}
-        </button>
-        {#if useProxy}
-          <div class="proxy-settings">
-            <div class="radio-group">
-              <label class="radio-label">
-                <input type="radio" bind:group={proxyMode} value="manual" />
-                Manual
-              </label>
-              <label class="radio-label">
-                <input type="radio" bind:group={proxyMode} value="system" />
-                System (use env variables)
-              </label>
-            </div>
-            {#if proxyMode === 'system'}
-              <span class="field-hint">Reads HTTP_PROXY / HTTPS_PROXY / NO_PROXY from environment</span>
-            {:else}
-              <label class="field-label">
-                Proxy URL
-                <input
-                  type="text"
-                  class="dialog-input"
-                  autocomplete="off"
-                  bind:value={proxyUrl}
-                  placeholder="http://proxy.example.com:8080"
-                />
-              </label>
-              <label class="field-label">
-                Proxy Username (optional)
-                <input
-                  type="text"
-                  class="dialog-input"
-                  autocomplete="off"
-                  bind:value={proxyUsername}
-                  placeholder="Username"
-                />
-              </label>
-              <label class="field-label">
-                Proxy Password (optional)
-                <input
-                  type="password"
-                  class="dialog-input"
-                  autocomplete="off"
-                  bind:value={proxyPassword}
-                  placeholder="Password"
-                />
-              </label>
-            {/if}
-          </div>
-        {/if}
-      </div>
 
       {#if selectedProvider === 'custom'}
         <div class="caps-section">
@@ -968,6 +796,190 @@
             </div>
           {/if}
         </div>
+      {/if}
+      {/if}
+
+      {#if activeTab === 'security'}
+      {#if !useAnonymous && !useOidc}
+        {#if !endpoint.trim()}
+          <div class="creds-toggle">
+            <label class="checkbox-label">
+              <input type="checkbox" bind:checked={useAcceleration} />
+              Transfer Acceleration
+            </label>
+            <span class="field-hint">Route transfers through CloudFront edge locations</span>
+          </div>
+        {/if}
+
+        <div class="section-header">AssumeRole</div>
+        <label class="field-label">
+          Role ARN
+          <input
+            type="text"
+            class="dialog-input"
+            autocomplete="off"
+            bind:value={roleArn}
+            placeholder="arn:aws:iam::123456789012:role/RoleName"
+          />
+        </label>
+        <label class="field-label">
+          External ID (optional)
+          <input
+            type="text"
+            class="dialog-input"
+            autocomplete="off"
+            bind:value={externalIdVal}
+            placeholder="External ID"
+          />
+        </label>
+        <label class="field-label">
+          Session Duration
+          <select class="dialog-input" bind:value={sessionDuration}>
+            <option value={900}>15 minutes</option>
+            <option value={1800}>30 minutes</option>
+            <option value={3600}>1 hour</option>
+            <option value={7200}>2 hours</option>
+            <option value={14400}>4 hours</option>
+            <option value={43200}>12 hours</option>
+          </select>
+        </label>
+      {:else}
+        <span class="tab-info">AssumeRole and Transfer Acceleration are not available with anonymous or OIDC access.</span>
+      {/if}
+
+      <div class="section-header">Proxy</div>
+      <div class="creds-toggle">
+        <label class="checkbox-label">
+          <input type="checkbox" bind:checked={useProxy} />
+          Enable Proxy
+        </label>
+      </div>
+      {#if useProxy}
+        <div class="proxy-settings">
+          <div class="radio-group">
+            <label class="radio-label">
+              <input type="radio" bind:group={proxyMode} value="manual" />
+              Manual
+            </label>
+            <label class="radio-label">
+              <input type="radio" bind:group={proxyMode} value="system" />
+              System (use env variables)
+            </label>
+          </div>
+          {#if proxyMode === 'system'}
+            <span class="field-hint">Reads HTTP_PROXY / HTTPS_PROXY / NO_PROXY from environment</span>
+          {:else}
+            <label class="field-label">
+              Proxy URL
+              <input
+                type="text"
+                class="dialog-input"
+                autocomplete="off"
+                bind:value={proxyUrl}
+                placeholder="http://proxy.example.com:8080"
+              />
+            </label>
+            <label class="field-label">
+              Proxy Username (optional)
+              <input
+                type="text"
+                class="dialog-input"
+                autocomplete="off"
+                bind:value={proxyUsername}
+                placeholder="Username"
+              />
+            </label>
+            <label class="field-label">
+              Proxy Password (optional)
+              <input
+                type="password"
+                class="dialog-input"
+                autocomplete="off"
+                bind:value={proxyPassword}
+                placeholder="Password"
+              />
+            </label>
+          {/if}
+        </div>
+      {/if}
+      {/if}
+
+      {#if activeTab === 'encryption'}
+      {#if !useAnonymous && !useOidc}
+        <div class="creds-toggle">
+          <label class="checkbox-label">
+            <input type="checkbox" bind:checked={defaultEncryption} />
+            Client-side encryption by default
+          </label>
+          <span class="field-hint">Prompt for password when uploading to this bucket</span>
+        </div>
+
+        {#if defaultEncryption}
+          <div class="encryption-settings">
+            <label class="field-label">
+              Cipher
+              <select class="dialog-input" bind:value={encryptionCipher}>
+                <option value="aes-256-gcm">AES-256-GCM (default)</option>
+                <option value="chacha20-poly1305">ChaCha20-Poly1305</option>
+              </select>
+            </label>
+
+            <div class="kdf-grid">
+              <label class="field-label">
+                KDF Memory (KiB)
+                <select class="dialog-input" bind:value={kdfMemoryCost}>
+                  <option value={8192}>8 MiB (faster)</option>
+                  <option value={19456}>19 MiB (default)</option>
+                  <option value={65536}>64 MiB</option>
+                  <option value={131072}>128 MiB (stronger)</option>
+                </select>
+              </label>
+              <label class="field-label">
+                KDF Iterations
+                <select class="dialog-input" bind:value={kdfTimeCost}>
+                  <option value={1}>1 (faster)</option>
+                  <option value={2}>2 (default)</option>
+                  <option value={4}>4</option>
+                  <option value={8}>8 (stronger)</option>
+                </select>
+              </label>
+              <label class="field-label">
+                KDF Parallelism
+                <select class="dialog-input" bind:value={kdfParallelism}>
+                  <option value={1}>1 (default)</option>
+                  <option value={2}>2</option>
+                  <option value={4}>4</option>
+                </select>
+              </label>
+            </div>
+            <span class="field-hint">Higher KDF values = slower but more resistant to brute force</span>
+
+            <label class="field-label">
+              Auto-encrypt min size
+              <select class="dialog-input" bind:value={autoEncryptMinSize}>
+                <option value={0}>Always encrypt (default)</option>
+                <option value={1024}>Skip if all files &lt; 1 KB</option>
+                <option value={10240}>Skip if all files &lt; 10 KB</option>
+                <option value={102400}>Skip if all files &lt; 100 KB</option>
+                <option value={1048576}>Skip if all files &lt; 1 MB</option>
+              </select>
+            </label>
+
+            <label class="field-label">
+              Encrypt only extensions (comma-separated)
+              <input
+                type="text"
+                class="dialog-input"
+                bind:value={autoEncryptExtensions}
+                placeholder="e.g. pdf, docx, xlsx (empty = all)"
+              />
+              <span class="field-hint">Only trigger encryption when files match these extensions</span>
+            </label>
+          </div>
+        {/if}
+      {:else}
+        <span class="tab-info">Client-side encryption is not available with anonymous or OIDC access.</span>
+      {/if}
       {/if}
 
     </div>
@@ -1038,7 +1050,7 @@
     background: var(--dialog-bg);
     border: 1px solid var(--dialog-border);
     border-radius: var(--radius-lg);
-    width: 72ch;
+    width: 84ch;
     height: 85vh;
     max-width: 90vw;
     max-height: 900px;
@@ -1440,5 +1452,52 @@
     font-size: 12px;
     color: var(--text-primary);
     cursor: pointer;
+  }
+
+  .conn-tab-bar {
+    display: flex;
+    gap: 0;
+    border-bottom: 1px solid var(--border-subtle);
+    margin-bottom: 8px;
+    flex-shrink: 0;
+  }
+
+  .conn-tab-btn {
+    padding: 6px 16px;
+    font-size: 12px;
+    font-family: inherit;
+    font-weight: 500;
+    background: none;
+    border: none;
+    border-bottom: 2px solid transparent;
+    color: var(--text-secondary);
+    cursor: pointer;
+    transition: color var(--transition-fast), border-color var(--transition-fast);
+  }
+
+  .conn-tab-btn:hover {
+    color: var(--text-primary);
+  }
+
+  .conn-tab-btn.active {
+    border-bottom: 2px solid var(--text-accent);
+    color: var(--text-accent);
+  }
+
+  .section-header {
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--text-secondary);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    padding: 8px 0 2px;
+    border-bottom: 1px solid var(--border-subtle);
+  }
+
+  .tab-info {
+    font-size: 12px;
+    color: var(--text-secondary);
+    opacity: 0.7;
+    padding: 12px 0;
   }
 </style>
