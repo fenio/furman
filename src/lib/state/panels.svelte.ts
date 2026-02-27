@@ -231,11 +231,11 @@ export class PanelData {
     await this.loadDirectory(realPath, focusName ?? archiveName);
   }
 
-  async connectS3(info: S3ConnectionInfo, endpoint?: string, profile?: string, accessKey?: string, secretKey?: string, roleArn?: string, externalId?: string, sessionName?: string, sessionDurationSecs?: number, useTransferAcceleration?: boolean, anonymous?: boolean, webIdentityToken?: string) {
+  async connectS3(info: S3ConnectionInfo, endpoint?: string, profile?: string, accessKey?: string, secretKey?: string, roleArn?: string, externalId?: string, sessionName?: string, sessionDurationSecs?: number, useTransferAcceleration?: boolean, anonymous?: boolean, webIdentityToken?: string, proxyUrl?: string, proxyUsername?: string, proxyPassword?: string) {
     this.loading = true;
     this.error = null;
     try {
-      await s3Connect(info.connectionId, info.bucket, info.region, endpoint, profile, accessKey, secretKey, roleArn, externalId, sessionName, sessionDurationSecs, useTransferAcceleration, anonymous, webIdentityToken);
+      await s3Connect(info.connectionId, info.bucket, info.region, endpoint, profile, accessKey, secretKey, roleArn, externalId, sessionName, sessionDurationSecs, useTransferAcceleration, anonymous, webIdentityToken, proxyUrl, proxyUsername, proxyPassword);
       this.backend = 's3';
       this.s3Connection = info;
       // Load root of the bucket

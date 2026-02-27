@@ -42,6 +42,9 @@ pub async fn s3_list_buckets(
     session_name: Option<String>,
     session_duration_secs: Option<i32>,
     web_identity_token: Option<String>,
+    proxy_url: Option<String>,
+    proxy_username: Option<String>,
+    proxy_password: Option<String>,
 ) -> Result<Vec<S3Bucket>, FmError> {
     let (client, _) = build_s3_client(
         &region,
@@ -56,6 +59,9 @@ pub async fn s3_list_buckets(
         None,
         None,
         web_identity_token.as_deref(),
+        proxy_url.as_deref(),
+        proxy_username.as_deref(),
+        proxy_password.as_deref(),
     )
     .await?;
     s3::service::list_buckets(&client).await
@@ -78,6 +84,9 @@ pub async fn s3_connect(
     use_transfer_acceleration: Option<bool>,
     anonymous: Option<bool>,
     web_identity_token: Option<String>,
+    proxy_url: Option<String>,
+    proxy_username: Option<String>,
+    proxy_password: Option<String>,
 ) -> Result<(), FmError> {
     let (client, sdk_config) = build_s3_client(
         &region,
@@ -92,6 +101,9 @@ pub async fn s3_connect(
         use_transfer_acceleration,
         anonymous,
         web_identity_token.as_deref(),
+        proxy_url.as_deref(),
+        proxy_username.as_deref(),
+        proxy_password.as_deref(),
     )
     .await?;
 
@@ -513,6 +525,9 @@ pub async fn s3_create_bucket(
     session_name: Option<String>,
     session_duration_secs: Option<i32>,
     web_identity_token: Option<String>,
+    proxy_url: Option<String>,
+    proxy_username: Option<String>,
+    proxy_password: Option<String>,
 ) -> Result<(), FmError> {
     let (client, _) = build_s3_client(
         &region,
@@ -527,6 +542,9 @@ pub async fn s3_create_bucket(
         None,
         None,
         web_identity_token.as_deref(),
+        proxy_url.as_deref(),
+        proxy_username.as_deref(),
+        proxy_password.as_deref(),
     )
     .await?;
     s3::service::create_bucket(&client, &bucket_name, &region).await
@@ -545,6 +563,9 @@ pub async fn s3_delete_bucket(
     session_name: Option<String>,
     session_duration_secs: Option<i32>,
     web_identity_token: Option<String>,
+    proxy_url: Option<String>,
+    proxy_username: Option<String>,
+    proxy_password: Option<String>,
 ) -> Result<(), FmError> {
     let (client, _) = build_s3_client(
         &region,
@@ -559,6 +580,9 @@ pub async fn s3_delete_bucket(
         None,
         None,
         web_identity_token.as_deref(),
+        proxy_url.as_deref(),
+        proxy_username.as_deref(),
+        proxy_password.as_deref(),
     )
     .await?;
     s3::service::delete_bucket(&client, &bucket_name).await

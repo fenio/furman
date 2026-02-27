@@ -458,4 +458,7 @@ export interface S3Profile {
   kdfParallelism?: number;    // threads (default: 1)
   autoEncryptMinSize?: number; // bytes; skip encryption if all files < this (0 = always)
   autoEncryptExtensions?: string[]; // only encrypt files with these extensions (empty = all)
+  proxyUrl?: string;       // "http://proxy:8080" or "system" for env auto-detect
+  proxyUsername?: string;
+  // proxyPassword stored in keychain as "furman-s3-proxy-{profile.id}"
 }

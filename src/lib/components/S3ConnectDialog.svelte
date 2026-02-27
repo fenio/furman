@@ -7,7 +7,7 @@
   import type { S3Bucket, S3Profile, S3ProviderCapabilities } from '$lib/types';
 
   interface Props {
-    onConnect: (bucket: string, region: string, endpoint?: string, profile?: string, accessKey?: string, secretKey?: string, provider?: string, customCapabilities?: S3ProviderCapabilities, roleArn?: string, externalId?: string, sessionName?: string, sessionDurationSecs?: number, useTransferAcceleration?: boolean, anonymous?: boolean, webIdentityToken?: string) => void;
+    onConnect: (bucket: string, region: string, endpoint?: string, profile?: string, accessKey?: string, secretKey?: string, provider?: string, customCapabilities?: S3ProviderCapabilities, roleArn?: string, externalId?: string, sessionName?: string, sessionDurationSecs?: number, useTransferAcceleration?: boolean, anonymous?: boolean, webIdentityToken?: string, proxyUrl?: string, proxyUsername?: string, proxyPassword?: string) => void;
     onCancel: () => void;
     saveMode?: boolean;
     initialData?: S3Profile;
@@ -59,6 +59,13 @@
   let autoEncryptMinSize = $state(init?.autoEncryptMinSize ?? 0);
   let autoEncryptExtensions = $state(init?.autoEncryptExtensions?.join(', ') ?? '');
   let showEncryptionSettings = $state(false);
+
+  // Proxy
+  let useProxy = $state(!!(init?.proxyUrl));
+  let proxyMode = $state<'manual' | 'system'>(init?.proxyUrl === 'system' ? 'system' : 'manual');
+  let proxyUrl = $state(init?.proxyUrl === 'system' ? '' : (init?.proxyUrl ?? ''));
+  let proxyUsername = $state(init?.proxyUsername ?? '');
+  let proxyPassword = $state('');
 
   // Custom capabilities (for 'custom' provider)
   let customCaps = $state<S3ProviderCapabilities>(init?.customCapabilities ?? { ...getProvider('custom').capabilities });
@@ -202,6 +209,13 @@
         if (secret) secretKey = secret;
       } catch { /* ignore — user can re-enter manually */ }
     }
+    // Load proxy password from keychain when editing
+    if (init?.proxyUrl && init.id) {
+      try {
+        const pp = await s3ProfilesState.getSecret(init.id + ':proxy');
+        if (pp) proxyPassword = pp;
+      } catch { /* ignore */ }
+    }
     if (saveMode && nameEl) {
       nameEl.focus();
     } else if (bucketEl) {
@@ -236,11 +250,15 @@
       ...(defaultEncryption && kdfParallelism !== 1 ? { kdfParallelism } : {}),
       ...(defaultEncryption && autoEncryptMinSize > 0 ? { autoEncryptMinSize } : {}),
       ...(defaultEncryption && autoEncryptExtensions.trim() ? { autoEncryptExtensions: autoEncryptExtensions.split(',').map(s => s.trim()).filter(Boolean) } : {}),
+      ...(useProxy && proxyMode === 'system' ? { proxyUrl: 'system' } : {}),
+      ...(useProxy && proxyMode === 'manual' && proxyUrl.trim() ? { proxyUrl: proxyUrl.trim() } : {}),
+      ...(useProxy && proxyMode === 'manual' && proxyUsername.trim() ? { proxyUsername: proxyUsername.trim() } : {}),
     };
   }
 
   async function handleConnect() {
     if (!bucket.trim()) return;
+    const [pUrl, pUser, pPass] = currentProxyArgs();
     if (useOidc) {
       if (!oidcIssuerUrl.trim() || !oidcClientId.trim() || !roleArn.trim()) return;
       oidcAuthenticating = true;
@@ -260,6 +278,7 @@
           sessionDuration,
           undefined, false,
           result.id_token,
+          pUrl, pUser, pPass,
         );
       } catch (e: any) {
         oidcError = e?.message ?? String(e);
@@ -283,6 +302,8 @@
       useAnonymous ? undefined : (roleArn.trim() ? sessionDuration : undefined),
       useAnonymous ? undefined : (useAcceleration || undefined),
       useAnonymous || undefined,
+      undefined, // webIdentityToken
+      pUrl, pUser, pPass,
     );
   }
 
@@ -290,7 +311,15 @@
     if (!bucket.trim() || !name.trim()) return;
     const p = buildProfile();
     const sk = useAnonymous ? undefined : (!useDefaultCreds && secretKey.trim() ? secretKey.trim() : undefined);
+    // Save proxy password to keychain
+    const pp = useProxy && proxyMode === 'manual' && proxyPassword.trim() ? proxyPassword.trim() : undefined;
+    if (pp && p.id) {
+      await s3ProfilesState.saveSecret(p.id + ':proxy', pp);
+    } else if (p.id && !pp) {
+      try { await s3ProfilesState.deleteSecret(p.id + ':proxy'); } catch { /* ignore */ }
+    }
     onSave?.(p, sk);
+    const [pUrl, pUser, pPass] = currentProxyArgs();
     if (useOidc) {
       if (!oidcIssuerUrl.trim() || !oidcClientId.trim() || !roleArn.trim()) return;
       oidcAuthenticating = true;
@@ -310,6 +339,7 @@
           sessionDuration,
           undefined, false,
           result.id_token,
+          pUrl, pUser, pPass,
         );
       } catch (e: any) {
         oidcError = e?.message ?? String(e);
@@ -333,13 +363,22 @@
       useAnonymous ? undefined : (roleArn.trim() ? sessionDuration : undefined),
       useAnonymous ? undefined : (useAcceleration || undefined),
       useAnonymous || undefined,
+      undefined, // webIdentityToken
+      pUrl, pUser, pPass,
     );
   }
 
-  function handleSave() {
+  async function handleSave() {
     if (!bucket.trim() || !name.trim()) return;
     const p = buildProfile();
     const sk = !useDefaultCreds && secretKey.trim() ? secretKey.trim() : undefined;
+    // Save proxy password to keychain
+    const pp = useProxy && proxyMode === 'manual' && proxyPassword.trim() ? proxyPassword.trim() : undefined;
+    if (pp && p.id) {
+      await s3ProfilesState.saveSecret(p.id + ':proxy', pp);
+    } else if (p.id && !pp) {
+      try { await s3ProfilesState.deleteSecret(p.id + ':proxy'); } catch { /* ignore */ }
+    }
     onSave?.(p, sk);
     onCancel();
   }
@@ -348,10 +387,10 @@
     browsing = true;
     browseError = '';
     try {
-      const [ep, prof, ak, sk, rArn, extId, sName, sDur] = currentCredArgs();
+      const [ep, prof, ak, sk, rArn, extId, sName, sDur, wit, pUrl, pUser, pPass] = currentCredArgs();
       buckets = await s3ListBuckets(
         region.trim() || 'us-east-1',
-        ep, prof, ak, sk, rArn, extId, sName, sDur,
+        ep, prof, ak, sk, rArn, extId, sName, sDur, wit, pUrl, pUser, pPass,
       );
       showBucketList = true;
     } catch (e: any) {
@@ -367,7 +406,7 @@
     showBucketList = false;
   }
 
-  function currentCredArgs(): [string | undefined, string | undefined, string | undefined, string | undefined, string | undefined, string | undefined, string | undefined, number | undefined] {
+  function currentCredArgs(): [string | undefined, string | undefined, string | undefined, string | undefined, string | undefined, string | undefined, string | undefined, number | undefined, string | undefined, string | undefined, string | undefined, string | undefined] {
     return [
       endpoint.trim() || undefined,
       profile.trim() || undefined,
@@ -377,6 +416,24 @@
       externalIdVal.trim() || undefined,
       undefined, // sessionName
       roleArn.trim() ? sessionDuration : undefined,
+      undefined, // webIdentityToken
+      currentProxyUrl(),
+      useProxy && proxyMode === 'manual' && proxyUsername.trim() ? proxyUsername.trim() : undefined,
+      useProxy && proxyMode === 'manual' && proxyPassword.trim() ? proxyPassword.trim() : undefined,
+    ];
+  }
+
+  function currentProxyUrl(): string | undefined {
+    if (!useProxy) return undefined;
+    if (proxyMode === 'system') return 'system';
+    return proxyUrl.trim() || undefined;
+  }
+
+  function currentProxyArgs(): [string | undefined, string | undefined, string | undefined] {
+    return [
+      currentProxyUrl(),
+      useProxy && proxyMode === 'manual' && proxyUsername.trim() ? proxyUsername.trim() : undefined,
+      useProxy && proxyMode === 'manual' && proxyPassword.trim() ? proxyPassword.trim() : undefined,
     ];
   }
 
@@ -386,10 +443,10 @@
     createError = '';
     try {
       const r = region.trim() || 'us-east-1';
-      const [ep, prof, ak, sk, rArn, extId, sName, sDur] = currentCredArgs();
-      await s3CreateBucket(r, newBucketName.trim(), ep, prof, ak, sk, rArn, extId, sName, sDur);
+      const [ep, prof, ak, sk, rArn, extId, sName, sDur, wit, pUrl, pUser, pPass] = currentCredArgs();
+      await s3CreateBucket(r, newBucketName.trim(), ep, prof, ak, sk, rArn, extId, sName, sDur, wit, pUrl, pUser, pPass);
       // Refresh bucket list
-      buckets = await s3ListBuckets(r, ep, prof, ak, sk, rArn, extId, sName, sDur);
+      buckets = await s3ListBuckets(r, ep, prof, ak, sk, rArn, extId, sName, sDur, wit, pUrl, pUser, pPass);
       showBucketList = true;
       newBucketName = '';
       showCreateForm = false;
@@ -406,8 +463,8 @@
     browseError = '';
     try {
       const r = region.trim() || 'us-east-1';
-      const [ep, prof, ak, sk, rArn, extId, sName, sDur] = currentCredArgs();
-      await s3DeleteBucket(r, bucketName, ep, prof, ak, sk, rArn, extId, sName, sDur);
+      const [ep, prof, ak, sk, rArn, extId, sName, sDur, wit, pUrl, pUser, pPass] = currentCredArgs();
+      await s3DeleteBucket(r, bucketName, ep, prof, ak, sk, rArn, extId, sName, sDur, wit, pUrl, pUser, pPass);
       buckets = buckets.filter(b => b.name !== bucketName);
       if (bucket === bucketName) bucket = '';
     } catch (e: any) {
@@ -827,6 +884,60 @@
           {/if}
         </div>
       {/if}
+
+      <div class="caps-section">
+        <button class="caps-toggle" onclick={() => { useProxy = !useProxy; }}>
+          Proxy Settings {useProxy ? '\u25B4' : '\u25BE'}
+        </button>
+        {#if useProxy}
+          <div class="proxy-settings">
+            <div class="radio-group">
+              <label class="radio-label">
+                <input type="radio" bind:group={proxyMode} value="manual" />
+                Manual
+              </label>
+              <label class="radio-label">
+                <input type="radio" bind:group={proxyMode} value="system" />
+                System (use env variables)
+              </label>
+            </div>
+            {#if proxyMode === 'system'}
+              <span class="field-hint">Reads HTTP_PROXY / HTTPS_PROXY / NO_PROXY from environment</span>
+            {:else}
+              <label class="field-label">
+                Proxy URL
+                <input
+                  type="text"
+                  class="dialog-input"
+                  autocomplete="off"
+                  bind:value={proxyUrl}
+                  placeholder="http://proxy.example.com:8080"
+                />
+              </label>
+              <label class="field-label">
+                Proxy Username (optional)
+                <input
+                  type="text"
+                  class="dialog-input"
+                  autocomplete="off"
+                  bind:value={proxyUsername}
+                  placeholder="Username"
+                />
+              </label>
+              <label class="field-label">
+                Proxy Password (optional)
+                <input
+                  type="password"
+                  class="dialog-input"
+                  autocomplete="off"
+                  bind:value={proxyPassword}
+                  placeholder="Password"
+                />
+              </label>
+            {/if}
+          </div>
+        {/if}
+      </div>
 
       {#if selectedProvider === 'custom'}
         <div class="caps-section">
@@ -1307,5 +1418,27 @@
     display: grid;
     grid-template-columns: 1fr 1fr 1fr;
     gap: 8px;
+  }
+
+  .proxy-settings {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    padding-left: 8px;
+    border-left: 2px solid var(--border-subtle);
+  }
+
+  .radio-group {
+    display: flex;
+    gap: 16px;
+  }
+
+  .radio-label {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    font-size: 12px;
+    color: var(--text-primary);
+    cursor: pointer;
   }
 </style>

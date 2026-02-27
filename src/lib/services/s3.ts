@@ -20,6 +20,9 @@ export async function s3Connect(
   useTransferAcceleration?: boolean,
   anonymous?: boolean,
   webIdentityToken?: string,
+  proxyUrl?: string,
+  proxyUsername?: string,
+  proxyPassword?: string,
 ): Promise<void> {
   await invoke('s3_connect', {
     id,
@@ -36,6 +39,9 @@ export async function s3Connect(
     useTransferAcceleration: useTransferAcceleration ?? null,
     anonymous: anonymous ?? null,
     webIdentityToken: webIdentityToken || null,
+    proxyUrl: proxyUrl || null,
+    proxyUsername: proxyUsername || null,
+    proxyPassword: proxyPassword || null,
   });
 }
 
@@ -50,6 +56,9 @@ export async function s3ListBuckets(
   sessionName?: string,
   sessionDurationSecs?: number,
   webIdentityToken?: string,
+  proxyUrl?: string,
+  proxyUsername?: string,
+  proxyPassword?: string,
 ): Promise<S3Bucket[]> {
   return await invoke<S3Bucket[]>('s3_list_buckets', {
     region,
@@ -62,6 +71,9 @@ export async function s3ListBuckets(
     sessionName: sessionName || null,
     sessionDurationSecs: sessionDurationSecs ?? null,
     webIdentityToken: webIdentityToken || null,
+    proxyUrl: proxyUrl || null,
+    proxyUsername: proxyUsername || null,
+    proxyPassword: proxyPassword || null,
   });
 }
 
@@ -227,6 +239,9 @@ export async function s3CreateBucket(
   sessionName?: string,
   sessionDurationSecs?: number,
   webIdentityToken?: string,
+  proxyUrl?: string,
+  proxyUsername?: string,
+  proxyPassword?: string,
 ): Promise<void> {
   await invoke('s3_create_bucket', {
     region,
@@ -240,6 +255,9 @@ export async function s3CreateBucket(
     sessionName: sessionName || null,
     sessionDurationSecs: sessionDurationSecs ?? null,
     webIdentityToken: webIdentityToken || null,
+    proxyUrl: proxyUrl || null,
+    proxyUsername: proxyUsername || null,
+    proxyPassword: proxyPassword || null,
   });
 }
 
@@ -255,6 +273,9 @@ export async function s3DeleteBucket(
   sessionName?: string,
   sessionDurationSecs?: number,
   webIdentityToken?: string,
+  proxyUrl?: string,
+  proxyUsername?: string,
+  proxyPassword?: string,
 ): Promise<void> {
   await invoke('s3_delete_bucket', {
     region,
@@ -268,6 +289,9 @@ export async function s3DeleteBucket(
     sessionName: sessionName || null,
     sessionDurationSecs: sessionDurationSecs ?? null,
     webIdentityToken: webIdentityToken || null,
+    proxyUrl: proxyUrl || null,
+    proxyUsername: proxyUsername || null,
+    proxyPassword: proxyPassword || null,
   });
 }
 

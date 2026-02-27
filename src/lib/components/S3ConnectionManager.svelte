@@ -12,7 +12,7 @@
   interface Props {
     onClose: () => void;
     initialTab?: 'saved' | 'connect';
-    onConnect?: (bucket: string, region: string, endpoint?: string, profile?: string, accessKey?: string, secretKey?: string, provider?: string, customCapabilities?: S3ProviderCapabilities, roleArn?: string, externalId?: string, sessionName?: string, sessionDurationSecs?: number, useTransferAcceleration?: boolean, anonymous?: boolean, webIdentityToken?: string) => void;
+    onConnect?: (bucket: string, region: string, endpoint?: string, profile?: string, accessKey?: string, secretKey?: string, provider?: string, customCapabilities?: S3ProviderCapabilities, roleArn?: string, externalId?: string, sessionName?: string, sessionDurationSecs?: number, useTransferAcceleration?: boolean, anonymous?: boolean, webIdentityToken?: string, proxyUrl?: string, proxyUsername?: string, proxyPassword?: string) => void;
   }
 
   let { onClose, initialTab = 'saved', onConnect: onConnectProp }: Props = $props();
@@ -56,6 +56,9 @@
     useTransferAcceleration?: boolean,
     anonymous?: boolean,
     webIdentityToken?: string,
+    proxyUrl?: string,
+    proxyUsername?: string,
+    proxyPassword?: string,
   ) {
     connectError = '';
     const panel = panels.active;
@@ -65,7 +68,7 @@
     if (endpoint) info.endpoint = endpoint;
     if (profile) info.profile = profile;
     try {
-      await panel.connectS3(info, endpoint, profile, accessKey, secretKey, roleArn, externalId, sessionName, sessionDurationSecs, useTransferAcceleration, anonymous, webIdentityToken);
+      await panel.connectS3(info, endpoint, profile, accessKey, secretKey, roleArn, externalId, sessionName, sessionDurationSecs, useTransferAcceleration, anonymous, webIdentityToken, proxyUrl, proxyUsername, proxyPassword);
       onClose();
     } catch (err: unknown) {
       connectError = err instanceof Error ? err.message : String(err);
@@ -78,6 +81,15 @@
     let secretKey: string | undefined;
     let accessKey: string | undefined = p.accessKeyId;
 
+    // Load proxy password from keychain
+    let proxyPassword: string | undefined;
+    if (p.proxyUrl && p.proxyUrl !== 'system') {
+      try {
+        const pp = await s3ProfilesState.getSecret(p.id + ':proxy');
+        if (pp) proxyPassword = pp;
+      } catch { /* ignore */ }
+    }
+
     if (p.credentialType === 'anonymous') {
       await handleConnect(
         p.bucket, p.region, p.endpoint,
@@ -85,6 +97,8 @@
         p.provider, p.customCapabilities,
         undefined, undefined, undefined, undefined, undefined,
         true,
+        undefined,
+        p.proxyUrl, p.proxyUsername, proxyPassword,
       );
       return;
     }
@@ -107,6 +121,7 @@
               p.roleArn, p.externalId, p.sessionName, p.sessionDurationSecs,
               undefined, false,
               result.id_token,
+              p.proxyUrl, p.proxyUsername, proxyPassword,
             );
             return;
           } catch {
@@ -149,6 +164,11 @@
       p.sessionName,
       p.sessionDurationSecs,
       p.useTransferAcceleration,
+      undefined,
+      undefined,
+      p.proxyUrl,
+      p.proxyUsername,
+      proxyPassword,
     );
   }
 

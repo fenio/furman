@@ -76,6 +76,9 @@ impl TestContext {
             None,
             None,
             None,
+            None,
+            None,
+            None,
         )
         .await
         .expect("Failed to build S3 client for testing");
@@ -113,6 +116,9 @@ impl TestContext {
             None,
             Some(&config.access_key),
             Some(&config.secret_key),
+            None,
+            None,
+            None,
             None,
             None,
             None,

@@ -19,6 +19,47 @@ pub struct S3Connection {
 
 // ── Client Builder ──────────────────────────────────────────────────────────
 
+/// Apply proxy settings to a config loader if proxy_url is set.
+fn apply_proxy(
+    loader: aws_config::ConfigLoader,
+    proxy_url: Option<&str>,
+    proxy_username: Option<&str>,
+    proxy_password: Option<&str>,
+) -> Result<aws_config::ConfigLoader, FmError> {
+    use aws_smithy_http_client::proxy::ProxyConfig;
+    use aws_smithy_http_client::tls;
+
+    match proxy_url {
+        Some(url) if !url.is_empty() => {
+            let pc = if url == "system" {
+                ProxyConfig::from_env()
+            } else {
+                let mut pc = ProxyConfig::all(url)
+                    .map_err(|e| s3err(format!("Invalid proxy URL: {e}")))?;
+                if let (Some(u), Some(p)) = (proxy_username, proxy_password) {
+                    if !u.is_empty() {
+                        pc = pc.with_basic_auth(u, p);
+                    }
+                }
+                pc
+            };
+
+            let http_client = aws_smithy_http_client::Builder::new()
+                .build_with_connector_fn(move |_settings, _runtime_components| {
+                    aws_smithy_http_client::Connector::builder()
+                        .proxy_config(pc.clone())
+                        .tls_provider(tls::Provider::Rustls(
+                            tls::rustls_provider::CryptoMode::AwsLc,
+                        ))
+                        .build()
+                });
+
+            Ok(loader.http_client(http_client))
+        }
+        _ => Ok(loader),
+    }
+}
+
 /// Build an S3 client from credentials without storing it in state.
 pub async fn build_s3_client(
     region: &str,
@@ -33,6 +74,9 @@ pub async fn build_s3_client(
     use_transfer_acceleration: Option<bool>,
     anonymous: Option<bool>,
     web_identity_token: Option<&str>,
+    proxy_url: Option<&str>,
+    proxy_username: Option<&str>,
+    proxy_password: Option<&str>,
 ) -> Result<(S3Client, aws_config::SdkConfig), FmError> {
     let mut loader = if anonymous.unwrap_or(false) {
         aws_config::defaults(BehaviorVersion::latest())
@@ -63,6 +107,8 @@ pub async fn build_s3_client(
             loader = loader.endpoint_url(ep);
         }
     }
+
+    loader = apply_proxy(loader, proxy_url, proxy_username, proxy_password)?;
 
     let base_config = loader.load().await;
 
@@ -102,6 +148,7 @@ pub async fn build_s3_client(
                 assumed_loader = assumed_loader.endpoint_url(ep);
             }
         }
+        assumed_loader = apply_proxy(assumed_loader, proxy_url, proxy_username, proxy_password)?;
         assumed_loader.load().await
     } else if let Some(arn) = role_arn {
         // If a role ARN is provided, assume the role via STS
@@ -150,6 +197,7 @@ pub async fn build_s3_client(
             }
         }
 
+        assumed_loader = apply_proxy(assumed_loader, proxy_url, proxy_username, proxy_password)?;
         assumed_loader.load().await
     } else {
         base_config
