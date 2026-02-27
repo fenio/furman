@@ -1,5 +1,5 @@
 import { invoke, Channel } from '@tauri-apps/api/core';
-import type { DirListing, KmsKeyInfo, ProgressEvent, S3Bucket, S3BucketAcl, S3BucketEncryption, S3BucketVersioning, S3CorsRule, S3LifecycleRule, S3MultipartUpload, S3ObjectLegalHold, S3ObjectLockConfig, S3ObjectMetadata, S3ObjectProperties, S3ObjectRetention, S3ObjectVersion, S3PublicAccessBlock, S3Tag, SearchEvent, TransferCheckpoint } from '$lib/types';
+import type { DirListing, KmsKeyInfo, ProgressEvent, S3Bucket, S3BucketAcl, S3BucketEncryption, S3BucketVersioning, S3CorsRule, S3InventoryConfiguration, S3LifecycleRule, S3MultipartUpload, S3ObjectLegalHold, S3ObjectLockConfig, S3ObjectMetadata, S3ObjectProperties, S3ObjectRetention, S3ObjectVersion, S3PublicAccessBlock, S3Tag, SearchEvent, TransferCheckpoint } from '$lib/types';
 
 export async function s3CheckCredentials(): Promise<boolean> {
   return await invoke<boolean>('s3_check_credentials');
@@ -599,6 +599,20 @@ export async function s3BatchPutObjectTags(
 
 export async function s3SetBandwidthLimit(bytesPerSec: number): Promise<void> {
   await invoke('s3_set_bandwidth_limit', { bytesPerSec });
+}
+
+// ── Inventory Configuration ──────────────────────────────────────────────────
+
+export async function s3ListInventoryConfigurations(id: string): Promise<S3InventoryConfiguration[]> {
+  return await invoke<S3InventoryConfiguration[]>('s3_list_inventory_configurations', { id });
+}
+
+export async function s3PutInventoryConfiguration(id: string, config: S3InventoryConfiguration): Promise<void> {
+  await invoke('s3_put_inventory_configuration', { id, config });
+}
+
+export async function s3DeleteInventoryConfiguration(id: string, configId: string): Promise<void> {
+  await invoke('s3_delete_inventory_configuration', { id, configId });
 }
 
 // ── OIDC Authentication ─────────────────────────────────────────────────────

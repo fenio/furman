@@ -182,6 +182,10 @@ pub fn run() {
             commands::s3::s3_bulk_put_object_retention,
             commands::s3::s3_batch_put_object_metadata,
             commands::s3::s3_batch_put_object_tags,
+            // inventory commands
+            commands::s3::s3_list_inventory_configurations,
+            commands::s3::s3_put_inventory_configuration,
+            commands::s3::s3_delete_inventory_configuration,
             // cloudfront commands
             commands::cloudfront::cf_list_distributions,
             commands::cloudfront::cf_get_distribution,

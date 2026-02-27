@@ -2,9 +2,9 @@ use crate::commands::file::FileOpState;
 use crate::models::{
     DirListing, FmError, KmsKeyInfo, ProgressEvent, S3BucketAcl, S3BucketEncryption,
     S3BucketLogging, S3BucketOwnership, S3BucketVersioning, S3BucketWebsite, S3CorsRule,
-    S3LifecycleRule, S3MultipartUpload, S3ObjectLegalHold, S3ObjectLockConfig, S3ObjectMetadata,
-    S3ObjectProperties, S3ObjectRetention, S3ObjectVersion, S3PublicAccessBlock, S3Tag, SearchEvent,
-    TransferCheckpoint,
+    S3InventoryConfiguration, S3LifecycleRule, S3MultipartUpload, S3ObjectLegalHold,
+    S3ObjectLockConfig, S3ObjectMetadata, S3ObjectProperties, S3ObjectRetention, S3ObjectVersion,
+    S3PublicAccessBlock, S3Tag, SearchEvent, TransferCheckpoint,
 };
 use crate::s3::{self, build_s3_client, s3err, S3State, BANDWIDTH_LIMIT};
 use crate::s3::service::{S3Bucket, S3Service};
@@ -1128,4 +1128,33 @@ pub async fn s3_batch_put_object_tags(
     }
 
     result
+}
+
+#[tauri::command]
+pub async fn s3_list_inventory_configurations(
+    state: State<'_, S3State>,
+    id: String,
+) -> Result<Vec<S3InventoryConfiguration>, FmError> {
+    let service = get_service(&state, &id)?;
+    service.list_inventory_configurations().await
+}
+
+#[tauri::command]
+pub async fn s3_put_inventory_configuration(
+    state: State<'_, S3State>,
+    id: String,
+    config: S3InventoryConfiguration,
+) -> Result<(), FmError> {
+    let service = get_service(&state, &id)?;
+    service.put_inventory_configuration(&config).await
+}
+
+#[tauri::command]
+pub async fn s3_delete_inventory_configuration(
+    state: State<'_, S3State>,
+    id: String,
+    config_id: String,
+) -> Result<(), FmError> {
+    let service = get_service(&state, &id)?;
+    service.delete_inventory_configuration(&config_id).await
 }

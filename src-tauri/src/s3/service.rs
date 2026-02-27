@@ -10,9 +10,10 @@ use tokio::io::AsyncWriteExt;
 use crate::models::{
     DirListing, FileEntry, FmError, ProgressEvent, S3AclGrant, S3BucketAcl, S3BucketEncryption,
     S3BucketLogging, S3BucketOwnership, S3BucketVersioning, S3BucketWebsite, S3CorsRule,
-    S3EncryptionRule, S3LifecycleRule, S3LifecycleTransition, S3MultipartUpload, S3ObjectLegalHold,
-    S3ObjectLockConfig, S3ObjectMetadata, S3ObjectProperties, S3ObjectRetention, S3ObjectVersion,
-    S3PublicAccessBlock, S3Tag, SearchDone, SearchEvent, SearchResult, TransferCheckpoint,
+    S3EncryptionRule, S3InventoryConfiguration, S3InventoryDestination, S3LifecycleRule,
+    S3LifecycleTransition, S3MultipartUpload, S3ObjectLegalHold, S3ObjectLockConfig,
+    S3ObjectMetadata, S3ObjectProperties, S3ObjectRetention, S3ObjectVersion, S3PublicAccessBlock,
+    S3Tag, SearchDone, SearchEvent, SearchResult, TransferCheckpoint,
 };
 
 use super::helpers::*;
@@ -3231,5 +3232,203 @@ impl S3Service {
         });
 
         Ok(failed)
+    }
+
+    // ── Inventory Configuration ─────────────────────────────────────────
+
+    /// List all inventory configurations for this bucket.
+    pub async fn list_inventory_configurations(
+        &self,
+    ) -> Result<Vec<S3InventoryConfiguration>, FmError> {
+        let mut all_configs = Vec::new();
+        let mut continuation_token: Option<String> = None;
+
+        loop {
+            let mut req = self
+                .client
+                .list_bucket_inventory_configurations()
+                .bucket(&self.bucket);
+
+            if let Some(token) = &continuation_token {
+                req = req.continuation_token(token);
+            }
+
+            let resp = req.send().await;
+
+            match resp {
+                Ok(r) => {
+                    if let Some(configs) = r.inventory_configuration_list {
+                        for ic in &configs {
+                            let id = ic.id().to_string();
+                            let enabled = ic.is_enabled();
+
+                            // Extract destination
+                            let Some(dest) = ic.destination() else {
+                                continue;
+                            };
+                            let Some(s3_dest) = dest.s3_bucket_destination() else {
+                                continue;
+                            };
+                            let bucket_arn = s3_dest.bucket().to_string();
+                            let prefix =
+                                s3_dest.prefix().map(|s: &str| s.to_string());
+                            let format = s3_dest.format().as_str().to_string();
+                            let account_id =
+                                s3_dest.account_id().map(|s: &str| s.to_string());
+
+                            // Schedule
+                            let schedule = ic
+                                .schedule()
+                                .map(|s| s.frequency().as_str().to_string())
+                                .unwrap_or_else(|| "Daily".to_string());
+
+                            // Included object versions
+                            let included_object_versions = ic
+                                .included_object_versions()
+                                .as_str()
+                                .to_string();
+
+                            // Optional fields
+                            let optional_fields: Vec<String> = ic
+                                .optional_fields()
+                                .iter()
+                                .map(|f| f.as_str().to_string())
+                                .collect();
+
+                            // Filter prefix
+                            let filter_prefix =
+                                ic.filter().map(|f| f.prefix().to_string());
+
+                            all_configs.push(S3InventoryConfiguration {
+                                id,
+                                enabled,
+                                destination: S3InventoryDestination {
+                                    bucket_arn,
+                                    prefix,
+                                    format,
+                                    account_id,
+                                },
+                                schedule,
+                                included_object_versions,
+                                optional_fields,
+                                filter_prefix,
+                            });
+                        }
+                    }
+
+                    if r.is_truncated.unwrap_or(false) {
+                        continuation_token = r.next_continuation_token;
+                    } else {
+                        break;
+                    }
+                }
+                Err(e) => {
+                    let err_str = e.to_string();
+                    let err_dbg = format!("{e:?}");
+                    if err_str.contains("NoSuchConfiguration")
+                        || err_dbg.contains("NoSuchConfiguration")
+                        || err_dbg.contains("StatusCode(404)")
+                    {
+                        return Ok(vec![]);
+                    }
+                    return Err(s3err(err_str));
+                }
+            }
+        }
+
+        Ok(all_configs)
+    }
+
+    /// Create or update an inventory configuration.
+    pub async fn put_inventory_configuration(
+        &self,
+        config: &S3InventoryConfiguration,
+    ) -> Result<(), FmError> {
+        use aws_sdk_s3::types::{
+            InventoryConfiguration, InventoryDestination, InventoryFilter, InventoryFormat,
+            InventoryFrequency, InventoryIncludedObjectVersions, InventoryOptionalField,
+            InventoryS3BucketDestination, InventorySchedule,
+        };
+
+        let format = match config.destination.format.as_str() {
+            "ORC" => InventoryFormat::Orc,
+            "Parquet" => InventoryFormat::Parquet,
+            _ => InventoryFormat::Csv,
+        };
+
+        let mut s3_dest_builder = InventoryS3BucketDestination::builder()
+            .bucket(&config.destination.bucket_arn)
+            .format(format);
+
+        if let Some(prefix) = &config.destination.prefix {
+            s3_dest_builder = s3_dest_builder.prefix(prefix);
+        }
+        if let Some(account_id) = &config.destination.account_id {
+            s3_dest_builder = s3_dest_builder.account_id(account_id);
+        }
+
+        let destination = InventoryDestination::builder()
+            .s3_bucket_destination(s3_dest_builder.build().map_err(|e| s3err(e.to_string()))?)
+            .build();
+
+        let frequency = match config.schedule.as_str() {
+            "Weekly" => InventoryFrequency::Weekly,
+            _ => InventoryFrequency::Daily,
+        };
+        let schedule = InventorySchedule::builder()
+            .frequency(frequency)
+            .build()
+            .map_err(|e| s3err(e.to_string()))?;
+
+        let versions = match config.included_object_versions.as_str() {
+            "All" => InventoryIncludedObjectVersions::All,
+            _ => InventoryIncludedObjectVersions::Current,
+        };
+
+        let mut builder = InventoryConfiguration::builder()
+            .id(&config.id)
+            .is_enabled(config.enabled)
+            .destination(destination)
+            .schedule(schedule)
+            .included_object_versions(versions);
+
+        for field_str in &config.optional_fields {
+            let field = InventoryOptionalField::from(field_str.as_str());
+            builder = builder.optional_fields(field);
+        }
+
+        if let Some(prefix) = &config.filter_prefix {
+            let filter = InventoryFilter::builder()
+                .prefix(prefix)
+                .build()
+                .map_err(|e| s3err(e.to_string()))?;
+            builder = builder.filter(filter);
+        }
+
+        let sdk_config = builder.build().map_err(|e| s3err(e.to_string()))?;
+
+        self.client
+            .put_bucket_inventory_configuration()
+            .bucket(&self.bucket)
+            .id(&config.id)
+            .inventory_configuration(sdk_config)
+            .send()
+            .await
+            .map_err(|e| s3err(format!("Failed to put inventory configuration: {}", e)))?;
+
+        Ok(())
+    }
+
+    /// Delete an inventory configuration by ID.
+    pub async fn delete_inventory_configuration(&self, config_id: &str) -> Result<(), FmError> {
+        self.client
+            .delete_bucket_inventory_configuration()
+            .bucket(&self.bucket)
+            .id(config_id)
+            .send()
+            .await
+            .map_err(|e| s3err(format!("Failed to delete inventory configuration: {}", e)))?;
+
+        Ok(())
     }
 }

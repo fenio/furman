@@ -409,6 +409,27 @@ pub struct S3ObjectLegalHold {
     pub status: String, // "ON" | "OFF"
 }
 
+// ── S3 Inventory ───────────────────────────────────────────────────────
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct S3InventoryDestination {
+    pub bucket_arn: String,
+    pub prefix: Option<String>,
+    pub format: String, // "CSV", "ORC", "Parquet"
+    pub account_id: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct S3InventoryConfiguration {
+    pub id: String,
+    pub enabled: bool,
+    pub destination: S3InventoryDestination,
+    pub schedule: String,                 // "Daily" or "Weekly"
+    pub included_object_versions: String, // "All" or "Current"
+    pub optional_fields: Vec<String>,
+    pub filter_prefix: Option<String>,
+}
+
 // ── CloudFront Types ────────────────────────────────────────────────────────
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

@@ -293,6 +293,25 @@ export interface KmsKeyInfo {
   alias: string | null;
 }
 
+// ── S3 Inventory Types ──────────────────────────────────────────────────────
+
+export interface S3InventoryDestination {
+  bucket_arn: string;
+  prefix: string | null;
+  format: string;
+  account_id: string | null;
+}
+
+export interface S3InventoryConfiguration {
+  id: string;
+  enabled: boolean;
+  destination: S3InventoryDestination;
+  schedule: string;
+  included_object_versions: string;
+  optional_fields: string[];
+  filter_prefix: string | null;
+}
+
 // ── CloudFront Types ────────────────────────────────────────────────────────
 
 export interface CfDistributionSummary {
@@ -369,6 +388,7 @@ export interface S3ProviderCapabilities {
   objectLock: boolean;
   listBuckets: boolean;
   cloudfront: boolean;
+  inventory: boolean;
 }
 
 export interface S3ConnectionInfo {

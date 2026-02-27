@@ -23,6 +23,7 @@
     objectLock: true,
     listBuckets: true,
     cloudfront: true,
+    inventory: true,
   };
 
   type TabType = 'metadata' | 'tags';
