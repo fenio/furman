@@ -665,14 +665,6 @@
 
       <div class="creds-toggle">
         <label class="checkbox-label">
-          <input type="checkbox" bind:checked={useAnonymous} onchange={() => { if (useAnonymous) { useOidc = false; } }} />
-          Anonymous (public bucket)
-        </label>
-        <span class="field-hint">Browse a public bucket without credentials (read-only)</span>
-      </div>
-
-      <div class="creds-toggle">
-        <label class="checkbox-label">
           <input type="checkbox" bind:checked={useOidc} onchange={() => { if (useOidc) { useAnonymous = false; useDefaultCreds = false; accessKey = ''; secretKey = ''; profile = ''; } }} />
           Sign in with Identity Provider (OIDC)
         </label>
@@ -766,6 +758,14 @@
         </label>
 
       {/if}
+
+      <div class="creds-toggle">
+        <label class="checkbox-label">
+          <input type="checkbox" bind:checked={useAnonymous} onchange={() => { if (useAnonymous) { useOidc = false; } }} />
+          Anonymous (public bucket)
+        </label>
+        <span class="field-hint">Browse a public bucket without credentials (read-only)</span>
+      </div>
 
       {#if selectedProvider === 'custom'}
         <div class="caps-section">
