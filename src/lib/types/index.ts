@@ -335,6 +335,22 @@ export interface S3ReplicationConfiguration {
   rules: S3ReplicationRule[];
 }
 
+// ── S3 Event Notification Types ──────────────────────────────────────────────
+
+export interface S3NotificationRule {
+  id: string | null;
+  destination_type: string;
+  destination_arn: string;
+  events: string[];
+  filter_prefix: string | null;
+  filter_suffix: string | null;
+}
+
+export interface S3NotificationConfiguration {
+  rules: S3NotificationRule[];
+  event_bridge_enabled: boolean;
+}
+
 // ── CloudFront Types ────────────────────────────────────────────────────────
 
 export interface CfDistributionSummary {
@@ -413,6 +429,7 @@ export interface S3ProviderCapabilities {
   cloudfront: boolean;
   inventory: boolean;
   replication: boolean;
+  eventNotifications: boolean;
 }
 
 export interface S3ConnectionInfo {

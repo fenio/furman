@@ -2,9 +2,10 @@ use crate::commands::file::FileOpState;
 use crate::models::{
     DirListing, FmError, KmsKeyInfo, ProgressEvent, S3BucketAcl, S3BucketEncryption,
     S3BucketLogging, S3BucketOwnership, S3BucketVersioning, S3BucketWebsite, S3CorsRule,
-    S3InventoryConfiguration, S3LifecycleRule, S3MultipartUpload, S3ObjectLegalHold,
-    S3ObjectLockConfig, S3ObjectMetadata, S3ObjectProperties, S3ObjectRetention, S3ObjectVersion,
-    S3PublicAccessBlock, S3ReplicationConfiguration, S3Tag, SearchEvent, TransferCheckpoint,
+    S3InventoryConfiguration, S3LifecycleRule, S3MultipartUpload, S3NotificationConfiguration,
+    S3ObjectLegalHold, S3ObjectLockConfig, S3ObjectMetadata, S3ObjectProperties, S3ObjectRetention,
+    S3ObjectVersion, S3PublicAccessBlock, S3ReplicationConfiguration, S3Tag, SearchEvent,
+    TransferCheckpoint,
 };
 use crate::s3::{self, build_s3_client, s3err, S3State, BANDWIDTH_LIMIT};
 use crate::s3::service::{S3Bucket, S3Service};
@@ -1211,4 +1212,25 @@ pub async fn s3_delete_replication_configuration(
 ) -> Result<(), FmError> {
     let service = get_service(&state, &id)?;
     service.delete_replication_configuration().await
+}
+
+// ── Notification Configuration ─────────────────────────────────────────────
+
+#[tauri::command]
+pub async fn s3_get_notification_configuration(
+    state: State<'_, S3State>,
+    id: String,
+) -> Result<S3NotificationConfiguration, FmError> {
+    let service = get_service(&state, &id)?;
+    service.get_notification_configuration().await
+}
+
+#[tauri::command]
+pub async fn s3_put_notification_configuration(
+    state: State<'_, S3State>,
+    id: String,
+    config: S3NotificationConfiguration,
+) -> Result<(), FmError> {
+    let service = get_service(&state, &id)?;
+    service.put_notification_configuration(&config).await
 }

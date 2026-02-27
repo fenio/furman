@@ -190,6 +190,9 @@ pub fn run() {
             commands::s3::s3_get_replication_configuration,
             commands::s3::s3_put_replication_configuration,
             commands::s3::s3_delete_replication_configuration,
+            // notification commands
+            commands::s3::s3_get_notification_configuration,
+            commands::s3::s3_put_notification_configuration,
             // cloudfront commands
             commands::cloudfront::cf_list_distributions,
             commands::cloudfront::cf_get_distribution,

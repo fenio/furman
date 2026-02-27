@@ -456,6 +456,24 @@ pub struct S3ReplicationConfiguration {
     pub rules: Vec<S3ReplicationRule>,
 }
 
+// ── S3 Event Notification ──────────────────────────────────────────────────
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct S3NotificationRule {
+    pub id: Option<String>,
+    pub destination_type: String, // "sns" | "sqs" | "lambda"
+    pub destination_arn: String,
+    pub events: Vec<String>,
+    pub filter_prefix: Option<String>,
+    pub filter_suffix: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct S3NotificationConfiguration {
+    pub rules: Vec<S3NotificationRule>,
+    pub event_bridge_enabled: bool,
+}
+
 // ── CloudFront Types ────────────────────────────────────────────────────────
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

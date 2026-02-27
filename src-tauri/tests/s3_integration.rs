@@ -1590,3 +1590,67 @@ async fn test_bulk_put_object_retention() {
 
     ctx.cleanup().await;
 }
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Notification Configuration
+// ═══════════════════════════════════════════════════════════════════════════
+
+#[tokio::test]
+async fn test_notification_configuration_roundtrip() {
+    use app_lib::models::S3NotificationConfiguration;
+
+    let ctx = TestContext::new().await;
+
+    // Get — should return empty config
+    let config = ctx
+        .service
+        .get_notification_configuration()
+        .await
+        .expect("get_notification_configuration failed");
+    assert!(config.rules.is_empty(), "Expected no notification rules initially");
+    assert!(!config.event_bridge_enabled, "EventBridge should be disabled initially");
+
+    if !ctx.config.is_aws() {
+        eprintln!("Notification put requires real AWS — skipping put on MinIO");
+        ctx.cleanup().await;
+        return;
+    }
+
+    // Put — enable EventBridge only (no destination ARNs needed)
+    let new_config = S3NotificationConfiguration {
+        rules: vec![],
+        event_bridge_enabled: true,
+    };
+    ctx.service
+        .put_notification_configuration(&new_config)
+        .await
+        .expect("put_notification_configuration failed");
+
+    // Verify EventBridge is now enabled
+    let updated = ctx
+        .service
+        .get_notification_configuration()
+        .await
+        .expect("get_notification_configuration after put failed");
+    assert!(updated.event_bridge_enabled, "EventBridge should be enabled after put");
+    assert!(updated.rules.is_empty(), "No rules should be present");
+
+    // Clear — disable EventBridge
+    let clear_config = S3NotificationConfiguration {
+        rules: vec![],
+        event_bridge_enabled: false,
+    };
+    ctx.service
+        .put_notification_configuration(&clear_config)
+        .await
+        .expect("clearing notification configuration failed");
+
+    let cleared = ctx
+        .service
+        .get_notification_configuration()
+        .await
+        .expect("get_notification_configuration after clear failed");
+    assert!(!cleared.event_bridge_enabled, "EventBridge should be disabled after clear");
+
+    ctx.cleanup().await;
+}

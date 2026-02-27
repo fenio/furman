@@ -25,6 +25,7 @@
     cloudfront: true,
     inventory: true,
     replication: true,
+    eventNotifications: true,
   };
 
   type TabType = 'metadata' | 'tags';

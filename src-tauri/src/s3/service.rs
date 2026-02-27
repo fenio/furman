@@ -13,8 +13,9 @@ use crate::models::{
     S3EncryptionRule, S3InventoryConfiguration, S3InventoryDestination, S3LifecycleRule,
     S3LifecycleTransition, S3MultipartUpload, S3ObjectLegalHold, S3ObjectLockConfig,
     S3ObjectMetadata, S3ObjectProperties, S3ObjectRetention, S3ObjectVersion, S3PublicAccessBlock,
-    S3ReplicationConfiguration, S3ReplicationDestination, S3ReplicationRule,
-    S3Tag, SearchDone, SearchEvent, SearchResult, TransferCheckpoint,
+    S3NotificationConfiguration, S3NotificationRule, S3ReplicationConfiguration,
+    S3ReplicationDestination, S3ReplicationRule, S3Tag, SearchDone, SearchEvent, SearchResult,
+    TransferCheckpoint,
 };
 
 use super::helpers::*;
@@ -3627,4 +3628,258 @@ impl S3Service {
 
         Ok(())
     }
+
+    // ── Event Notification Configuration ───────────────────────────────────
+
+    /// Get the notification configuration for this bucket.
+    pub async fn get_notification_configuration(
+        &self,
+    ) -> Result<S3NotificationConfiguration, FmError> {
+        let resp = self
+            .client
+            .get_bucket_notification_configuration()
+            .bucket(&self.bucket)
+            .send()
+            .await
+            .map_err(|e| s3err(format!("Failed to get notification configuration: {}", e)))?;
+
+        let mut rules = Vec::new();
+
+        // SNS topic configurations
+        for tc in resp.topic_configurations() {
+            rules.push(S3NotificationRule {
+                id: tc.id().map(|s| s.to_string()),
+                destination_type: "sns".to_string(),
+                destination_arn: tc.topic_arn().to_string(),
+                events: tc.events().iter().map(|e| e.as_str().to_string()).collect(),
+                filter_prefix: extract_filter_prefix(tc.filter()),
+                filter_suffix: extract_filter_suffix(tc.filter()),
+            });
+        }
+
+        // SQS queue configurations
+        for qc in resp.queue_configurations() {
+            rules.push(S3NotificationRule {
+                id: qc.id().map(|s| s.to_string()),
+                destination_type: "sqs".to_string(),
+                destination_arn: qc.queue_arn().to_string(),
+                events: qc.events().iter().map(|e| e.as_str().to_string()).collect(),
+                filter_prefix: extract_filter_prefix(qc.filter()),
+                filter_suffix: extract_filter_suffix(qc.filter()),
+            });
+        }
+
+        // Lambda function configurations
+        for lc in resp.lambda_function_configurations() {
+            rules.push(S3NotificationRule {
+                id: lc.id().map(|s| s.to_string()),
+                destination_type: "lambda".to_string(),
+                destination_arn: lc.lambda_function_arn().to_string(),
+                events: lc.events().iter().map(|e| e.as_str().to_string()).collect(),
+                filter_prefix: extract_filter_prefix(lc.filter()),
+                filter_suffix: extract_filter_suffix(lc.filter()),
+            });
+        }
+
+        let event_bridge_enabled = resp.event_bridge_configuration().is_some();
+
+        Ok(S3NotificationConfiguration {
+            rules,
+            event_bridge_enabled,
+        })
+    }
+
+    /// Set the notification configuration for this bucket.
+    pub async fn put_notification_configuration(
+        &self,
+        config: &S3NotificationConfiguration,
+    ) -> Result<(), FmError> {
+        use aws_sdk_s3::types::{
+            Event, EventBridgeConfiguration, LambdaFunctionConfiguration,
+            QueueConfiguration, TopicConfiguration,
+        };
+
+        let mut topic_configs = Vec::new();
+        let mut queue_configs = Vec::new();
+        let mut lambda_configs = Vec::new();
+
+        for rule in &config.rules {
+            let events: Vec<Event> = rule
+                .events
+                .iter()
+                .map(|s| Event::from(s.as_str()))
+                .collect();
+
+            let filter = build_notification_filter(
+                rule.filter_prefix.as_deref(),
+                rule.filter_suffix.as_deref(),
+            );
+
+            match rule.destination_type.as_str() {
+                "sns" => {
+                    let mut builder = TopicConfiguration::builder()
+                        .topic_arn(&rule.destination_arn)
+                        .set_events(Some(events));
+                    if let Some(id) = &rule.id {
+                        builder = builder.id(id);
+                    }
+                    if let Some(f) = filter {
+                        builder = builder.filter(f);
+                    }
+                    topic_configs.push(builder.build().map_err(|e| s3err(e.to_string()))?);
+                }
+                "sqs" => {
+                    let mut builder = QueueConfiguration::builder()
+                        .queue_arn(&rule.destination_arn)
+                        .set_events(Some(events));
+                    if let Some(id) = &rule.id {
+                        builder = builder.id(id);
+                    }
+                    if let Some(f) = filter {
+                        builder = builder.filter(f);
+                    }
+                    queue_configs.push(builder.build().map_err(|e| s3err(e.to_string()))?);
+                }
+                "lambda" => {
+                    let mut builder = LambdaFunctionConfiguration::builder()
+                        .lambda_function_arn(&rule.destination_arn)
+                        .set_events(Some(events));
+                    if let Some(id) = &rule.id {
+                        builder = builder.id(id);
+                    }
+                    if let Some(f) = filter {
+                        builder = builder.filter(f);
+                    }
+                    lambda_configs.push(builder.build().map_err(|e| s3err(e.to_string()))?);
+                }
+                _ => {
+                    return Err(s3err(format!(
+                        "Unknown destination type: {}",
+                        rule.destination_type
+                    )));
+                }
+            }
+        }
+
+        let mut notif_builder = aws_sdk_s3::types::NotificationConfiguration::builder()
+            .set_topic_configurations(if topic_configs.is_empty() {
+                None
+            } else {
+                Some(topic_configs)
+            })
+            .set_queue_configurations(if queue_configs.is_empty() {
+                None
+            } else {
+                Some(queue_configs)
+            })
+            .set_lambda_function_configurations(if lambda_configs.is_empty() {
+                None
+            } else {
+                Some(lambda_configs)
+            });
+
+        if config.event_bridge_enabled {
+            notif_builder =
+                notif_builder.event_bridge_configuration(EventBridgeConfiguration::builder().build());
+        }
+
+        let notif_config = notif_builder.build();
+
+        self.client
+            .put_bucket_notification_configuration()
+            .bucket(&self.bucket)
+            .notification_configuration(notif_config)
+            .send()
+            .await
+            .map_err(|e| {
+                s3err(format!(
+                    "Failed to put notification configuration: {}",
+                    e
+                ))
+            })?;
+
+        Ok(())
+    }
+}
+
+// ── Notification filter helpers ─────────────────────────────────────────────
+
+fn extract_filter_prefix(
+    filter: Option<&aws_sdk_s3::types::NotificationConfigurationFilter>,
+) -> Option<String> {
+    let key = filter?.key()?;
+    for rule in key.filter_rules() {
+        if rule.name() == Some(&aws_sdk_s3::types::FilterRuleName::Prefix) {
+            if let Some(v) = rule.value() {
+                if !v.is_empty() {
+                    return Some(v.to_string());
+                }
+            }
+        }
+    }
+    None
+}
+
+fn extract_filter_suffix(
+    filter: Option<&aws_sdk_s3::types::NotificationConfigurationFilter>,
+) -> Option<String> {
+    let key = filter?.key()?;
+    for rule in key.filter_rules() {
+        if rule.name() == Some(&aws_sdk_s3::types::FilterRuleName::Suffix) {
+            if let Some(v) = rule.value() {
+                if !v.is_empty() {
+                    return Some(v.to_string());
+                }
+            }
+        }
+    }
+    None
+}
+
+fn build_notification_filter(
+    prefix: Option<&str>,
+    suffix: Option<&str>,
+) -> Option<aws_sdk_s3::types::NotificationConfigurationFilter> {
+    use aws_sdk_s3::types::{
+        FilterRule, FilterRuleName, NotificationConfigurationFilter, S3KeyFilter,
+    };
+
+    let has_prefix = prefix.map_or(false, |p| !p.is_empty());
+    let has_suffix = suffix.map_or(false, |s| !s.is_empty());
+
+    if !has_prefix && !has_suffix {
+        return None;
+    }
+
+    let mut filter_rules = Vec::new();
+    if let Some(p) = prefix {
+        if !p.is_empty() {
+            filter_rules.push(
+                FilterRule::builder()
+                    .name(FilterRuleName::Prefix)
+                    .value(p)
+                    .build(),
+            );
+        }
+    }
+    if let Some(s) = suffix {
+        if !s.is_empty() {
+            filter_rules.push(
+                FilterRule::builder()
+                    .name(FilterRuleName::Suffix)
+                    .value(s)
+                    .build(),
+            );
+        }
+    }
+
+    let key_filter = S3KeyFilter::builder()
+        .set_filter_rules(Some(filter_rules))
+        .build();
+
+    Some(
+        NotificationConfigurationFilter::builder()
+            .key(key_filter)
+            .build(),
+    )
 }
