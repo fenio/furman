@@ -68,6 +68,7 @@ const ALL_TRUE: S3ProviderCapabilities = {
   listBuckets: true,
   cloudfront: true,
   inventory: true,
+  replication: true,
 };
 
 // ── Curated providers (manually maintained, with specific capabilities) ────
@@ -110,6 +111,7 @@ const CURATED_PROVIDERS: S3ProviderProfile[] = [
       listBuckets: true,
       cloudfront: false,
       inventory: false,
+      replication: false,
     },
   },
   {
@@ -141,6 +143,7 @@ const CURATED_PROVIDERS: S3ProviderProfile[] = [
       listBuckets: true,
       cloudfront: false,
       inventory: false,
+      replication: false,
     },
   },
   {
@@ -172,6 +175,7 @@ const CURATED_PROVIDERS: S3ProviderProfile[] = [
       listBuckets: true,
       cloudfront: false,
       inventory: false,
+      replication: false,
     },
   },
   {
@@ -203,6 +207,7 @@ const CURATED_PROVIDERS: S3ProviderProfile[] = [
       listBuckets: true,
       cloudfront: false,
       inventory: false,
+      replication: false,
     },
   },
   {
@@ -234,6 +239,7 @@ const CURATED_PROVIDERS: S3ProviderProfile[] = [
       listBuckets: false,
       cloudfront: false,
       inventory: false,
+      replication: false,
     },
   },
   {
@@ -265,6 +271,7 @@ const CURATED_PROVIDERS: S3ProviderProfile[] = [
       listBuckets: true,
       cloudfront: false,
       inventory: false,
+      replication: false,
     },
   },
   {
@@ -296,6 +303,7 @@ const CURATED_PROVIDERS: S3ProviderProfile[] = [
       listBuckets: true,
       cloudfront: false,
       inventory: false,
+      replication: false,
     },
   },
 ];

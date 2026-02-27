@@ -1,5 +1,5 @@
 import { invoke, Channel } from '@tauri-apps/api/core';
-import type { DirListing, KmsKeyInfo, ProgressEvent, S3Bucket, S3BucketAcl, S3BucketEncryption, S3BucketVersioning, S3CorsRule, S3InventoryConfiguration, S3LifecycleRule, S3MultipartUpload, S3ObjectLegalHold, S3ObjectLockConfig, S3ObjectMetadata, S3ObjectProperties, S3ObjectRetention, S3ObjectVersion, S3PublicAccessBlock, S3Tag, SearchEvent, TransferCheckpoint } from '$lib/types';
+import type { DirListing, KmsKeyInfo, ProgressEvent, S3Bucket, S3BucketAcl, S3BucketEncryption, S3BucketVersioning, S3CorsRule, S3InventoryConfiguration, S3LifecycleRule, S3MultipartUpload, S3ObjectLegalHold, S3ObjectLockConfig, S3ObjectMetadata, S3ObjectProperties, S3ObjectRetention, S3ObjectVersion, S3PublicAccessBlock, S3ReplicationConfiguration, S3Tag, SearchEvent, TransferCheckpoint } from '$lib/types';
 
 export async function s3CheckCredentials(): Promise<boolean> {
   return await invoke<boolean>('s3_check_credentials');
@@ -613,6 +613,20 @@ export async function s3PutInventoryConfiguration(id: string, config: S3Inventor
 
 export async function s3DeleteInventoryConfiguration(id: string, configId: string): Promise<void> {
   await invoke('s3_delete_inventory_configuration', { id, configId });
+}
+
+// ── Replication Configuration ────────────────────────────────────────────────
+
+export async function s3GetReplicationConfiguration(id: string): Promise<S3ReplicationConfiguration | null> {
+  return await invoke<S3ReplicationConfiguration | null>('s3_get_replication_configuration', { id });
+}
+
+export async function s3PutReplicationConfiguration(id: string, config: S3ReplicationConfiguration): Promise<void> {
+  await invoke('s3_put_replication_configuration', { id, config });
+}
+
+export async function s3DeleteReplicationConfiguration(id: string): Promise<void> {
+  await invoke('s3_delete_replication_configuration', { id });
 }
 
 // ── OIDC Authentication ─────────────────────────────────────────────────────

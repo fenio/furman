@@ -13,6 +13,7 @@ use crate::models::{
     S3EncryptionRule, S3InventoryConfiguration, S3InventoryDestination, S3LifecycleRule,
     S3LifecycleTransition, S3MultipartUpload, S3ObjectLegalHold, S3ObjectLockConfig,
     S3ObjectMetadata, S3ObjectProperties, S3ObjectRetention, S3ObjectVersion, S3PublicAccessBlock,
+    S3ReplicationConfiguration, S3ReplicationDestination, S3ReplicationRule,
     S3Tag, SearchDone, SearchEvent, SearchResult, TransferCheckpoint,
 };
 
@@ -3428,6 +3429,201 @@ impl S3Service {
             .send()
             .await
             .map_err(|e| s3err(format!("Failed to delete inventory configuration: {}", e)))?;
+
+        Ok(())
+    }
+
+    // ── Replication Configuration ────────────────────────────────────────
+
+    /// Get the replication configuration for this bucket.
+    pub async fn get_replication_configuration(
+        &self,
+    ) -> Result<Option<S3ReplicationConfiguration>, FmError> {
+        let resp = self
+            .client
+            .get_bucket_replication()
+            .bucket(&self.bucket)
+            .send()
+            .await;
+
+        match resp {
+            Ok(r) => {
+                let Some(repl_config) = r.replication_configuration() else {
+                    return Ok(None);
+                };
+
+                let role = repl_config.role().to_string();
+                let mut rules = Vec::new();
+
+                for rule in repl_config.rules() {
+                    let id = rule.id().map(|s| s.to_string());
+                    let priority = rule.priority();
+                    let status = rule
+                        .status()
+                        .as_str()
+                        .to_string();
+
+                    // Extract filter prefix from filter.prefix() or filter.and().prefix()
+                    let filter_prefix = rule.filter().and_then(|f| {
+                        if let Some(p) = f.prefix() {
+                            if !p.is_empty() { return Some(p.to_string()); }
+                        }
+                        if let Some(and) = f.and() {
+                            if let Some(p) = and.prefix() {
+                                if !p.is_empty() { return Some(p.to_string()); }
+                            }
+                        }
+                        None
+                    });
+
+                    let dest = rule.destination();
+                    let bucket_arn = dest
+                        .map(|d| d.bucket().to_string())
+                        .unwrap_or_default();
+                    let storage_class = dest
+                        .and_then(|d| d.storage_class())
+                        .map(|sc| sc.as_str().to_string());
+                    let account = dest
+                        .and_then(|d| d.account())
+                        .map(|a| a.to_string());
+                    let kms_key_id = dest
+                        .and_then(|d| d.encryption_configuration())
+                        .and_then(|ec| ec.replica_kms_key_id())
+                        .map(|k| k.to_string());
+
+                    let delete_marker_replication = rule
+                        .delete_marker_replication()
+                        .and_then(|dmr| dmr.status())
+                        .map(|s| s.as_str() == "Enabled")
+                        .unwrap_or(false);
+
+                    rules.push(S3ReplicationRule {
+                        id,
+                        priority,
+                        status,
+                        filter_prefix,
+                        destination: S3ReplicationDestination {
+                            bucket_arn,
+                            storage_class,
+                            account,
+                            kms_key_id,
+                        },
+                        delete_marker_replication,
+                    });
+                }
+
+                Ok(Some(S3ReplicationConfiguration { role, rules }))
+            }
+            Err(e) => {
+                let err_str = e.to_string();
+                let err_dbg = format!("{e:?}");
+                if err_str.contains("ReplicationConfigurationNotFoundError")
+                    || err_dbg.contains("ReplicationConfigurationNotFoundError")
+                    || err_dbg.contains("StatusCode(404)")
+                {
+                    return Ok(None);
+                }
+                Err(s3err(err_str))
+            }
+        }
+    }
+
+    /// Set the replication configuration for this bucket.
+    pub async fn put_replication_configuration(
+        &self,
+        config: &S3ReplicationConfiguration,
+    ) -> Result<(), FmError> {
+        use aws_sdk_s3::types::{
+            DeleteMarkerReplication, DeleteMarkerReplicationStatus, Destination,
+            EncryptionConfiguration, ReplicationConfiguration, ReplicationRule,
+            ReplicationRuleFilter, ReplicationRuleStatus, StorageClass,
+        };
+
+        let mut sdk_rules = Vec::new();
+
+        for rule in &config.rules {
+            let mut dest_builder = Destination::builder().bucket(&rule.destination.bucket_arn);
+
+            if let Some(sc) = &rule.destination.storage_class {
+                dest_builder = dest_builder.storage_class(StorageClass::from(sc.as_str()));
+            }
+            if let Some(acct) = &rule.destination.account {
+                dest_builder = dest_builder.account(acct);
+            }
+            if let Some(kms_key) = &rule.destination.kms_key_id {
+                let enc = EncryptionConfiguration::builder()
+                    .replica_kms_key_id(kms_key)
+                    .build();
+                dest_builder = dest_builder.encryption_configuration(enc);
+            }
+
+            let destination = dest_builder
+                .build()
+                .map_err(|e| s3err(e.to_string()))?;
+
+            let status = match rule.status.as_str() {
+                "Disabled" => ReplicationRuleStatus::Disabled,
+                _ => ReplicationRuleStatus::Enabled,
+            };
+
+            let dmr_status = if rule.delete_marker_replication {
+                DeleteMarkerReplicationStatus::Enabled
+            } else {
+                DeleteMarkerReplicationStatus::Disabled
+            };
+            let dmr = DeleteMarkerReplication::builder()
+                .status(dmr_status)
+                .build();
+
+            // Always set a filter (required for V2 replication config)
+            let filter = match &rule.filter_prefix {
+                Some(prefix) if !prefix.is_empty() => {
+                    ReplicationRuleFilter::builder().prefix(prefix).build()
+                }
+                _ => ReplicationRuleFilter::builder().prefix("").build(),
+            };
+
+            let mut rule_builder = ReplicationRule::builder()
+                .status(status)
+                .destination(destination)
+                .delete_marker_replication(dmr)
+                .filter(filter);
+
+            if let Some(id) = &rule.id {
+                rule_builder = rule_builder.id(id);
+            }
+            if let Some(priority) = rule.priority {
+                rule_builder = rule_builder.priority(priority);
+            }
+
+            sdk_rules.push(rule_builder.build().map_err(|e| s3err(e.to_string()))?);
+        }
+
+        let sdk_config = ReplicationConfiguration::builder()
+            .role(&config.role)
+            .set_rules(Some(sdk_rules))
+            .build()
+            .map_err(|e| s3err(e.to_string()))?;
+
+        self.client
+            .put_bucket_replication()
+            .bucket(&self.bucket)
+            .replication_configuration(sdk_config)
+            .send()
+            .await
+            .map_err(|e| s3err(format!("Failed to put replication configuration: {}", e)))?;
+
+        Ok(())
+    }
+
+    /// Delete the replication configuration for this bucket.
+    pub async fn delete_replication_configuration(&self) -> Result<(), FmError> {
+        self.client
+            .delete_bucket_replication()
+            .bucket(&self.bucket)
+            .send()
+            .await
+            .map_err(|e| s3err(format!("Failed to delete replication configuration: {}", e)))?;
 
         Ok(())
     }

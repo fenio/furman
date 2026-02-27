@@ -5,6 +5,7 @@
   import MfaDialog from './MfaDialog.svelte';
   import CloudFrontTab from './CloudFrontTab.svelte';
   import S3InventoryTab from './S3InventoryTab.svelte';
+  import S3ReplicationTab from './S3ReplicationTab.svelte';
   import {
     s3HeadObject, s3ChangeStorageClass, s3RestoreObject, s3ListObjectVersions,
     s3DownloadVersion, s3RestoreVersion, s3DeleteVersion,
@@ -55,14 +56,14 @@
     glacierRestore: true, presignedUrls: true, objectMetadata: true,
     objectTags: true, bucketTags: true, multipartUploadCleanup: true,
     websiteHosting: true, requesterPays: true, objectOwnership: true, serverAccessLogging: true,
-    objectLock: true, listBuckets: true, cloudfront: true, inventory: true,
+    objectLock: true, listBuckets: true, cloudfront: true, inventory: true, replication: true,
   };
 
   let fileProps = $state<FileProperties | null>(null);
   let s3Props = $state<S3ObjectProperties | null>(null);
   let s3IsPrefix = $state(false);
   let s3IsBucketRoot = $state(false);
-  let bucketTab = $state<'general' | 'security' | 'cors' | 'acl' | 'lifecycle' | 'cdn' | 'inventory'>('general');
+  let bucketTab = $state<'general' | 'security' | 'cors' | 'acl' | 'lifecycle' | 'cdn' | 'inventory' | 'replication'>('general');
   let objectTab = $state<'general' | 'metadata' | 'versions'>('general');
   let loading = $state(true);
   let error = $state('');
@@ -1877,6 +1878,9 @@
             {#if caps.inventory}
               <button class="tab-btn" class:active={bucketTab === 'inventory'} onclick={() => { bucketTab = 'inventory'; }}>Inventory</button>
             {/if}
+            {#if caps.replication}
+              <button class="tab-btn" class:active={bucketTab === 'replication'} onclick={() => { bucketTab = 'replication'; }}>Replication</button>
+            {/if}
           </div>
 
           <!-- Bucket Versioning -->
@@ -2641,6 +2645,10 @@
 
           {#if bucketTab === 'inventory' && caps.inventory}
             <S3InventoryTab s3ConnectionId={s3ConnectionId} />
+          {/if}
+
+          {#if bucketTab === 'replication' && caps.replication}
+            <S3ReplicationTab s3ConnectionId={s3ConnectionId} />
           {/if}
         {/if}
       {/if}

@@ -4,7 +4,7 @@ use crate::models::{
     S3BucketLogging, S3BucketOwnership, S3BucketVersioning, S3BucketWebsite, S3CorsRule,
     S3InventoryConfiguration, S3LifecycleRule, S3MultipartUpload, S3ObjectLegalHold,
     S3ObjectLockConfig, S3ObjectMetadata, S3ObjectProperties, S3ObjectRetention, S3ObjectVersion,
-    S3PublicAccessBlock, S3Tag, SearchEvent, TransferCheckpoint,
+    S3PublicAccessBlock, S3ReplicationConfiguration, S3Tag, SearchEvent, TransferCheckpoint,
 };
 use crate::s3::{self, build_s3_client, s3err, S3State, BANDWIDTH_LIMIT};
 use crate::s3::service::{S3Bucket, S3Service};
@@ -1157,4 +1157,34 @@ pub async fn s3_delete_inventory_configuration(
 ) -> Result<(), FmError> {
     let service = get_service(&state, &id)?;
     service.delete_inventory_configuration(&config_id).await
+}
+
+// ── Replication Configuration ──────────────────────────────────────────────
+
+#[tauri::command]
+pub async fn s3_get_replication_configuration(
+    state: State<'_, S3State>,
+    id: String,
+) -> Result<Option<S3ReplicationConfiguration>, FmError> {
+    let service = get_service(&state, &id)?;
+    service.get_replication_configuration().await
+}
+
+#[tauri::command]
+pub async fn s3_put_replication_configuration(
+    state: State<'_, S3State>,
+    id: String,
+    config: S3ReplicationConfiguration,
+) -> Result<(), FmError> {
+    let service = get_service(&state, &id)?;
+    service.put_replication_configuration(&config).await
+}
+
+#[tauri::command]
+pub async fn s3_delete_replication_configuration(
+    state: State<'_, S3State>,
+    id: String,
+) -> Result<(), FmError> {
+    let service = get_service(&state, &id)?;
+    service.delete_replication_configuration().await
 }

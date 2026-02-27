@@ -430,6 +430,32 @@ pub struct S3InventoryConfiguration {
     pub filter_prefix: Option<String>,
 }
 
+// ── S3 Replication ──────────────────────────────────────────────────────
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct S3ReplicationDestination {
+    pub bucket_arn: String,
+    pub storage_class: Option<String>,
+    pub account: Option<String>,
+    pub kms_key_id: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct S3ReplicationRule {
+    pub id: Option<String>,
+    pub priority: Option<i32>,
+    pub status: String, // "Enabled" | "Disabled"
+    pub filter_prefix: Option<String>,
+    pub destination: S3ReplicationDestination,
+    pub delete_marker_replication: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct S3ReplicationConfiguration {
+    pub role: String, // IAM role ARN
+    pub rules: Vec<S3ReplicationRule>,
+}
+
 // ── CloudFront Types ────────────────────────────────────────────────────────
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

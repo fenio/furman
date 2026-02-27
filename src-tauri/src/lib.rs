@@ -186,6 +186,10 @@ pub fn run() {
             commands::s3::s3_list_inventory_configurations,
             commands::s3::s3_put_inventory_configuration,
             commands::s3::s3_delete_inventory_configuration,
+            // replication commands
+            commands::s3::s3_get_replication_configuration,
+            commands::s3::s3_put_replication_configuration,
+            commands::s3::s3_delete_replication_configuration,
             // cloudfront commands
             commands::cloudfront::cf_list_distributions,
             commands::cloudfront::cf_get_distribution,

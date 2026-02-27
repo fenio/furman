@@ -24,6 +24,7 @@
     listBuckets: true,
     cloudfront: true,
     inventory: true,
+    replication: true,
   };
 
   type TabType = 'metadata' | 'tags';

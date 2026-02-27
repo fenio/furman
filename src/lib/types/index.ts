@@ -312,6 +312,29 @@ export interface S3InventoryConfiguration {
   filter_prefix: string | null;
 }
 
+// ── S3 Replication Types ─────────────────────────────────────────────────────
+
+export interface S3ReplicationDestination {
+  bucket_arn: string;
+  storage_class: string | null;
+  account: string | null;
+  kms_key_id: string | null;
+}
+
+export interface S3ReplicationRule {
+  id: string | null;
+  priority: number | null;
+  status: string;
+  filter_prefix: string | null;
+  destination: S3ReplicationDestination;
+  delete_marker_replication: boolean;
+}
+
+export interface S3ReplicationConfiguration {
+  role: string;
+  rules: S3ReplicationRule[];
+}
+
 // ── CloudFront Types ────────────────────────────────────────────────────────
 
 export interface CfDistributionSummary {
@@ -389,6 +412,7 @@ export interface S3ProviderCapabilities {
   listBuckets: boolean;
   cloudfront: boolean;
   inventory: boolean;
+  replication: boolean;
 }
 
 export interface S3ConnectionInfo {
