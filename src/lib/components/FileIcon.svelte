@@ -115,7 +115,7 @@
   {ondblclick}
 >
   <div class="tile-thumb">
-    {#if isImage && !imgFailed}
+    {#if isImage && !imgFailed && backend === 'local'}
       <img
         src={convertFileSrc(entry.path)}
         alt={entry.name}

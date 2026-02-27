@@ -114,7 +114,7 @@
   let rowEl: HTMLDivElement | undefined = $state(undefined);
 
   function onMouseEnter() {
-    if (!isImage || entry.name === '..') return;
+    if (!isImage || entry.name === '..' || backend !== 'local') return;
     hoverTimer = setTimeout(() => { showTooltip = true; }, 300);
   }
 
