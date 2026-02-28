@@ -120,6 +120,10 @@
 <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
 <div class="sftp-dialog" class:embedded onkeydown={handleKeydown} role="form">
   <div class="main-body">
+    <div class="conn-tab-bar">
+      <button class="conn-tab-btn active">Connection</button>
+    </div>
+
     {#if connectError}
       <div class="error-msg">{connectError}</div>
     {/if}
@@ -218,6 +222,32 @@
     gap: 14px;
     flex: 1;
     overflow-y: auto;
+  }
+
+  .conn-tab-bar {
+    display: flex;
+    gap: 0;
+    border-bottom: 1px solid var(--border-subtle);
+    margin-bottom: 8px;
+    flex-shrink: 0;
+  }
+
+  .conn-tab-btn {
+    padding: 6px 16px;
+    font-size: 12px;
+    font-family: inherit;
+    font-weight: 500;
+    background: none;
+    border: none;
+    border-bottom: 2px solid transparent;
+    color: var(--text-secondary);
+    cursor: default;
+    transition: color var(--transition-fast), border-color var(--transition-fast);
+  }
+
+  .conn-tab-btn.active {
+    border-bottom: 2px solid var(--text-accent);
+    color: var(--text-accent);
   }
 
   .main-footer {

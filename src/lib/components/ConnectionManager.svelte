@@ -315,7 +315,7 @@
         <div class="sidebar-section-label">NEW</div>
         <button
           class="sidebar-item"
-          class:active={selected.mode === 'new'}
+          class:active={selected.mode === 'new' && selected.protocol === 's3'}
           onclick={() => { selected = { mode: 'new', protocol: 's3' }; dialogKey++; }}
         >
           S3
