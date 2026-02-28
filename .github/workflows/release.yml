@@ -117,7 +117,7 @@ jobs:
           VERSION=${{ steps.version.outputs.version }}
           echo "arm=$(sha256sum Furman_${VERSION}_aarch64.dmg | cut -d ' ' -f 1)" >> "$GITHUB_OUTPUT"
           echo "intel=$(sha256sum Furman_${VERSION}_x64.dmg | cut -d ' ' -f 1)" >> "$GITHUB_OUTPUT"
-          echo "linux=$(sha256sum furman_${VERSION}_amd64.AppImage | cut -d ' ' -f 1)" >> "$GITHUB_OUTPUT"
+          echo "linux=$(sha256sum Furman_${VERSION}_amd64.AppImage | cut -d ' ' -f 1)" >> "$GITHUB_OUTPUT"
 
       - name: Checkout homebrew-tap
         uses: actions/checkout@v4
@@ -177,11 +177,11 @@ jobs:
 
             depends_on :linux
 
-            url "https://github.com/fenio/furman/releases/download/v#{version}/furman_#{version}_amd64.AppImage"
+            url "https://github.com/fenio/furman/releases/download/v#{version}/Furman_#{version}_amd64.AppImage"
             sha256 "${LINUX_SHA}"
 
             def install
-              bin.install "furman_#{version}_amd64.AppImage" => "furman"
+              bin.install "Furman_#{version}_amd64.AppImage" => "furman"
             end
           end
           FORMULA
