@@ -386,9 +386,11 @@
             appState.showProperties(
               `s3://${panel.s3Connection.bucket}/`,
               panel.backend,
-              panel.s3Connection.connectionId,
-              panel.s3Connection.capabilities,
-              panel.s3Connection,
+              {
+                s3ConnectionId: panel.s3Connection.connectionId,
+                capabilities: panel.s3Connection.capabilities,
+                s3Connection: panel.s3Connection,
+              },
             );
           }
         }}
@@ -404,7 +406,22 @@
         </svg>
       </button>
     {:else if panel.backend === 'sftp'}
-      <span class="backend-indicator">
+      <button
+        class="backend-indicator backend-indicator-clickable"
+        title="Connection info"
+        onclick={() => {
+          if (panel.sftpConnection) {
+            appState.showProperties(
+              panel.path,
+              panel.backend,
+              {
+                sftpConnectionId: panel.sftpConnection.connectionId,
+                sftpConnection: panel.sftpConnection,
+              },
+            );
+          }
+        }}
+      >
         <svg class="backend-logo" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
           <rect x="3" y="2" width="18" height="6" rx="1" fill="none" stroke="#6EA8FE" stroke-width="1.5"/>
           <rect x="3" y="10" width="18" height="6" rx="1" fill="none" stroke="#6EA8FE" stroke-width="1.5"/>
@@ -413,9 +430,21 @@
           <path d="M9 20h6M12 16v4" stroke="#6EA8FE" stroke-width="1.5" stroke-linecap="round"/>
         </svg>
         <span class="backend-label">SFTP</span>
-      </span>
+      </button>
     {:else if panel.backend === 'archive'}
-      <span class="backend-indicator">
+      <button
+        class="backend-indicator backend-indicator-clickable"
+        title="Archive info"
+        onclick={() => {
+          if (panel.archiveInfo) {
+            appState.showProperties(
+              panel.archiveInfo.archivePath,
+              panel.backend,
+              { archiveInfo: panel.archiveInfo },
+            );
+          }
+        }}
+      >
         <svg class="backend-logo" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
           <path d="M4 4h16v2H4zm2 4h12v12H6zm4 3v2h4v-2z" fill="#8B8BCD"/>
           <rect x="11" y="4" width="2" height="2" fill="#8B8BCD"/>
@@ -423,7 +452,7 @@
           <rect x="11" y="12" width="2" height="2" fill="#8B8BCD"/>
         </svg>
         <span class="backend-label">Archive</span>
-      </span>
+      </button>
     {/if}
     <button class="view-toggle" onclick={() => panel.toggleViewMode()} title={panel.viewMode === 'list' ? 'Switch to icon view' : panel.viewMode === 'icon' ? 'Switch to column view' : 'Switch to list view'}>
       {panel.viewMode === 'list' ? '\u229E' : panel.viewMode === 'icon' ? '\u25A5' : '\u2630'}

@@ -347,6 +347,8 @@
       backend={appState.propertiesBackend}
       s3ConnectionId={appState.propertiesS3ConnectionId}
       sftpConnectionId={appState.propertiesSftpConnectionId}
+      sftpConnection={appState.propertiesSftpConnection}
+      archiveInfo={appState.propertiesArchiveInfo}
       capabilities={appState.propertiesCapabilities}
       s3Connection={appState.propertiesS3Connection}
       onClose={() => appState.closeModal()}

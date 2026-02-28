@@ -1,4 +1,4 @@
-import type { ModalType, ViewerMode, PanelBackend, S3ProviderCapabilities, S3ConnectionInfo, S3Profile, SortField, SortDirection } from '$lib/types';
+import type { ModalType, ViewerMode, PanelBackend, S3ProviderCapabilities, S3ConnectionInfo, SftpConnectionInfo, S3Profile, SortField, SortDirection, ArchiveInfo } from '$lib/types';
 import type { Theme } from '@tauri-apps/api/window';
 import { saveConfig, type Config } from '$lib/services/config';
 import { sidebarState } from '$lib/state/sidebar.svelte';
@@ -52,6 +52,8 @@ class AppState {
   propertiesSftpConnectionId = $state('');
   propertiesCapabilities = $state<S3ProviderCapabilities | undefined>(undefined);
   propertiesS3Connection = $state<S3ConnectionInfo | undefined>(undefined);
+  propertiesSftpConnection = $state<SftpConnectionInfo | undefined>(undefined);
+  propertiesArchiveInfo = $state<ArchiveInfo | undefined>(undefined);
   syncSourceBackend = $state<PanelBackend>('local');
   syncSourcePath = $state('');
   syncSourceS3Id = $state('');
@@ -156,13 +158,22 @@ class AppState {
     this.modal = 'connection-manager';
   }
 
-  showProperties(path: string, backend: PanelBackend, s3ConnectionId?: string, capabilities?: S3ProviderCapabilities, s3Connection?: S3ConnectionInfo, sftpConnectionId?: string) {
+  showProperties(path: string, backend: PanelBackend, opts?: {
+    s3ConnectionId?: string;
+    capabilities?: S3ProviderCapabilities;
+    s3Connection?: S3ConnectionInfo;
+    sftpConnectionId?: string;
+    sftpConnection?: SftpConnectionInfo;
+    archiveInfo?: ArchiveInfo;
+  }) {
     this.propertiesPath = path;
     this.propertiesBackend = backend;
-    this.propertiesS3ConnectionId = s3ConnectionId ?? '';
-    this.propertiesSftpConnectionId = sftpConnectionId ?? '';
-    this.propertiesCapabilities = capabilities;
-    this.propertiesS3Connection = s3Connection;
+    this.propertiesS3ConnectionId = opts?.s3ConnectionId ?? '';
+    this.propertiesSftpConnectionId = opts?.sftpConnectionId ?? '';
+    this.propertiesCapabilities = opts?.capabilities;
+    this.propertiesS3Connection = opts?.s3Connection;
+    this.propertiesSftpConnection = opts?.sftpConnection;
+    this.propertiesArchiveInfo = opts?.archiveInfo;
     this.modal = 'properties';
   }
 
@@ -274,6 +285,8 @@ class AppState {
     this.propertiesSftpConnectionId = '';
     this.propertiesCapabilities = undefined;
     this.propertiesS3Connection = undefined;
+    this.propertiesSftpConnection = undefined;
+    this.propertiesArchiveInfo = undefined;
     this.batchEditKeys = [];
     this.batchEditS3ConnectionId = '';
     this.batchEditCapabilities = undefined;

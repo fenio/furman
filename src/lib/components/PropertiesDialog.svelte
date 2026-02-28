@@ -38,7 +38,7 @@
     S3ObjectMetadata, S3LifecycleRule, S3CorsRule, S3PublicAccessBlock, S3BucketAcl,
     S3ProviderCapabilities, S3BucketWebsite, S3BucketLogging, S3BucketOwnership,
     S3ObjectLockConfig, S3ObjectRetention, S3ObjectLegalHold,
-    KmsKeyInfo, S3ConnectionInfo,
+    KmsKeyInfo, S3ConnectionInfo, SftpConnectionInfo, ArchiveInfo,
   } from '$lib/types';
 
   interface Props {
@@ -46,12 +46,14 @@
     backend: PanelBackend;
     s3ConnectionId: string;
     sftpConnectionId?: string;
+    sftpConnection?: SftpConnectionInfo;
+    archiveInfo?: ArchiveInfo;
     capabilities?: S3ProviderCapabilities;
     s3Connection?: S3ConnectionInfo;
     onClose: () => void;
   }
 
-  let { path, backend, s3ConnectionId, sftpConnectionId, capabilities, s3Connection, onClose }: Props = $props();
+  let { path, backend, s3ConnectionId, sftpConnectionId, sftpConnection, archiveInfo, capabilities, s3Connection, onClose }: Props = $props();
 
   // Default capabilities: all true if not provided (backward compat)
   const ALL_CLASSES = ['STANDARD', 'STANDARD_IA', 'ONEZONE_IA', 'INTELLIGENT_TIERING', 'GLACIER', 'DEEP_ARCHIVE', 'GLACIER_IR'];
@@ -69,6 +71,8 @@
   let s3Props = $state<S3ObjectProperties | null>(null);
   let s3IsPrefix = $state(false);
   let s3IsBucketRoot = $state(false);
+  let sftpIsRoot = $state(false);
+  let archiveFileProps = $state<FileProperties | null>(null);
   let bucketTab = $state<'general' | 'security' | 'cors' | 'acl' | 'lifecycle' | 'cdn' | 'inventory' | 'replication' | 'notifications' | 'accesspoints'>('general');
   let objectTab = $state<'general' | 'metadata' | 'versions'>('general');
   let loading = $state(true);
@@ -1427,8 +1431,27 @@
           }
         }
       } else if (backend === 'sftp' && sftpConnectionId) {
-        fileProps = await sftpHead(sftpConnectionId, path);
-        editMode = fileProps.permissions & 0o777;
+        // Check if this is a connection-level (root) view or a specific file
+        if (sftpConnection && (path.match(/^sftp:\/\/[^/]+:\d+\/?$/) || path.endsWith('/'))) {
+          sftpIsRoot = true;
+          // Still try to get props for the directory
+          try {
+            fileProps = await sftpHead(sftpConnectionId, path);
+            editMode = fileProps.permissions & 0o777;
+          } catch {
+            // Root listing may fail, that's ok — we still show connection info
+          }
+        } else {
+          fileProps = await sftpHead(sftpConnectionId, path);
+          editMode = fileProps.permissions & 0o777;
+        }
+      } else if (backend === 'archive' && archiveInfo) {
+        // Get properties of the archive file itself
+        try {
+          archiveFileProps = await getFileProperties(archiveInfo.archivePath);
+        } catch {
+          // May fail for nested archives
+        }
       } else {
         fileProps = await getFileProperties(path);
         editMode = fileProps.permissions & 0o777;
@@ -1467,6 +1490,43 @@
         <div class="loading">Loading...</div>
       {:else if error}
         <div class="error">{error}</div>
+      {:else if sftpIsRoot && sftpConnection}
+        <!-- SFTP connection info -->
+        <table class="props-table">
+          <tbody>
+            <tr><td class="prop-label">Host</td><td class="prop-value">{sftpConnection.host}</td></tr>
+            <tr><td class="prop-label">Port</td><td class="prop-value">{sftpConnection.port}</td></tr>
+            <tr><td class="prop-label">Username</td><td class="prop-value">{sftpConnection.username}</td></tr>
+            <tr><td class="prop-label">Protocol</td><td class="prop-value">SFTP (SSH File Transfer)</td></tr>
+            <tr><td class="prop-label">Connection ID</td><td class="prop-value mono">{sftpConnection.connectionId}</td></tr>
+            <tr><td class="prop-label">Current Path</td><td class="prop-value path">{path}</td></tr>
+            {#if fileProps}
+              <tr><td class="prop-label">Permissions</td><td class="prop-value">{formatPermissions(fileProps.permissions & 0o777)}</td></tr>
+              {#if fileProps.owner}<tr><td class="prop-label">Owner</td><td class="prop-value">{fileProps.owner}</td></tr>{/if}
+              {#if fileProps.group}<tr><td class="prop-label">Group</td><td class="prop-value">{fileProps.group}</td></tr>{/if}
+            {/if}
+          </tbody>
+        </table>
+      {:else if backend === 'archive' && (archiveFileProps || archiveInfo)}
+        <!-- Archive info -->
+        <table class="props-table">
+          <tbody>
+            {#if archiveInfo}
+              <tr><td class="prop-label">Archive</td><td class="prop-value path">{archiveInfo.archivePath.split('/').pop()}</td></tr>
+              <tr><td class="prop-label">Full Path</td><td class="prop-value path">{archiveInfo.archivePath}</td></tr>
+              {#if archiveInfo.internalPath}
+                <tr><td class="prop-label">Internal Path</td><td class="prop-value path">{archiveInfo.internalPath}</td></tr>
+              {/if}
+            {/if}
+            {#if archiveFileProps}
+              <tr><td class="prop-label">Archive Size</td><td class="prop-value">{formatSize(archiveFileProps.size)} ({archiveFileProps.size.toLocaleString()} bytes)</td></tr>
+              <tr><td class="prop-label">Format</td><td class="prop-value">{archiveFileProps.name.split('.').pop()?.toUpperCase() ?? 'Unknown'}</td></tr>
+              <tr><td class="prop-label">Modified</td><td class="prop-value">{formatDate(archiveFileProps.modified)}</td></tr>
+              <tr><td class="prop-label">Permissions</td><td class="prop-value">{formatPermissions(archiveFileProps.permissions & 0o777)}</td></tr>
+              <tr><td class="prop-label">Owner</td><td class="prop-value">{archiveFileProps.owner}</td></tr>
+            {/if}
+          </tbody>
+        </table>
       {:else if fileProps}
         <!-- Local file/directory properties -->
         <table class="props-table">

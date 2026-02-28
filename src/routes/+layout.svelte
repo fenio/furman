@@ -894,9 +894,20 @@
         appState.showProperties(
           `s3://${active.s3Connection.bucket}/`,
           active.backend,
-          active.s3Connection.connectionId,
-          active.s3Connection.capabilities,
-          active.s3Connection,
+          {
+            s3ConnectionId: active.s3Connection.connectionId,
+            capabilities: active.s3Connection.capabilities,
+            s3Connection: active.s3Connection,
+          },
+        );
+      } else if (active.backend === 'sftp' && active.sftpConnection) {
+        appState.showProperties(
+          active.path,
+          active.backend,
+          {
+            sftpConnectionId: active.sftpConnection.connectionId,
+            sftpConnection: active.sftpConnection,
+          },
         );
       }
       return;
@@ -916,10 +927,14 @@
     appState.showProperties(
       entry.path,
       active.backend,
-      active.s3Connection?.connectionId,
-      active.s3Connection?.capabilities,
-      active.s3Connection ?? undefined,
-      active.sftpConnection?.connectionId,
+      {
+        s3ConnectionId: active.s3Connection?.connectionId,
+        capabilities: active.s3Connection?.capabilities,
+        s3Connection: active.s3Connection ?? undefined,
+        sftpConnectionId: active.sftpConnection?.connectionId,
+        sftpConnection: active.sftpConnection ?? undefined,
+        archiveInfo: active.archiveInfo ?? undefined,
+      },
     );
   }
 
@@ -929,9 +944,11 @@
     appState.showProperties(
       `s3://${active.s3Connection.bucket}/`,
       active.backend,
-      active.s3Connection.connectionId,
-      active.s3Connection.capabilities,
-      active.s3Connection,
+      {
+        s3ConnectionId: active.s3Connection.connectionId,
+        capabilities: active.s3Connection.capabilities,
+        s3Connection: active.s3Connection,
+      },
     );
   }
 
