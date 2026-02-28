@@ -377,6 +377,45 @@
 {/if}
 
 <style>
+  .dialog-btn {
+    padding: 8px 24px;
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--radius-sm);
+    background: var(--bg-surface);
+    color: var(--text-primary);
+    cursor: pointer;
+    font-size: 13px;
+    font-family: inherit;
+    transition: background var(--transition-fast), border-color var(--transition-fast);
+  }
+
+  .dialog-btn:hover {
+    background: var(--bg-hover);
+    border-color: var(--text-accent);
+  }
+
+  .dialog-btn:disabled {
+    opacity: 0.5;
+    cursor: default;
+  }
+
+  .apply-btn {
+    align-self: flex-start;
+    padding: 6px 18px;
+    background: rgba(110, 168, 254, 0.2);
+    border: 1px solid var(--border-active);
+    border-radius: var(--radius-sm);
+    color: var(--text-accent);
+    cursor: pointer;
+    font-size: 12px;
+    font-family: inherit;
+    transition: background var(--transition-fast);
+  }
+
+  .apply-btn:hover {
+    background: rgba(110, 168, 254, 0.3);
+  }
+
   .ap-form {
     display: flex;
     flex-direction: column;

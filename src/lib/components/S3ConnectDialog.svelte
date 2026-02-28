@@ -93,6 +93,13 @@
   const currentProvider = $derived(getProvider(selectedProvider));
   const providerRegions = $derived(currentProvider.regions ?? []);
   const canListBuckets = $derived(selectedProvider === 'custom' ? (customCaps.listBuckets ?? true) : (currentProvider.capabilities.listBuckets ?? true));
+  const hasCreds = $derived(
+    !useAnonymous && !useOidc && (
+      (useDefaultCreds && hasDefaultCreds) ||
+      (accessKey.trim() !== '' && secretKey.trim() !== '') ||
+      profile.trim() !== ''
+    )
+  );
 
   const filteredProviders = $derived.by(() => {
     const q = providerQuery.toLowerCase().trim();
@@ -225,7 +232,7 @@
   });
 
   function buildProfile(): Omit<S3Profile, 'id'> & { id?: string } {
-    const credentialType = useOidc ? 'oidc' as const : useAnonymous ? 'anonymous' as const : !useDefaultCreds && accessKey.trim() ? 'keychain' as const : profile.trim() ? 'aws-profile' as const : 'default' as const;
+    const credentialType = useOidc ? 'oidc' as const : useAnonymous ? 'anonymous' as const : accessKey.trim() ? 'keychain' as const : profile.trim() ? 'aws-profile' as const : 'default' as const;
     return {
       ...(init ? { id: init.id } : {}),
       name: name.trim(),
@@ -293,8 +300,8 @@
       region.trim() || 'us-east-1',
       endpoint.trim() || undefined,
       useAnonymous ? undefined : (profile.trim() || undefined),
-      useAnonymous ? undefined : (!useDefaultCreds && accessKey.trim() ? accessKey.trim() : undefined),
-      useAnonymous ? undefined : (!useDefaultCreds && secretKey.trim() ? secretKey.trim() : undefined),
+      useAnonymous ? undefined : (accessKey.trim() || undefined),
+      useAnonymous ? undefined : (secretKey.trim() || undefined),
       selectedProvider,
       selectedProvider === 'custom' ? { ...customCaps } : undefined,
       useAnonymous ? undefined : (roleArn.trim() || undefined),
@@ -311,7 +318,7 @@
   async function handleSaveAndConnect() {
     if (!bucket.trim() || !name.trim()) return;
     const p = buildProfile();
-    const sk = useAnonymous ? undefined : (!useDefaultCreds && secretKey.trim() ? secretKey.trim() : undefined);
+    const sk = useAnonymous ? undefined : (secretKey.trim() || undefined);
     // Save proxy password to keychain
     const pp = useProxy && proxyMode === 'manual' && proxyPassword.trim() ? proxyPassword.trim() : undefined;
     if (pp && p.id) {
@@ -354,8 +361,8 @@
       region.trim() || 'us-east-1',
       endpoint.trim() || undefined,
       useAnonymous ? undefined : (profile.trim() || undefined),
-      useAnonymous ? undefined : (!useDefaultCreds && accessKey.trim() ? accessKey.trim() : undefined),
-      useAnonymous ? undefined : (!useDefaultCreds && secretKey.trim() ? secretKey.trim() : undefined),
+      useAnonymous ? undefined : (accessKey.trim() || undefined),
+      useAnonymous ? undefined : (secretKey.trim() || undefined),
       selectedProvider,
       selectedProvider === 'custom' ? { ...customCaps } : undefined,
       useAnonymous ? undefined : (roleArn.trim() || undefined),
@@ -372,7 +379,7 @@
   async function handleSave() {
     if (!bucket.trim() || !name.trim()) return;
     const p = buildProfile();
-    const sk = !useDefaultCreds && secretKey.trim() ? secretKey.trim() : undefined;
+    const sk = secretKey.trim() || undefined;
     // Save proxy password to keychain
     const pp = useProxy && proxyMode === 'manual' && proxyPassword.trim() ? proxyPassword.trim() : undefined;
     if (pp && p.id) {
@@ -402,8 +409,11 @@
     }
   }
 
-  function selectBucket(name: string) {
-    bucket = name;
+  function selectBucket(bucketName: string) {
+    bucket = bucketName;
+    if (saveMode && !name.trim()) {
+      name = bucketName;
+    }
     showBucketList = false;
   }
 
@@ -411,8 +421,8 @@
     return [
       endpoint.trim() || undefined,
       profile.trim() || undefined,
-      !useDefaultCreds && accessKey.trim() ? accessKey.trim() : undefined,
-      !useDefaultCreds && secretKey.trim() ? secretKey.trim() : undefined,
+      accessKey.trim() || undefined,
+      secretKey.trim() || undefined,
       roleArn.trim() || undefined,
       externalIdVal.trim() || undefined,
       undefined, // sessionName
@@ -571,6 +581,8 @@
         </label>
       {/if}
 
+      <div class="conn-columns">
+      <div class="conn-col">
       <div class="field-label">
         Bucket
         <div class="bucket-row">
@@ -583,7 +595,7 @@
             placeholder="my-bucket-name"
           />
           {#if canListBuckets}
-            <button class="dialog-btn browse-btn" onclick={handleBrowse} disabled={browsing}>
+            <button class="dialog-btn browse-btn" onclick={handleBrowse} disabled={browsing || !hasCreds}>
               {browsing ? 'Loading...' : 'Browse'}
             </button>
           {/if}
@@ -662,11 +674,13 @@
         />
         <span class="field-hint">Leave empty for AWS. Provider is auto-detected from endpoint.</span>
       </label>
+      </div>
 
+      <div class="conn-col">
       <div class="creds-toggle">
         <label class="checkbox-label">
           <input type="checkbox" bind:checked={useOidc} onchange={() => { if (useOidc) { useAnonymous = false; useDefaultCreds = false; accessKey = ''; secretKey = ''; profile = ''; } }} />
-          Sign in with Identity Provider (OIDC)
+          OIDC
         </label>
         <span class="field-hint">Authenticate via Okta, Auth0, Entra ID, Keycloak, etc.</span>
       </div>
@@ -710,7 +724,7 @@
         {/if}
       {/if}
 
-      {#if !useAnonymous && !useOidc}
+      {#if !useOidc}
         <label class="field-label">
           Profile (optional)
           <input
@@ -719,6 +733,7 @@
             autocomplete="off"
             bind:value={profile}
             placeholder="default"
+            disabled={useAnonymous}
           />
           <span class="field-hint">SSO profiles work if you've run `aws sso login`</span>
         </label>
@@ -726,7 +741,7 @@
         {#if !checking && hasDefaultCreds}
           <div class="creds-toggle">
             <label class="checkbox-label">
-              <input type="checkbox" bind:checked={useDefaultCreds} />
+              <input type="checkbox" bind:checked={useDefaultCreds} disabled={useAnonymous} />
               Use default credentials
             </label>
             <span class="creds-status ok">Default credentials found</span>
@@ -741,7 +756,7 @@
             autocomplete="off"
             bind:value={accessKey}
             placeholder="AKIA..."
-            disabled={useDefaultCreds && hasDefaultCreds}
+            disabled={useAnonymous || (useDefaultCreds && hasDefaultCreds)}
           />
         </label>
 
@@ -753,18 +768,19 @@
             autocomplete="off"
             bind:value={secretKey}
             placeholder={isEditing ? 'Leave empty to keep current' : 'secret'}
-            disabled={useDefaultCreds && hasDefaultCreds}
+            disabled={useAnonymous || (useDefaultCreds && hasDefaultCreds)}
           />
         </label>
-
       {/if}
 
       <div class="creds-toggle">
         <label class="checkbox-label">
           <input type="checkbox" bind:checked={useAnonymous} onchange={() => { if (useAnonymous) { useOidc = false; } }} />
-          Anonymous (public bucket)
+          Anonymous
         </label>
         <span class="field-hint">Browse a public bucket without credentials (read-only)</span>
+      </div>
+      </div>
       </div>
 
       {#if selectedProvider === 'custom'}
@@ -1499,5 +1515,18 @@
     color: var(--text-secondary);
     opacity: 0.7;
     padding: 12px 0;
+  }
+
+  .conn-columns {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 12px 24px;
+    align-items: start;
+  }
+
+  .conn-col {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
   }
 </style>

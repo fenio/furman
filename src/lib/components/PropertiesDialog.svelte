@@ -30,13 +30,14 @@
   } from '$lib/services/s3';
   import { invoke } from '@tauri-apps/api/core';
   import { formatSize, formatDate, formatPermissions } from '$lib/utils/format';
+  import { s3ProfilesState } from '$lib/state/s3profiles.svelte';
   import type {
     FileProperties, S3ObjectProperties, S3ObjectVersion, PanelBackend,
     S3BucketVersioning, S3BucketEncryption, S3Tag, S3MultipartUpload,
     S3ObjectMetadata, S3LifecycleRule, S3CorsRule, S3PublicAccessBlock, S3BucketAcl,
     S3ProviderCapabilities, S3BucketWebsite, S3BucketLogging, S3BucketOwnership,
     S3ObjectLockConfig, S3ObjectRetention, S3ObjectLegalHold,
-    KmsKeyInfo,
+    KmsKeyInfo, S3ConnectionInfo,
   } from '$lib/types';
 
   interface Props {
@@ -44,10 +45,11 @@
     backend: PanelBackend;
     s3ConnectionId: string;
     capabilities?: S3ProviderCapabilities;
+    s3Connection?: S3ConnectionInfo;
     onClose: () => void;
   }
 
-  let { path, backend, s3ConnectionId, capabilities, onClose }: Props = $props();
+  let { path, backend, s3ConnectionId, capabilities, s3Connection, onClose }: Props = $props();
 
   // Default capabilities: all true if not provided (backward compat)
   const ALL_CLASSES = ['STANDARD', 'STANDARD_IA', 'ONEZONE_IA', 'INTELLIGENT_TIERING', 'GLACIER', 'DEEP_ARCHIVE', 'GLACIER_IR'];
@@ -69,6 +71,24 @@
   let objectTab = $state<'general' | 'metadata' | 'versions'>('general');
   let loading = $state(true);
   let error = $state('');
+  const isAlreadySaved = $derived(
+    s3Connection ? s3ProfilesState.profiles.some(p => p.bucket === s3Connection!.bucket && p.region === s3Connection!.region) : false
+  );
+
+  function saveConnection() {
+    if (!s3Connection) return;
+    onClose();
+    appState.showS3ManagerSave({
+      name: s3Connection.bucket,
+      bucket: s3Connection.bucket,
+      region: s3Connection.region,
+      ...(s3Connection.endpoint ? { endpoint: s3Connection.endpoint } : {}),
+      ...(s3Connection.profile ? { profile: s3Connection.profile } : {}),
+      credentialType: 'default',
+      ...(s3Connection.provider ? { provider: s3Connection.provider } : {}),
+      ...(s3Connection.capabilities ? { customCapabilities: s3Connection.capabilities } : {}),
+    });
+  }
   let dirSize = $state<number | null>(null);
   let dirSizeLoading = $state(false);
 
@@ -1891,6 +1911,7 @@
             {/if}
           </div>
 
+          <div class="tab-content">
           <!-- Bucket Versioning -->
           {#if bucketTab === 'general' && caps.versioning}
           <div class="section-title">Versioning</div>
@@ -2666,11 +2687,15 @@
           {#if bucketTab === 'accesspoints' && caps.accessPoints}
             <S3AccessPointsTab s3ConnectionId={s3ConnectionId} />
           {/if}
+          </div>
         {/if}
       {/if}
 
     </div>
     <div class="dialog-footer">
+      {#if s3IsBucketRoot && s3Connection && !isAlreadySaved}
+        <button class="dialog-btn apply-btn" onclick={saveConnection}>Save Connection</button>
+      {/if}
       <button class="dialog-btn primary" onclick={onClose}>Close</button>
     </div>
   </div>
@@ -2706,7 +2731,7 @@
     background: var(--dialog-bg);
     border: 1px solid var(--dialog-border);
     border-radius: var(--radius-lg);
-    width: 72ch;
+    width: 100ch;
     height: 85vh;
     max-width: 90vw;
     max-height: 900px;
@@ -2737,6 +2762,20 @@
     overflow-y: auto;
     user-select: text;
     -webkit-user-select: text;
+  }
+
+  .dialog-body:has(.tab-content) {
+    overflow: hidden;
+  }
+
+  .tab-content {
+    flex: 1;
+    min-height: 0;
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    padding-top: 4px;
   }
 
   .loading, .error {
@@ -2900,10 +2939,13 @@
   .dialog-footer {
     display: flex;
     justify-content: center;
+    align-items: center;
+    gap: 10px;
     padding: 16px 24px;
     border-top: 1px solid var(--dialog-border);
     flex-shrink: 0;
   }
+
 
   .dialog-btn {
     padding: 8px 24px;

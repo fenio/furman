@@ -308,6 +308,7 @@
   {#if appState.modal === 's3-manager'}
     <S3ConnectionManager
       initialTab={appState.s3ManagerTab}
+      initialData={appState.s3ManagerInitialData}
       onConnect={(bucket, region, endpoint, profile, accessKey, secretKey, provider, customCapabilities, roleArn, externalId, sessionName, sessionDurationSecs, useTransferAcceleration) => {
         const cb = appState.s3ConnectCallback;
         appState.closeModal();
@@ -344,6 +345,7 @@
       backend={appState.propertiesBackend}
       s3ConnectionId={appState.propertiesS3ConnectionId}
       capabilities={appState.propertiesCapabilities}
+      s3Connection={appState.propertiesS3Connection}
       onClose={() => appState.closeModal()}
     />
   {/if}

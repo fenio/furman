@@ -8,6 +8,7 @@
   import { onMount, tick } from 'svelte';
   import FileRow from './FileRow.svelte';
   import FileIcon from './FileIcon.svelte';
+  import ColumnView from './ColumnView.svelte';
   import BreadcrumbBar from './BreadcrumbBar.svelte';
 
   interface Props {
@@ -34,7 +35,7 @@
   // Scroll to keep cursor visible
   $effect(() => {
     const idx = panel.cursorIndex;
-    if (!listContainer) return;
+    if (!listContainer || panel.viewMode === 'column') return;
 
     if (panel.viewMode === 'icon') {
       const tile = listContainer.querySelectorAll('.file-tile')[idx] as HTMLElement | undefined;
@@ -56,6 +57,7 @@
 
   // Measure grid columns for keyboard navigation
   $effect(() => {
+    if (panel.viewMode === 'column') return; // ColumnView sets gridColumns itself
     if (panel.viewMode !== 'icon' || !listContainer) {
       panel.gridColumns = 1;
       return;
@@ -179,6 +181,8 @@
   }
 
   function handleListMouseDown(e: MouseEvent) {
+    // No rubber band in column mode
+    if (panel.viewMode === 'column') return;
     // Only start rubber band if clicking on empty space
     const target = e.target as HTMLElement;
     if (target.closest('.file-row') || target.closest('.file-tile')) return;
@@ -380,6 +384,7 @@
               panel.backend,
               panel.s3Connection.connectionId,
               panel.s3Connection.capabilities,
+              panel.s3Connection,
             );
           }
         }}
@@ -405,8 +410,8 @@
         <span class="backend-label">Archive</span>
       </span>
     {/if}
-    <button class="view-toggle" onclick={() => panel.toggleViewMode()} title={panel.viewMode === 'list' ? 'Switch to icon view' : 'Switch to list view'}>
-      {panel.viewMode === 'list' ? '\u229E' : '\u2630'}
+    <button class="view-toggle" onclick={() => panel.toggleViewMode()} title={panel.viewMode === 'list' ? 'Switch to icon view' : panel.viewMode === 'icon' ? 'Switch to column view' : 'Switch to list view'}>
+      {panel.viewMode === 'list' ? '\u229E' : panel.viewMode === 'icon' ? '\u2759\u2759\u2759' : '\u2630'}
     </button>
   </div>
 
@@ -450,6 +455,21 @@
 
   <!-- File list -->
   <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
+  {#if panel.viewMode === 'column'}
+    {#if panel.loading}
+      <div class="file-list"><div class="loading-msg">Loading...</div></div>
+    {:else if panel.error}
+      <div class="file-list"><div class="error-msg">{panel.error}</div></div>
+    {:else}
+      <ColumnView
+        {panel}
+        {isActive}
+        {side}
+        onEntryClick={(i, e) => handleRowClick(i, e)}
+        onEntryDblClick={(i) => handleRowDblClick(i)}
+      />
+    {/if}
+  {:else}
   <div
     class="file-list"
     class:icon-grid={panel.viewMode === 'icon'}
@@ -509,6 +529,7 @@
       ></div>
     {/if}
   </div>
+  {/if}
 
   <!-- Footer: selection info, git status, free space -->
   <div class="panel-footer">

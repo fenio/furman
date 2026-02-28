@@ -1,4 +1,4 @@
-import type { ModalType, ViewerMode, PanelBackend, S3ProviderCapabilities, SortField, SortDirection } from '$lib/types';
+import type { ModalType, ViewerMode, PanelBackend, S3ProviderCapabilities, S3ConnectionInfo, S3Profile, SortField, SortDirection } from '$lib/types';
 import type { Theme } from '@tauri-apps/api/window';
 import { saveConfig, type Config } from '$lib/services/config';
 import { sidebarState } from '$lib/state/sidebar.svelte';
@@ -34,6 +34,7 @@ class AppState {
   calculateDirSizes = $state(true);
   s3ConnectCallback = $state<((bucket: string, region: string, endpoint?: string, profile?: string, accessKey?: string, secretKey?: string, provider?: string, customCapabilities?: S3ProviderCapabilities) => void) | null>(null);
   s3ManagerTab = $state<'saved' | 'connect'>('saved');
+  s3ManagerInitialData = $state<Partial<S3Profile> | undefined>(undefined);
   searchRoot = $state('');
   searchBackend = $state<PanelBackend>('local');
   searchS3ConnectionId = $state('');
@@ -46,6 +47,7 @@ class AppState {
   propertiesBackend = $state<PanelBackend>('local');
   propertiesS3ConnectionId = $state('');
   propertiesCapabilities = $state<S3ProviderCapabilities | undefined>(undefined);
+  propertiesS3Connection = $state<S3ConnectionInfo | undefined>(undefined);
   syncSourceBackend = $state<PanelBackend>('local');
   syncSourcePath = $state('');
   syncSourceS3Id = $state('');
@@ -140,14 +142,22 @@ class AppState {
 
   showS3Manager() {
     this.s3ManagerTab = 'saved';
+    this.s3ManagerInitialData = undefined;
     this.modal = 's3-manager';
   }
 
-  showProperties(path: string, backend: PanelBackend, s3ConnectionId?: string, capabilities?: S3ProviderCapabilities) {
+  showS3ManagerSave(initialData: Partial<S3Profile>) {
+    this.s3ManagerTab = 'connect';
+    this.s3ManagerInitialData = initialData;
+    this.modal = 's3-manager';
+  }
+
+  showProperties(path: string, backend: PanelBackend, s3ConnectionId?: string, capabilities?: S3ProviderCapabilities, s3Connection?: S3ConnectionInfo) {
     this.propertiesPath = path;
     this.propertiesBackend = backend;
     this.propertiesS3ConnectionId = s3ConnectionId ?? '';
     this.propertiesCapabilities = capabilities;
+    this.propertiesS3Connection = s3Connection;
     this.modal = 'properties';
   }
 
@@ -246,6 +256,7 @@ class AppState {
     this.inputType = 'text';
     this.menuActive = false;
     this.s3ConnectCallback = null;
+    this.s3ManagerInitialData = undefined;
     this.searchRoot = '';
     this.searchBackend = 'local';
     this.searchS3ConnectionId = '';
@@ -255,6 +266,7 @@ class AppState {
     this.propertiesBackend = 'local';
     this.propertiesS3ConnectionId = '';
     this.propertiesCapabilities = undefined;
+    this.propertiesS3Connection = undefined;
     this.batchEditKeys = [];
     this.batchEditS3ConnectionId = '';
     this.batchEditCapabilities = undefined;

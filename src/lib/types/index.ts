@@ -52,7 +52,7 @@ export interface TerminalExit {
 
 export type SortField = 'name' | 'size' | 'modified' | 'extension' | 'storage_class';
 export type SortDirection = 'asc' | 'desc';
-export type ViewMode = 'list' | 'icon';
+export type ViewMode = 'list' | 'icon' | 'column';
 export type ViewerMode = 'text' | 'image' | 'hex';
 export type ModalType =
   | 'none'

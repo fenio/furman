@@ -338,7 +338,7 @@ export class PanelData {
   }
 
   toggleViewMode() {
-    this.viewMode = this.viewMode === 'list' ? 'icon' : 'list';
+    this.viewMode = this.viewMode === 'list' ? 'icon' : this.viewMode === 'icon' ? 'column' : 'list';
   }
 
   getSelectedOrCurrent(): string[] {

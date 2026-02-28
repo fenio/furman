@@ -804,6 +804,7 @@
           active.backend,
           active.s3Connection.connectionId,
           active.s3Connection.capabilities,
+          active.s3Connection,
         );
       }
       return;
@@ -825,6 +826,7 @@
       active.backend,
       active.s3Connection?.connectionId,
       active.s3Connection?.capabilities,
+      active.s3Connection ?? undefined,
     );
   }
 
@@ -836,6 +838,7 @@
       active.backend,
       active.s3Connection.connectionId,
       active.s3Connection.capabilities,
+      active.s3Connection,
     );
   }
 
@@ -1305,6 +1308,7 @@
     }
 
     const isIconMode = active.viewMode === 'icon';
+    const isColumnMode = active.viewMode === 'column';
     const cols = active.gridColumns;
 
     switch (e.key) {
@@ -1335,25 +1339,29 @@
         }
         break;
       case 'ArrowLeft':
-        if (isIconMode) {
+        if (isColumnMode || isIconMode) {
           e.preventDefault();
+          // In column mode, cols = rowsPerCol so this jumps between columns
+          // In icon mode, cols = 1 so this moves one entry
+          const leftDelta = isColumnMode ? cols : 1;
           if (e.shiftKey) {
-            active.moveCursor(-1);
+            active.moveCursor(-leftDelta);
             active.selectRange(active.selectionAnchor, active.cursorIndex);
           } else {
-            active.moveCursor(-1);
+            active.moveCursor(-leftDelta);
             active.selectionAnchor = active.cursorIndex;
           }
         }
         break;
       case 'ArrowRight':
-        if (isIconMode) {
+        if (isColumnMode || isIconMode) {
           e.preventDefault();
+          const rightDelta = isColumnMode ? cols : 1;
           if (e.shiftKey) {
-            active.moveCursor(1);
+            active.moveCursor(rightDelta);
             active.selectRange(active.selectionAnchor, active.cursorIndex);
           } else {
-            active.moveCursor(1);
+            active.moveCursor(rightDelta);
             active.selectionAnchor = active.cursorIndex;
           }
         }

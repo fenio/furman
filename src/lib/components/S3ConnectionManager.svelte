@@ -12,10 +12,11 @@
   interface Props {
     onClose: () => void;
     initialTab?: 'saved' | 'connect';
+    initialData?: Partial<S3Profile>;
     onConnect?: (bucket: string, region: string, endpoint?: string, profile?: string, accessKey?: string, secretKey?: string, provider?: string, customCapabilities?: S3ProviderCapabilities, roleArn?: string, externalId?: string, sessionName?: string, sessionDurationSecs?: number, useTransferAcceleration?: boolean, anonymous?: boolean, webIdentityToken?: string, proxyUrl?: string, proxyUsername?: string, proxyPassword?: string) => void;
   }
 
-  let { onClose, initialTab = 'saved', onConnect: onConnectProp }: Props = $props();
+  let { onClose, initialTab = 'saved', initialData, onConnect: onConnectProp }: Props = $props();
 
   let activeTab = $state(untrack(() => initialTab));
   let view = $state<'list' | 'edit'>('list');
@@ -271,8 +272,11 @@
       {:else}
         <S3ConnectDialog
           embedded={true}
+          saveMode={true}
+          initialData={initialData as S3Profile | undefined}
           onConnect={onConnectProp ?? handleConnect}
           onCancel={onClose}
+          onSave={handleSave}
         />
       {/if}
     </div>
@@ -299,7 +303,7 @@
     background: var(--dialog-bg);
     border: 1px solid var(--dialog-border);
     border-radius: var(--radius-lg);
-    width: 72ch;
+    width: 100ch;
     height: 85vh;
     max-width: 90vw;
     max-height: 900px;
