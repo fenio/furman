@@ -30,6 +30,7 @@
   import S3BatchEditDialog from '$lib/components/S3BatchEditDialog.svelte';
   import { connectionsState } from '$lib/state/connections.svelte';
   import { s3BookmarksState } from '$lib/state/s3bookmarks.svelte';
+  import { sftpBookmarksState } from '$lib/state/sftpbookmarks.svelte';
   import type { SyncEntry } from '$lib/types';
 
   let bottomResizing = $state(false);
@@ -60,6 +61,7 @@
       workspacesState.load(config.workspaces);
       connectionsState.load(config.connections);
       s3BookmarksState.load(config.s3Bookmarks);
+      sftpBookmarksState.load(config.sftpBookmarks);
       await Promise.all([
         panels.left.loadDirectory(homePath),
         panels.right.loadDirectory(homePath)
@@ -344,6 +346,7 @@
       path={appState.propertiesPath}
       backend={appState.propertiesBackend}
       s3ConnectionId={appState.propertiesS3ConnectionId}
+      sftpConnectionId={appState.propertiesSftpConnectionId}
       capabilities={appState.propertiesCapabilities}
       s3Connection={appState.propertiesS3Connection}
       onClose={() => appState.closeModal()}

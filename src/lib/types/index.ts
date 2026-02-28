@@ -473,6 +473,13 @@ export interface S3Bookmark {
   path: string; // e.g. "s3://mybucket/data/reports/"
 }
 
+export interface SftpBookmark {
+  id: string;
+  name: string;
+  profileId: string;
+  path: string; // e.g. "sftp://host:22/remote/path/"
+}
+
 export type ConnectionProtocol = 's3' | 'sftp';
 
 export interface ConnectionProfileBase {

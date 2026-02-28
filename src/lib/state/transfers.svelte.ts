@@ -348,6 +348,25 @@ class TransfersState {
         });
         return await sftpUpload(t.sftpDestConnectionId!, t.id + '-up', downloaded, t.sftpDestPath!, onProgress);
       }
+      // Cross-protocol: S3 ↔ SFTP (via temp dir)
+      if (srcBackend === 's3' && destBackend === 'sftp') {
+        const tempDir = `/tmp/furman-xfer-${t.id}`;
+        await s3Download(t.s3SrcConnectionId!, t.id, t.sources, tempDir, onProgress, t.encryptionPassword);
+        const downloaded = t.sources.map((s) => {
+          const name = s.replace(/\/+$/, '').split('/').pop()!;
+          return `${tempDir}/${name}`;
+        });
+        return await sftpUpload(t.sftpDestConnectionId!, t.id + '-up', downloaded, t.sftpDestPath!, onProgress);
+      }
+      if (srcBackend === 'sftp' && destBackend === 's3') {
+        const tempDir = `/tmp/furman-xfer-${t.id}`;
+        await sftpDownload(t.sftpSrcConnectionId!, t.id, t.sources, tempDir, onProgress);
+        const downloaded = t.sources.map((s) => {
+          const name = s.replace(/\/+$/, '').split('/').pop()!;
+          return `${tempDir}/${name}`;
+        });
+        return await s3Upload(t.s3DestConnectionId!, t.id + '-up', downloaded, t.s3DestPrefix!, onProgress);
+      }
     }
 
     if (t.type === 'move') {
@@ -385,6 +404,25 @@ class TransfersState {
           return `${tempDir}/${name}`;
         });
         return await sftpUpload(t.sftpDestConnectionId!, t.id + '-up', downloaded, t.sftpDestPath!, onProgress);
+      }
+      // Cross-protocol: S3 ↔ SFTP (via temp dir)
+      if (srcBackend === 's3' && destBackend === 'sftp') {
+        const tempDir = `/tmp/furman-xfer-${t.id}`;
+        await s3Download(t.s3SrcConnectionId!, t.id, t.sources, tempDir, onProgress, t.encryptionPassword);
+        const downloaded = t.sources.map((s) => {
+          const name = s.replace(/\/+$/, '').split('/').pop()!;
+          return `${tempDir}/${name}`;
+        });
+        return await sftpUpload(t.sftpDestConnectionId!, t.id + '-up', downloaded, t.sftpDestPath!, onProgress);
+      }
+      if (srcBackend === 'sftp' && destBackend === 's3') {
+        const tempDir = `/tmp/furman-xfer-${t.id}`;
+        await sftpDownload(t.sftpSrcConnectionId!, t.id, t.sources, tempDir, onProgress);
+        const downloaded = t.sources.map((s) => {
+          const name = s.replace(/\/+$/, '').split('/').pop()!;
+          return `${tempDir}/${name}`;
+        });
+        return await s3Upload(t.s3DestConnectionId!, t.id + '-up', downloaded, t.s3DestPrefix!, onProgress);
       }
     }
 

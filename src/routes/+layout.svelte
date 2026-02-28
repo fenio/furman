@@ -8,17 +8,18 @@
   import { sidebarState } from '$lib/state/sidebar.svelte';
   import { workspacesState } from '$lib/state/workspaces.svelte';
   import { s3BookmarksState } from '$lib/state/s3bookmarks.svelte';
+  import { sftpBookmarksState } from '$lib/state/sftpbookmarks.svelte';
   import { connectionsState } from '$lib/state/connections.svelte';
   import { copyFiles, moveFiles, deleteFiles, renameFile, createDirectory, openFileDefault, openInEditor, checkConflicts } from '$lib/services/tauri';
   import { statusState } from '$lib/state/status.svelte';
   import { transfersState } from '$lib/state/transfers.svelte';
   import { s3Download, s3Upload, s3CopyObjects, s3DeleteObjects, s3RenameObject, s3CreateFolder, s3PresignUrl, s3DownloadToTemp, s3BulkChangeStorageClass, s3IsObjectEncrypted, type EncryptionConfig } from '$lib/services/s3';
-  import { sftpDelete, sftpRename, sftpCreateFolder, sftpDownloadTemp, sftpPutText } from '$lib/services/sftp';
+  import { sftpDelete, sftpRename, sftpCreateFolder, sftpDownload, sftpUpload, sftpDownloadTemp, sftpPutText } from '$lib/services/sftp';
   import { keychainGet } from '$lib/services/keychain';
   import { s3PathToPrefix } from '$lib/state/panels.svelte';
   import { error } from '$lib/services/log';
   import { resolveCapabilities } from '$lib/data/s3-providers';
-  import type { S3Bookmark } from '$lib/types';
+  import type { S3Bookmark, SftpBookmark } from '$lib/types';
   import { dragState } from '$lib/services/drag';
   import type { PanelData } from '$lib/state/panels.svelte';
   import type { ProgressEvent, S3ConnectionInfo, S3ProviderCapabilities, SyncEntry } from '$lib/types';
@@ -194,6 +195,24 @@
           } else if (sourceBackend === 's3' && destBackend === 's3') {
             const destPrefix = s3PathToPrefix(destPath, '');
             await s3CopyObjects(sourceS3Id, opId, copySourcePaths, destS3Id, destPrefix, onProgress);
+          } else if (sourceBackend === 'sftp' && destBackend === 'local') {
+            const sftpId = panels.active.backend === 'sftp' ? panels.active.sftpConnection?.connectionId : panels.inactive.sftpConnection?.connectionId;
+            if (sftpId) await sftpDownload(sftpId, opId, copySourcePaths, destPath, onProgress);
+          } else if (sourceBackend === 'local' && destBackend === 'sftp') {
+            const sftpId = panels.active.backend === 'sftp' ? panels.active.sftpConnection?.connectionId : panels.inactive.sftpConnection?.connectionId;
+            if (sftpId) await sftpUpload(sftpId, opId, copySourcePaths, destPath, onProgress);
+          } else if (sourceBackend === 'sftp' && destBackend === 'sftp') {
+            const srcSftpId = panels.active.backend === 'sftp' ? panels.active.sftpConnection?.connectionId : panels.inactive.sftpConnection?.connectionId;
+            const destSftpId = panels.inactive.backend === 'sftp' ? panels.inactive.sftpConnection?.connectionId : panels.active.sftpConnection?.connectionId;
+            if (srcSftpId && destSftpId) {
+              const tempDir = `/tmp/furman-sync-${opId}`;
+              await sftpDownload(srcSftpId, opId, copySourcePaths, tempDir, onProgress);
+              const downloaded = copySourcePaths.map((s) => {
+                const name = s.replace(/\/+$/, '').split('/').pop()!;
+                return `${tempDir}/${name}`;
+              });
+              await sftpUpload(destSftpId, opId + '-up', downloaded, destPath, onProgress);
+            }
           }
 
           transfersState.complete(opId);
@@ -246,6 +265,9 @@
     try {
       if (destBackend === 's3') {
         await s3DeleteObjects(destS3Id, deletePaths);
+      } else if (destBackend === 'sftp') {
+        const sftpId = panels.active.backend === 'sftp' ? panels.active.sftpConnection?.connectionId : panels.inactive.sftpConnection?.connectionId;
+        if (sftpId) await sftpDelete(sftpId, deletePaths);
       } else {
         await deleteFiles(deletePaths, true);
       }
@@ -897,6 +919,7 @@
       active.s3Connection?.connectionId,
       active.s3Connection?.capabilities,
       active.s3Connection ?? undefined,
+      active.sftpConnection?.connectionId,
     );
   }
 
@@ -987,6 +1010,38 @@
     });
   }
 
+  function handleBookmarkSftp() {
+    const active = panels.active;
+    if (active.backend !== 'sftp' || !active.sftpConnection) return;
+
+    const conn = active.sftpConnection;
+    const profile = connectionsState.sftpProfiles.find((p) =>
+      p.host === conn.host &&
+      p.port === conn.port &&
+      p.username === conn.username,
+    );
+
+    if (!profile) {
+      statusState.setMessage('Save this connection as a profile first');
+      return;
+    }
+
+    const pathSegments = active.path.replace(/\/+$/, '').split('/');
+    const defaultName = pathSegments[pathSegments.length - 1] || conn.host;
+
+    appState.showInput('Bookmark name:', defaultName, (name) => {
+      appState.closeModal();
+      if (!name) return;
+      sftpBookmarksState.add({
+        id: Date.now().toString(36),
+        name,
+        profileId: profile.id,
+        path: active.path,
+      });
+      statusState.setMessage(`Bookmarked: ${name}`);
+    });
+  }
+
   function handleQuit() {
     appState.showConfirm('Quit Furman?', async () => {
       try {
@@ -1005,6 +1060,7 @@
     | { type: 'workspace'; name: string; leftPath: string; rightPath: string; activePanel: 'left' | 'right' }
     | { type: 'save-workspace' }
     | { type: 's3-bookmark'; id: string; name: string; profileId: string; path: string }
+    | { type: 'sftp-bookmark'; id: string; name: string; profileId: string; path: string }
     | { type: 'volume'; mountPoint: string }
     | { type: 's3'; panel: 'left' | 'right'; bucket: string }
     | { type: 'theme' };
@@ -1021,6 +1077,9 @@
     list.push({ type: 'save-workspace' });
     for (const bm of s3BookmarksState.bookmarks) {
       list.push({ type: 's3-bookmark', id: bm.id, name: bm.name, profileId: bm.profileId, path: bm.path });
+    }
+    for (const bm of sftpBookmarksState.bookmarks) {
+      list.push({ type: 'sftp-bookmark', id: bm.id, name: bm.name, profileId: bm.profileId, path: bm.path });
     }
     for (const vol of sidebarState.volumes) {
       list.push({ type: 'volume', mountPoint: vol.mount_point });
@@ -1083,6 +1142,52 @@
     }
   }
 
+  async function navigateSftpBookmark(bm: SftpBookmark) {
+    sidebarState.blur();
+    const profile = connectionsState.sftpProfiles.find((p) => p.id === bm.profileId);
+    if (!profile) {
+      statusState.setMessage('SFTP profile not found — save the connection as a profile first');
+      return;
+    }
+
+    const panel = panels.active;
+
+    // Already connected to same host — just navigate
+    if (panel.backend === 'sftp' && panel.sftpConnection &&
+        panel.sftpConnection.host === profile.host &&
+        panel.sftpConnection.port === profile.port) {
+      await panel.loadDirectory(bm.path);
+      return;
+    }
+
+    let password: string | undefined;
+    if (profile.authMethod === 'password') {
+      try {
+        const secret = await keychainGet(profile.id);
+        if (secret) password = secret;
+      } catch (err: unknown) {
+        error(String(err));
+        statusState.setMessage('Failed to retrieve credentials from keychain');
+        return;
+      }
+    }
+
+    try {
+      const connectionId = `sftp-${Date.now()}`;
+      await panel.connectSftp(
+        { connectionId, host: profile.host, port: profile.port, username: profile.username },
+        password,
+        profile.keyPath,
+      );
+      if (bm.path !== `sftp://${profile.host}:${profile.port}/`) {
+        await panel.loadDirectory(bm.path);
+      }
+    } catch (err: unknown) {
+      error(String(err));
+      statusState.setMessage('Failed to connect: ' + String(err));
+    }
+  }
+
   function activateSidebarItem(action: SidebarAction) {
     if (!action) return;
     switch (action.type) {
@@ -1119,6 +1224,9 @@
         break;
       case 's3-bookmark':
         navigateBookmark({ id: action.id, name: action.name, profileId: action.profileId, path: action.path });
+        break;
+      case 'sftp-bookmark':
+        navigateSftpBookmark({ id: action.id, name: action.name, profileId: action.profileId, path: action.path });
         break;
       case 'volume':
         sidebarState.blur();
@@ -1288,6 +1396,8 @@
           e.preventDefault();
           if (active.backend === 's3') {
             handleBookmarkS3();                  // Cmd+D = Bookmark S3 path
+          } else if (active.backend === 'sftp') {
+            handleBookmarkSftp();                // Cmd+D = Bookmark SFTP path
           } else {
             appState.showInput('Workspace name:', '', (name) => {
               appState.closeModal();

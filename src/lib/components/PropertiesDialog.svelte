@@ -29,6 +29,7 @@
     s3GetObjectLegalHold, s3PutObjectLegalHold,
   } from '$lib/services/s3';
   import { invoke } from '@tauri-apps/api/core';
+  import { sftpHead } from '$lib/services/sftp';
   import { formatSize, formatDate, formatPermissions } from '$lib/utils/format';
   import { connectionsState } from '$lib/state/connections.svelte';
   import type {
@@ -44,12 +45,13 @@
     path: string;
     backend: PanelBackend;
     s3ConnectionId: string;
+    sftpConnectionId?: string;
     capabilities?: S3ProviderCapabilities;
     s3Connection?: S3ConnectionInfo;
     onClose: () => void;
   }
 
-  let { path, backend, s3ConnectionId, capabilities, s3Connection, onClose }: Props = $props();
+  let { path, backend, s3ConnectionId, sftpConnectionId, capabilities, s3Connection, onClose }: Props = $props();
 
   // Default capabilities: all true if not provided (backward compat)
   const ALL_CLASSES = ['STANDARD', 'STANDARD_IA', 'ONEZONE_IA', 'INTELLIGENT_TIERING', 'GLACIER', 'DEEP_ARCHIVE', 'GLACIER_IR'];
@@ -1424,6 +1426,9 @@
               .finally(() => { objLegalHoldLoading = false; });
           }
         }
+      } else if (backend === 'sftp' && sftpConnectionId) {
+        fileProps = await sftpHead(sftpConnectionId, path);
+        editMode = fileProps.permissions & 0o777;
       } else {
         fileProps = await getFileProperties(path);
         editMode = fileProps.permissions & 0o777;

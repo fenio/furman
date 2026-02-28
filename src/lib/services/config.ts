@@ -1,7 +1,7 @@
 import { readFileText, writeFileText } from '$lib/services/tauri';
 import type { FavoriteItem } from '$lib/state/sidebar.svelte';
 import type { Workspace } from '$lib/state/workspaces.svelte';
-import type { S3Bookmark, ConnectionProfile, SortField, SortDirection } from '$lib/types';
+import type { S3Bookmark, SftpBookmark, ConnectionProfile, SortField, SortDirection } from '$lib/types';
 import { inferProviderFromEndpoint } from '$lib/data/s3-providers';
 
 export interface Config {
@@ -16,6 +16,7 @@ export interface Config {
   workspaces: Workspace[];
   connections: ConnectionProfile[];
   s3Bookmarks: S3Bookmark[];
+  sftpBookmarks: SftpBookmark[];
   bandwidthLimit: number;
   maxConcurrent: number;
   secureTempCleanup: boolean;
@@ -36,6 +37,7 @@ export const DEFAULT_CONFIG: Config = {
   workspaces: [],
   connections: [],
   s3Bookmarks: [],
+  sftpBookmarks: [],
   bandwidthLimit: 0,
   maxConcurrent: 2,
   secureTempCleanup: false,

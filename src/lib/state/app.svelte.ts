@@ -5,6 +5,7 @@ import { sidebarState } from '$lib/state/sidebar.svelte';
 import { workspacesState } from '$lib/state/workspaces.svelte';
 import { connectionsState } from '$lib/state/connections.svelte';
 import { s3BookmarksState } from '$lib/state/s3bookmarks.svelte';
+import { sftpBookmarksState } from '$lib/state/sftpbookmarks.svelte';
 import { transfersState } from '$lib/state/transfers.svelte';
 import { s3SetBandwidthLimit } from '$lib/services/s3';
 
@@ -48,6 +49,7 @@ class AppState {
   propertiesPath = $state('');
   propertiesBackend = $state<PanelBackend>('local');
   propertiesS3ConnectionId = $state('');
+  propertiesSftpConnectionId = $state('');
   propertiesCapabilities = $state<S3ProviderCapabilities | undefined>(undefined);
   propertiesS3Connection = $state<S3ConnectionInfo | undefined>(undefined);
   syncSourceBackend = $state<PanelBackend>('local');
@@ -154,10 +156,11 @@ class AppState {
     this.modal = 'connection-manager';
   }
 
-  showProperties(path: string, backend: PanelBackend, s3ConnectionId?: string, capabilities?: S3ProviderCapabilities, s3Connection?: S3ConnectionInfo) {
+  showProperties(path: string, backend: PanelBackend, s3ConnectionId?: string, capabilities?: S3ProviderCapabilities, s3Connection?: S3ConnectionInfo, sftpConnectionId?: string) {
     this.propertiesPath = path;
     this.propertiesBackend = backend;
     this.propertiesS3ConnectionId = s3ConnectionId ?? '';
+    this.propertiesSftpConnectionId = sftpConnectionId ?? '';
     this.propertiesCapabilities = capabilities;
     this.propertiesS3Connection = s3Connection;
     this.modal = 'properties';
@@ -238,6 +241,7 @@ class AppState {
       workspaces: workspacesState.workspaces,
       connections: connectionsState.profiles,
       s3Bookmarks: s3BookmarksState.bookmarks,
+      sftpBookmarks: sftpBookmarksState.bookmarks,
       bandwidthLimit: transfersState.bandwidthLimit,
       maxConcurrent: transfersState.maxConcurrent,
       secureTempCleanup: this.secureTempCleanup,
@@ -267,6 +271,7 @@ class AppState {
     this.propertiesPath = '';
     this.propertiesBackend = 'local';
     this.propertiesS3ConnectionId = '';
+    this.propertiesSftpConnectionId = '';
     this.propertiesCapabilities = undefined;
     this.propertiesS3Connection = undefined;
     this.batchEditKeys = [];

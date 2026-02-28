@@ -4,6 +4,7 @@
   import { appState } from '$lib/state/app.svelte';
   import { workspacesState } from '$lib/state/workspaces.svelte';
   import { s3BookmarksState } from '$lib/state/s3bookmarks.svelte';
+  import { sftpBookmarksState } from '$lib/state/sftpbookmarks.svelte';
   import { connectionsState } from '$lib/state/connections.svelte';
   import { keychainGet } from '$lib/services/keychain';
   import { resolveCapabilities } from '$lib/data/s3-providers';
@@ -19,7 +20,9 @@
   // workspaces: wsBase..wsBase+wsCount-1, then "save current" at wsBase+wsCount
   const bmBase = $derived(wsBase + wsCount + 1);
   const bmCount = $derived(s3BookmarksState.bookmarks.length);
-  const volBase = $derived(bmBase + bmCount);
+  const sftpBmBase = $derived(bmBase + bmCount);
+  const sftpBmCount = $derived(sftpBookmarksState.bookmarks.length);
+  const volBase = $derived(sftpBmBase + sftpBmCount);
   const volCount = $derived(sidebarState.volumes.length);
 
   const s3Base = $derived(volBase + volCount);
@@ -197,6 +200,53 @@
     }
   }
 
+  async function navigateSftpBookmark(bm: { id: string; name: string; profileId: string; path: string }) {
+    sidebarState.blur();
+    const profile = connectionsState.sftpProfiles.find((p) => p.id === bm.profileId);
+    if (!profile) {
+      statusState.setMessage('SFTP profile not found — save the connection as a profile first');
+      return;
+    }
+
+    const panel = panels.active;
+
+    // If already connected to the same SFTP host, just navigate
+    if (panel.backend === 'sftp' && panel.sftpConnection &&
+        panel.sftpConnection.host === profile.host &&
+        panel.sftpConnection.port === profile.port) {
+      await panel.loadDirectory(bm.path);
+      return;
+    }
+
+    // Connect using the profile
+    let password: string | undefined;
+    if (profile.authMethod === 'password') {
+      try {
+        const secret = await keychainGet(profile.id);
+        if (secret) password = secret;
+      } catch (err: unknown) {
+        error(String(err));
+        statusState.setMessage('Failed to retrieve credentials from keychain');
+        return;
+      }
+    }
+
+    try {
+      const connectionId = `sftp-${Date.now()}`;
+      await panel.connectSftp(
+        { connectionId, host: profile.host, port: profile.port, username: profile.username },
+        password,
+        profile.keyPath,
+      );
+      if (bm.path !== `sftp://${profile.host}:${profile.port}/`) {
+        await panel.loadDirectory(bm.path);
+      }
+    } catch (err: unknown) {
+      error(String(err));
+      statusState.setMessage('Failed to connect: ' + String(err));
+    }
+  }
+
   function isFocused(idx: number): boolean {
     return sidebarState.focused && sidebarState.focusIndex === idx;
   }
@@ -253,6 +303,24 @@
             <button
               class="remove-btn"
               onclick={(e) => { e.stopPropagation(); s3BookmarksState.remove(bm.id); }}
+              title="Remove bookmark"
+            >&times;</button>
+          </div>
+        {/each}
+      </div>
+    {/if}
+
+    <!-- SFTP Bookmarks -->
+    {#if sftpBookmarksState.bookmarks.length > 0}
+      <div class="section">
+        <div class="section-header">SFTP BOOKMARKS</div>
+        {#each sftpBookmarksState.bookmarks as bm, i (bm.id)}
+          <!-- svelte-ignore a11y_click_events_have_key_events -->
+          <div class="sidebar-item" class:focused={isFocused(sftpBmBase + i)} onclick={() => navigateSftpBookmark(bm)} role="button" tabindex="-1">
+            <span class="item-name">{bm.name}</span>
+            <button
+              class="remove-btn"
+              onclick={(e) => { e.stopPropagation(); sftpBookmarksState.remove(bm.id); }}
               title="Remove bookmark"
             >&times;</button>
           </div>
