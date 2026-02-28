@@ -157,8 +157,8 @@ jobs:
             end
 
             zap trash: [
-              "~/Library/Caches/com.furman.app",
-              "~/Library/Preferences/com.furman.app.plist",
+              "~/Library/Caches/com.furman.filemanager",
+              "~/Library/Preferences/com.furman.filemanager.plist",
             ]
           end
           CASK

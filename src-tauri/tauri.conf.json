@@ -2,7 +2,7 @@
   "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
   "productName": "Furman",
   "version": "0.2.0",
-  "identifier": "com.furman.app",
+  "identifier": "com.furman.filemanager",
   "build": {
     "frontendDist": "../build",
     "devUrl": "http://localhost:1420",

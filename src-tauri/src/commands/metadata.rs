@@ -235,11 +235,11 @@ pub fn get_log_path() -> Result<String, FmError> {
     #[cfg(target_os = "macos")]
     let dir = dirs::home_dir()
         .unwrap_or_default()
-        .join("Library/Logs/com.furman.app");
+        .join("Library/Logs/com.furman.filemanager");
     #[cfg(target_os = "linux")]
     let dir = dirs::data_dir()
         .unwrap_or_else(|| dirs::home_dir().unwrap_or_default().join(".local/share"))
-        .join("com.furman.app/logs");
+        .join("com.furman.filemanager/logs");
     Ok(dir.to_string_lossy().into_owned())
 }
 
