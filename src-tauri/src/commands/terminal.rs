@@ -80,8 +80,13 @@ pub fn terminal_spawn(
         })
         .map_err(|e| FmError::Other(format!("openpty: {e}")))?;
 
-    // Detect shell from $SHELL, fallback to /bin/zsh
-    let shell = std::env::var("SHELL").unwrap_or_else(|_| "/bin/zsh".to_string());
+    // Detect shell from $SHELL, fallback to platform default
+    let shell = std::env::var("SHELL").unwrap_or_else(|_| {
+        #[cfg(target_os = "macos")]
+        { "/bin/zsh".to_string() }
+        #[cfg(target_os = "linux")]
+        { "/bin/bash".to_string() }
+    });
 
     let mut cmd = CommandBuilder::new(&shell);
     cmd.arg("-l"); // login shell

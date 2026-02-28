@@ -42,9 +42,10 @@ fn list_7z_cli(archive_path: &str) -> Result<Vec<RawEntry>, FmError> {
         .output()
         .map_err(|e| {
             if e.kind() == std::io::ErrorKind::NotFound {
-                FmError::Other(
-                    "7z not found. Install with: brew install 7zip".to_string(),
-                )
+                #[cfg(target_os = "macos")]
+                { FmError::Other("7z not found. Install with: brew install 7zip".to_string()) }
+                #[cfg(target_os = "linux")]
+                { FmError::Other("7z not found. Install with: sudo apt install p7zip-full (or your distro's equivalent)".to_string()) }
             } else {
                 FmError::Other(format!("Failed to run 7z: {e}"))
             }
@@ -365,7 +366,10 @@ pub fn extract_archive(
         .spawn()
         .map_err(|e| {
             if e.kind() == std::io::ErrorKind::NotFound {
-                FmError::Other("7z not found. Install with: brew install 7zip".to_string())
+                #[cfg(target_os = "macos")]
+                { FmError::Other("7z not found. Install with: brew install 7zip".to_string()) }
+                #[cfg(target_os = "linux")]
+                { FmError::Other("7z not found. Install with: sudo apt install p7zip-full (or your distro's equivalent)".to_string()) }
             } else {
                 FmError::Other(format!("Failed to run 7z: {e}"))
             }

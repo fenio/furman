@@ -1,5 +1,6 @@
 <script lang="ts">
   import { appState } from '$lib/state/app.svelte';
+  import { platform } from '$lib/state/platform.svelte';
   import { onMount } from 'svelte';
   import logoLight from '$lib/assets/furman-logo-light.svg';
   import logoDark from '$lib/assets/furman-logo-dark.svg';
@@ -47,7 +48,7 @@
     >
       <span class="check"></span>
       Shortcuts...
-      <span class="menu-shortcut">{'\u2318'}/</span>
+      <span class="menu-shortcut">{platform.mod}/</span>
     </button>
 
     <div class="menu-divider"></div>

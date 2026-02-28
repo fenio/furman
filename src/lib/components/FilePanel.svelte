@@ -4,6 +4,7 @@
   import { appState } from '$lib/state/app.svelte';
   import { statusState } from '$lib/state/status.svelte';
   import { formatSize } from '$lib/utils/format';
+  import { platform } from '$lib/state/platform.svelte';
   import { gitPull, getGitRepoInfo, gitListBranches, gitCheckout } from '$lib/services/tauri';
   import { onMount, tick } from 'svelte';
   import FileRow from './FileRow.svelte';
@@ -381,7 +382,7 @@
     {:else if panel.backend === 's3'}
       <button
         class="backend-indicator backend-indicator-clickable"
-        title="Bucket properties (⌘⇧I)"
+        title={`Bucket properties (${platform.mod}${platform.shift}I)`}
         onclick={() => {
           if (panel.s3Connection) {
             appState.showProperties(

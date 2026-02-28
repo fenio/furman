@@ -6,7 +6,7 @@ Furman includes a built-in SFTP client for browsing, transferring, viewing, and 
 
 Press **Cmd+S** to open the Connection Manager, then click **SFTP** in the sidebar. You can authenticate using:
 
-- **Password** — stored securely in macOS Keychain
+- **Password** — stored securely in the system keychain
 - **SSH Key** — specify a path to a private key file (e.g. `~/.ssh/id_rsa`) with optional passphrase
 - **SSH Agent** — use keys loaded in your running SSH agent
 

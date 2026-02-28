@@ -119,30 +119,87 @@ pub fn open_in_editor(path: String, editor: String) -> Result<(), FmError> {
         .unwrap_or(exe);
 
     if TERMINAL_EDITORS.contains(&exe_basename) {
-        // Wrap in a new Terminal.app window via osascript
-        let mut cmd_parts: Vec<String> = vec![exe.to_string()];
-        cmd_parts.extend(extra_args.iter().map(|s| s.to_string()));
-        cmd_parts.push(p.to_string_lossy().into_owned());
+        #[cfg(target_os = "macos")]
+        {
+            // Wrap in a new Terminal.app window via osascript
+            let mut cmd_parts: Vec<String> = vec![exe.to_string()];
+            cmd_parts.extend(extra_args.iter().map(|s| s.to_string()));
+            cmd_parts.push(p.to_string_lossy().into_owned());
 
-        // Shell-escape each part for the AppleScript string
-        let escaped: Vec<String> = cmd_parts
-            .iter()
-            .map(|s| format!("'{}'", s.replace('\'', "'\\''")))
-            .collect();
-        let shell_cmd = escaped.join(" ");
+            // Shell-escape each part for the AppleScript string
+            let escaped: Vec<String> = cmd_parts
+                .iter()
+                .map(|s| format!("'{}'", s.replace('\'', "'\\''")))
+                .collect();
+            let shell_cmd = escaped.join(" ");
 
-        let script = format!(
-            "tell application \"Terminal\"\n\
-                activate\n\
-                do script \"{}\"\n\
-            end tell",
-            shell_cmd.replace('\\', "\\\\").replace('"', "\\\"")
-        );
+            let script = format!(
+                "tell application \"Terminal\"\n\
+                    activate\n\
+                    do script \"{}\"\n\
+                end tell",
+                shell_cmd.replace('\\', "\\\\").replace('"', "\\\"")
+            );
 
-        std::process::Command::new("osascript")
-            .args(["-e", &script])
-            .spawn()
-            .map_err(|e| FmError::Other(format!("Failed to open terminal editor: {e}")))?;
+            std::process::Command::new("osascript")
+                .args(["-e", &script])
+                .spawn()
+                .map_err(|e| FmError::Other(format!("Failed to open terminal editor: {e}")))?;
+        }
+        #[cfg(target_os = "linux")]
+        {
+            // Launch the editor in a terminal emulator window.
+            let file_arg = p.to_string_lossy().into_owned();
+            let mut editor_args: Vec<String> = vec![exe.to_string()];
+            editor_args.extend(extra_args.iter().map(|s| s.to_string()));
+            editor_args.push(file_arg);
+
+            // Try terminal emulators in order of preference
+            let terminals: &[(&str, &[&str])] = &[
+                ("x-terminal-emulator", &["-e"]),
+                ("gnome-terminal", &["--"]),
+                ("konsole", &["-e"]),
+                ("xfce4-terminal", &["-e"]),
+                ("alacritty", &["-e"]),
+                ("kitty", &["--"]),
+                ("xterm", &["-e"]),
+            ];
+
+            // Check $TERMINAL env var first
+            let custom_terminal = std::env::var("TERMINAL").ok();
+            let mut launched = false;
+
+            if let Some(ref term) = custom_terminal {
+                if std::process::Command::new(term)
+                    .arg("-e")
+                    .args(&editor_args)
+                    .spawn()
+                    .is_ok()
+                {
+                    launched = true;
+                }
+            }
+
+            if !launched {
+                for (term, args) in terminals {
+                    if std::process::Command::new(term)
+                        .args(*args)
+                        .args(&editor_args)
+                        .spawn()
+                        .is_ok()
+                    {
+                        launched = true;
+                        break;
+                    }
+                }
+            }
+
+            if !launched {
+                return Err(FmError::Other(
+                    "No terminal emulator found. Set $TERMINAL or install one of: gnome-terminal, konsole, xfce4-terminal, alacritty, kitty, xterm".into(),
+                ));
+            }
+        }
     } else {
         // GUI editor — spawn directly
         let mut cmd = std::process::Command::new(exe);
@@ -175,9 +232,14 @@ pub fn set_permissions(path: String, mode: u32) -> Result<(), FmError> {
 /// Return the path to the application log directory.
 #[tauri::command]
 pub fn get_log_path() -> Result<String, FmError> {
+    #[cfg(target_os = "macos")]
     let dir = dirs::home_dir()
         .unwrap_or_default()
         .join("Library/Logs/com.furman.app");
+    #[cfg(target_os = "linux")]
+    let dir = dirs::data_dir()
+        .unwrap_or_else(|| dirs::home_dir().unwrap_or_default().join(".local/share"))
+        .join("com.furman.app/logs");
     Ok(dir.to_string_lossy().into_owned())
 }
 

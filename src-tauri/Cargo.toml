@@ -1,7 +1,7 @@
 [package]
 name = "furman"
 version = "0.2.0"
-description = "Furman File Manager for macOS"
+description = "Furman File Manager"
 authors = ["Bartosz Fenski"]
 license = "GPL-3.0-only"
 edition = "2021"
@@ -45,7 +45,7 @@ chacha20poly1305 = "0.10"
 argon2 = "0.5"
 rand = "0.8"
 base64 = "0.22"
-keyring = { version = "3", features = ["apple-native"] }
+keyring = "3"
 tokio = { version = "1", features = ["sync", "fs", "io-util", "time", "net"] }
 sha2 = "0.10"
 reqwest = { version = "0.12", features = ["json", "rustls-tls"], default-features = false }
@@ -64,6 +64,10 @@ tempfile = "3"
 
 
 [target.'cfg(target_os = "macos")'.dependencies]
+keyring = { version = "3", features = ["apple-native"] }
 objc2 = "0.6"
 objc2-app-kit = { version = "0.3", features = ["NSApplication", "NSImage"] }
 objc2-foundation = { version = "0.3", features = ["NSData"] }
+
+[target.'cfg(target_os = "linux")'.dependencies]
+keyring = { version = "3", features = ["sync-secret-service"] }

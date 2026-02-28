@@ -8,7 +8,7 @@
 
 <p align="center">
   <b>F</b>ile & <b>U</b>RL <b>R</b>epository <b>MAN</b>ager<br>
-  a dual-pane file manager for macOS inspired by times when Dos Navigator was the king.<br>
+  a dual-pane file manager for macOS and Linux inspired by times when Dos Navigator was the king.<br>
   <sub><i>furman</i> is also Polish for "carter" — one who hauls goods by horse-drawn cart, and in our case, hauls files.</sub>
 </p>
 
@@ -29,7 +29,7 @@
 - **File viewer** (F3) — text with line numbers, image preview, hex dump
 - **File editor** (F4) — built-in text editor with dirty-state tracking
 - **Search** (Cmd+F) — search by file name or file content with streaming results
-- **Archive browsing** — navigate inside zip, rar, and 7z archives as if they were directories (requires `brew install 7zip`)
+- **Archive browsing** — navigate inside zip, rar, and 7z archives as if they were directories (requires `7z` — install via `brew install 7zip` on macOS or `sudo apt install p7zip-full` on Linux)
 - **File watcher** — panels auto-refresh when files change on disk
 - **Quick filter** — type to filter the file list in real time
 - **Directory sizes** — selecting a directory calculates its recursive size (configurable in Preferences)
@@ -50,12 +50,16 @@ brew install fenio/tap/furman
 
 ### Download
 
-Grab the latest `.dmg` from the [Releases](https://github.com/fenio/furman/releases/latest) page. Both Apple Silicon (ARM) and Intel builds are available.
+Grab the latest `.dmg` (macOS) or `.AppImage` / `.deb` (Linux) from the [Releases](https://github.com/fenio/furman/releases/latest) page.
+
+**macOS:** Both Apple Silicon (ARM) and Intel builds are available.
 
 > **Note:** Furman is not signed with an Apple Developer certificate. On first launch macOS Gatekeeper will block it. To allow it, go to **System Settings > Privacy & Security** and click **Open Anyway**, or run:
 > ```sh
 > xattr -cr /Applications/Furman.app
 > ```
+
+**Linux:** Download the `.AppImage` and make it executable (`chmod +x Furman_*.AppImage`), or install the `.deb` package with `sudo dpkg -i Furman_*.deb`.
 
 ### Build from source
 
@@ -66,7 +70,7 @@ npm install
 npm run tauri build
 ```
 
-The `.dmg` will be in `src-tauri/target/release/bundle/dmg/`.
+The built package will be in `src-tauri/target/release/bundle/` (`.dmg` on macOS, `.AppImage`/`.deb` on Linux).
 
 ## Screenshots
 
@@ -99,7 +103,7 @@ The `.dmg` will be in `src-tauri/target/release/bundle/dmg/`.
 | Terminal | xterm.js |
 | S3       | aws-sdk-s3 (Rust) |
 | SFTP     | russh, russh-sftp (Rust) |
-| Platform | macOS (Apple Silicon + Intel) |
+| Platform | macOS (Apple Silicon + Intel), Linux (x86_64) |
 
 ## Keyboard Shortcuts
 

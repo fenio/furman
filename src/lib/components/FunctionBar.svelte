@@ -1,5 +1,6 @@
 <script lang="ts">
   import { terminalState } from '$lib/state/terminal.svelte';
+  import { platform } from '$lib/state/platform.svelte';
 
   interface FnKey {
     key: string;
@@ -9,16 +10,16 @@
   }
 
   const fnKeys: FnKey[] = [
-    { key: '1', label: 'Term', shortcut: '\u2318T', custom: () => terminalState.toggle('bottom') },
-    { key: '2', label: 'Rename', shortcut: '\u2318R' },
-    { key: '3', label: 'View', shortcut: '\u23183' },
-    { key: '4', label: 'Edit', shortcut: '\u2318E' },
-    { key: '5', label: 'Copy', shortcut: '\u2318C' },
-    { key: '6', label: 'Move', shortcut: '\u2318M' },
-    { key: '7', label: 'MkDir', shortcut: '\u2318N' },
-    { key: '8', label: 'Delete', shortcut: '\u2318D' },
-    { key: '9', label: 'Props', shortcut: '\u2318I' },
-    { key: '10', label: 'Quit', shortcut: '\u2318Q' }
+    { key: '1', label: 'Term', shortcut: `${platform.mod}T`, custom: () => terminalState.toggle('bottom') },
+    { key: '2', label: 'Rename', shortcut: `${platform.mod}R` },
+    { key: '3', label: 'View', shortcut: `${platform.mod}3` },
+    { key: '4', label: 'Edit', shortcut: `${platform.mod}E` },
+    { key: '5', label: 'Copy', shortcut: `${platform.mod}C` },
+    { key: '6', label: 'Move', shortcut: `${platform.mod}M` },
+    { key: '7', label: 'MkDir', shortcut: `${platform.mod}N` },
+    { key: '8', label: 'Delete', shortcut: `${platform.mod}D` },
+    { key: '9', label: 'Props', shortcut: `${platform.mod}I` },
+    { key: '10', label: 'Quit', shortcut: `${platform.mod}Q` }
   ];
 
   function handleClick(fk: FnKey) {

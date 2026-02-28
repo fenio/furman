@@ -20,6 +20,7 @@ use std::sync::Mutex;
 /// macOS GUI apps launched from Finder/Spotlight get a minimal PATH
 /// that excludes Homebrew and MacPorts. Prepend the usual locations
 /// so child processes (`git`, `7z`, editors, etc.) can be found.
+#[cfg(target_os = "macos")]
 fn ensure_path() {
     let extra_dirs = ["/opt/homebrew/bin", "/usr/local/bin", "/opt/homebrew/sbin"];
     let current = std::env::var("PATH").unwrap_or_default();
@@ -37,6 +38,7 @@ fn ensure_path() {
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    #[cfg(target_os = "macos")]
     ensure_path();
 
     tauri::Builder::default()

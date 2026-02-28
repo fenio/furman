@@ -1,4 +1,6 @@
 <script lang="ts">
+  import { platform } from '$lib/state/platform.svelte';
+
   interface Props {
     onClose: () => void;
   }
@@ -58,16 +60,16 @@
         {
           title: 'File Operations',
           shortcuts: [
-            { keys: 'F2 / \u2318R', desc: 'Rename' },
-            { keys: 'F3 / \u23183', desc: 'View file' },
-            { keys: 'F4 / \u2318E', desc: 'Edit file' },
-            { keys: 'F5 / \u2318C', desc: 'Copy to other panel' },
-            { keys: 'F6 / \u2318M', desc: 'Move to other panel' },
+            { keys: `F2 / ${platform.mod}R`, desc: 'Rename' },
+            { keys: `F3 / ${platform.mod}3`, desc: 'View file' },
+            { keys: `F4 / ${platform.mod}E`, desc: 'Edit file' },
+            { keys: `F5 / ${platform.mod}C`, desc: 'Copy to other panel' },
+            { keys: `F6 / ${platform.mod}M`, desc: 'Move to other panel' },
             { keys: 'Shift+F6', desc: 'Rename (alt)' },
-            { keys: 'F7 / \u2318N', desc: 'Create directory' },
-            { keys: 'F8 / \u2318\u232B', desc: 'Delete' },
-            { keys: 'F9 / \u2318I', desc: 'Properties' },
-            { keys: 'F10 / \u2318Q', desc: 'Quit' },
+            { keys: `F7 / ${platform.mod}N`, desc: 'Create directory' },
+            { keys: `F8 / ${platform.mod}${platform.backspace}`, desc: 'Delete' },
+            { keys: `F9 / ${platform.mod}I`, desc: 'Properties' },
+            { keys: `F10 / ${platform.mod}Q`, desc: 'Quit' },
           ],
         },
       ],
@@ -79,28 +81,28 @@
         {
           title: 'Layout',
           shortcuts: [
-            { keys: '\u2318P', desc: 'Toggle single / dual pane' },
-            { keys: '\u2318B', desc: 'Toggle sidebar' },
-            { keys: '\u2318D', desc: 'Save workspace' },
-            { keys: '\u2318J', desc: 'Toggle transfer panel' },
-            { keys: '\u2318Y', desc: 'Sync directories' },
-            { keys: '\u2318\u21E7L', desc: 'Toggle dark / light theme' },
+            { keys: `${platform.mod}P`, desc: 'Toggle single / dual pane' },
+            { keys: `${platform.mod}B`, desc: 'Toggle sidebar' },
+            { keys: `${platform.mod}D`, desc: 'Save workspace' },
+            { keys: `${platform.mod}J`, desc: 'Toggle transfer panel' },
+            { keys: `${platform.mod}Y`, desc: 'Sync directories' },
+            { keys: `${platform.mod}${platform.shift}L`, desc: 'Toggle dark / light theme' },
           ],
         },
         {
           title: 'Terminal',
           shortcuts: [
-            { keys: '\u2318T', desc: 'Bottom terminal' },
-            { keys: '\u2318\u21E7T', desc: 'In-pane terminal' },
-            { keys: '\u2318`', desc: 'Quake console' },
+            { keys: `${platform.mod}T`, desc: 'Bottom terminal' },
+            { keys: `${platform.mod}${platform.shift}T`, desc: 'In-pane terminal' },
+            { keys: `${platform.mod}\``, desc: 'Quake console' },
             { keys: 'Esc', desc: 'Hide quake console' },
           ],
         },
         {
           title: 'Search',
           shortcuts: [
-            { keys: '\u2318F', desc: 'Search files' },
-            { keys: '\u2318/', desc: 'This cheatsheet' },
+            { keys: `${platform.mod}F`, desc: 'Search files' },
+            { keys: `${platform.mod}/`, desc: 'This cheatsheet' },
           ],
         },
       ],
@@ -112,12 +114,12 @@
         {
           title: 'S3 Operations',
           shortcuts: [
-            { keys: '\u2318S', desc: 'Connect / disconnect S3' },
-            { keys: '\u2318\u21E7I', desc: 'Bucket properties' },
-            { keys: '\u2318D', desc: 'Bookmark S3 path' },
-            { keys: '\u2318U', desc: 'Presigned URL' },
-            { keys: '\u2318K', desc: 'Copy S3 URI' },
-            { keys: '\u2318L', desc: 'Bulk storage class change' },
+            { keys: `${platform.mod}S`, desc: 'Connect / disconnect S3' },
+            { keys: `${platform.mod}${platform.shift}I`, desc: 'Bucket properties' },
+            { keys: `${platform.mod}D`, desc: 'Bookmark S3 path' },
+            { keys: `${platform.mod}U`, desc: 'Presigned URL' },
+            { keys: `${platform.mod}K`, desc: 'Copy S3 URI' },
+            { keys: `${platform.mod}L`, desc: 'Bulk storage class change' },
           ],
         },
       ],
