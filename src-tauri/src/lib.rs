@@ -41,6 +41,13 @@ pub fn run() {
     #[cfg(target_os = "macos")]
     ensure_path();
 
+    // Work around WebKitGTK compositing issues that cause a blank screen
+    // on some Linux systems.
+    #[cfg(target_os = "linux")]
+    if std::env::var("WEBKIT_DISABLE_COMPOSITING_MODE").is_err() {
+        std::env::set_var("WEBKIT_DISABLE_COMPOSITING_MODE", "1");
+    }
+
     tauri::Builder::default()
         .manage(WatcherState(Mutex::new(HashMap::new())))
         .manage(TerminalState(Mutex::new(HashMap::new())))
