@@ -184,21 +184,23 @@
   </div>
 
   <div class="main-footer">
-    <button class="dialog-btn" onclick={onCancel}>Cancel</button>
-    <div class="footer-right">
-      {#if saveMode}
-        <button class="dialog-btn" onclick={handleSaveOnly} disabled={!name}>
-          Save
-        </button>
-        <button class="dialog-btn primary" onclick={handleSaveAndConnect} disabled={!canConnect() || !name || connecting}>
-          {connecting ? 'Connecting...' : 'Save & Connect'}
+    {#if saveMode}
+      <button class="dialog-btn primary" onclick={handleSaveAndConnect} disabled={!canConnect() || !name || connecting}>
+        {connecting ? 'Connecting...' : 'Save & Connect'}
+      </button>
+      {#if !init?.id}
+        <button class="dialog-btn" onclick={handleConnect} disabled={!canConnect() || connecting}>
+          {connecting ? 'Connecting...' : 'Connect Without Saving'}
         </button>
       {:else}
-        <button class="dialog-btn primary" onclick={handleConnect} disabled={!canConnect() || connecting}>
-          {connecting ? 'Connecting...' : 'Connect'}
-        </button>
+        <button class="dialog-btn" onclick={handleSaveOnly} disabled={!name}>Save</button>
       {/if}
-    </div>
+    {:else}
+      <button class="dialog-btn primary" onclick={handleConnect} disabled={!canConnect() || connecting}>
+        {connecting ? 'Connecting...' : 'Connect'}
+      </button>
+    {/if}
+    <button class="dialog-btn" onclick={onCancel}>Cancel</button>
   </div>
 </div>
 
@@ -220,17 +222,12 @@
 
   .main-footer {
     display: flex;
-    justify-content: space-between;
+    justify-content: center;
     align-items: center;
     gap: 10px;
     padding: 16px 24px;
     border-top: 1px solid var(--dialog-border);
     flex-shrink: 0;
-  }
-
-  .footer-right {
-    display: flex;
-    gap: 8px;
   }
 
   .field {
