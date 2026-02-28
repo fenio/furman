@@ -2731,10 +2731,10 @@
     background: var(--dialog-bg);
     border: 1px solid var(--dialog-border);
     border-radius: var(--radius-lg);
-    width: 100ch;
-    height: 85vh;
-    max-width: 90vw;
-    max-height: 900px;
+    width: 110ch;
+    height: 90vh;
+    max-width: 95vw;
+    max-height: 1000px;
     box-shadow: var(--shadow-dialog);
     overflow: hidden;
     display: flex;

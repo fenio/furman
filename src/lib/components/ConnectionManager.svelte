@@ -236,7 +236,7 @@
           class:active={selected.mode === 'saved' || selected.mode === 'edit'}
           onclick={() => { selected = { mode: 'saved' }; }}
         >
-          Saved Connections
+          Connections
           {#if connectionsState.profiles.length > 0}
             <span class="sidebar-badge">{connectionsState.profiles.length}</span>
           {/if}

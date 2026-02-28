@@ -37,7 +37,7 @@
 - **Sidebar** — favorites, workspaces, mounted devices, S3 connections, theme toggle (Cmd+B to open, press again to focus for keyboard navigation)
 - **Preferences** — icon size, hidden files, external editor, startup sound (accessible via F9 menu)
 - **Dark / Light theme** — auto-detects OS preference, toggle with Cmd+Shift+L
-- **Icon and list views** — switch between list and grid layouts with configurable icon sizes
+- **List, icon, and column views** — switch between list, grid, and column layouts with configurable icon sizes
 
 ## Installation
 
@@ -128,7 +128,7 @@ The `.dmg` will be in `src-tauri/target/release/bundle/dmg/`.
 
 | Shortcut | Action |
 |----------|--------|
-| Cmd+S | Connect / disconnect S3 |
+| Cmd+S | Connection Manager / disconnect S3 |
 | Cmd+U | Presigned URL to clipboard |
 | Cmd+K | Copy S3 URI to clipboard |
 | Cmd+L | Bulk storage class change |

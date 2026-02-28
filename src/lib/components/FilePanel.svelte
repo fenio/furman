@@ -411,7 +411,7 @@
       </span>
     {/if}
     <button class="view-toggle" onclick={() => panel.toggleViewMode()} title={panel.viewMode === 'list' ? 'Switch to icon view' : panel.viewMode === 'icon' ? 'Switch to column view' : 'Switch to list view'}>
-      {panel.viewMode === 'list' ? '\u229E' : panel.viewMode === 'icon' ? '\u2759\u2759\u2759' : '\u2630'}
+      {panel.viewMode === 'list' ? '\u229E' : panel.viewMode === 'icon' ? '\u25A5' : '\u2630'}
     </button>
   </div>
 

@@ -1232,7 +1232,7 @@
           if (active.backend === 's3') {
             active.disconnectS3();               // Cmd+S = Disconnect if S3
           } else {
-            handleS3Connect();                   // Cmd+S = S3 Connect if local
+            appState.showConnectionManager();     // Cmd+S = Connection Manager if local
           }
           return;
         case 'f':
