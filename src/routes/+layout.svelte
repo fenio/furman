@@ -13,6 +13,7 @@
   import { statusState } from '$lib/state/status.svelte';
   import { transfersState } from '$lib/state/transfers.svelte';
   import { s3Download, s3Upload, s3CopyObjects, s3DeleteObjects, s3RenameObject, s3CreateFolder, s3PresignUrl, s3DownloadToTemp, s3BulkChangeStorageClass, s3IsObjectEncrypted, type EncryptionConfig } from '$lib/services/s3';
+  import { sftpDelete, sftpRename, sftpCreateFolder, sftpDownloadTemp, sftpPutText } from '$lib/services/sftp';
   import { keychainGet } from '$lib/services/keychain';
   import { s3PathToPrefix } from '$lib/state/panels.svelte';
   import { error } from '$lib/services/log';
@@ -85,6 +86,18 @@
               destBackend: 's3',
               s3DestConnectionId: conn.connectionId,
               s3DestPrefix: prefix,
+            });
+          } else if (target.backend === 'sftp' && target.sftpConnection) {
+            const conn = target.sftpConnection;
+            transfersState.enqueue({
+              id: opId,
+              type: 'copy',
+              sources: paths,
+              destination: target.path,
+              srcBackend: 'local',
+              destBackend: 'sftp',
+              sftpDestConnectionId: conn.connectionId,
+              sftpDestPath: target.path,
             });
           } else if (target.backend === 'local') {
             transfersState.enqueue({
@@ -281,6 +294,8 @@
         }
       } else if (panel.backend === 's3' && panel.s3Connection) {
         await openS3Viewer(entry.path, entry.extension, panel.s3Connection.connectionId);
+      } else if (panel.backend === 'sftp' && panel.sftpConnection) {
+        await openSftpViewer(entry.path, entry.extension, panel.sftpConnection.connectionId);
       } else {
         // Open file in viewer
         openViewer(entry.path, entry.extension);
@@ -355,6 +370,8 @@
     if (!entry || entry.is_dir || entry.name === '..') return;
     if (panel.backend === 's3' && panel.s3Connection) {
       openS3Viewer(entry.path, entry.extension, panel.s3Connection.connectionId);
+    } else if (panel.backend === 'sftp' && panel.sftpConnection) {
+      openSftpViewer(entry.path, entry.extension, panel.sftpConnection.connectionId);
     } else {
       const lower = (entry.extension ?? '').toLowerCase();
       if (systemOpenExtensions.has(lower)) {
@@ -386,6 +403,46 @@
       appState.editorDirty = false;
       appState.editorS3ConnectionId = connectionId;
       appState.editorS3Key = s3Path;
+      appState.modal = 'editor';
+    } catch (err: unknown) {
+      error(String(err));
+      statusState.setMessage('Edit failed: ' + String(err));
+    }
+  }
+
+  async function openSftpViewer(sftpPath: string, ext: string | null, connectionId: string) {
+    statusState.setMessage('Downloading for preview...');
+    try {
+      const localPath = await sftpDownloadTemp(connectionId, sftpPath);
+      const lower = (ext ?? '').toLowerCase();
+      if (systemOpenExtensions.has(lower)) {
+        await openFileDefault(localPath);
+        statusState.setMessage('');
+      } else if (imageExtensions.has(lower)) {
+        appState.viewerMode = 'image';
+        appState.viewerPath = localPath;
+        appState.modal = 'viewer';
+      } else {
+        appState.viewerMode = 'text';
+        appState.viewerPath = localPath;
+        appState.modal = 'viewer';
+      }
+    } catch (err: unknown) {
+      error(String(err));
+      statusState.setMessage('Preview failed: ' + String(err));
+    }
+  }
+
+  async function openSftpEditor(sftpPath: string, connectionId: string) {
+    statusState.setMessage('Downloading for editing...');
+    try {
+      const localPath = await sftpDownloadTemp(connectionId, sftpPath);
+      appState.editorPath = localPath;
+      appState.editorDirty = false;
+      appState.editorS3ConnectionId = '';
+      appState.editorS3Key = '';
+      appState.editorSftpConnectionId = connectionId;
+      appState.editorSftpPath = sftpPath;
       appState.modal = 'editor';
     } catch (err: unknown) {
       error(String(err));
@@ -469,6 +526,9 @@
         s3DestPrefix: destBackend === 's3' && inactive.s3Connection
           ? s3PathToPrefix(dest, inactive.s3Connection.bucket)
           : undefined,
+        sftpSrcConnectionId: srcBackend === 'sftp' ? active.sftpConnection?.connectionId : undefined,
+        sftpDestConnectionId: destBackend === 'sftp' ? inactive.sftpConnection?.connectionId : undefined,
+        sftpDestPath: destBackend === 'sftp' ? dest : undefined,
         encryptionPassword,
         encryptionConfig,
       });
@@ -499,6 +559,9 @@
       s3DestPrefix: destBackend === 's3' && inactive.s3Connection
         ? s3PathToPrefix(dest, inactive.s3Connection.bucket)
         : undefined,
+      sftpSrcConnectionId: srcBackend === 'sftp' ? active.sftpConnection?.connectionId : undefined,
+      sftpDestConnectionId: destBackend === 'sftp' ? inactive.sftpConnection?.connectionId : undefined,
+      sftpDestPath: destBackend === 'sftp' ? dest : undefined,
       encryptionPassword,
       encryptionConfig,
     });
@@ -692,6 +755,8 @@
       try {
         if (active.backend === 's3' && active.s3Connection) {
           await s3DeleteObjects(active.s3Connection.connectionId, sources);
+        } else if (active.backend === 'sftp' && active.sftpConnection) {
+          await sftpDelete(active.sftpConnection.connectionId, sources);
         } else {
           await deleteFiles(sources, true);
         }
@@ -732,6 +797,8 @@
       try {
         if (active.backend === 's3' && active.s3Connection) {
           await s3RenameObject(active.s3Connection.connectionId, entry.path, newName);
+        } else if (active.backend === 'sftp' && active.sftpConnection) {
+          await sftpRename(active.sftpConnection.connectionId, entry.path, newName);
         } else {
           await renameFile(entry.path, newName);
         }
@@ -755,6 +822,9 @@
           const prefix = s3PathToPrefix(active.path, active.s3Connection.bucket);
           const folderKey = prefix + name + '/';
           await s3CreateFolder(active.s3Connection.connectionId, folderKey);
+        } else if (active.backend === 'sftp' && active.sftpConnection) {
+          const folderPath = active.path.replace(/\/+$/, '') + '/' + name;
+          await sftpCreateFolder(active.sftpConnection.connectionId, folderPath);
         } else {
           const newPath = active.path.replace(/\/+$/, '') + '/' + name;
           await createDirectory(newPath);
@@ -1175,6 +1245,8 @@
             if (entry && !entry.is_dir && entry.name !== '..') {
               if (active.backend === 's3' && active.s3Connection) {
                 openS3Viewer(entry.path, entry.extension, active.s3Connection.connectionId);
+              } else if (active.backend === 'sftp' && active.sftpConnection) {
+                openSftpViewer(entry.path, entry.extension, active.sftpConnection.connectionId);
               } else {
                 openViewer(entry.path, entry.extension);  // Cmd+3 = View (F3)
               }
@@ -1188,6 +1260,8 @@
             if (entry && !entry.is_dir && entry.name !== '..') {
               if (active.backend === 's3' && active.s3Connection) {
                 openS3Editor(entry.path, active.s3Connection.connectionId);
+              } else if (active.backend === 'sftp' && active.sftpConnection) {
+                openSftpEditor(entry.path, active.sftpConnection.connectionId);
               } else {
                 openEditor(entry.path);            // Cmd+E = Edit (F4)
               }
@@ -1231,6 +1305,8 @@
           e.preventDefault();
           if (active.backend === 's3') {
             active.disconnectS3();               // Cmd+S = Disconnect if S3
+          } else if (active.backend === 'sftp') {
+            active.disconnectSftp();             // Cmd+S = Disconnect if SFTP
           } else {
             appState.showConnectionManager();     // Cmd+S = Connection Manager if local
           }
@@ -1467,6 +1543,8 @@
           if (entry && !entry.is_dir && entry.name !== '..') {
             if (active.backend === 's3' && active.s3Connection) {
               openS3Editor(entry.path, active.s3Connection.connectionId);
+            } else if (active.backend === 'sftp' && active.sftpConnection) {
+              openSftpEditor(entry.path, active.sftpConnection.connectionId);
             } else {
               openEditor(entry.path);
             }

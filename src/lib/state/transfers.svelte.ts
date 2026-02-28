@@ -1,6 +1,7 @@
 import type { ProgressEvent, TransferCheckpoint } from '$lib/types';
 import { cancelFileOperation, pauseFileOperation, copyFiles, moveFiles, extractArchive } from '$lib/services/tauri';
 import { s3Download, s3Upload, s3CopyObjects, s3UploadEncrypted, type EncryptionConfig } from '$lib/services/s3';
+import { sftpDownload, sftpUpload } from '$lib/services/sftp';
 import { formatSize } from '$lib/utils/format';
 
 export type TransferStatus = 'queued' | 'running' | 'paused' | 'completed' | 'failed' | 'cancelled';
@@ -22,6 +23,9 @@ export interface Transfer {
   s3SrcConnectionId?: string;
   s3DestConnectionId?: string;
   s3DestPrefix?: string;
+  sftpSrcConnectionId?: string;
+  sftpDestConnectionId?: string;
+  sftpDestPath?: string;
   archivePath?: string;
   archiveInternalPaths?: string[];
   encryptionPassword?: string;
@@ -326,6 +330,24 @@ class TransfersState {
           t.s3DestConnectionId!, t.s3DestPrefix!, onProgress,
         );
       }
+      // SFTP transfers
+      if (srcBackend === 'sftp' && destBackend === 'local') {
+        return await sftpDownload(t.sftpSrcConnectionId!, t.id, t.sources, t.destination, onProgress);
+      }
+      if (srcBackend === 'local' && destBackend === 'sftp') {
+        return await sftpUpload(t.sftpDestConnectionId!, t.id, t.sources, t.sftpDestPath!, onProgress);
+      }
+      if (srcBackend === 'sftp' && destBackend === 'sftp') {
+        // No server-side copy in SFTP — download to temp then upload
+        const tempDir = `/tmp/furman-xfer-${t.id}`;
+        await sftpDownload(t.sftpSrcConnectionId!, t.id, t.sources, tempDir, onProgress);
+        // Build list of downloaded files for upload
+        const downloaded = t.sources.map((s) => {
+          const name = s.replace(/\/+$/, '').split('/').pop()!;
+          return `${tempDir}/${name}`;
+        });
+        return await sftpUpload(t.sftpDestConnectionId!, t.id + '-up', downloaded, t.sftpDestPath!, onProgress);
+      }
     }
 
     if (t.type === 'move') {
@@ -347,6 +369,22 @@ class TransfersState {
           t.s3SrcConnectionId!, t.id, t.sources,
           t.s3DestConnectionId!, t.s3DestPrefix!, onProgress,
         );
+      }
+      // SFTP move = download + upload (delete handled by caller)
+      if (srcBackend === 'sftp' && destBackend === 'local') {
+        return await sftpDownload(t.sftpSrcConnectionId!, t.id, t.sources, t.destination, onProgress);
+      }
+      if (srcBackend === 'local' && destBackend === 'sftp') {
+        return await sftpUpload(t.sftpDestConnectionId!, t.id, t.sources, t.sftpDestPath!, onProgress);
+      }
+      if (srcBackend === 'sftp' && destBackend === 'sftp') {
+        const tempDir = `/tmp/furman-xfer-${t.id}`;
+        await sftpDownload(t.sftpSrcConnectionId!, t.id, t.sources, tempDir, onProgress);
+        const downloaded = t.sources.map((s) => {
+          const name = s.replace(/\/+$/, '').split('/').pop()!;
+          return `${tempDir}/${name}`;
+        });
+        return await sftpUpload(t.sftpDestConnectionId!, t.id + '-up', downloaded, t.sftpDestPath!, onProgress);
       }
     }
 

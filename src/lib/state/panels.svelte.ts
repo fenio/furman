@@ -1,7 +1,8 @@
-import type { FileEntry, SortField, SortDirection, ViewMode, PanelBackend, S3ConnectionInfo, ArchiveInfo, GitRepoInfo } from '$lib/types';
+import type { FileEntry, SortField, SortDirection, ViewMode, PanelBackend, S3ConnectionInfo, SftpConnectionInfo, ArchiveInfo, GitRepoInfo } from '$lib/types';
 import { sortEntries } from '$lib/utils/sort';
 import { listDirectory, listArchive, watchDirectory, unwatchDirectory, getGitRepoInfo, getDirectorySize } from '$lib/services/tauri';
 import { s3Connect, s3Disconnect, s3ListObjects, s3IsObjectEncrypted } from '$lib/services/s3';
+import { sftpConnect, sftpDisconnect, sftpListObjects } from '$lib/services/sftp';
 import { appState } from '$lib/state/app.svelte';
 
 
@@ -22,6 +23,7 @@ export class PanelData {
   freeSpace = $state(0);
   backend = $state<PanelBackend>('local');
   s3Connection = $state<S3ConnectionInfo | null>(null);
+  sftpConnection = $state<SftpConnectionInfo | null>(null);
   archiveInfo = $state<ArchiveInfo | null>(null);
   gitInfo = $state<GitRepoInfo | null>(null);
 
@@ -182,6 +184,8 @@ export class PanelData {
         // Extract prefix from s3://bucket/prefix path
         const prefix = s3PathToPrefix(path, this.s3Connection.bucket);
         listing = await s3ListObjects(this.s3Connection.connectionId, prefix);
+      } else if (this.backend === 'sftp' && this.sftpConnection) {
+        listing = await sftpListObjects(this.sftpConnection.connectionId, path);
       } else {
         listing = await listDirectory(path, appState.showHidden);
       }
@@ -257,6 +261,33 @@ export class PanelData {
     this.backend = 'local';
     this.s3Connection = null;
     // Navigate back to home directory
+    await this.loadDirectory(homePath || '/');
+  }
+
+  async connectSftp(info: SftpConnectionInfo, password?: string, keyPath?: string, keyPassphrase?: string) {
+    this.loading = true;
+    this.error = null;
+    try {
+      const homeDir = await sftpConnect(info.connectionId, info.host, info.port, info.username, password ? 'password' : keyPath ? 'key' : 'agent', password, keyPath, keyPassphrase);
+      this.backend = 'sftp';
+      this.sftpConnection = info;
+      await this.loadDirectory(`sftp://${info.host}:${info.port}${homeDir.startsWith('/') ? '' : '/'}${homeDir}/`);
+    } catch (err: unknown) {
+      this.error = err instanceof Error ? err.message : String(err);
+      this.loading = false;
+    }
+  }
+
+  async disconnectSftp(homePath?: string) {
+    if (this.sftpConnection) {
+      try {
+        await sftpDisconnect(this.sftpConnection.connectionId);
+      } catch {
+        // Ignore disconnect errors
+      }
+    }
+    this.backend = 'local';
+    this.sftpConnection = null;
     await this.loadDirectory(homePath || '/');
   }
 

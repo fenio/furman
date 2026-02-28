@@ -1,4 +1,4 @@
-import type { ConnectionProfile, S3Profile } from '$lib/types';
+import type { ConnectionProfile, S3Profile, SftpProfile } from '$lib/types';
 import { keychainSet, keychainGet, keychainDelete } from '$lib/services/keychain';
 import { appState } from '$lib/state/app.svelte';
 
@@ -7,6 +7,10 @@ class ConnectionsState {
 
   get s3Profiles(): S3Profile[] {
     return this.profiles.filter((p): p is S3Profile => p.type === 's3');
+  }
+
+  get sftpProfiles(): SftpProfile[] {
+    return this.profiles.filter((p): p is SftpProfile => p.type === 'sftp');
   }
 
   load(profiles?: ConnectionProfile[]) {

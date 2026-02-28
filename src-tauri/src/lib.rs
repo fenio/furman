@@ -3,9 +3,11 @@ pub mod cloudfront;
 pub mod models;
 pub mod oidc;
 pub mod s3;
+pub mod sftp;
 
 use commands::file::FileOpState;
 use s3::S3State;
+use sftp::SftpState;
 use commands::search::SearchState;
 use commands::sync::SyncState;
 use commands::terminal::TerminalState;
@@ -41,6 +43,7 @@ pub fn run() {
         .manage(WatcherState(Mutex::new(HashMap::new())))
         .manage(TerminalState(Mutex::new(HashMap::new())))
         .manage(S3State(Mutex::new(HashMap::new())))
+        .manage(SftpState::default())
         .manage(SearchState(Mutex::new(HashMap::new())))
         .manage(FileOpState(Mutex::new(HashMap::new())))
         .manage(SyncState(Mutex::new(HashMap::new())))
@@ -201,6 +204,18 @@ pub fn run() {
             commands::s3::s3_get_access_point_policy,
             commands::s3::s3_put_access_point_policy,
             commands::s3::s3_delete_access_point_policy,
+            // sftp commands
+            commands::sftp::sftp_connect,
+            commands::sftp::sftp_disconnect,
+            commands::sftp::sftp_list_objects,
+            commands::sftp::sftp_delete,
+            commands::sftp::sftp_rename,
+            commands::sftp::sftp_create_folder,
+            commands::sftp::sftp_download,
+            commands::sftp::sftp_upload,
+            commands::sftp::sftp_download_temp,
+            commands::sftp::sftp_put_text,
+            commands::sftp::sftp_head,
             // cloudfront commands
             commands::cloudfront::cf_list_distributions,
             commands::cloudfront::cf_get_distribution,

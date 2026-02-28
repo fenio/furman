@@ -4,10 +4,11 @@
   import { appState } from '$lib/state/app.svelte';
   import { connectionsState } from '$lib/state/connections.svelte';
   import S3ConnectDialog from '$lib/components/S3ConnectDialog.svelte';
+  import SftpConnectDialog from '$lib/components/SftpConnectDialog.svelte';
   import { resolveCapabilities, getProviderIcon } from '$lib/data/s3-providers';
   import { error } from '$lib/services/log';
   import { oidcRefresh } from '$lib/services/s3';
-  import type { S3Profile, S3ConnectionInfo, S3ProviderCapabilities, ConnectionProfile } from '$lib/types';
+  import type { S3Profile, S3ConnectionInfo, SftpConnectionInfo, S3ProviderCapabilities, SftpProfile, ConnectionProfile } from '$lib/types';
 
   interface Props {
     onClose: () => void;
@@ -20,8 +21,9 @@
 
   type Selection =
     | { mode: 'saved' }
-    | { mode: 'new'; protocol: 's3' }
-    | { mode: 'edit'; profile: S3Profile };
+    | { mode: 'new'; protocol: 's3' | 'sftp' }
+    | { mode: 'edit'; profile: S3Profile }
+    | { mode: 'edit-sftp'; profile: SftpProfile };
 
   let selected = $state<Selection>(untrack(() =>
     initialTab === 'connect' ? { mode: 'new', protocol: 's3' } : { mode: 'saved' }
@@ -33,12 +35,17 @@
     if (profile.type === 's3') {
       selected = { mode: 'edit', profile };
       dialogKey++;
+    } else if (profile.type === 'sftp') {
+      selected = { mode: 'edit-sftp', profile };
+      dialogKey++;
     }
   }
 
   function handleDelete(profile: ConnectionProfile) {
     appState.showConfirm(`Delete connection "${profile.name}"?`, async () => {
       if (profile.type === 's3' && profile.credentialType === 'keychain') {
+        await connectionsState.deleteSecret(profile.id);
+      } else if (profile.type === 'sftp' && profile.authMethod === 'password') {
         await connectionsState.deleteSecret(profile.id);
       }
       connectionsState.removeProfile(profile.id);
@@ -81,7 +88,70 @@
     }
   }
 
+  async function handleConnectSftp(
+    host: string,
+    port: number,
+    username: string,
+    authMethod: string,
+    password?: string,
+    keyPath?: string,
+    keyPassphrase?: string,
+  ) {
+    connectError = '';
+    const panel = panels.active;
+    const connectionId = `sftp-${Date.now()}`;
+    const info: SftpConnectionInfo = { connectionId, host, port, username };
+    try {
+      await panel.connectSftp(info, password, keyPath, keyPassphrase);
+      onClose();
+    } catch (err: unknown) {
+      connectError = err instanceof Error ? err.message : String(err);
+      error(String(err));
+    }
+  }
+
+  async function handleSaveSftp(profileData: Omit<SftpProfile, 'id'> & { id?: string }, password?: string) {
+    const isEdit = !!profileData.id;
+    const id = profileData.id || `sftp-profile-${Date.now()}`;
+    const profile: SftpProfile = { ...profileData, id, type: 'sftp' } as SftpProfile;
+
+    if (password && profile.authMethod === 'password') {
+      await connectionsState.saveSecret(id, password);
+    }
+
+    if (isEdit) {
+      connectionsState.updateProfile(profile);
+    } else {
+      connectionsState.addProfile(profile);
+    }
+
+    selected = { mode: 'saved' };
+  }
+
   async function handleConnectFromProfile(p: ConnectionProfile) {
+    if (p.type === 'sftp') {
+      connectError = '';
+      let password: string | undefined;
+      if (p.authMethod === 'password') {
+        try {
+          const secret = await connectionsState.getSecret(p.id);
+          if (secret) password = secret;
+        } catch (err: unknown) {
+          connectError = 'Failed to retrieve password from keychain';
+          error(String(err));
+          return;
+        }
+      }
+      await handleConnectSftp(
+        p.host,
+        p.port,
+        p.username,
+        p.authMethod,
+        password,
+        p.keyPath,
+      );
+      return;
+    }
     if (p.type !== 's3') return;
     connectError = '';
     let secretKey: string | undefined;
@@ -208,7 +278,7 @@
     if (e.key === 'Escape') {
       e.preventDefault();
       e.stopPropagation();
-      if (selected.mode === 'edit') {
+      if (selected.mode === 'edit' || selected.mode === 'edit-sftp') {
         selected = { mode: 'saved' };
       } else {
         onClose();
@@ -233,7 +303,7 @@
         <div class="sidebar-section-label">SAVED</div>
         <button
           class="sidebar-item"
-          class:active={selected.mode === 'saved' || selected.mode === 'edit'}
+          class:active={selected.mode === 'saved' || selected.mode === 'edit' || selected.mode === 'edit-sftp'}
           onclick={() => { selected = { mode: 'saved' }; }}
         >
           Connections
@@ -251,9 +321,13 @@
           S3
           <span class="sidebar-hint">Amazon S3 & compatible</span>
         </button>
-        <button class="sidebar-item disabled" disabled>
+        <button
+          class="sidebar-item"
+          class:active={selected.mode === 'new' && selected.protocol === 'sftp'}
+          onclick={() => { selected = { mode: 'new', protocol: 'sftp' }; dialogKey++; }}
+        >
           SFTP
-          <span class="sidebar-hint">Coming soon</span>
+          <span class="sidebar-hint">SSH File Transfer</span>
         </button>
       </div>
 
@@ -287,7 +361,7 @@
                         {#if p.type === 's3'}
                           {p.bucket} — {p.region}{p.endpoint ? ` — ${p.endpoint}` : ''}
                         {:else}
-                          {p.type}
+                          {p.host}:{p.port} — {p.username}
                         {/if}
                       </div>
                     </div>
@@ -313,6 +387,27 @@
               onConnect={handleConnect}
               onCancel={handleDialogCancel}
               onSave={handleSave}
+            />
+          {/key}
+        {:else if selected.mode === 'edit-sftp'}
+          {#key dialogKey}
+            <SftpConnectDialog
+              embedded={true}
+              saveMode={true}
+              initialData={selected.profile}
+              onConnect={handleConnectSftp}
+              onCancel={handleDialogCancel}
+              onSave={handleSaveSftp}
+            />
+          {/key}
+        {:else if selected.mode === 'new' && selected.protocol === 'sftp'}
+          {#key dialogKey}
+            <SftpConnectDialog
+              embedded={true}
+              saveMode={true}
+              onConnect={handleConnectSftp}
+              onCancel={onClose}
+              onSave={handleSaveSftp}
             />
           {/key}
         {:else}
@@ -423,11 +518,6 @@
   .sidebar-item.active {
     background: rgba(110,168,254,0.12);
     color: var(--text-accent);
-  }
-
-  .sidebar-item.disabled {
-    opacity: 0.4;
-    cursor: not-allowed;
   }
 
   .sidebar-badge {

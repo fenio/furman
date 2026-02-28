@@ -7,6 +7,7 @@ pub mod keychain;
 pub mod metadata;
 pub mod oidc;
 pub mod s3;
+pub mod sftp;
 pub mod search;
 pub mod sync;
 pub mod terminal;

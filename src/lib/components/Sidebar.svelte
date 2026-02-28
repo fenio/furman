@@ -41,7 +41,29 @@
     }
     return conns;
   });
-  const themeIdx = $derived(s3Base + s3Connections.length);
+
+  const sftpBase = $derived(s3Base + s3Connections.length);
+  const sftpConnections = $derived.by(() => {
+    const conns: { panel: 'left' | 'right'; host: string; port: number; connectionId: string }[] = [];
+    if (panels.left.sftpConnection) {
+      conns.push({
+        panel: 'left',
+        host: panels.left.sftpConnection.host,
+        port: panels.left.sftpConnection.port,
+        connectionId: panels.left.sftpConnection.connectionId,
+      });
+    }
+    if (panels.right.sftpConnection) {
+      conns.push({
+        panel: 'right',
+        host: panels.right.sftpConnection.host,
+        port: panels.right.sftpConnection.port,
+        connectionId: panels.right.sftpConnection.connectionId,
+      });
+    }
+    return conns;
+  });
+  const themeIdx = $derived(sftpBase + sftpConnections.length);
 
   function formatSize(bytes: number): string {
     if (bytes < 1024) return `${bytes} B`;
@@ -71,6 +93,15 @@
     sidebarState.blur();
     panels.activePanel = panelSide;
     panels.active.loadDirectory(`s3://${bucket}/`);
+  }
+
+  function navigateSftp(panelSide: 'left' | 'right', host: string, port: number) {
+    sidebarState.blur();
+    panels.activePanel = panelSide;
+    const conn = panelSide === 'left' ? panels.left.sftpConnection : panels.right.sftpConnection;
+    if (conn) {
+      panels.active.loadDirectory(`sftp://${host}:${port}/`);
+    }
   }
 
   function addCurrentAsFavorite() {
@@ -251,6 +282,19 @@
         {#each s3Connections as conn, i (conn.connectionId)}
           <button class="sidebar-item" class:focused={isFocused(s3Base + i)} onclick={() => navigateS3(conn.panel, conn.bucket)}>
             <span class="item-name">{conn.bucket}</span>
+            <span class="item-detail">{conn.panel} panel</span>
+          </button>
+        {/each}
+      </div>
+    {/if}
+
+    <!-- SFTP Connections (conditional) -->
+    {#if sftpConnections.length > 0}
+      <div class="section">
+        <div class="section-header">SFTP</div>
+        {#each sftpConnections as conn, i (conn.connectionId)}
+          <button class="sidebar-item" class:focused={isFocused(sftpBase + i)} onclick={() => navigateSftp(conn.panel, conn.host, conn.port)}>
+            <span class="item-name">{conn.host}</span>
             <span class="item-detail">{conn.panel} panel</span>
           </button>
         {/each}

@@ -20,6 +20,8 @@ class AppState {
   editorDirty = $state(false);
   editorS3ConnectionId = $state('');
   editorS3Key = $state('');
+  editorSftpConnectionId = $state('');
+  editorSftpPath = $state('');
   confirmMessage = $state('');
   confirmCallback = $state<(() => void) | null>(null);
   confirmAlertOnly = $state(false);

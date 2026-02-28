@@ -421,7 +421,7 @@ export interface CfInvalidation {
   paths: string[];
 }
 
-export type PanelBackend = 'local' | 's3' | 'archive';
+export type PanelBackend = 'local' | 's3' | 'sftp' | 'archive';
 
 export interface ArchiveInfo {
   archivePath: string;
@@ -511,12 +511,20 @@ export interface S3Profile extends ConnectionProfileBase {
   // proxyPassword stored in keychain as "furman-s3-proxy-{profile.id}"
 }
 
+export interface SftpConnectionInfo {
+  connectionId: string;
+  host: string;
+  port: number;
+  username: string;
+}
+
 export interface SftpProfile extends ConnectionProfileBase {
   type: 'sftp';
   host: string;
   port: number;
   username: string;
-  authMethod: 'password' | 'key';
+  authMethod: 'password' | 'key' | 'agent';
+  keyPath?: string;
 }
 
 export type ConnectionProfile = S3Profile | SftpProfile;

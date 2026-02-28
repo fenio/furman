@@ -74,6 +74,9 @@ pub enum FmError {
 
     #[error("S3: {0}")]
     S3(String),
+
+    #[error("SFTP: {0}")]
+    Sftp(String),
 }
 
 // Tauri v2 requires command return errors to implement `Into<InvokeError>`.

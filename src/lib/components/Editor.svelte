@@ -1,6 +1,7 @@
 <script lang="ts">
   import { readFileText, writeFileText } from '$lib/services/tauri';
   import { s3PutText } from '$lib/services/s3';
+  import { sftpPutText } from '$lib/services/sftp';
   import { appState } from '$lib/state/app.svelte';
   import { onMount } from 'svelte';
 
@@ -64,6 +65,12 @@
         await s3PutText(
           appState.editorS3ConnectionId,
           appState.editorS3Key,
+          content,
+        );
+      } else if (appState.editorSftpConnectionId) {
+        await sftpPutText(
+          appState.editorSftpConnectionId,
+          appState.editorSftpPath,
           content,
         );
       }
