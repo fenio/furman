@@ -21,7 +21,7 @@
 
 ## Features
 
-- **Dual-pane navigation** with Tab to switch between panes
+- **Dual-pane navigation** with Tab to switch between panes (single-pane mode available via Cmd+P)
 - **[S3 support](S3.md)** — full-featured S3 client for 38+ S3-compatible providers (AWS, MinIO, Backblaze B2, Cloudflare R2, etc.) with multipart transfers, CRC32C checksum verification, versioning with MFA Delete, object lock, batch metadata/tag editing, lifecycle rules, CORS, bucket policies, client-side encryption (AES-256-GCM / ChaCha20), sync with exclude filters, bandwidth throttling, IAM role assumption, OIDC/Web Identity Federation, HTTP/HTTPS proxy support, CloudFront CDN management, inventory reports, replication configuration, event notifications, access points, anonymous access, and more
 - **[SFTP support](SFTP.md)** — browse, transfer, view, and edit files on remote servers via SSH with password, SSH key, or SSH agent authentication. Cross-protocol transfers between local, S3, and SFTP
 - **Integrated terminal** — bottom panel (Cmd+T), Quake-style drop-down (Cmd+\`), or in-pane mode (Cmd+Shift+T)
@@ -152,6 +152,7 @@ The built package will be in `src-tauri/target/release/bundle/` (`.dmg` on macOS
 
 | Shortcut | Action |
 |----------|--------|
+| Cmd+P | Toggle single / dual pane |
 | Cmd+T | Toggle bottom terminal |
 | Cmd+\` | Toggle Quake terminal |
 | Cmd+Shift+T | Toggle in-pane terminal |
