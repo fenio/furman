@@ -343,6 +343,7 @@
       path={panel.path}
       backend={panel.backend}
       s3Connection={panel.s3Connection}
+      sftpConnection={panel.sftpConnection}
       archiveInfo={panel.archiveInfo}
       {homePath}
       onNavigate={(p) => panel.loadDirectory(p)}

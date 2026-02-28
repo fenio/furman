@@ -1,17 +1,18 @@
 <script lang="ts">
-  import type { PanelBackend, S3ConnectionInfo, ArchiveInfo } from '$lib/types';
+  import type { PanelBackend, S3ConnectionInfo, SftpConnectionInfo, ArchiveInfo } from '$lib/types';
   import { tick } from 'svelte';
 
   interface Props {
     path: string;
     backend: PanelBackend;
     s3Connection: S3ConnectionInfo | null;
+    sftpConnection: SftpConnectionInfo | null;
     archiveInfo: ArchiveInfo | null;
     homePath: string;
     onNavigate: (path: string) => void;
   }
 
-  let { path, backend, s3Connection, archiveInfo, homePath, onNavigate }: Props = $props();
+  let { path, backend, s3Connection, sftpConnection, archiveInfo, homePath, onNavigate }: Props = $props();
 
   let scrollContainer: HTMLDivElement | undefined = $state(undefined);
 
@@ -32,6 +33,22 @@
         for (const part of parts) {
           accumulated += part + '/';
           result.push({ label: part, path: accumulated });
+        }
+      }
+      return result;
+    }
+
+    if (backend === 'sftp' && sftpConnection) {
+      const prefix = `sftp://${sftpConnection.host}:${sftpConnection.port}`;
+      const remotePath = path.startsWith(prefix) ? path.substring(prefix.length) : '/';
+      const cleanRemote = remotePath.replace(/\/+$/, '') || '/';
+      const result: Segment[] = [{ label: `${sftpConnection.username}@${sftpConnection.host}`, path: prefix + '/' }];
+      if (cleanRemote !== '/') {
+        const parts = cleanRemote.split('/').filter(Boolean);
+        let accumulated = prefix;
+        for (const part of parts) {
+          accumulated += '/' + part;
+          result.push({ label: part, path: accumulated + '/' });
         }
       }
       return result;
