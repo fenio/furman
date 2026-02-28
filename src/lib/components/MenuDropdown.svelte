@@ -1,9 +1,20 @@
 <script lang="ts">
   import { appState } from '$lib/state/app.svelte';
+  import { onMount } from 'svelte';
   import logoLight from '$lib/assets/furman-logo-light.svg';
   import logoDark from '$lib/assets/furman-logo-dark.svg';
 
   const logo = $derived(appState.theme === 'dark' ? logoDark : logoLight);
+
+  let version = $state('');
+  onMount(async () => {
+    try {
+      const { getVersion } = await import('@tauri-apps/api/app');
+      version = await getVersion();
+    } catch {
+      version = '';
+    }
+  });
 </script>
 
 <!-- svelte-ignore a11y_click_events_have_key_events -->
@@ -44,7 +55,7 @@
     <div class="about-section">
       <img class="about-logo" src={logo} alt="Furman" />
       <div class="about-name">Furman</div>
-      <div class="about-version">v0.1.6</div>
+      <div class="about-version">{version ? `v${version}` : ''}</div>
       <div class="about-desc">Dual-pane file manager</div>
     </div>
   </div>
