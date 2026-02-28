@@ -109,7 +109,7 @@ jobs:
         run: |
           gh release download "$GITHUB_REF_NAME" \
             --repo fenio/furman \
-            --pattern "*.dmg"
+            --pattern "*.dmg" --pattern "*.AppImage"
 
       - name: Compute SHA256 checksums
         id: sha
@@ -117,6 +117,7 @@ jobs:
           VERSION=${{ steps.version.outputs.version }}
           echo "arm=$(sha256sum Furman_${VERSION}_aarch64.dmg | cut -d ' ' -f 1)" >> "$GITHUB_OUTPUT"
           echo "intel=$(sha256sum Furman_${VERSION}_x64.dmg | cut -d ' ' -f 1)" >> "$GITHUB_OUTPUT"
+          echo "linux=$(sha256sum furman_${VERSION}_amd64.AppImage | cut -d ' ' -f 1)" >> "$GITHUB_OUTPUT"
 
       - name: Checkout homebrew-tap
         uses: actions/checkout@v4
@@ -145,7 +146,7 @@ jobs:
             end
 
             name "Furman"
-            desc "Dual-pane file manager for macOS"
+            desc "Dual-pane file manager for macOS and Linux"
             homepage "https://github.com/fenio/furman"
 
             app "Furman.app"
@@ -162,10 +163,33 @@ jobs:
           end
           CASK
 
+      - name: Update Furman formula (Linux)
+        run: |
+          VERSION=${{ steps.version.outputs.version }}
+          LINUX_SHA=${{ steps.sha.outputs.linux }}
+          mkdir -p Formula
+          cat > Formula/furman.rb << FORMULA
+          class Furman < Formula
+            desc "Dual-pane file manager for macOS and Linux"
+            homepage "https://github.com/fenio/furman"
+            version "${VERSION}"
+            license "GPL-3.0-only"
+
+            depends_on :linux
+
+            url "https://github.com/fenio/furman/releases/download/v#{version}/furman_#{version}_amd64.AppImage"
+            sha256 "${LINUX_SHA}"
+
+            def install
+              bin.install "furman_#{version}_amd64.AppImage" => "furman"
+            end
+          end
+          FORMULA
+
       - name: Commit and push
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add Casks/furman.rb
+          git add Casks/furman.rb Formula/furman.rb
           git commit -m "Update furman to ${{ steps.version.outputs.version }}"
           git push
