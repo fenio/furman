@@ -23,6 +23,7 @@
 
 - **Dual-pane navigation** with Tab to switch between panes
 - **[S3 support](S3.md)** — full-featured S3 client for 38+ S3-compatible providers (AWS, MinIO, Backblaze B2, Cloudflare R2, etc.) with multipart transfers, CRC32C checksum verification, versioning with MFA Delete, object lock, batch metadata/tag editing, lifecycle rules, CORS, bucket policies, client-side encryption (AES-256-GCM / ChaCha20), sync with exclude filters, bandwidth throttling, IAM role assumption, OIDC/Web Identity Federation, HTTP/HTTPS proxy support, CloudFront CDN management, inventory reports, replication configuration, event notifications, access points, anonymous access, and more
+- **[SFTP support](SFTP.md)** — browse, transfer, view, and edit files on remote servers via SSH with password, SSH key, or SSH agent authentication. Cross-protocol transfers between local, S3, and SFTP
 - **Integrated terminal** — bottom panel (Cmd+T), Quake-style drop-down (Cmd+\`), or in-pane mode (Cmd+Shift+T)
 - **Git integration** — panel header shows repo indicator with branch name, ahead/behind status, dirty flag, pull button, and branch switcher
 - **File viewer** (F3) — text with line numbers, image preview, hex dump
@@ -34,7 +35,7 @@
 - **Directory sizes** — selecting a directory calculates its recursive size (configurable in Preferences)
 - **Selection** — click, Cmd+click to toggle, Shift+click for range, or rubber-band (marquee) drag in empty space
 - **Drag and drop** — drag files between panels to copy (or Shift+drag to move)
-- **Sidebar** — favorites, workspaces, mounted devices, S3 connections, theme toggle (Cmd+B to open, press again to focus for keyboard navigation)
+- **Sidebar** — favorites, workspaces, S3 bookmarks, SFTP bookmarks, mounted devices, active S3/SFTP connections, theme toggle (Cmd+B to open, press again to focus for keyboard navigation)
 - **Preferences** — icon size, hidden files, external editor, startup sound (accessible via F9 menu)
 - **Dark / Light theme** — auto-detects OS preference, toggle with Cmd+Shift+L
 - **List, icon, and column views** — switch between list, grid, and column layouts with configurable icon sizes
@@ -97,6 +98,7 @@ The `.dmg` will be in `src-tauri/target/release/bundle/dmg/`.
 | Backend  | Rust, Tauri 2 |
 | Terminal | xterm.js |
 | S3       | aws-sdk-s3 (Rust) |
+| SFTP     | russh, russh-sftp (Rust) |
 | Platform | macOS (Apple Silicon + Intel) |
 
 ## Keyboard Shortcuts
@@ -111,7 +113,7 @@ The `.dmg` will be in `src-tauri/target/release/bundle/dmg/`.
 | Cmd+C | F5 | Copy to other panel |
 | Cmd+M | F6 | Move to other panel |
 | Cmd+N | F7 | Create directory |
-| Cmd+D | F8 | Delete |
+| Cmd+Backspace | F8 | Delete |
 
 ### Navigation
 
@@ -124,16 +126,23 @@ The `.dmg` will be in `src-tauri/target/release/bundle/dmg/`.
 | PageUp / PageDown | Scroll by page |
 | Insert or Space | Toggle selection |
 
+### Connections
+
+| Shortcut | Action |
+|----------|--------|
+| Cmd+S | Connection Manager / disconnect S3 or SFTP |
+| Cmd+D | Bookmark S3 or SFTP path / Save workspace (local) |
+| Cmd+I | Properties / Connection info |
+| Cmd+Y | Sync between panels |
+
 ### S3
 
 | Shortcut | Action |
 |----------|--------|
-| Cmd+S | Connection Manager / disconnect S3 |
 | Cmd+U | Presigned URL to clipboard |
 | Cmd+K | Copy S3 URI to clipboard |
 | Cmd+L | Bulk storage class change |
-| Cmd+Y | Sync between panels |
-| Cmd+I | Properties (single) / Batch Edit (multi-select) |
+| Cmd+Shift+I | Bucket properties |
 
 ### Terminal & UI
 
