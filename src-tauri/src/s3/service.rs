@@ -819,7 +819,7 @@ impl S3Service {
             let dest_key = format!("{}{}", dest_prefix, filename);
 
             copy_single_or_multipart(
-                src_bucket, key, dest_client, dest_bucket, &dest_key, *size,
+                src_client, src_bucket, key, dest_client, dest_bucket, &dest_key, *size,
             )
             .await?;
 
@@ -1009,7 +1009,7 @@ impl S3Service {
         let object_size = src_head.content_length().unwrap_or(0) as u64;
 
         copy_single_or_multipart(
-            &self.bucket, key, &self.client, &self.bucket, &dest_key, object_size,
+            &self.client, &self.bucket, key, &self.client, &self.bucket, &dest_key, object_size,
         )
         .await?;
 
@@ -1062,7 +1062,7 @@ impl S3Service {
             let dest_key = format!("{}{}", new_prefix, relative);
 
             copy_single_or_multipart(
-                &self.bucket, child_key, &self.client, &self.bucket, &dest_key, *size,
+                &self.client, &self.bucket, child_key, &self.client, &self.bucket, &dest_key, *size,
             )
             .await?;
         }

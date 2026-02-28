@@ -424,7 +424,10 @@ pub async fn copy_object_multipart(
 }
 
 /// Copy a single object, using multipart copy for objects >= 5 GiB.
+/// Tries server-side copy first; falls back to download-then-upload when
+/// server-side copy fails (e.g. cross-provider copies).
 pub async fn copy_single_or_multipart(
+    src_client: &S3Client,
     src_bucket: &str,
     src_key: &str,
     dest_client: &S3Client,
@@ -434,18 +437,172 @@ pub async fn copy_single_or_multipart(
 ) -> Result<(), FmError> {
     if object_size < COPY_MULTIPART_THRESHOLD {
         let copy_source = format!("{}/{}", src_bucket, src_key);
-        dest_client
+        let result = dest_client
             .copy_object()
             .bucket(dest_bucket)
             .key(dest_key)
             .copy_source(&copy_source)
             .send()
+            .await;
+        match result {
+            Ok(_) => return Ok(()),
+            Err(_) => {
+                // Server-side copy failed — fall back to download + upload
+                return copy_via_download(
+                    src_client, src_bucket, src_key,
+                    dest_client, dest_bucket, dest_key,
+                    object_size,
+                ).await;
+            }
+        }
+    } else {
+        let result = copy_object_multipart(
+            src_bucket, src_key, dest_client, dest_bucket, dest_key, object_size,
+        ).await;
+        match result {
+            Ok(()) => return Ok(()),
+            Err(_) => {
+                // Server-side multipart copy failed — fall back to download + upload
+                return copy_via_download(
+                    src_client, src_bucket, src_key,
+                    dest_client, dest_bucket, dest_key,
+                    object_size,
+                ).await;
+            }
+        }
+    }
+}
+
+/// Download from source and upload to destination.
+/// Used as fallback when server-side copy fails (cross-provider copies).
+/// Uses range-based GETs for large files to keep memory usage bounded.
+async fn copy_via_download(
+    src_client: &S3Client,
+    src_bucket: &str,
+    src_key: &str,
+    dest_client: &S3Client,
+    dest_bucket: &str,
+    dest_key: &str,
+    object_size: u64,
+) -> Result<(), FmError> {
+    if object_size < MULTIPART_THRESHOLD {
+        // Small file: single GET + PUT
+        let resp = src_client
+            .get_object()
+            .bucket(src_bucket)
+            .key(src_key)
+            .send()
+            .await
+            .map_err(|e| s3err(e.to_string()))?;
+        let body = resp.body.collect().await
+            .map_err(|e| s3err(e.to_string()))?;
+        dest_client
+            .put_object()
+            .bucket(dest_bucket)
+            .key(dest_key)
+            .body(body.into_bytes().into())
+            .send()
             .await
             .map_err(|e| s3err(e.to_string()))?;
     } else {
-        copy_object_multipart(src_bucket, src_key, dest_client, dest_bucket, dest_key, object_size)
-            .await?;
+        // Large file: multipart upload with range-based GETs from source
+        let create_resp = dest_client
+            .create_multipart_upload()
+            .bucket(dest_bucket)
+            .key(dest_key)
+            .send()
+            .await
+            .map_err(|e| s3err(e.to_string()))?;
+
+        let upload_id = create_resp
+            .upload_id()
+            .ok_or_else(|| s3err("Missing upload_id from create_multipart_upload"))?
+            .to_string();
+
+        let part_size = std::cmp::max(PART_SIZE, object_size / 10_000 + 1);
+        let num_parts = ((object_size + part_size - 1) / part_size) as i32;
+        let mut completed_parts: Vec<(i32, String)> = Vec::with_capacity(num_parts as usize);
+
+        for i in 0..num_parts {
+            let start = i as u64 * part_size;
+            let end = std::cmp::min(start + part_size, object_size) - 1;
+            let part_number = i + 1;
+            let chunk_size = end - start + 1;
+
+            // Download chunk via range GET
+            let get_resp = src_client
+                .get_object()
+                .bucket(src_bucket)
+                .key(src_key)
+                .range(format!("bytes={}-{}", start, end))
+                .send()
+                .await
+                .map_err(|e| {
+                    s3err(format!("Range GET failed for part {}: {}", part_number, e))
+                })?;
+
+            let chunk = get_resp.body.collect().await
+                .map_err(|e| s3err(e.to_string()))?;
+
+            // Upload chunk as part
+            let upload_result = dest_client
+                .upload_part()
+                .bucket(dest_bucket)
+                .key(dest_key)
+                .upload_id(&upload_id)
+                .part_number(part_number)
+                .body(chunk.into_bytes().into())
+                .send()
+                .await;
+
+            match upload_result {
+                Ok(resp) => {
+                    let etag = resp
+                        .e_tag()
+                        .ok_or_else(|| s3err("Missing ETag in upload_part response"))?
+                        .to_string();
+                    completed_parts.push((part_number, etag));
+                    throttle(chunk_size).await;
+                }
+                Err(e) => {
+                    let _ = dest_client
+                        .abort_multipart_upload()
+                        .bucket(dest_bucket)
+                        .key(dest_key)
+                        .upload_id(&upload_id)
+                        .send()
+                        .await;
+                    return Err(s3err(e.to_string()));
+                }
+            }
+        }
+
+        // Complete multipart upload
+        let parts: Vec<_> = completed_parts
+            .iter()
+            .map(|(num, etag)| {
+                aws_sdk_s3::types::CompletedPart::builder()
+                    .part_number(*num)
+                    .e_tag(etag)
+                    .build()
+            })
+            .collect();
+
+        let completed_upload = aws_sdk_s3::types::CompletedMultipartUpload::builder()
+            .set_parts(Some(parts))
+            .build();
+
+        dest_client
+            .complete_multipart_upload()
+            .bucket(dest_bucket)
+            .key(dest_key)
+            .upload_id(&upload_id)
+            .multipart_upload(completed_upload)
+            .send()
+            .await
+            .map_err(|e| s3err(e.to_string()))?;
     }
+
     Ok(())
 }
 
