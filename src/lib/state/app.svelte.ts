@@ -3,7 +3,7 @@ import type { Theme } from '@tauri-apps/api/window';
 import { saveConfig, type Config } from '$lib/services/config';
 import { sidebarState } from '$lib/state/sidebar.svelte';
 import { workspacesState } from '$lib/state/workspaces.svelte';
-import { s3ProfilesState } from '$lib/state/s3profiles.svelte';
+import { connectionsState } from '$lib/state/connections.svelte';
 import { s3BookmarksState } from '$lib/state/s3bookmarks.svelte';
 import { transfersState } from '$lib/state/transfers.svelte';
 import { s3SetBandwidthLimit } from '$lib/services/s3';
@@ -32,9 +32,9 @@ class AppState {
   startupSound = $state(true);
   showHidden = $state(false);
   calculateDirSizes = $state(true);
-  s3ConnectCallback = $state<((bucket: string, region: string, endpoint?: string, profile?: string, accessKey?: string, secretKey?: string, provider?: string, customCapabilities?: S3ProviderCapabilities) => void) | null>(null);
-  s3ManagerTab = $state<'saved' | 'connect'>('saved');
-  s3ManagerInitialData = $state<Partial<S3Profile> | undefined>(undefined);
+  connectCallback = $state<((bucket: string, region: string, endpoint?: string, profile?: string, accessKey?: string, secretKey?: string, provider?: string, customCapabilities?: S3ProviderCapabilities) => void) | null>(null);
+  connectionManagerTab = $state<'saved' | 'connect'>('saved');
+  connectionManagerInitialData = $state<Partial<S3Profile> | undefined>(undefined);
   searchRoot = $state('');
   searchBackend = $state<PanelBackend>('local');
   searchS3ConnectionId = $state('');
@@ -134,22 +134,22 @@ class AppState {
     this.modal = 'input';
   }
 
-  showS3Connect(callback: (bucket: string, region: string, endpoint?: string, profile?: string, accessKey?: string, secretKey?: string, provider?: string, customCapabilities?: S3ProviderCapabilities) => void) {
-    this.s3ConnectCallback = callback;
-    this.s3ManagerTab = 'connect';
-    this.modal = 's3-manager';
+  showConnect(callback: (bucket: string, region: string, endpoint?: string, profile?: string, accessKey?: string, secretKey?: string, provider?: string, customCapabilities?: S3ProviderCapabilities) => void) {
+    this.connectCallback = callback;
+    this.connectionManagerTab = 'connect';
+    this.modal = 'connection-manager';
   }
 
-  showS3Manager() {
-    this.s3ManagerTab = 'saved';
-    this.s3ManagerInitialData = undefined;
-    this.modal = 's3-manager';
+  showConnectionManager() {
+    this.connectionManagerTab = 'saved';
+    this.connectionManagerInitialData = undefined;
+    this.modal = 'connection-manager';
   }
 
-  showS3ManagerSave(initialData: Partial<S3Profile>) {
-    this.s3ManagerTab = 'connect';
-    this.s3ManagerInitialData = initialData;
-    this.modal = 's3-manager';
+  showConnectionManagerSave(initialData: Partial<S3Profile>) {
+    this.connectionManagerTab = 'connect';
+    this.connectionManagerInitialData = initialData;
+    this.modal = 'connection-manager';
   }
 
   showProperties(path: string, backend: PanelBackend, s3ConnectionId?: string, capabilities?: S3ProviderCapabilities, s3Connection?: S3ConnectionInfo) {
@@ -234,7 +234,7 @@ class AppState {
       externalEditor: this.externalEditor,
       favorites: sidebarState.favorites,
       workspaces: workspacesState.workspaces,
-      s3Profiles: s3ProfilesState.profiles,
+      connections: connectionsState.profiles,
       s3Bookmarks: s3BookmarksState.bookmarks,
       bandwidthLimit: transfersState.bandwidthLimit,
       maxConcurrent: transfersState.maxConcurrent,
@@ -255,8 +255,8 @@ class AppState {
     this.inputCallback = null;
     this.inputType = 'text';
     this.menuActive = false;
-    this.s3ConnectCallback = null;
-    this.s3ManagerInitialData = undefined;
+    this.connectCallback = null;
+    this.connectionManagerInitialData = undefined;
     this.searchRoot = '';
     this.searchBackend = 'local';
     this.searchS3ConnectionId = '';

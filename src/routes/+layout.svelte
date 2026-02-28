@@ -8,7 +8,7 @@
   import { sidebarState } from '$lib/state/sidebar.svelte';
   import { workspacesState } from '$lib/state/workspaces.svelte';
   import { s3BookmarksState } from '$lib/state/s3bookmarks.svelte';
-  import { s3ProfilesState } from '$lib/state/s3profiles.svelte';
+  import { connectionsState } from '$lib/state/connections.svelte';
   import { copyFiles, moveFiles, deleteFiles, renameFile, createDirectory, openFileDefault, openInEditor, checkConflicts } from '$lib/services/tauri';
   import { statusState } from '$lib/state/status.svelte';
   import { transfersState } from '$lib/state/transfers.svelte';
@@ -509,7 +509,7 @@
       (p) => p.s3Connection?.connectionId === connectionId,
     );
     if (!panel?.s3Connection) return undefined;
-    return s3ProfilesState.profiles.find(
+    return connectionsState.s3Profiles.find(
       (p) => p.bucket === panel.s3Connection!.bucket,
     );
   }
@@ -707,7 +707,7 @@
 
   function handleS3Connect() {
     const panel = panels.active;
-    appState.showS3Connect(async (bucket, region, endpoint, profile, accessKey, secretKey, provider, customCapabilities) => {
+    appState.showConnect(async (bucket, region, endpoint, profile, accessKey, secretKey, provider, customCapabilities) => {
       const connectionId = `s3-${Date.now()}`;
       const caps = resolveCapabilities({ provider, customCapabilities });
       const info: S3ConnectionInfo = { bucket, region, connectionId, provider, capabilities: caps };
@@ -889,7 +889,7 @@
 
     const conn = active.s3Connection;
     // Find a saved profile matching this connection
-    const profile = s3ProfilesState.profiles.find((p) =>
+    const profile = connectionsState.s3Profiles.find((p) =>
       p.bucket === conn.bucket &&
       p.region === conn.region &&
       (p.endpoint ?? '') === (conn.endpoint ?? ''),
@@ -967,7 +967,7 @@
 
   async function navigateBookmark(bm: S3Bookmark) {
     sidebarState.blur();
-    const profile = s3ProfilesState.profiles.find((p) => p.id === bm.profileId);
+    const profile = connectionsState.s3Profiles.find((p) => p.id === bm.profileId);
     if (!profile) {
       statusState.setMessage('S3 profile not found — save the connection as a profile first');
       return;

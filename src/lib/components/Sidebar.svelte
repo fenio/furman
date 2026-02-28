@@ -4,7 +4,7 @@
   import { appState } from '$lib/state/app.svelte';
   import { workspacesState } from '$lib/state/workspaces.svelte';
   import { s3BookmarksState } from '$lib/state/s3bookmarks.svelte';
-  import { s3ProfilesState } from '$lib/state/s3profiles.svelte';
+  import { connectionsState } from '$lib/state/connections.svelte';
   import { keychainGet } from '$lib/services/keychain';
   import { resolveCapabilities } from '$lib/data/s3-providers';
   import { statusState } from '$lib/state/status.svelte';
@@ -104,7 +104,7 @@
 
   async function navigateBookmark(bm: { id: string; name: string; profileId: string; path: string }) {
     sidebarState.blur();
-    const profile = s3ProfilesState.profiles.find((p) => p.id === bm.profileId);
+    const profile = connectionsState.s3Profiles.find((p) => p.id === bm.profileId);
     if (!profile) {
       statusState.setMessage('S3 profile not found — save the connection as a profile first');
       return;

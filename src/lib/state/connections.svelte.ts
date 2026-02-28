@@ -1,22 +1,26 @@
-import type { S3Profile } from '$lib/types';
+import type { ConnectionProfile, S3Profile } from '$lib/types';
 import { keychainSet, keychainGet, keychainDelete } from '$lib/services/keychain';
 import { appState } from '$lib/state/app.svelte';
 
-class S3ProfilesState {
-  profiles = $state<S3Profile[]>([]);
+class ConnectionsState {
+  profiles = $state<ConnectionProfile[]>([]);
 
-  load(profiles?: S3Profile[]) {
+  get s3Profiles(): S3Profile[] {
+    return this.profiles.filter((p): p is S3Profile => p.type === 's3');
+  }
+
+  load(profiles?: ConnectionProfile[]) {
     if (profiles) {
       this.profiles = profiles;
     }
   }
 
-  addProfile(profile: S3Profile) {
+  addProfile(profile: ConnectionProfile) {
     this.profiles = [...this.profiles, profile];
     this.persist();
   }
 
-  updateProfile(profile: S3Profile) {
+  updateProfile(profile: ConnectionProfile) {
     const idx = this.profiles.findIndex((p) => p.id === profile.id);
     if (idx >= 0) {
       this.profiles[idx] = profile;
@@ -47,4 +51,4 @@ class S3ProfilesState {
   }
 }
 
-export const s3ProfilesState = new S3ProfilesState();
+export const connectionsState = new ConnectionsState();

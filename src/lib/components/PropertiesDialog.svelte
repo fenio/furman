@@ -30,7 +30,7 @@
   } from '$lib/services/s3';
   import { invoke } from '@tauri-apps/api/core';
   import { formatSize, formatDate, formatPermissions } from '$lib/utils/format';
-  import { s3ProfilesState } from '$lib/state/s3profiles.svelte';
+  import { connectionsState } from '$lib/state/connections.svelte';
   import type {
     FileProperties, S3ObjectProperties, S3ObjectVersion, PanelBackend,
     S3BucketVersioning, S3BucketEncryption, S3Tag, S3MultipartUpload,
@@ -72,13 +72,13 @@
   let loading = $state(true);
   let error = $state('');
   const isAlreadySaved = $derived(
-    s3Connection ? s3ProfilesState.profiles.some(p => p.bucket === s3Connection!.bucket && p.region === s3Connection!.region) : false
+    s3Connection ? connectionsState.s3Profiles.some(p => p.bucket === s3Connection!.bucket && p.region === s3Connection!.region) : false
   );
 
   function saveConnection() {
     if (!s3Connection) return;
     onClose();
-    appState.showS3ManagerSave({
+    appState.showConnectionManagerSave({
       name: s3Connection.bucket,
       bucket: s3Connection.bucket,
       region: s3Connection.region,

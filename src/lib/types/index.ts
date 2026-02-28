@@ -62,7 +62,7 @@ export type ModalType =
   | 'editor'
   | 'menu'
   | 'volume-selector'
-  | 's3-manager'
+  | 'connection-manager'
   | 'overwrite'
   | 'search'
   | 'sync'
@@ -473,9 +473,16 @@ export interface S3Bookmark {
   path: string; // e.g. "s3://mybucket/data/reports/"
 }
 
-export interface S3Profile {
+export type ConnectionProtocol = 's3' | 'sftp';
+
+export interface ConnectionProfileBase {
+  type: ConnectionProtocol;
   id: string;
   name: string;
+}
+
+export interface S3Profile extends ConnectionProfileBase {
+  type: 's3';
   bucket: string;
   region: string;
   endpoint?: string;
@@ -503,3 +510,13 @@ export interface S3Profile {
   proxyUsername?: string;
   // proxyPassword stored in keychain as "furman-s3-proxy-{profile.id}"
 }
+
+export interface SftpProfile extends ConnectionProfileBase {
+  type: 'sftp';
+  host: string;
+  port: number;
+  username: string;
+  authMethod: 'password' | 'key';
+}
+
+export type ConnectionProfile = S3Profile | SftpProfile;

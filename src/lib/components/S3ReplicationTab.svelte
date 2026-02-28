@@ -202,50 +202,58 @@
   <div class="section-title">{editingIndex != null ? 'Edit Replication Rule' : 'Add Replication Rule'}</div>
   <div class="repl-form">
     <div class="repl-field">
-      <label class="repl-label">Rule ID <span class="repl-hint">(optional)</span></label>
-      <input class="repl-input" type="text" bind:value={ruleId} placeholder="my-replication-rule" />
+      <label class="repl-label">Rule ID <span class="repl-hint">(optional)</span>
+        <input class="repl-input" type="text" bind:value={ruleId} placeholder="my-replication-rule" />
+      </label>
     </div>
 
     <div class="repl-field">
-      <label class="repl-label">Priority <span class="repl-hint">(optional, integer)</span></label>
-      <input class="repl-input" type="number" bind:value={rulePriority} placeholder="0" />
+      <label class="repl-label">Priority <span class="repl-hint">(optional, integer)</span>
+        <input class="repl-input" type="number" bind:value={rulePriority} placeholder="0" />
+      </label>
     </div>
 
     <div class="repl-field">
-      <label class="repl-label">Status</label>
-      <select class="repl-input" bind:value={ruleStatus}>
-        <option value="Enabled">Enabled</option>
-        <option value="Disabled">Disabled</option>
-      </select>
+      <label class="repl-label">Status
+        <select class="repl-input" bind:value={ruleStatus}>
+          <option value="Enabled">Enabled</option>
+          <option value="Disabled">Disabled</option>
+        </select>
+      </label>
     </div>
 
     <div class="repl-field">
-      <label class="repl-label">Filter Prefix <span class="repl-hint">(optional)</span></label>
-      <input class="repl-input" type="text" bind:value={ruleFilterPrefix} placeholder="data/" />
+      <label class="repl-label">Filter Prefix <span class="repl-hint">(optional)</span>
+        <input class="repl-input" type="text" bind:value={ruleFilterPrefix} placeholder="data/" />
+      </label>
     </div>
 
     <div class="repl-field">
-      <label class="repl-label">Destination Bucket ARN</label>
-      <input class="repl-input" type="text" bind:value={ruleDestBucket} placeholder="arn:aws:s3:::destination-bucket" />
+      <label class="repl-label">Destination Bucket ARN
+        <input class="repl-input" type="text" bind:value={ruleDestBucket} placeholder="arn:aws:s3:::destination-bucket" />
+      </label>
     </div>
 
     <div class="repl-field">
-      <label class="repl-label">Storage Class Override <span class="repl-hint">(optional)</span></label>
-      <select class="repl-input" bind:value={ruleStorageClass}>
-        {#each STORAGE_CLASSES as sc}
-          <option value={sc}>{sc || '(same as source)'}</option>
-        {/each}
-      </select>
+      <label class="repl-label">Storage Class Override <span class="repl-hint">(optional)</span>
+        <select class="repl-input" bind:value={ruleStorageClass}>
+          {#each STORAGE_CLASSES as sc}
+            <option value={sc}>{sc || '(same as source)'}</option>
+          {/each}
+        </select>
+      </label>
     </div>
 
     <div class="repl-field">
-      <label class="repl-label">Destination Account ID <span class="repl-hint">(optional, cross-account)</span></label>
-      <input class="repl-input" type="text" bind:value={ruleAccount} placeholder="123456789012" />
+      <label class="repl-label">Destination Account ID <span class="repl-hint">(optional, cross-account)</span>
+        <input class="repl-input" type="text" bind:value={ruleAccount} placeholder="123456789012" />
+      </label>
     </div>
 
     <div class="repl-field">
-      <label class="repl-label">KMS Key ID <span class="repl-hint">(optional, for SSE-KMS)</span></label>
-      <input class="repl-input" type="text" bind:value={ruleKmsKeyId} placeholder="arn:aws:kms:..." />
+      <label class="repl-label">KMS Key ID <span class="repl-hint">(optional, for SSE-KMS)</span>
+        <input class="repl-input" type="text" bind:value={ruleKmsKeyId} placeholder="arn:aws:kms:..." />
+      </label>
     </div>
 
     <div class="repl-field-row">
@@ -272,8 +280,9 @@
     <div class="error">{error}</div>
   {:else}
     <div class="repl-field">
-      <label class="repl-label">IAM Role ARN</label>
-      <input class="repl-input" type="text" bind:value={formRole} oninput={handleRoleInput} placeholder="arn:aws:iam::123456789012:role/replication-role" />
+      <label class="repl-label">IAM Role ARN
+        <input class="repl-input" type="text" bind:value={formRole} oninput={handleRoleInput} placeholder="arn:aws:iam::123456789012:role/replication-role" />
+      </label>
     </div>
 
     {#if localRules.length === 0}

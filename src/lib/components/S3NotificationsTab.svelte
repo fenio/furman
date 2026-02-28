@@ -219,27 +219,30 @@
   <div class="section-title">{editingIndex != null ? 'Edit Notification Rule' : 'Add Notification Rule'}</div>
   <div class="notif-form">
     <div class="notif-field">
-      <label class="notif-label">Rule ID <span class="notif-hint">(optional)</span></label>
-      <input class="notif-input" type="text" bind:value={ruleId} placeholder="my-notification-rule" />
+      <label class="notif-label">Rule ID <span class="notif-hint">(optional)</span>
+        <input class="notif-input" type="text" bind:value={ruleId} placeholder="my-notification-rule" />
+      </label>
     </div>
 
     <div class="notif-field">
-      <label class="notif-label">Destination Type</label>
-      <select class="notif-input" bind:value={ruleDestType}>
-        <option value="sns">SNS Topic</option>
-        <option value="sqs">SQS Queue</option>
-        <option value="lambda">Lambda Function</option>
-      </select>
+      <label class="notif-label">Destination Type
+        <select class="notif-input" bind:value={ruleDestType}>
+          <option value="sns">SNS Topic</option>
+          <option value="sqs">SQS Queue</option>
+          <option value="lambda">Lambda Function</option>
+        </select>
+      </label>
     </div>
 
     <div class="notif-field">
-      <label class="notif-label">Destination ARN</label>
-      <input class="notif-input" type="text" bind:value={ruleDestArn}
-        placeholder={ruleDestType === 'sns' ? 'arn:aws:sns:...' : ruleDestType === 'sqs' ? 'arn:aws:sqs:...' : 'arn:aws:lambda:...'} />
+      <label class="notif-label">Destination ARN
+        <input class="notif-input" type="text" bind:value={ruleDestArn}
+          placeholder={ruleDestType === 'sns' ? 'arn:aws:sns:...' : ruleDestType === 'sqs' ? 'arn:aws:sqs:...' : 'arn:aws:lambda:...'} />
+      </label>
     </div>
 
     <div class="notif-field">
-      <label class="notif-label">Events</label>
+      <span class="notif-label">Events</span>
       <div class="notif-events">
         {#each EVENT_GROUPS as group}
           <div class="notif-event-group">
@@ -256,13 +259,15 @@
     </div>
 
     <div class="notif-field">
-      <label class="notif-label">Filter Prefix <span class="notif-hint">(optional)</span></label>
-      <input class="notif-input" type="text" bind:value={ruleFilterPrefix} placeholder="images/" />
+      <label class="notif-label">Filter Prefix <span class="notif-hint">(optional)</span>
+        <input class="notif-input" type="text" bind:value={ruleFilterPrefix} placeholder="images/" />
+      </label>
     </div>
 
     <div class="notif-field">
-      <label class="notif-label">Filter Suffix <span class="notif-hint">(optional)</span></label>
-      <input class="notif-input" type="text" bind:value={ruleFilterSuffix} placeholder=".jpg" />
+      <label class="notif-label">Filter Suffix <span class="notif-hint">(optional)</span>
+        <input class="notif-input" type="text" bind:value={ruleFilterSuffix} placeholder=".jpg" />
+      </label>
     </div>
 
     <div class="notif-actions">

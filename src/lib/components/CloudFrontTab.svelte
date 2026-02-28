@@ -272,8 +272,9 @@
   <div class="section-title">{mode === 'create' ? 'Create Distribution' : 'Edit Distribution'}</div>
   <div class="cf-form">
     <div class="cf-field">
-      <label class="cf-label">Comment</label>
-      <input class="cf-input" type="text" bind:value={formComment} placeholder="Description" />
+      <label class="cf-label">Comment
+        <input class="cf-input" type="text" bind:value={formComment} placeholder="Description" />
+      </label>
     </div>
 
     <div class="cf-field-row">
@@ -283,44 +284,49 @@
     </div>
 
     <div class="cf-field">
-      <label class="cf-label">Default Root Object</label>
-      <input class="cf-input" type="text" bind:value={formDefaultRoot} placeholder="index.html" />
+      <label class="cf-label">Default Root Object
+        <input class="cf-input" type="text" bind:value={formDefaultRoot} placeholder="index.html" />
+      </label>
     </div>
 
     <div class="cf-field">
-      <label class="cf-label">Price Class</label>
-      <select class="cf-input" bind:value={formPriceClass}>
-        <option value="PriceClass_100">US, Canada, Europe</option>
-        <option value="PriceClass_200">+ Asia, Middle East, Africa</option>
-        <option value="PriceClass_All">All Edge Locations (best performance)</option>
-      </select>
+      <label class="cf-label">Price Class
+        <select class="cf-input" bind:value={formPriceClass}>
+          <option value="PriceClass_100">US, Canada, Europe</option>
+          <option value="PriceClass_200">+ Asia, Middle East, Africa</option>
+          <option value="PriceClass_All">All Edge Locations (best performance)</option>
+        </select>
+      </label>
     </div>
 
     <div class="cf-field">
-      <label class="cf-label">HTTP Version</label>
-      <select class="cf-input" bind:value={formHttpVersion}>
-        <option value="http1.1">HTTP/1.1</option>
-        <option value="http2">HTTP/2</option>
-        <option value="http2and3">HTTP/2 and HTTP/3</option>
-      </select>
+      <label class="cf-label">HTTP Version
+        <select class="cf-input" bind:value={formHttpVersion}>
+          <option value="http1.1">HTTP/1.1</option>
+          <option value="http2">HTTP/2</option>
+          <option value="http2and3">HTTP/2 and HTTP/3</option>
+        </select>
+      </label>
     </div>
 
     <div class="cf-field">
-      <label class="cf-label">Viewer Protocol Policy</label>
-      <select class="cf-input" bind:value={formViewerPolicy}>
-        <option value="allow-all">HTTP and HTTPS</option>
-        <option value="redirect-to-https">Redirect HTTP to HTTPS</option>
-        <option value="https-only">HTTPS Only</option>
-      </select>
+      <label class="cf-label">Viewer Protocol Policy
+        <select class="cf-input" bind:value={formViewerPolicy}>
+          <option value="allow-all">HTTP and HTTPS</option>
+          <option value="redirect-to-https">Redirect HTTP to HTTPS</option>
+          <option value="https-only">HTTPS Only</option>
+        </select>
+      </label>
     </div>
 
     <div class="cf-field">
-      <label class="cf-label">Aliases / CNAMEs <span class="cf-hint">(one per line)</span></label>
-      <textarea class="cf-textarea" rows="3" bind:value={formAliases} placeholder="cdn.example.com"></textarea>
+      <label class="cf-label">Aliases / CNAMEs <span class="cf-hint">(one per line)</span>
+        <textarea class="cf-textarea" rows="3" bind:value={formAliases} placeholder="cdn.example.com"></textarea>
+      </label>
     </div>
 
     <div class="cf-field">
-      <label class="cf-label">Custom Error Responses</label>
+      <span class="cf-label">Custom Error Responses</span>
       {#each formErrorResponses as er, i}
         <div class="cf-error-row">
           <input class="cf-input cf-small" type="number" bind:value={er.error_code} placeholder="Error code" />
@@ -444,8 +450,9 @@
           <div class="cf-invalidation">
             <div class="section-title">Cache Invalidation</div>
             <div class="cf-field">
-              <label class="cf-label">Paths <span class="cf-hint">(one per line)</span></label>
-              <textarea class="cf-textarea" rows="3" bind:value={invalidationPaths} placeholder="/*"></textarea>
+              <label class="cf-label">Paths <span class="cf-hint">(one per line)</span>
+                <textarea class="cf-textarea" rows="3" bind:value={invalidationPaths} placeholder="/*"></textarea>
+              </label>
             </div>
             <div class="cf-actions">
               <button class="dialog-btn apply-btn" onclick={createInvalidation} disabled={invalidating}>

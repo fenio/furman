@@ -1,7 +1,7 @@
 <script lang="ts">
   import { onMount, untrack } from 'svelte';
   import { s3CheckCredentials, s3ListBuckets, s3CreateBucket, s3DeleteBucket, oidcStartAuth } from '$lib/services/s3';
-  import { s3ProfilesState } from '$lib/state/s3profiles.svelte';
+  import { connectionsState } from '$lib/state/connections.svelte';
   import { S3_PROVIDERS, getProvider, inferProviderFromEndpoint } from '$lib/data/s3-providers';
   import type { S3ProviderProfile, S3ProviderRegion } from '$lib/data/s3-providers';
   import type { S3Bucket, S3Profile, S3ProviderCapabilities } from '$lib/types';
@@ -213,14 +213,14 @@
     // Load secret key from keychain when editing a saved profile
     if (init?.credentialType === 'keychain' && init.id) {
       try {
-        const secret = await s3ProfilesState.getSecret(init.id);
+        const secret = await connectionsState.getSecret(init.id);
         if (secret) secretKey = secret;
       } catch { /* ignore — user can re-enter manually */ }
     }
     // Load proxy password from keychain when editing
     if (init?.proxyUrl && init.id) {
       try {
-        const pp = await s3ProfilesState.getSecret(init.id + ':proxy');
+        const pp = await connectionsState.getSecret(init.id + ':proxy');
         if (pp) proxyPassword = pp;
       } catch { /* ignore */ }
     }
@@ -234,6 +234,7 @@
   function buildProfile(): Omit<S3Profile, 'id'> & { id?: string } {
     const credentialType = useOidc ? 'oidc' as const : useAnonymous ? 'anonymous' as const : accessKey.trim() ? 'keychain' as const : profile.trim() ? 'aws-profile' as const : 'default' as const;
     return {
+      type: 's3' as const,
       ...(init ? { id: init.id } : {}),
       name: name.trim(),
       bucket: bucket.trim(),
@@ -322,9 +323,9 @@
     // Save proxy password to keychain
     const pp = useProxy && proxyMode === 'manual' && proxyPassword.trim() ? proxyPassword.trim() : undefined;
     if (pp && p.id) {
-      await s3ProfilesState.saveSecret(p.id + ':proxy', pp);
+      await connectionsState.saveSecret(p.id + ':proxy', pp);
     } else if (p.id && !pp) {
-      try { await s3ProfilesState.deleteSecret(p.id + ':proxy'); } catch { /* ignore */ }
+      try { await connectionsState.deleteSecret(p.id + ':proxy'); } catch { /* ignore */ }
     }
     onSave?.(p, sk);
     const [pUrl, pUser, pPass] = currentProxyArgs();
@@ -383,9 +384,9 @@
     // Save proxy password to keychain
     const pp = useProxy && proxyMode === 'manual' && proxyPassword.trim() ? proxyPassword.trim() : undefined;
     if (pp && p.id) {
-      await s3ProfilesState.saveSecret(p.id + ':proxy', pp);
+      await connectionsState.saveSecret(p.id + ':proxy', pp);
     } else if (p.id && !pp) {
-      try { await s3ProfilesState.deleteSecret(p.id + ':proxy'); } catch { /* ignore */ }
+      try { await connectionsState.deleteSecret(p.id + ':proxy'); } catch { /* ignore */ }
     }
     onSave?.(p, sk);
     onCancel();
@@ -514,6 +515,20 @@
       </div>
 
       {#if activeTab === 'connection'}
+      {#if saveMode}
+        <label class="field-label">
+          Connection Name
+          <input
+            type="text"
+            class="dialog-input"
+            autocomplete="off"
+            bind:value={name}
+            bind:this={nameEl}
+            placeholder="My S3 Bucket"
+          />
+        </label>
+      {/if}
+
       <div class="field-label">
         Provider
         <!-- svelte-ignore a11y_no_static_element_interactions -->
@@ -555,7 +570,7 @@
       {#if providerRegions.length > 0}
         <label class="field-label">
           Region Preset
-          <select class="dialog-input" value={selectedRegionId} onchange={handleRegionChange}>
+          <select class="dialog-input" autocomplete="off" value={selectedRegionId} onchange={handleRegionChange}>
             <option value="_custom">(Custom / manual entry)</option>
             {#each providerRegions as r}
               <option value={r.id === '' ? `${r.id}::${r.name}` : r.id}>
@@ -564,20 +579,6 @@
             {/each}
           </select>
           <span class="field-hint">Pick a region to auto-fill endpoint and region, or choose Custom to enter your own.</span>
-        </label>
-      {/if}
-
-      {#if saveMode}
-        <label class="field-label">
-          Connection Name
-          <input
-            type="text"
-            class="dialog-input"
-            autocomplete="off"
-            bind:value={name}
-            bind:this={nameEl}
-            placeholder="My S3 Bucket"
-          />
         </label>
       {/if}
 
@@ -707,7 +708,7 @@
         </label>
         <label class="field-label">
           Session Duration
-          <select class="dialog-input" bind:value={sessionDuration}>
+          <select class="dialog-input compact-select" autocomplete="off" bind:value={sessionDuration}>
             <option value={900}>15 minutes</option>
             <option value={1800}>30 minutes</option>
             <option value={3600}>1 hour</option>
@@ -850,7 +851,7 @@
         </label>
         <label class="field-label">
           Session Duration
-          <select class="dialog-input" bind:value={sessionDuration}>
+          <select class="dialog-input compact-select" autocomplete="off" bind:value={sessionDuration}>
             <option value={900}>15 minutes</option>
             <option value={1800}>30 minutes</option>
             <option value={3600}>1 hour</option>
@@ -934,7 +935,7 @@
           <div class="encryption-settings">
             <label class="field-label">
               Cipher
-              <select class="dialog-input" bind:value={encryptionCipher}>
+              <select class="dialog-input" autocomplete="off" bind:value={encryptionCipher}>
                 <option value="aes-256-gcm">AES-256-GCM (default)</option>
                 <option value="chacha20-poly1305">ChaCha20-Poly1305</option>
               </select>
@@ -943,7 +944,7 @@
             <div class="kdf-grid">
               <label class="field-label">
                 KDF Memory (KiB)
-                <select class="dialog-input" bind:value={kdfMemoryCost}>
+                <select class="dialog-input" autocomplete="off" bind:value={kdfMemoryCost}>
                   <option value={8192}>8 MiB (faster)</option>
                   <option value={19456}>19 MiB (default)</option>
                   <option value={65536}>64 MiB</option>
@@ -952,7 +953,7 @@
               </label>
               <label class="field-label">
                 KDF Iterations
-                <select class="dialog-input" bind:value={kdfTimeCost}>
+                <select class="dialog-input" autocomplete="off" bind:value={kdfTimeCost}>
                   <option value={1}>1 (faster)</option>
                   <option value={2}>2 (default)</option>
                   <option value={4}>4</option>
@@ -961,7 +962,7 @@
               </label>
               <label class="field-label">
                 KDF Parallelism
-                <select class="dialog-input" bind:value={kdfParallelism}>
+                <select class="dialog-input" autocomplete="off" bind:value={kdfParallelism}>
                   <option value={1}>1 (default)</option>
                   <option value={2}>2</option>
                   <option value={4}>4</option>
@@ -972,7 +973,7 @@
 
             <label class="field-label">
               Auto-encrypt min size
-              <select class="dialog-input" bind:value={autoEncryptMinSize}>
+              <select class="dialog-input" autocomplete="off" bind:value={autoEncryptMinSize}>
                 <option value={0}>Always encrypt (default)</option>
                 <option value={1024}>Skip if all files &lt; 1 KB</option>
                 <option value={10240}>Skip if all files &lt; 10 KB</option>
@@ -1528,5 +1529,10 @@
     display: flex;
     flex-direction: column;
     gap: 12px;
+  }
+
+  .compact-select {
+    width: auto;
+    max-width: 200px;
   }
 </style>

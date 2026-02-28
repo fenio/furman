@@ -3,8 +3,8 @@
   import { appState } from '$lib/state/app.svelte';
   import { sidebarState } from '$lib/state/sidebar.svelte';
 
-  function handleS3Click() {
-    appState.showS3Manager();
+  function handleConnectClick() {
+    appState.showConnectionManager();
   }
 
   function switchToLeft() {
@@ -47,7 +47,7 @@
   <button class="menu-item" onclick={() => appState.toggleLayout()}>
     {isSingle ? 'Dual' : 'Single'}
   </button>
-  <button class="menu-item" onclick={handleS3Click}> S3 </button>
+  <button class="menu-item" onclick={handleConnectClick}> Connect </button>
   {#if !isSingle}
     <button class="menu-item" onclick={switchToRight}> Right </button>
   {/if}

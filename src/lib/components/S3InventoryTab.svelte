@@ -162,8 +162,9 @@
   <div class="section-title">{editingExisting ? 'Edit Inventory Configuration' : 'Create Inventory Configuration'}</div>
   <div class="inv-form">
     <div class="inv-field">
-      <label class="inv-label">Configuration ID</label>
-      <input class="inv-input" type="text" bind:value={formId} placeholder="my-inventory-config" disabled={editingExisting} />
+      <label class="inv-label">Configuration ID
+        <input class="inv-input" type="text" bind:value={formId} placeholder="my-inventory-config" disabled={editingExisting} />
+      </label>
     </div>
 
     <div class="inv-field-row">
@@ -173,52 +174,59 @@
     </div>
 
     <div class="inv-field">
-      <label class="inv-label">Schedule</label>
-      <select class="inv-input" bind:value={formSchedule}>
-        <option value="Daily">Daily</option>
-        <option value="Weekly">Weekly</option>
-      </select>
+      <label class="inv-label">Schedule
+        <select class="inv-input" bind:value={formSchedule}>
+          <option value="Daily">Daily</option>
+          <option value="Weekly">Weekly</option>
+        </select>
+      </label>
     </div>
 
     <div class="inv-field">
-      <label class="inv-label">Included Object Versions</label>
-      <select class="inv-input" bind:value={formVersions}>
-        <option value="Current">Current</option>
-        <option value="All">All</option>
-      </select>
+      <label class="inv-label">Included Object Versions
+        <select class="inv-input" bind:value={formVersions}>
+          <option value="Current">Current</option>
+          <option value="All">All</option>
+        </select>
+      </label>
     </div>
 
     <div class="inv-field">
-      <label class="inv-label">Destination Bucket ARN</label>
-      <input class="inv-input" type="text" bind:value={formBucketArn} placeholder="arn:aws:s3:::destination-bucket" />
+      <label class="inv-label">Destination Bucket ARN
+        <input class="inv-input" type="text" bind:value={formBucketArn} placeholder="arn:aws:s3:::destination-bucket" />
+      </label>
     </div>
 
     <div class="inv-field">
-      <label class="inv-label">Destination Prefix <span class="inv-hint">(optional)</span></label>
-      <input class="inv-input" type="text" bind:value={formPrefix} placeholder="inventory/" />
+      <label class="inv-label">Destination Prefix <span class="inv-hint">(optional)</span>
+        <input class="inv-input" type="text" bind:value={formPrefix} placeholder="inventory/" />
+      </label>
     </div>
 
     <div class="inv-field">
-      <label class="inv-label">Output Format</label>
-      <select class="inv-input" bind:value={formFormat}>
-        <option value="CSV">CSV</option>
-        <option value="ORC">ORC</option>
-        <option value="Parquet">Parquet</option>
-      </select>
+      <label class="inv-label">Output Format
+        <select class="inv-input" bind:value={formFormat}>
+          <option value="CSV">CSV</option>
+          <option value="ORC">ORC</option>
+          <option value="Parquet">Parquet</option>
+        </select>
+      </label>
     </div>
 
     <div class="inv-field">
-      <label class="inv-label">Destination Account ID <span class="inv-hint">(optional, cross-account)</span></label>
-      <input class="inv-input" type="text" bind:value={formAccountId} placeholder="123456789012" />
+      <label class="inv-label">Destination Account ID <span class="inv-hint">(optional, cross-account)</span>
+        <input class="inv-input" type="text" bind:value={formAccountId} placeholder="123456789012" />
+      </label>
     </div>
 
     <div class="inv-field">
-      <label class="inv-label">Filter Prefix <span class="inv-hint">(optional)</span></label>
-      <input class="inv-input" type="text" bind:value={formFilterPrefix} placeholder="data/" />
+      <label class="inv-label">Filter Prefix <span class="inv-hint">(optional)</span>
+        <input class="inv-input" type="text" bind:value={formFilterPrefix} placeholder="data/" />
+      </label>
     </div>
 
     <div class="inv-field">
-      <label class="inv-label">Optional Fields</label>
+      <span class="inv-label">Optional Fields</span>
       <div class="inv-fields-grid">
         {#each OPTIONAL_FIELDS as field}
           <label class="inv-checkbox">

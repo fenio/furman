@@ -1,7 +1,7 @@
 import { readFileText, writeFileText } from '$lib/services/tauri';
 import type { FavoriteItem } from '$lib/state/sidebar.svelte';
 import type { Workspace } from '$lib/state/workspaces.svelte';
-import type { S3Bookmark, S3Profile, SortField, SortDirection } from '$lib/types';
+import type { S3Bookmark, ConnectionProfile, SortField, SortDirection } from '$lib/types';
 import { inferProviderFromEndpoint } from '$lib/data/s3-providers';
 
 export interface Config {
@@ -14,7 +14,7 @@ export interface Config {
   externalEditor: string;
   favorites: FavoriteItem[];
   workspaces: Workspace[];
-  s3Profiles: S3Profile[];
+  connections: ConnectionProfile[];
   s3Bookmarks: S3Bookmark[];
   bandwidthLimit: number;
   maxConcurrent: number;
@@ -34,7 +34,7 @@ export const DEFAULT_CONFIG: Config = {
   externalEditor: '',
   favorites: [],
   workspaces: [],
-  s3Profiles: [],
+  connections: [],
   s3Bookmarks: [],
   bandwidthLimit: 0,
   maxConcurrent: 2,
@@ -60,9 +60,16 @@ export async function loadConfig(): Promise<Config> {
     const text = await readFileText(path);
     const parsed = JSON.parse(text);
     const config = { ...DEFAULT_CONFIG, ...parsed };
-    // Migrate existing profiles that lack a provider field
-    for (const p of config.s3Profiles) {
-      if (!p.provider) {
+    // Migrate old s3Profiles key → connections
+    if (parsed.s3Profiles && !parsed.connections) {
+      config.connections = parsed.s3Profiles;
+    }
+    // Migrate existing profiles that lack a provider or type field
+    for (const p of config.connections) {
+      if (!p.type) {
+        p.type = 's3';
+      }
+      if (p.type === 's3' && !p.provider) {
         p.provider = inferProviderFromEndpoint(p.endpoint);
       }
     }

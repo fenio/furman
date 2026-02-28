@@ -2,12 +2,12 @@
   import { untrack } from 'svelte';
   import { panels } from '$lib/state/panels.svelte';
   import { appState } from '$lib/state/app.svelte';
-  import { s3ProfilesState } from '$lib/state/s3profiles.svelte';
+  import { connectionsState } from '$lib/state/connections.svelte';
   import S3ConnectDialog from '$lib/components/S3ConnectDialog.svelte';
   import { resolveCapabilities, getProviderIcon } from '$lib/data/s3-providers';
   import { error } from '$lib/services/log';
   import { oidcRefresh } from '$lib/services/s3';
-  import type { S3Profile, S3ConnectionInfo, S3ProviderCapabilities } from '$lib/types';
+  import type { S3Profile, S3ConnectionInfo, S3ProviderCapabilities, ConnectionProfile } from '$lib/types';
 
   interface Props {
     onClose: () => void;
@@ -18,26 +18,30 @@
 
   let { onClose, initialTab = 'saved', initialData, onConnect: onConnectProp }: Props = $props();
 
-  let activeTab = $state(untrack(() => initialTab));
-  let view = $state<'list' | 'edit'>('list');
-  let editingProfile = $state<S3Profile | undefined>(undefined);
+  type Selection =
+    | { mode: 'saved' }
+    | { mode: 'new'; protocol: 's3' }
+    | { mode: 'edit'; profile: S3Profile };
+
+  let selected = $state<Selection>(untrack(() =>
+    initialTab === 'connect' ? { mode: 'new', protocol: 's3' } : { mode: 'saved' }
+  ));
   let connectError = $state('');
+  let dialogKey = $state(0);
 
-  function handleAddNew() {
-    activeTab = 'connect';
+  function handleEdit(profile: ConnectionProfile) {
+    if (profile.type === 's3') {
+      selected = { mode: 'edit', profile };
+      dialogKey++;
+    }
   }
 
-  function handleEdit(profile: S3Profile) {
-    editingProfile = profile;
-    view = 'edit';
-  }
-
-  function handleDelete(profile: S3Profile) {
+  function handleDelete(profile: ConnectionProfile) {
     appState.showConfirm(`Delete connection "${profile.name}"?`, async () => {
-      if (profile.credentialType === 'keychain') {
-        await s3ProfilesState.deleteSecret(profile.id);
+      if (profile.type === 's3' && profile.credentialType === 'keychain') {
+        await connectionsState.deleteSecret(profile.id);
       }
-      s3ProfilesState.removeProfile(profile.id);
+      connectionsState.removeProfile(profile.id);
     });
   }
 
@@ -77,7 +81,8 @@
     }
   }
 
-  async function handleConnectFromProfile(p: S3Profile) {
+  async function handleConnectFromProfile(p: ConnectionProfile) {
+    if (p.type !== 's3') return;
     connectError = '';
     let secretKey: string | undefined;
     let accessKey: string | undefined = p.accessKeyId;
@@ -86,7 +91,7 @@
     let proxyPassword: string | undefined;
     if (p.proxyUrl && p.proxyUrl !== 'system') {
       try {
-        const pp = await s3ProfilesState.getSecret(p.id + ':proxy');
+        const pp = await connectionsState.getSecret(p.id + ':proxy');
         if (pp) proxyPassword = pp;
       } catch { /* ignore */ }
     }
@@ -107,13 +112,13 @@
     if (p.credentialType === 'oidc') {
       // Try silent refresh first
       try {
-        const refreshToken = await s3ProfilesState.getSecret(p.id + ':oidc-refresh');
+        const refreshToken = await connectionsState.getSecret(p.id + ':oidc-refresh');
         if (refreshToken && p.oidcIssuerUrl && p.oidcClientId) {
           try {
             const result = await oidcRefresh(p.oidcIssuerUrl, p.oidcClientId, refreshToken);
             // Store new refresh token
             if (result.refresh_token) {
-              await s3ProfilesState.saveSecret(p.id + ':oidc-refresh', result.refresh_token);
+              await connectionsState.saveSecret(p.id + ':oidc-refresh', result.refresh_token);
             }
             await handleConnect(
               p.bucket, p.region, p.endpoint,
@@ -133,14 +138,14 @@
         // No stored refresh token
       }
       // Interactive: open edit dialog for re-authentication
-      editingProfile = p;
-      view = 'edit';
+      selected = { mode: 'edit', profile: p };
+      dialogKey++;
       return;
     }
 
     if (p.credentialType === 'keychain' && p.accessKeyId) {
       try {
-        const secret = await s3ProfilesState.getSecret(p.id);
+        const secret = await connectionsState.getSecret(p.id);
         if (secret) {
           secretKey = secret;
         }
@@ -176,34 +181,35 @@
   async function handleSave(profileData: Omit<S3Profile, 'id'> & { id?: string }, secretKey?: string) {
     const isEdit = !!profileData.id;
     const id = profileData.id || `s3-profile-${Date.now()}`;
-    const profile: S3Profile = { ...profileData, id } as S3Profile;
+    const profile: S3Profile = { ...profileData, id, type: 's3' } as S3Profile;
 
     if (secretKey && profile.credentialType === 'keychain') {
-      await s3ProfilesState.saveSecret(id, secretKey);
+      await connectionsState.saveSecret(id, secretKey);
     }
 
     if (isEdit) {
-      s3ProfilesState.updateProfile(profile);
+      connectionsState.updateProfile(profile);
     } else {
-      s3ProfilesState.addProfile(profile);
+      connectionsState.addProfile(profile);
     }
 
-    view = 'list';
-    editingProfile = undefined;
+    selected = { mode: 'saved' };
   }
 
   function handleDialogCancel() {
-    view = 'list';
-    editingProfile = undefined;
+    selected = { mode: 'saved' };
+  }
+
+  function protocolBadge(p: ConnectionProfile): string {
+    return p.type.toUpperCase();
   }
 
   function handleKeydown(e: KeyboardEvent) {
     if (e.key === 'Escape') {
       e.preventDefault();
       e.stopPropagation();
-      if (activeTab === 'saved' && view !== 'list') {
-        view = 'list';
-        editingProfile = undefined;
+      if (selected.mode === 'edit') {
+        selected = { mode: 'saved' };
       } else {
         onClose();
       }
@@ -211,77 +217,120 @@
   }
 </script>
 
-{#if view === 'edit' && editingProfile}
-  <S3ConnectDialog
-    saveMode={true}
-    initialData={editingProfile}
-    onConnect={handleConnect}
-    onCancel={handleDialogCancel}
-    onSave={handleSave}
-  />
-{:else}
-  <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
-  <div
-    class="dialog-overlay no-select"
-    role="dialog"
-    aria-modal="true"
-    tabindex="-1"
-    onkeydown={handleKeydown}
-  >
-    <div class="dialog-box">
-      <div class="dialog-title">S3 Connections</div>
+<!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
+<div
+  class="dialog-overlay no-select"
+  role="dialog"
+  aria-modal="true"
+  tabindex="-1"
+  onkeydown={handleKeydown}
+>
+  <div class="dialog-box">
+    <div class="dialog-title">Connections</div>
 
-      <div class="tab-bar">
-        <button class="tab-btn" class:active={activeTab === 'saved'} onclick={() => { activeTab = 'saved'; }}>Saved</button>
-        <button class="tab-btn" class:active={activeTab === 'connect'} onclick={() => { activeTab = 'connect'; }}>New Connection</button>
+    <div class="dialog-content">
+      <div class="manager-sidebar">
+        <div class="sidebar-section-label">SAVED</div>
+        <button
+          class="sidebar-item"
+          class:active={selected.mode === 'saved' || selected.mode === 'edit'}
+          onclick={() => { selected = { mode: 'saved' }; }}
+        >
+          Saved Connections
+          {#if connectionsState.profiles.length > 0}
+            <span class="sidebar-badge">{connectionsState.profiles.length}</span>
+          {/if}
+        </button>
+
+        <div class="sidebar-section-label">NEW</div>
+        <button
+          class="sidebar-item"
+          class:active={selected.mode === 'new'}
+          onclick={() => { selected = { mode: 'new', protocol: 's3' }; dialogKey++; }}
+        >
+          S3
+          <span class="sidebar-hint">Amazon S3 & compatible</span>
+        </button>
+        <button class="sidebar-item disabled" disabled>
+          SFTP
+          <span class="sidebar-hint">Coming soon</span>
+        </button>
       </div>
 
-      {#if activeTab === 'saved'}
-        <div class="dialog-body">
-          {#if connectError}
-            <div class="error-msg">{connectError}</div>
-          {/if}
+      <div class="manager-main">
+        {#if selected.mode === 'saved'}
+          <div class="main-body">
+            {#if connectError}
+              <div class="error-msg">{connectError}</div>
+            {/if}
 
-          {#if s3ProfilesState.profiles.length === 0}
-            <div class="empty-state">
-              <div class="empty-text">No saved connections</div>
-            </div>
-          {:else}
-            <div class="profile-list">
-              {#each s3ProfilesState.profiles as p (p.id)}
-                <div class="profile-row">
-                  <img class="profile-icon" src={getProviderIcon(p.provider ?? 'aws')} alt="" />
-                  <div class="profile-info">
-                    <div class="profile-name">{p.name}</div>
-                    <div class="profile-detail">{p.bucket} — {p.region}{p.endpoint ? ` — ${p.endpoint}` : ''}</div>
+            {#if connectionsState.profiles.length === 0}
+              <div class="empty-state">
+                <div class="empty-text">No saved connections</div>
+                <button class="dialog-btn primary" onclick={() => { selected = { mode: 'new', protocol: 's3' }; dialogKey++; }}>
+                  New S3 Connection
+                </button>
+              </div>
+            {:else}
+              <div class="profile-list">
+                {#each connectionsState.profiles as p (p.id)}
+                  <div class="profile-row">
+                    {#if p.type === 's3'}
+                      <img class="profile-icon" src={getProviderIcon(p.provider ?? 'aws')} alt="" />
+                    {:else}
+                      <span class="profile-icon-placeholder">&#128274;</span>
+                    {/if}
+                    <span class="protocol-badge">{protocolBadge(p)}</span>
+                    <div class="profile-info">
+                      <div class="profile-name">{p.name}</div>
+                      <div class="profile-detail">
+                        {#if p.type === 's3'}
+                          {p.bucket} — {p.region}{p.endpoint ? ` — ${p.endpoint}` : ''}
+                        {:else}
+                          {p.type}
+                        {/if}
+                      </div>
+                    </div>
+                    <div class="profile-actions">
+                      <button class="action-btn connect" onclick={() => handleConnectFromProfile(p)}>Connect</button>
+                      <button class="action-btn" onclick={() => handleEdit(p)}>Edit</button>
+                      <button class="action-btn danger" onclick={() => handleDelete(p)}>Delete</button>
+                    </div>
                   </div>
-                  <div class="profile-actions">
-                    <button class="action-btn connect" onclick={() => handleConnectFromProfile(p)}>Connect</button>
-                    <button class="action-btn" onclick={() => handleEdit(p)}>Edit</button>
-                    <button class="action-btn danger" onclick={() => handleDelete(p)}>Delete</button>
-                  </div>
-                </div>
-              {/each}
-            </div>
-          {/if}
-        </div>
-        <div class="dialog-footer">
-          <button class="dialog-btn primary" onclick={handleAddNew}>Add New</button>
-          <button class="dialog-btn" onclick={onClose}>Close</button>
-        </div>
-      {:else}
-        <S3ConnectDialog
-          embedded={true}
-          saveMode={true}
-          initialData={initialData as S3Profile | undefined}
-          onConnect={onConnectProp ?? handleConnect}
-          onCancel={onClose}
-          onSave={handleSave}
-        />
-      {/if}
+                {/each}
+              </div>
+            {/if}
+          </div>
+          <div class="main-footer">
+            <button class="dialog-btn" onclick={onClose}>Close</button>
+          </div>
+        {:else if selected.mode === 'edit'}
+          {#key dialogKey}
+            <S3ConnectDialog
+              embedded={true}
+              saveMode={true}
+              initialData={selected.profile}
+              onConnect={handleConnect}
+              onCancel={handleDialogCancel}
+              onSave={handleSave}
+            />
+          {/key}
+        {:else}
+          {#key dialogKey}
+            <S3ConnectDialog
+              embedded={true}
+              saveMode={true}
+              initialData={initialData as S3Profile | undefined}
+              onConnect={onConnectProp ?? handleConnect}
+              onCancel={onClose}
+              onSave={handleSave}
+            />
+          {/key}
+        {/if}
+      </div>
     </div>
   </div>
-{/if}
+</div>
 
 <style>
   .dialog-overlay {
@@ -303,10 +352,10 @@
     background: var(--dialog-bg);
     border: 1px solid var(--dialog-border);
     border-radius: var(--radius-lg);
-    width: 100ch;
-    height: 85vh;
-    max-width: 90vw;
-    max-height: 900px;
+    width: 110ch;
+    height: 90vh;
+    max-width: 95vw;
+    max-height: 1000px;
     box-shadow: var(--shadow-dialog);
     overflow: hidden;
     display: flex;
@@ -321,37 +370,103 @@
     font-weight: 600;
     font-size: 14px;
     border-bottom: 1px solid var(--dialog-border);
+    flex-shrink: 0;
   }
 
-  .tab-bar {
+  .dialog-content {
     display: flex;
-    gap: 0;
-    border-bottom: 1px solid var(--dialog-border);
-    padding: 0 16px;
+    flex: 1;
+    overflow: hidden;
   }
 
-  .tab-btn {
-    padding: 6px 16px;
-    font-size: 12px;
-    font-family: inherit;
+  /* --- Sidebar --- */
+  .manager-sidebar {
+    width: 180px;
+    flex-shrink: 0;
+    border-right: 1px solid var(--dialog-border);
+    padding: 8px 0;
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+  }
+
+  .sidebar-section-label {
+    font-size: 10px;
+    font-weight: 600;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+    color: var(--text-secondary);
+    padding: 10px 16px 4px;
+  }
+
+  .sidebar-item {
+    display: flex;
+    flex-direction: column;
+    gap: 1px;
+    padding: 8px 16px;
     background: none;
     border: none;
-    border-bottom: 2px solid transparent;
-    color: var(--text-secondary);
-    cursor: pointer;
-    transition: color var(--transition-fast), border-color var(--transition-fast);
-  }
-
-  .tab-btn:hover {
+    text-align: left;
+    font-family: inherit;
+    font-size: 13px;
+    font-weight: 500;
     color: var(--text-primary);
+    cursor: pointer;
+    transition: background var(--transition-fast);
+    position: relative;
   }
 
-  .tab-btn.active {
-    border-bottom: 2px solid var(--text-accent);
+  .sidebar-item:hover:not(:disabled) {
+    background: var(--bg-hover);
+  }
+
+  .sidebar-item.active {
+    background: rgba(110,168,254,0.12);
     color: var(--text-accent);
   }
 
-  .dialog-body {
+  .sidebar-item.disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+  }
+
+  .sidebar-badge {
+    position: absolute;
+    right: 12px;
+    top: 50%;
+    transform: translateY(-50%);
+    font-size: 10px;
+    font-weight: 600;
+    min-width: 18px;
+    height: 18px;
+    line-height: 18px;
+    text-align: center;
+    border-radius: 9px;
+    background: rgba(110,168,254,0.15);
+    color: var(--text-accent);
+  }
+
+  .sidebar-hint {
+    font-size: 11px;
+    font-weight: 400;
+    color: var(--text-secondary);
+  }
+
+  .sidebar-item.active .sidebar-hint {
+    color: var(--text-accent);
+    opacity: 0.7;
+  }
+
+  /* --- Main area --- */
+  .manager-main {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    min-width: 0;
+  }
+
+  .main-body {
     padding: 20px 24px;
     display: flex;
     flex-direction: column;
@@ -360,7 +475,7 @@
     overflow-y: auto;
   }
 
-  .dialog-footer {
+  .main-footer {
     display: flex;
     justify-content: center;
     gap: 10px;
@@ -383,7 +498,7 @@
     flex-direction: column;
     align-items: center;
     gap: 16px;
-    padding: 24px 0;
+    padding: 40px 0;
   }
 
   .empty-text {
@@ -395,8 +510,6 @@
     display: flex;
     flex-direction: column;
     gap: 2px;
-    max-height: 320px;
-    overflow-y: auto;
   }
 
   .profile-row {
@@ -416,6 +529,27 @@
   .profile-icon {
     width: 20px;
     height: 20px;
+    flex-shrink: 0;
+  }
+
+  .profile-icon-placeholder {
+    width: 20px;
+    height: 20px;
+    flex-shrink: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 14px;
+  }
+
+  .protocol-badge {
+    font-size: 9px;
+    font-weight: 600;
+    letter-spacing: 0.5px;
+    padding: 1px 5px;
+    border-radius: 3px;
+    background: rgba(110,168,254,0.15);
+    color: var(--text-accent);
     flex-shrink: 0;
   }
 

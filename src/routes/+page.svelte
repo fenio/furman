@@ -19,7 +19,7 @@
   import { initLogging } from '$lib/services/log';
   import Viewer from '$lib/components/Viewer.svelte';
   import Editor from '$lib/components/Editor.svelte';
-  import S3ConnectionManager from '$lib/components/S3ConnectionManager.svelte';
+  import ConnectionManager from '$lib/components/ConnectionManager.svelte';
   import SearchDialog from '$lib/components/SearchDialog.svelte';
   import MenuDropdown from '$lib/components/MenuDropdown.svelte';
   import PreferencesDialog from '$lib/components/PreferencesDialog.svelte';
@@ -28,7 +28,7 @@
   import SyncDialog from '$lib/components/SyncDialog.svelte';
   import ShortcutsDialog from '$lib/components/ShortcutsDialog.svelte';
   import S3BatchEditDialog from '$lib/components/S3BatchEditDialog.svelte';
-  import { s3ProfilesState } from '$lib/state/s3profiles.svelte';
+  import { connectionsState } from '$lib/state/connections.svelte';
   import { s3BookmarksState } from '$lib/state/s3bookmarks.svelte';
   import type { SyncEntry } from '$lib/types';
 
@@ -58,7 +58,7 @@
 
       sidebarState.loadFavorites(homePath, config.favorites);
       workspacesState.load(config.workspaces);
-      s3ProfilesState.load(config.s3Profiles);
+      connectionsState.load(config.connections);
       s3BookmarksState.load(config.s3Bookmarks);
       await Promise.all([
         panels.left.loadDirectory(homePath),
@@ -305,12 +305,12 @@
     />
   {/if}
 
-  {#if appState.modal === 's3-manager'}
-    <S3ConnectionManager
-      initialTab={appState.s3ManagerTab}
-      initialData={appState.s3ManagerInitialData}
+  {#if appState.modal === 'connection-manager'}
+    <ConnectionManager
+      initialTab={appState.connectionManagerTab}
+      initialData={appState.connectionManagerInitialData}
       onConnect={(bucket, region, endpoint, profile, accessKey, secretKey, provider, customCapabilities, roleArn, externalId, sessionName, sessionDurationSecs, useTransferAcceleration) => {
-        const cb = appState.s3ConnectCallback;
+        const cb = appState.connectCallback;
         appState.closeModal();
         if (cb) cb(bucket, region, endpoint, profile, accessKey, secretKey, provider, customCapabilities);
       }}

@@ -210,28 +210,31 @@
   <div class="section-title">Create Access Point</div>
   <div class="ap-form">
     <div class="ap-field">
-      <label class="ap-label">Name</label>
-      <input class="ap-input" type="text" bind:value={createName}
-        placeholder="my-access-point" minlength="3" maxlength="255" />
+      <label class="ap-label">Name
+        <input class="ap-input" type="text" bind:value={createName}
+          placeholder="my-access-point" minlength="3" maxlength="255" />
+      </label>
     </div>
 
     <div class="ap-field">
-      <label class="ap-label">Network Origin</label>
-      <select class="ap-input" bind:value={createNetwork}>
-        <option value="Internet">Internet</option>
-        <option value="VPC">VPC</option>
-      </select>
+      <label class="ap-label">Network Origin
+        <select class="ap-input" bind:value={createNetwork}>
+          <option value="Internet">Internet</option>
+          <option value="VPC">VPC</option>
+        </select>
+      </label>
     </div>
 
     {#if createNetwork === 'VPC'}
       <div class="ap-field">
-        <label class="ap-label">VPC ID</label>
-        <input class="ap-input" type="text" bind:value={createVpcId} placeholder="vpc-0123456789abcdef0" />
+        <label class="ap-label">VPC ID
+          <input class="ap-input" type="text" bind:value={createVpcId} placeholder="vpc-0123456789abcdef0" />
+        </label>
       </div>
     {/if}
 
     <div class="ap-field">
-      <label class="ap-label">Public Access Block</label>
+      <span class="ap-label">Public Access Block</span>
       <div class="ap-checkboxes">
         <label class="ap-checkbox">
           <input type="checkbox" bind:checked={createBlockPublicAcls} />
