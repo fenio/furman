@@ -94,37 +94,6 @@ jobs:
           prerelease: false
           args: --target ${{ matrix.target }}
 
-      # Strip bundled WebKit from AppImage — it conflicts with system
-      # libraries on newer distros. WebKit must come from the host system.
-      - name: Fix AppImage (strip bundled WebKit)
-        if: runner.os == 'Linux'
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          APPIMAGE=$(ls src-tauri/target/x86_64-unknown-linux-gnu/release/bundle/appimage/Furman_*.AppImage)
-          echo "Fixing $APPIMAGE"
-
-          # Extract
-          chmod +x "$APPIMAGE"
-          "$APPIMAGE" --appimage-extract
-
-          # Remove bundled WebKit
-          rm -f squashfs-root/usr/lib/libwebkit2gtk-4.1*
-          rm -f squashfs-root/usr/lib/libjavascriptcoregtk-4.1*
-          rm -rf squashfs-root/usr/lib/webkit2gtk-4.1/
-
-          # Repackage
-          wget -q https://github.com/AppImage/appimagetool/releases/download/continuous/appimagetool-x86_64.AppImage
-          chmod +x appimagetool-x86_64.AppImage
-          ./appimagetool-x86_64.AppImage squashfs-root "$APPIMAGE"
-          rm -rf squashfs-root appimagetool-x86_64.AppImage
-
-          # Update the release asset
-          VERSION=${GITHUB_REF_NAME#v}
-          ASSET_NAME="Furman_${VERSION}_amd64.AppImage"
-          gh release delete-asset "$GITHUB_REF_NAME" "$ASSET_NAME" --repo fenio/furman --yes || true
-          gh release upload "$GITHUB_REF_NAME" "$APPIMAGE" --repo fenio/furman
-
   update-homebrew:
     needs: build
     runs-on: ubuntu-latest
