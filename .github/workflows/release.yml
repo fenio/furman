@@ -94,6 +94,7 @@ jobs:
           # APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
           # APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
         with:
+          tauriScript: ${{ runner.os == 'Linux' && 'cargo tauri' || 'npm run tauri' }}
           tagName: ${{ github.ref_name }}
           releaseName: "Furman ${{ github.ref_name }}"
           releaseBody: ${{ needs.changelog.outputs.body }}
