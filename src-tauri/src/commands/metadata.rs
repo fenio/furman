@@ -89,6 +89,26 @@ pub fn open_file_default(path: String) -> Result<(), FmError> {
     Ok(())
 }
 
+/// Open a URL in the system's default browser.
+#[tauri::command]
+pub fn open_url(url: String) -> Result<(), FmError> {
+    #[cfg(target_os = "macos")]
+    {
+        std::process::Command::new("open")
+            .arg(&url)
+            .spawn()
+            .map_err(|e| FmError::Other(format!("Failed to open URL: {e}")))?;
+    }
+    #[cfg(target_os = "linux")]
+    {
+        std::process::Command::new("xdg-open")
+            .arg(&url)
+            .spawn()
+            .map_err(|e| FmError::Other(format!("Failed to open URL: {e}")))?;
+    }
+    Ok(())
+}
+
 /// Open a file in the user's configured external editor.
 ///
 /// Terminal-based editors (vim, nvim, vi, nano, emacs, helix, hx, micro) are

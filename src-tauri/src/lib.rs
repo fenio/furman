@@ -112,6 +112,7 @@ pub fn run() {
             commands::metadata::read_file_binary,
             commands::metadata::set_permissions,
             commands::metadata::open_file_default,
+            commands::metadata::open_url,
             commands::metadata::open_in_editor,
             commands::metadata::get_file_properties,
             commands::metadata::get_log_path,

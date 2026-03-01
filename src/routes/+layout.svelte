@@ -1661,10 +1661,16 @@
           active.moveCursor(1);
         }
         break;
-      case '*':
+      case '*': {
         e.preventDefault();
-        active.selectAll();
+        const allCount = active.entries.filter(e => e.name !== '..').length;
+        if (active.selectedPaths.size === allCount) {
+          active.deselectAll();
+        } else {
+          active.selectAll();
+        }
         break;
+      }
       case 'F2':
         e.preventDefault();
         handleRename();

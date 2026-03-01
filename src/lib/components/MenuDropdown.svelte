@@ -2,6 +2,7 @@
   import { appState } from '$lib/state/app.svelte';
   import { platform } from '$lib/state/platform.svelte';
   import { onMount } from 'svelte';
+  import { invoke } from '@tauri-apps/api/core';
   import logoLight from '$lib/assets/furman-logo-light.svg';
   import logoDark from '$lib/assets/furman-logo-dark.svg';
 
@@ -49,6 +50,15 @@
       <span class="check"></span>
       Shortcuts...
       <span class="menu-shortcut">{platform.mod}/</span>
+    </button>
+
+    <button
+      class="menu-row"
+      role="menuitem"
+      onclick={() => { appState.menuActive = false; invoke('open_url', { url: 'https://github.com/fenio/furman' }); }}
+    >
+      <span class="check"></span>
+      GitHub...
     </button>
 
     <div class="menu-divider"></div>
