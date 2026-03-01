@@ -94,41 +94,16 @@ jobs:
           prerelease: false
           args: --target ${{ matrix.target }}
 
-      # Strip bundled WebKit and GStreamer from AppImage — they conflict
-      # with system libraries on newer distros (e.g. Debian 13).
-      # These must come from the host system.
-      - name: Fix AppImage (strip bundled WebKit and GStreamer)
+      # Remove AppImage from release — it has unresolvable library conflicts
+      # across distros. Linux users should use .deb or .rpm instead.
+      # Tracking: https://github.com/tauri-apps/tauri/pull/12491
+      - name: Remove AppImage from release
         if: runner.os == 'Linux'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          APPIMAGE=$(ls src-tauri/target/x86_64-unknown-linux-gnu/release/bundle/appimage/Furman_*.AppImage)
-          echo "Fixing $APPIMAGE"
-
-          # Extract
-          chmod +x "$APPIMAGE"
-          "$APPIMAGE" --appimage-extract
-
-          # Remove bundled WebKit
-          rm -f squashfs-root/usr/lib/libwebkit2gtk-4.1*
-          rm -f squashfs-root/usr/lib/libjavascriptcoregtk-4.1*
-          rm -rf squashfs-root/usr/lib/webkit2gtk-4.1/
-
-          # Remove bundled GStreamer (system WebKit needs matching system GStreamer)
-          rm -f squashfs-root/usr/lib/libgst*
-          rm -rf squashfs-root/usr/lib/gstreamer-1.0/
-
-          # Repackage
-          wget -q https://github.com/AppImage/appimagetool/releases/download/continuous/appimagetool-x86_64.AppImage
-          chmod +x appimagetool-x86_64.AppImage
-          ./appimagetool-x86_64.AppImage squashfs-root "$APPIMAGE"
-          rm -rf squashfs-root appimagetool-x86_64.AppImage
-
-          # Update the release asset
           VERSION=${GITHUB_REF_NAME#v}
-          ASSET_NAME="Furman_${VERSION}_amd64.AppImage"
-          gh release delete-asset "$GITHUB_REF_NAME" "$ASSET_NAME" --repo fenio/furman --yes || true
-          gh release upload "$GITHUB_REF_NAME" "$APPIMAGE" --repo fenio/furman
+          gh release delete-asset "$GITHUB_REF_NAME" "Furman_${VERSION}_amd64.AppImage" --repo fenio/furman --yes || true
 
   update-homebrew:
     needs: build
@@ -145,7 +120,7 @@ jobs:
         run: |
           gh release download "$GITHUB_REF_NAME" \
             --repo fenio/furman \
-            --pattern "*.dmg" --pattern "*.AppImage"
+            --pattern "*.dmg"
 
       - name: Compute SHA256 checksums
         id: sha
@@ -153,7 +128,6 @@ jobs:
           VERSION=${{ steps.version.outputs.version }}
           echo "arm=$(sha256sum Furman_${VERSION}_aarch64.dmg | cut -d ' ' -f 1)" >> "$GITHUB_OUTPUT"
           echo "intel=$(sha256sum Furman_${VERSION}_x64.dmg | cut -d ' ' -f 1)" >> "$GITHUB_OUTPUT"
-          echo "linux=$(sha256sum Furman_${VERSION}_amd64.AppImage | cut -d ' ' -f 1)" >> "$GITHUB_OUTPUT"
 
       - name: Checkout homebrew-tap
         uses: actions/checkout@v4
@@ -199,33 +173,10 @@ jobs:
           end
           CASK
 
-      - name: Update Furman formula (Linux)
-        run: |
-          VERSION=${{ steps.version.outputs.version }}
-          LINUX_SHA=${{ steps.sha.outputs.linux }}
-          mkdir -p Formula
-          cat > Formula/furman.rb << FORMULA
-          class Furman < Formula
-            desc "Dual-pane file manager for macOS and Linux"
-            homepage "https://github.com/fenio/furman"
-            version "${VERSION}"
-            license "GPL-3.0-only"
-
-            depends_on :linux
-
-            url "https://github.com/fenio/furman/releases/download/v#{version}/Furman_#{version}_amd64.AppImage"
-            sha256 "${LINUX_SHA}"
-
-            def install
-              bin.install "Furman_#{version}_amd64.AppImage" => "furman"
-            end
-          end
-          FORMULA
-
       - name: Commit and push
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add Casks/furman.rb Formula/furman.rb
+          git add Casks/furman.rb
           git commit -m "Update furman to ${{ steps.version.outputs.version }}"
           git push
