@@ -130,16 +130,6 @@ jobs:
           gh release delete-asset "$GITHUB_REF_NAME" "$ASSET_NAME" --repo fenio/furman --yes || true
           gh release upload "$GITHUB_REF_NAME" "$APPIMAGE" --repo fenio/furman
 
-      # Upload bare binary for Homebrew (no AppImage/FUSE overhead)
-      - name: Upload Linux binary
-        if: runner.os == 'Linux'
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          BIN="src-tauri/target/x86_64-unknown-linux-gnu/release/furman"
-          cp "$BIN" furman-linux-amd64
-          gh release upload "$GITHUB_REF_NAME" furman-linux-amd64 --repo fenio/furman
-
   update-homebrew:
     needs: build
     runs-on: ubuntu-latest
@@ -155,7 +145,7 @@ jobs:
         run: |
           gh release download "$GITHUB_REF_NAME" \
             --repo fenio/furman \
-            --pattern "*.dmg" --pattern "furman-linux-amd64"
+            --pattern "*.dmg" --pattern "*.AppImage"
 
       - name: Compute SHA256 checksums
         id: sha
@@ -163,7 +153,7 @@ jobs:
           VERSION=${{ steps.version.outputs.version }}
           echo "arm=$(sha256sum Furman_${VERSION}_aarch64.dmg | cut -d ' ' -f 1)" >> "$GITHUB_OUTPUT"
           echo "intel=$(sha256sum Furman_${VERSION}_x64.dmg | cut -d ' ' -f 1)" >> "$GITHUB_OUTPUT"
-          echo "linux=$(sha256sum furman-linux-amd64 | cut -d ' ' -f 1)" >> "$GITHUB_OUTPUT"
+          echo "linux=$(sha256sum Furman_${VERSION}_amd64.AppImage | cut -d ' ' -f 1)" >> "$GITHUB_OUTPUT"
 
       - name: Checkout homebrew-tap
         uses: actions/checkout@v4
@@ -223,11 +213,11 @@ jobs:
 
             depends_on :linux
 
-            url "https://github.com/fenio/furman/releases/download/v#{version}/furman-linux-amd64"
+            url "https://github.com/fenio/furman/releases/download/v#{version}/Furman_#{version}_amd64.AppImage"
             sha256 "${LINUX_SHA}"
 
             def install
-              bin.install "furman-linux-amd64" => "furman"
+              bin.install "Furman_#{version}_amd64.AppImage" => "furman"
             end
           end
           FORMULA
