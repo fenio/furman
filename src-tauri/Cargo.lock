@@ -2088,7 +2088,7 @@ checksum = "e6d5a32815ae3f33302d95fdcb2ce17862f8c65363dcfd29360480ba1001fc9c"
 
 [[package]]
 name = "furman"
-version = "0.2.4"
+version = "0.2.5"
 dependencies = [
  "aes-gcm",
  "argon2",
