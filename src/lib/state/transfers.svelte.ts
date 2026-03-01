@@ -1,7 +1,7 @@
 import type { ProgressEvent, TransferCheckpoint } from '$lib/types';
 import { cancelFileOperation, pauseFileOperation, copyFiles, moveFiles, extractArchive } from '$lib/services/tauri';
-import { s3Download, s3Upload, s3CopyObjects, s3UploadEncrypted, type EncryptionConfig } from '$lib/services/s3';
-import { sftpDownload, sftpUpload } from '$lib/services/sftp';
+import { s3Download, s3Upload, s3CopyObjects, s3DeleteObjects, s3UploadEncrypted, type EncryptionConfig } from '$lib/services/s3';
+import { sftpDownload, sftpUpload, sftpDelete } from '$lib/services/sftp';
 import { formatSize } from '$lib/utils/format';
 
 export type TransferStatus = 'queued' | 'running' | 'paused' | 'completed' | 'failed' | 'cancelled';
@@ -388,28 +388,40 @@ class TransfersState {
       if (srcBackend === 'local' && destBackend === 'local') {
         return await moveFiles(t.id, t.sources, t.destination, onProgress);
       }
-      // S3 move = copy + delete (handled by caller in +layout.svelte)
+      // S3 move = copy/download + delete source
       if (srcBackend === 's3' && destBackend === 'local') {
-        return await s3Download(t.s3SrcConnectionId!, t.id, t.sources, t.destination, onProgress, t.encryptionPassword);
+        const result = await s3Download(t.s3SrcConnectionId!, t.id, t.sources, t.destination, onProgress, t.encryptionPassword);
+        await s3DeleteObjects(t.s3SrcConnectionId!, t.sources);
+        return result;
       }
       if (srcBackend === 'local' && destBackend === 's3') {
+        let result;
         if (t.encryptionPassword) {
-          return await s3UploadEncrypted(t.s3DestConnectionId!, t.id, t.sources, t.s3DestPrefix!, t.encryptionPassword, onProgress, t.encryptionConfig);
+          result = await s3UploadEncrypted(t.s3DestConnectionId!, t.id, t.sources, t.s3DestPrefix!, t.encryptionPassword, onProgress, t.encryptionConfig);
+        } else {
+          result = await s3Upload(t.s3DestConnectionId!, t.id, t.sources, t.s3DestPrefix!, onProgress);
         }
-        return await s3Upload(t.s3DestConnectionId!, t.id, t.sources, t.s3DestPrefix!, onProgress);
+        await deleteFiles(t.id + '-del', t.sources, () => {});
+        return result;
       }
       if (srcBackend === 's3' && destBackend === 's3') {
-        return await s3CopyObjects(
+        const result = await s3CopyObjects(
           t.s3SrcConnectionId!, t.id, t.sources,
           t.s3DestConnectionId!, t.s3DestPrefix!, onProgress,
         );
+        await s3DeleteObjects(t.s3SrcConnectionId!, t.sources);
+        return result;
       }
-      // SFTP move = download + upload (delete handled by caller)
+      // SFTP move = download/upload + delete source
       if (srcBackend === 'sftp' && destBackend === 'local') {
-        return await sftpDownload(t.sftpSrcConnectionId!, t.id, t.sources, t.destination, onProgress);
+        const result = await sftpDownload(t.sftpSrcConnectionId!, t.id, t.sources, t.destination, onProgress);
+        await sftpDelete(t.sftpSrcConnectionId!, t.sources);
+        return result;
       }
       if (srcBackend === 'local' && destBackend === 'sftp') {
-        return await sftpUpload(t.sftpDestConnectionId!, t.id, t.sources, t.sftpDestPath!, onProgress);
+        const result = await sftpUpload(t.sftpDestConnectionId!, t.id, t.sources, t.sftpDestPath!, onProgress);
+        await deleteFiles(t.id + '-del', t.sources, () => {});
+        return result;
       }
       if (srcBackend === 'sftp' && destBackend === 'sftp') {
         const tempDir = `/tmp/furman-xfer-${t.id}`;
@@ -418,7 +430,9 @@ class TransfersState {
           const name = s.replace(/\/+$/, '').split('/').pop()!;
           return `${tempDir}/${name}`;
         });
-        return await sftpUpload(t.sftpDestConnectionId!, t.id + '-up', downloaded, t.sftpDestPath!, onProgress);
+        const result = await sftpUpload(t.sftpDestConnectionId!, t.id + '-up', downloaded, t.sftpDestPath!, onProgress);
+        await sftpDelete(t.sftpSrcConnectionId!, t.sources);
+        return result;
       }
       // Cross-protocol: S3 ↔ SFTP (via temp dir)
       if (srcBackend === 's3' && destBackend === 'sftp') {
@@ -428,7 +442,9 @@ class TransfersState {
           const name = s.replace(/\/+$/, '').split('/').pop()!;
           return `${tempDir}/${name}`;
         });
-        return await sftpUpload(t.sftpDestConnectionId!, t.id + '-up', downloaded, t.sftpDestPath!, onProgress);
+        const result = await sftpUpload(t.sftpDestConnectionId!, t.id + '-up', downloaded, t.sftpDestPath!, onProgress);
+        await s3DeleteObjects(t.s3SrcConnectionId!, t.sources);
+        return result;
       }
       if (srcBackend === 'sftp' && destBackend === 's3') {
         const tempDir = `/tmp/furman-xfer-${t.id}`;
@@ -437,7 +453,9 @@ class TransfersState {
           const name = s.replace(/\/+$/, '').split('/').pop()!;
           return `${tempDir}/${name}`;
         });
-        return await s3Upload(t.s3DestConnectionId!, t.id + '-up', downloaded, t.s3DestPrefix!, onProgress);
+        const result = await s3Upload(t.s3DestConnectionId!, t.id + '-up', downloaded, t.s3DestPrefix!, onProgress);
+        await sftpDelete(t.sftpSrcConnectionId!, t.sources);
+        return result;
       }
     }
 
