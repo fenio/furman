@@ -341,9 +341,13 @@
             {#if connectionsState.profiles.length === 0}
               <div class="empty-state">
                 <div class="empty-text">No saved connections</div>
-                <button class="dialog-btn primary" onclick={() => { selected = { mode: 'new', protocol: 's3' }; dialogKey++; }}>
-                  New S3 Connection
-                </button>
+                <div class="empty-actions">
+                  New
+                  <button class="dialog-btn primary" onclick={() => { selected = { mode: 'new', protocol: 's3' }; dialogKey++; }}>S3</button>
+                  or
+                  <button class="dialog-btn primary" onclick={() => { selected = { mode: 'new', protocol: 'sftp' }; dialogKey++; }}>SFTP</button>
+                  connection
+                </div>
               </div>
             {:else}
               <div class="profile-list">
@@ -592,6 +596,14 @@
   }
 
   .empty-text {
+    font-size: 13px;
+    color: var(--text-secondary);
+  }
+
+  .empty-actions {
+    display: flex;
+    align-items: center;
+    gap: 8px;
     font-size: 13px;
     color: var(--text-secondary);
   }
