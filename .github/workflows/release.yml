@@ -35,7 +35,7 @@ jobs:
           - target: x86_64-apple-darwin
             runner: macos-latest
           - target: x86_64-unknown-linux-gnu
-            runner: ubuntu-22.04
+            runner: ubuntu-24.04
 
     runs-on: ${{ matrix.runner }}
 
@@ -46,15 +46,7 @@ jobs:
         if: runner.os == 'Linux'
         run: |
           sudo apt-get update
-          webkit_version='2.50.*'
-          sudo apt-get install -y \
-            libwebkit2gtk-4.1-0="$webkit_version" \
-            libwebkit2gtk-4.1-dev="$webkit_version" \
-            libjavascriptcoregtk-4.1-0="$webkit_version" \
-            libjavascriptcoregtk-4.1-dev="$webkit_version" \
-            gir1.2-javascriptcoregtk-4.1="$webkit_version" \
-            gir1.2-webkit2-4.1="$webkit_version" \
-            libappindicator3-dev librsvg2-dev patchelf libsecret-1-dev
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf libsecret-1-dev
 
       - name: Install Rust stable
         uses: dtolnay/rust-toolchain@stable
@@ -101,6 +93,42 @@ jobs:
           releaseDraft: false
           prerelease: false
           args: --target ${{ matrix.target }}
+
+      # Strip bundled WebKit and GStreamer from AppImage — they conflict
+      # with system libraries on newer distros (e.g. Debian 13).
+      # These must come from the host system.
+      - name: Fix AppImage (strip bundled WebKit and GStreamer)
+        if: runner.os == 'Linux'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          APPIMAGE=$(ls src-tauri/target/x86_64-unknown-linux-gnu/release/bundle/appimage/Furman_*.AppImage)
+          echo "Fixing $APPIMAGE"
+
+          # Extract
+          chmod +x "$APPIMAGE"
+          "$APPIMAGE" --appimage-extract
+
+          # Remove bundled WebKit
+          rm -f squashfs-root/usr/lib/libwebkit2gtk-4.1*
+          rm -f squashfs-root/usr/lib/libjavascriptcoregtk-4.1*
+          rm -rf squashfs-root/usr/lib/webkit2gtk-4.1/
+
+          # Remove bundled GStreamer (system WebKit needs matching system GStreamer)
+          rm -f squashfs-root/usr/lib/libgst*
+          rm -rf squashfs-root/usr/lib/gstreamer-1.0/
+
+          # Repackage
+          wget -q https://github.com/AppImage/appimagetool/releases/download/continuous/appimagetool-x86_64.AppImage
+          chmod +x appimagetool-x86_64.AppImage
+          ./appimagetool-x86_64.AppImage squashfs-root "$APPIMAGE"
+          rm -rf squashfs-root appimagetool-x86_64.AppImage
+
+          # Update the release asset
+          VERSION=${GITHUB_REF_NAME#v}
+          ASSET_NAME="Furman_${VERSION}_amd64.AppImage"
+          gh release delete-asset "$GITHUB_REF_NAME" "$ASSET_NAME" --repo fenio/furman --yes || true
+          gh release upload "$GITHUB_REF_NAME" "$APPIMAGE" --repo fenio/furman
 
   update-homebrew:
     needs: build
