@@ -14,7 +14,7 @@ jobs:
     outputs:
       body: ${{ steps.changelog.outputs.content }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
         with:
           fetch-depth: 0
 
@@ -40,7 +40,7 @@ jobs:
     runs-on: ${{ matrix.runner }}
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Install Linux dependencies
         if: runner.os == 'Linux'
@@ -65,7 +65,7 @@ jobs:
           workspaces: src-tauri
 
       - name: Install Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v6
         with:
           node-version: 22
           cache: npm
@@ -128,7 +128,7 @@ jobs:
           echo "linux=$(sha256sum Furman_${VERSION}_amd64.AppImage | cut -d ' ' -f 1)" >> "$GITHUB_OUTPUT"
 
       - name: Checkout homebrew-tap
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           repository: fenio/homebrew-tap
           token: ${{ secrets.TAP_GITHUB_TOKEN }}
