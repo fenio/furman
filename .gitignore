@@ -24,3 +24,7 @@ vite.config.ts.timestamp-*
 
 # Claude Code
 .claude/
+AGENTS.md
+
+# Beads
+.beads/
