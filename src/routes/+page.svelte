@@ -28,7 +28,9 @@
   import SyncDialog from '$lib/components/SyncDialog.svelte';
   import ShortcutsDialog from '$lib/components/ShortcutsDialog.svelte';
   import S3BatchEditDialog from '$lib/components/S3BatchEditDialog.svelte';
+  import TransferProgressDialog from '$lib/components/TransferProgressDialog.svelte';
   import { connectionsState } from '$lib/state/connections.svelte';
+  import { transfersState } from '$lib/state/transfers.svelte';
   import { s3BookmarksState } from '$lib/state/s3bookmarks.svelte';
   import { sftpBookmarksState } from '$lib/state/sftpbookmarks.svelte';
   import type { SyncEntry } from '$lib/types';
@@ -379,6 +381,10 @@
       onSync={handleSyncExecute}
       onClose={() => appState.closeModal()}
     />
+  {/if}
+
+  {#if transfersState.dialogVisible}
+    <TransferProgressDialog />
   {/if}
 </div>
 

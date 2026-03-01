@@ -653,7 +653,10 @@
     if (sources.length === 0) return;
 
     const dest = inactive.path;
-    const names = sources.map((s) => s.split('/').pop()).join(', ');
+    const allNames = sources.map((s) => s.replace(/\/+$/, '').split('/').pop() ?? s);
+    const names = allNames.length > 5
+      ? allNames.slice(0, 5).join(', ') + ` … and ${allNames.length - 5} more`
+      : allNames.join(', ');
     const srcBackend = active.backend;
     const destBackend = inactive.backend;
 
@@ -712,7 +715,10 @@
     if (sources.length === 0) return;
 
     const dest = inactive.path;
-    const names = sources.map((s) => s.split('/').pop()).join(', ');
+    const allNames = sources.map((s) => s.replace(/\/+$/, '').split('/').pop() ?? s);
+    const names = allNames.length > 5
+      ? allNames.slice(0, 5).join(', ') + ` … and ${allNames.length - 5} more`
+      : allNames.join(', ');
     const srcBackend = active.backend;
     const destBackend = inactive.backend;
 
@@ -856,7 +862,7 @@
         mkdirError = raw.includes('Already exists') ? 'Directory already exists' : raw;
         error(String(err));
       }
-      await active.loadDirectory(active.path);
+      await active.loadDirectory(active.path, mkdirError ? undefined : name);
       if (mkdirError) {
         appState.showAlert(mkdirError);
       }
@@ -1654,6 +1660,10 @@
           }
           active.moveCursor(1);
         }
+        break;
+      case '*':
+        e.preventDefault();
+        active.selectAll();
         break;
       case 'F2':
         e.preventDefault();

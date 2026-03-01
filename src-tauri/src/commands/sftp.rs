@@ -23,6 +23,17 @@ fn get_service(state: &State<'_, SftpState>, id: &str) -> Result<SftpService, Fm
 
 // ── Commands ────────────────────────────────────────────────────────────────
 
+/// Returns true for network-level errors that may be caused by macOS
+/// prompting for Local Network permission on the first connection attempt.
+fn is_network_error(err: &FmError) -> bool {
+    let msg = err.to_string().to_lowercase();
+    msg.contains("timeout")
+        || msg.contains("connection refused")
+        || msg.contains("unreachable")
+        || msg.contains("connect failed")
+        || msg.contains("network is down")
+}
+
 #[tauri::command]
 pub async fn sftp_connect(
     state: State<'_, SftpState>,
@@ -35,7 +46,7 @@ pub async fn sftp_connect(
     key_path: Option<String>,
     key_passphrase: Option<String>,
 ) -> Result<String, FmError> {
-    let conn = sftp::client::build_sftp_client(
+    let conn = match sftp::client::build_sftp_client(
         &host,
         port,
         &username,
@@ -44,7 +55,34 @@ pub async fn sftp_connect(
         key_path.as_deref(),
         key_passphrase.as_deref(),
     )
-    .await?;
+    .await
+    {
+        Ok(c) => c,
+        Err(first_err) if is_network_error(&first_err) => {
+            // On macOS the first connection to a local-network host may
+            // trigger a system permission dialog.  The original TCP attempt
+            // often fails before the user can approve it, so retry once
+            // after a short pause.
+            log::info!(
+                "SFTP connect to {}:{} failed ({}), retrying once…",
+                host,
+                port,
+                first_err
+            );
+            tokio::time::sleep(std::time::Duration::from_secs(3)).await;
+            sftp::client::build_sftp_client(
+                &host,
+                port,
+                &username,
+                &auth_method,
+                password.as_deref(),
+                key_path.as_deref(),
+                key_passphrase.as_deref(),
+            )
+            .await?
+        }
+        Err(e) => return Err(e),
+    };
 
     let home_dir = conn.home_dir.clone();
     let mut map = state.0.lock().map_err(|e| sftperr(e.to_string()))?;

@@ -39,8 +39,12 @@ export interface Transfer {
 class TransfersState {
   transfers = $state<Transfer[]>([]);
   panelVisible = $state(false);
+  dialogVisible = $state(false);
   maxConcurrent = $state(2);
   bandwidthLimit = $state(0);
+
+  showDialog() { this.dialogVisible = true; }
+  hideDialog() { this.dialogVisible = false; }
 
   get active(): Transfer[] {
     return this.transfers.filter((t) => t.status === 'running');
@@ -105,6 +109,7 @@ class TransfersState {
       _lastBytesDone: 0,
     });
     this.panelVisible = true;
+    this.dialogVisible = true;
     this.processQueue();
   }
 
@@ -141,6 +146,7 @@ class TransfersState {
       _lastBytesDone: 0,
     });
     this.panelVisible = true;
+    this.dialogVisible = true;
   }
 
   updateProgress(id: string, event: ProgressEvent) {
@@ -171,6 +177,9 @@ class TransfersState {
       t.completedAt = Date.now();
     }
     this.processQueue();
+    if (!this.hasActive && this.queued.length === 0) {
+      this.dialogVisible = false;
+    }
     window.dispatchEvent(new CustomEvent('transfer-done'));
   }
 
@@ -182,6 +191,9 @@ class TransfersState {
       t.completedAt = Date.now();
     }
     this.processQueue();
+    if (!this.hasActive && this.queued.length === 0) {
+      this.dialogVisible = false;
+    }
   }
 
   markCancelled(id: string) {
@@ -191,6 +203,9 @@ class TransfersState {
       t.completedAt = Date.now();
     }
     this.processQueue();
+    if (!this.hasActive && this.queued.length === 0) {
+      this.dialogVisible = false;
+    }
   }
 
   markPaused(id: string, checkpoint?: TransferCheckpoint | null) {

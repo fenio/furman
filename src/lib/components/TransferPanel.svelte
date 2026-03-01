@@ -86,11 +86,12 @@
 
 {#if visible}
 <div class="transfer-panel">
-  <div class="transfer-header">
+  <div class="transfer-header" onclick={() => transfersState.showDialog()} role="button" tabindex="-1">
     <span class="transfer-title">
       Transfers{#if activeCount > 0} ({activeCount} active{#if queuedCount > 0}, {queuedCount} queued{/if}){:else if queuedCount > 0} ({queuedCount} queued){/if}
     </span>
-    <div class="transfer-header-buttons">
+    <!-- svelte-ignore a11y_click_events_have_key_events -->
+    <div class="transfer-header-buttons" onclick={(e) => e.stopPropagation()} role="none">
       <select class="tp-concurrency" value={transfersState.maxConcurrent} onchange={handleConcurrencyChange} title="Max concurrent transfers">
         <option value={1}>1</option>
         <option value={2}>2</option>
@@ -128,7 +129,11 @@
         <div class="transfer-label" title={t.sources.join(', ')}>
           {transferLabel(t)}
         </div>
-        {#if t.status === 'running'}
+        {#if t.status === 'running' && (!t.progress || t.progress.bytes_total === 0)}
+          <div class="transfer-stats">
+            <span class="queued-label">{t.progress?.current_file || 'Scanning...'}</span>
+          </div>
+        {:else if t.status === 'running'}
           <div class="transfer-progress-row">
             <div class="transfer-bar-container">
               <div class="transfer-bar-fill" style="width: {percentage(t)}%"></div>
@@ -199,6 +204,7 @@
     background: var(--bg-header);
     border-bottom: 1px solid var(--border-subtle);
     flex-shrink: 0;
+    cursor: pointer;
   }
 
   .transfer-title {
