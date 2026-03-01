@@ -4,6 +4,7 @@ use std::sync::Arc;
 
 use russh_sftp::client::SftpSession;
 use russh_sftp::protocol::FileAttributes;
+use tokio::io::AsyncWriteExt;
 
 use crate::models::{DirListing, FileEntry, FmError, ProgressEvent, TransferCheckpoint};
 
@@ -206,22 +207,51 @@ impl SftpService {
         cancel: &AtomicBool,
         on_progress: &(dyn Fn(ProgressEvent) + Send + Sync),
     ) -> Result<Option<TransferCheckpoint>, FmError> {
+        // Send an initial "scanning" progress event so the UI shows activity
+        on_progress(ProgressEvent {
+            id: op_id.to_string(),
+            bytes_done: 0,
+            bytes_total: 0,
+            current_file: "Scanning…".to_string(),
+            files_done: 0,
+            files_total: 0,
+        });
+
         // First pass: collect all files and calculate total size
+        log::info!("SFTP download: scanning {} paths in {}", remote_paths.len(), local_dest);
         let mut file_list: Vec<(String, String, u64)> = Vec::new(); // (remote_path, local_path, size)
-        for remote_path in remote_paths {
+        for (i, remote_path) in remote_paths.iter().enumerate() {
+            if cancel.load(Ordering::Relaxed) {
+                return Err(FmError::Other("cancelled".into()));
+            }
+
             let clean = remote_path.trim_end_matches('/');
+            log::info!("SFTP scan [{}/{}]: stat '{}'", i + 1, remote_paths.len(), clean);
             let meta = self.stat(clean).await?;
             let name = clean.rsplit('/').next().unwrap_or(clean);
             let local_target = format!("{}/{}", local_dest.trim_end_matches('/'), name);
 
             if meta.is_dir() {
-                Box::pin(self.collect_remote_files(clean, &local_target, &mut file_list))
+                log::info!("SFTP scan: recursing into '{}'", clean);
+                Box::pin(self.collect_remote_files(clean, &local_target, &mut file_list, op_id, on_progress))
                     .await?;
+                log::info!("SFTP scan: done with '{}', {} files so far", clean, file_list.len());
             } else {
                 file_list.push((clean.to_string(), local_target, meta.size.unwrap_or(0)));
             }
+
+            // Report scanning progress so the UI stays responsive
+            on_progress(ProgressEvent {
+                id: op_id.to_string(),
+                bytes_done: 0,
+                bytes_total: 0,
+                current_file: format!("Scanning… {} files found", file_list.len()),
+                files_done: 0,
+                files_total: 0,
+            });
         }
 
+        log::info!("SFTP download: scan complete, {} files, starting download", file_list.len());
         let bytes_total: u64 = file_list.iter().map(|(_, _, s)| s).sum();
         let files_total = file_list.len() as u32;
         let mut bytes_done: u64 = 0;
@@ -240,11 +270,35 @@ impl SftpService {
             }
 
             // Download file
-            let data = self
-                .session
-                .read(remote)
-                .await
-                .map_err(|e| sftperr(format!("read '{}': {}", remote, e)))?;
+            log::info!("SFTP download [{}/{}]: '{}'", files_done + 1, files_total, remote);
+            let data = match tokio::time::timeout(
+                std::time::Duration::from_secs(60),
+                self.session.read(remote),
+            )
+            .await
+            {
+                Ok(Ok(d)) => d,
+                Ok(Err(e)) => {
+                    log::warn!("SFTP download: read '{}' failed: {}, skipping", remote, e);
+                    files_done += 1;
+                    on_progress(ProgressEvent {
+                        id: op_id.to_string(),
+                        bytes_done,
+                        bytes_total,
+                        current_file: format!("Skipped: {}", remote.rsplit('/').next().unwrap_or(remote)),
+                        files_done,
+                        files_total,
+                    });
+                    continue;
+                }
+                Err(_) => {
+                    log::error!("SFTP download: read '{}' timed out after 60s — connection likely dead", remote);
+                    return Err(FmError::Other(format!(
+                        "SFTP read timed out on '{}' — connection lost",
+                        remote.rsplit('/').next().unwrap_or(remote)
+                    )));
+                }
+            };
 
             tokio::fs::write(local, &data).await.map_err(FmError::Io)?;
 
@@ -270,12 +324,18 @@ impl SftpService {
         remote_dir: &str,
         local_dir: &str,
         out: &mut Vec<(String, String, u64)>,
+        op_id: &str,
+        on_progress: &(dyn Fn(ProgressEvent) + Send + Sync),
     ) -> Result<(), FmError> {
-        let entries = self
-            .session
-            .read_dir(remote_dir)
-            .await
-            .map_err(|e| sftperr(format!("readdir '{}': {}", remote_dir, e)))?;
+        log::info!("SFTP collect: readdir '{}'", remote_dir);
+        let entries = match self.session.read_dir(remote_dir).await {
+            Ok(iter) => iter.collect::<Vec<_>>(),
+            Err(e) => {
+                log::warn!("SFTP collect: readdir '{}' failed: {}, skipping", remote_dir, e);
+                return Ok(());
+            }
+        };
+        log::info!("SFTP collect: '{}' has {} entries", remote_dir, entries.len());
 
         for entry in entries {
             let name = entry.file_name();
@@ -284,11 +344,35 @@ impl SftpService {
             let meta = entry.metadata();
 
             if meta.is_dir() {
-                Box::pin(self.collect_remote_files(&remote_child, &local_child, out))
-                    .await?;
-            } else {
+                // Verify with stat before recursing — some entries (sockets, pipes)
+                // can be misreported as directories by the SFTP server
+                match self.session.metadata(&remote_child).await {
+                    Ok(verified) if verified.is_dir() => {
+                        Box::pin(self.collect_remote_files(&remote_child, &local_child, out, op_id, on_progress))
+                            .await?;
+                    }
+                    Ok(verified) if verified.is_regular() => {
+                        out.push((remote_child, local_child, verified.size.unwrap_or(0)));
+                    }
+                    Ok(_) => {
+                        log::info!("SFTP collect: '{}' is not a regular file or dir, skipping", remote_child);
+                    }
+                    Err(e) => {
+                        log::warn!("SFTP collect: stat '{}' failed: {}, skipping", remote_child, e);
+                    }
+                }
+            } else if meta.is_regular() {
                 out.push((remote_child, local_child, meta.size.unwrap_or(0)));
+                on_progress(ProgressEvent {
+                    id: op_id.to_string(),
+                    bytes_done: 0,
+                    bytes_total: 0,
+                    current_file: format!("Scanning\u{2026} {} files found", out.len()),
+                    files_done: 0,
+                    files_total: 0,
+                });
             }
+            // Skip sockets, pipes, and other special files
         }
         Ok(())
     }
@@ -342,8 +426,11 @@ impl SftpService {
             let data = tokio::fs::read(local).await.map_err(FmError::Io)?;
             let len = data.len() as u64;
 
-            self.session
-                .write(remote, &data)
+            let mut file = self.session
+                .create(remote)
+                .await
+                .map_err(|e| sftperr(format!("create '{}': {}", remote, e)))?;
+            file.write_all(&data)
                 .await
                 .map_err(|e| sftperr(format!("write '{}': {}", remote, e)))?;
 
@@ -404,8 +491,11 @@ impl SftpService {
 
     /// Write text content to a remote file.
     pub async fn put_text(&self, remote_path: &str, content: &str) -> Result<(), FmError> {
-        self.session
-            .write(remote_path, content.as_bytes())
+        let mut file = self.session
+            .create(remote_path)
+            .await
+            .map_err(|e| sftperr(format!("create '{}': {}", remote_path, e)))?;
+        file.write_all(content.as_bytes())
             .await
             .map_err(|e| sftperr(format!("write '{}': {}", remote_path, e)))?;
         Ok(())

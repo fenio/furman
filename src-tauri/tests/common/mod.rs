@@ -1,6 +1,9 @@
 use app_lib::s3::client::build_s3_client;
 use app_lib::s3::service::{self, S3Service};
+use app_lib::sftp::client::build_sftp_client;
+use app_lib::sftp::service::SftpService;
 use aws_sdk_s3::Client as S3Client;
+use tokio::io::AsyncWriteExt;
 use uuid::Uuid;
 
 /// Configuration for connecting to MinIO or real AWS.
@@ -321,5 +324,136 @@ impl TestContext {
                 .send()
                 .await;
         }
+    }
+}
+
+// ── SFTP Test Context ────────────────────────────────────────────────────────
+
+/// Configuration for connecting to an SFTP test server.
+///
+/// Reads from env vars:
+///   SFTP_TEST_HOST (default: localhost)
+///   SFTP_TEST_PORT (default: 2222)
+///   SFTP_TEST_USER (default: testuser)
+///   SFTP_TEST_PASS (default: testpass)
+#[allow(dead_code)]
+pub struct SftpConfig {
+    pub host: String,
+    pub port: u16,
+    pub user: String,
+    pub pass: String,
+}
+
+impl SftpConfig {
+    pub fn from_env() -> Self {
+        Self {
+            host: std::env::var("SFTP_TEST_HOST").unwrap_or_else(|_| "localhost".to_string()),
+            port: std::env::var("SFTP_TEST_PORT")
+                .ok()
+                .and_then(|p| p.parse().ok())
+                .unwrap_or(2222),
+            user: std::env::var("SFTP_TEST_USER").unwrap_or_else(|_| "testuser".to_string()),
+            pass: std::env::var("SFTP_TEST_PASS").unwrap_or_else(|_| "testpass".to_string()),
+        }
+    }
+}
+
+/// Test context that owns a unique directory on the SFTP server.
+/// Each test gets its own SftpTestContext for isolation.
+#[allow(dead_code)]
+pub struct SftpTestContext {
+    pub service: SftpService,
+    pub test_dir: String,
+    pub host: String,
+    pub port: u16,
+}
+
+#[allow(dead_code)]
+impl SftpTestContext {
+    /// Create a new SFTP test context with a unique directory.
+    pub async fn new() -> Self {
+        let config = SftpConfig::from_env();
+        let conn = build_sftp_client(
+            &config.host,
+            config.port,
+            &config.user,
+            "password",
+            Some(&config.pass),
+            None,
+            None,
+        )
+        .await
+        .expect("Failed to connect to SFTP test server");
+
+        let service = SftpService::new(
+            conn.session.clone(),
+            config.host.clone(),
+            config.port,
+        );
+
+        // Use the resolved home dir (accounts for chroot jails like atmoz/sftp)
+        let home = conn.home_dir.trim_end_matches('/');
+        let test_dir = format!("{}/upload/{}", home, Uuid::new_v4());
+        service
+            .create_folder(&test_dir)
+            .await
+            .expect("Failed to create SFTP test directory");
+
+        Self {
+            service,
+            test_dir,
+            host: config.host,
+            port: config.port,
+        }
+    }
+
+    /// Write a file inside the test directory.
+    pub async fn put_file(&self, name: &str, data: &[u8]) {
+        let path = format!("{}/{}", self.test_dir, name);
+        let mut file = self.service.session.create(&path).await
+            .expect("Failed to create test file");
+        file.write_all(data).await.expect("Failed to write test file data");
+    }
+
+    /// Write a file at an arbitrary subpath, creating parent dirs.
+    pub async fn put_file_at(&self, relative_path: &str, data: &[u8]) {
+        let path = format!("{}/{}", self.test_dir, relative_path);
+        // Ensure parent dirs exist
+        if let Some((parent, _)) = path.rsplit_once('/') {
+            self.ensure_dir(parent).await;
+        }
+        let mut file = self.service.session.create(&path).await
+            .expect("Failed to create test file");
+        file.write_all(data).await.expect("Failed to write test file data");
+    }
+
+    /// Create a subdirectory inside the test directory.
+    pub async fn mkdir(&self, name: &str) {
+        let path = format!("{}/{}", self.test_dir, name);
+        self.service
+            .create_folder(&path)
+            .await
+            .expect("Failed to create test subdirectory");
+    }
+
+    /// Ensure a remote directory and all parents exist.
+    async fn ensure_dir(&self, path: &str) {
+        if self.service.session.try_exists(path).await.unwrap_or(false) {
+            return;
+        }
+        if let Some((parent, _)) = path.rsplit_once('/') {
+            if !parent.is_empty() {
+                Box::pin(self.ensure_dir(parent)).await;
+            }
+        }
+        let _ = self.service.create_folder(path).await;
+    }
+
+    /// Clean up: delete the test directory and all its contents.
+    pub async fn cleanup(self) {
+        let _ = self
+            .service
+            .delete(&[self.test_dir.clone()])
+            .await;
     }
 }
