@@ -94,9 +94,10 @@ jobs:
           prerelease: false
           args: --target ${{ matrix.target }}
 
-      # Strip bundled WebKit from AppImage — it conflicts with system
-      # libraries on newer distros. WebKit must come from the host system.
-      - name: Fix AppImage (strip bundled WebKit)
+      # Strip bundled WebKit and GStreamer from AppImage — they conflict
+      # with system libraries on newer distros (e.g. Debian 13).
+      # These must come from the host system.
+      - name: Fix AppImage (strip bundled WebKit and GStreamer)
         if: runner.os == 'Linux'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -112,6 +113,10 @@ jobs:
           rm -f squashfs-root/usr/lib/libwebkit2gtk-4.1*
           rm -f squashfs-root/usr/lib/libjavascriptcoregtk-4.1*
           rm -rf squashfs-root/usr/lib/webkit2gtk-4.1/
+
+          # Remove bundled GStreamer (system WebKit needs matching system GStreamer)
+          rm -f squashfs-root/usr/lib/libgst*
+          rm -rf squashfs-root/usr/lib/gstreamer-1.0/
 
           # Repackage
           wget -q https://github.com/AppImage/appimagetool/releases/download/continuous/appimagetool-x86_64.AppImage

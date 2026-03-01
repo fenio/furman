@@ -1,10 +1,9 @@
 #!/usr/bin/env bash
-# Strip bundled WebKit libraries from the AppImage.
+# Strip bundled WebKit and GStreamer libraries from the AppImage.
 #
-# linuxdeploy copies WebKit into the AppImage, but the bundled copy
-# conflicts with system libraries on newer distros (e.g. Debian 13).
-# WebKit should always come from the system — it's already listed as
-# a dependency in the .deb package.
+# linuxdeploy copies WebKit and GStreamer into the AppImage, but the
+# bundled copies conflict with system libraries on newer distros
+# (e.g. Debian 13). These should always come from the system.
 #
 # Usage: ./scripts/fix-appimage.sh [path-to.AppImage]
 
@@ -23,15 +22,17 @@ echo "Fixing AppImage: $APPIMAGE"
 "$APPIMAGE" --appimage-extract > /dev/null 2>&1
 
 # Remove bundled WebKit libraries
-echo "Removing bundled WebKit libraries..."
+echo "Removing bundled WebKit..."
 rm -f squashfs-root/usr/lib/libwebkit2gtk-4.1* \
       squashfs-root/usr/lib/libjavascriptcoregtk-4.1*
-
-# Also remove WebKit helper processes that won't work outside their
-# original prefix
 rm -rf squashfs-root/usr/lib/webkit2gtk-4.1/
 
-echo "Removed bundled WebKit — AppImage will use system WebKit."
+# Remove bundled GStreamer (system WebKit needs matching system GStreamer)
+echo "Removing bundled GStreamer..."
+rm -f squashfs-root/usr/lib/libgst*
+rm -rf squashfs-root/usr/lib/gstreamer-1.0/
+
+echo "Removed bundled WebKit and GStreamer — AppImage will use system libs."
 
 # Repackage using appimagetool
 if ! command -v appimagetool &> /dev/null; then
