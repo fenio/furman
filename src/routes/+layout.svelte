@@ -44,6 +44,11 @@
   let dragDropUnlisten: (() => void) | null = null;
 
   onMount(async () => {
+    // Disable autocomplete on all inputs globally
+    document.addEventListener('focusin', (e) => {
+      if (e.target instanceof HTMLInputElement) e.target.autocomplete = 'off';
+    });
+
     try {
       const { getCurrentWindow } = await import('@tauri-apps/api/window');
       dragDropUnlisten = await getCurrentWindow().onDragDropEvent((event) => {

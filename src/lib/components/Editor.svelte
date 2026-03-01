@@ -159,7 +159,7 @@
         bind:this={textareaEl}
         onscroll={handleScroll}
         spellcheck="false"
-        autocomplete="off"
+       
         autocapitalize="off"
         {...{ autocorrect: 'off' }}
       ></textarea>

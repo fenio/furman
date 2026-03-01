@@ -49,7 +49,7 @@
         id="mfa-serial"
         type="text"
         class="dialog-input"
-        autocomplete="off"
+       
         placeholder="arn:aws:iam::123456789012:mfa/user"
         bind:value={serial}
         bind:this={serialEl}
@@ -60,7 +60,7 @@
         id="mfa-code"
         type="text"
         class="dialog-input"
-        autocomplete="off"
+       
         placeholder="123456"
         maxlength="6"
         bind:value={code}

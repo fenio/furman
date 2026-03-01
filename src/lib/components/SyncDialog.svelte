@@ -289,6 +289,7 @@
             id="sync-exclude"
             type="text"
             class="exclude-input"
+           
             bind:this={excludeInput}
             bind:value={excludeText}
             placeholder=".DS_Store, node_modules/**, *.tmp"

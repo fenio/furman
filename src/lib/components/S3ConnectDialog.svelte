@@ -521,7 +521,6 @@
           <input
             type="text"
             class="dialog-input"
-            autocomplete="off"
             bind:value={name}
             bind:this={nameEl}
             placeholder="My S3 Bucket"
@@ -538,7 +537,6 @@
             <input
               type="text"
               class="dialog-input provider-search"
-              autocomplete="off"
               placeholder={currentProvider.name}
               bind:value={providerQuery}
               bind:this={providerInputEl}
@@ -570,7 +568,7 @@
       {#if providerRegions.length > 0}
         <label class="field-label">
           Region Preset
-          <select class="dialog-input" autocomplete="off" value={selectedRegionId} onchange={handleRegionChange}>
+          <select class="dialog-input" value={selectedRegionId} onchange={handleRegionChange}>
             <option value="_custom">(Custom / manual entry)</option>
             {#each providerRegions as r}
               <option value={r.id === '' ? `${r.id}::${r.name}` : r.id}>
@@ -590,7 +588,6 @@
           <input
             type="text"
             class="dialog-input"
-            autocomplete="off"
             bind:value={bucket}
             bind:this={bucketEl}
             placeholder="my-bucket-name"
@@ -657,7 +654,6 @@
         <input
           type="text"
           class="dialog-input"
-          autocomplete="off"
           bind:value={region}
           placeholder={currentProvider.regionHint || 'us-east-1'}
         />
@@ -668,7 +664,6 @@
         <input
           type="text"
           class="dialog-input"
-          autocomplete="off"
           bind:value={endpoint}
           placeholder={currentProvider.endpointHint || 'https://us-east-1.linodeobjects.com'}
           onblur={handleEndpointBlur}
@@ -689,26 +684,26 @@
       {#if useOidc}
         <label class="field-label">
           Issuer URL
-          <input type="text" class="dialog-input" autocomplete="off" bind:value={oidcIssuerUrl} placeholder="https://login.example.com" />
+          <input type="text" class="dialog-input" bind:value={oidcIssuerUrl} placeholder="https://login.example.com" />
           <span class="field-hint">Your identity provider's base URL</span>
         </label>
         <label class="field-label">
           Client ID
-          <input type="text" class="dialog-input" autocomplete="off" bind:value={oidcClientId} placeholder="your-client-id" />
+          <input type="text" class="dialog-input" bind:value={oidcClientId} placeholder="your-client-id" />
         </label>
         <label class="field-label">
           Scopes
-          <input type="text" class="dialog-input" autocomplete="off" bind:value={oidcScopes} placeholder="openid" />
+          <input type="text" class="dialog-input" bind:value={oidcScopes} placeholder="openid" />
           <span class="field-hint">Space-separated OIDC scopes (default: openid)</span>
         </label>
         <label class="field-label">
           Role ARN
-          <input type="text" class="dialog-input" autocomplete="off" bind:value={roleArn} placeholder="arn:aws:iam::123456789012:role/MyRole" />
+          <input type="text" class="dialog-input" bind:value={roleArn} placeholder="arn:aws:iam::123456789012:role/MyRole" />
           <span class="field-hint">AWS role to assume with the OIDC token</span>
         </label>
         <label class="field-label">
           Session Duration
-          <select class="dialog-input compact-select" autocomplete="off" bind:value={sessionDuration}>
+          <select class="dialog-input compact-select" bind:value={sessionDuration}>
             <option value={900}>15 minutes</option>
             <option value={1800}>30 minutes</option>
             <option value={3600}>1 hour</option>
@@ -731,7 +726,6 @@
           <input
             type="text"
             class="dialog-input"
-            autocomplete="off"
             bind:value={profile}
             placeholder="default"
             disabled={useAnonymous}
@@ -754,7 +748,6 @@
           <input
             type="text"
             class="dialog-input"
-            autocomplete="off"
             bind:value={accessKey}
             placeholder="AKIA..."
             disabled={useAnonymous || (useDefaultCreds && hasDefaultCreds)}
@@ -766,7 +759,6 @@
           <input
             type="password"
             class="dialog-input"
-            autocomplete="off"
             bind:value={secretKey}
             placeholder={isEditing ? 'Leave empty to keep current' : 'secret'}
             disabled={useAnonymous || (useDefaultCreds && hasDefaultCreds)}
@@ -834,7 +826,6 @@
           <input
             type="text"
             class="dialog-input"
-            autocomplete="off"
             bind:value={roleArn}
             placeholder="arn:aws:iam::123456789012:role/RoleName"
           />
@@ -844,14 +835,13 @@
           <input
             type="text"
             class="dialog-input"
-            autocomplete="off"
             bind:value={externalIdVal}
             placeholder="External ID"
           />
         </label>
         <label class="field-label">
           Session Duration
-          <select class="dialog-input compact-select" autocomplete="off" bind:value={sessionDuration}>
+          <select class="dialog-input compact-select" bind:value={sessionDuration}>
             <option value={900}>15 minutes</option>
             <option value={1800}>30 minutes</option>
             <option value={3600}>1 hour</option>
@@ -891,7 +881,6 @@
               <input
                 type="text"
                 class="dialog-input"
-                autocomplete="off"
                 bind:value={proxyUrl}
                 placeholder="http://proxy.example.com:8080"
               />
@@ -901,7 +890,6 @@
               <input
                 type="text"
                 class="dialog-input"
-                autocomplete="off"
                 bind:value={proxyUsername}
                 placeholder="Username"
               />
@@ -911,7 +899,6 @@
               <input
                 type="password"
                 class="dialog-input"
-                autocomplete="off"
                 bind:value={proxyPassword}
                 placeholder="Password"
               />
@@ -935,7 +922,7 @@
           <div class="encryption-settings">
             <label class="field-label">
               Cipher
-              <select class="dialog-input" autocomplete="off" bind:value={encryptionCipher}>
+              <select class="dialog-input" bind:value={encryptionCipher}>
                 <option value="aes-256-gcm">AES-256-GCM (default)</option>
                 <option value="chacha20-poly1305">ChaCha20-Poly1305</option>
               </select>
@@ -944,7 +931,7 @@
             <div class="kdf-grid">
               <label class="field-label">
                 KDF Memory (KiB)
-                <select class="dialog-input" autocomplete="off" bind:value={kdfMemoryCost}>
+                <select class="dialog-input" bind:value={kdfMemoryCost}>
                   <option value={8192}>8 MiB (faster)</option>
                   <option value={19456}>19 MiB (default)</option>
                   <option value={65536}>64 MiB</option>
@@ -953,7 +940,7 @@
               </label>
               <label class="field-label">
                 KDF Iterations
-                <select class="dialog-input" autocomplete="off" bind:value={kdfTimeCost}>
+                <select class="dialog-input" bind:value={kdfTimeCost}>
                   <option value={1}>1 (faster)</option>
                   <option value={2}>2 (default)</option>
                   <option value={4}>4</option>
@@ -962,7 +949,7 @@
               </label>
               <label class="field-label">
                 KDF Parallelism
-                <select class="dialog-input" autocomplete="off" bind:value={kdfParallelism}>
+                <select class="dialog-input" bind:value={kdfParallelism}>
                   <option value={1}>1 (default)</option>
                   <option value={2}>2</option>
                   <option value={4}>4</option>
@@ -973,7 +960,7 @@
 
             <label class="field-label">
               Auto-encrypt min size
-              <select class="dialog-input" autocomplete="off" bind:value={autoEncryptMinSize}>
+              <select class="dialog-input" bind:value={autoEncryptMinSize}>
                 <option value={0}>Always encrypt (default)</option>
                 <option value={1024}>Skip if all files &lt; 1 KB</option>
                 <option value={10240}>Skip if all files &lt; 10 KB</option>

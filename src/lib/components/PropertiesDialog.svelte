@@ -1569,6 +1569,7 @@
             <input
               class="octal-input"
               type="text"
+             
               value={octalString()}
               maxlength="4"
               oninput={handleOctalInput}
@@ -2042,6 +2043,7 @@
                         <input
                           type="number"
                           class="meta-input"
+                         
                           min="1"
                           value={olPeriodUnit === 'days' ? olRetentionDays ?? '' : olRetentionYears ?? ''}
                           oninput={(e) => {
@@ -2409,6 +2411,7 @@
                             <input
                               class="lifecycle-days-input"
                               type="number"
+                             
                               min="0"
                               value={rule.expiration_days ?? ''}
                               oninput={(e) => {
@@ -2448,6 +2451,7 @@
                             <input
                               class="lifecycle-days-input"
                               type="number"
+                             
                               min="0"
                               value={rule.noncurrent_expiration_days ?? ''}
                               oninput={(e) => {
@@ -2467,6 +2471,7 @@
                             <input
                               class="lifecycle-days-input"
                               type="number"
+                             
                               min="0"
                               value={rule.abort_incomplete_days ?? ''}
                               oninput={(e) => {
@@ -2585,6 +2590,7 @@
                           <input
                             class="meta-input"
                             type="text"
+                           
                             value={rule.allowed_headers.join(', ')}
                             oninput={(e) => {
                               rule.allowed_headers = (e.target as HTMLInputElement).value.split(',').map(s => s.trim()).filter(Boolean);
@@ -2598,6 +2604,7 @@
                           <input
                             class="meta-input"
                             type="text"
+                           
                             value={rule.expose_headers.join(', ')}
                             oninput={(e) => {
                               rule.expose_headers = (e.target as HTMLInputElement).value.split(',').map(s => s.trim()).filter(Boolean);
@@ -2611,6 +2618,7 @@
                           <input
                             class="lifecycle-days-input"
                             type="number"
+                           
                             min="0"
                             value={rule.max_age_seconds ?? ''}
                             oninput={(e) => {
