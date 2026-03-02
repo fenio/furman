@@ -36,17 +36,23 @@ jobs:
             runner: macos-latest
           - target: x86_64-unknown-linux-gnu
             runner: ubuntu-24.04
+            container: ghcr.io/pkgforge-dev/archlinux:latest
 
     runs-on: ${{ matrix.runner }}
+    container: ${{ matrix.container || '' }}
 
     steps:
       - uses: actions/checkout@v6
 
+      - name: Prepare Arch container for AppImage bundler
+        if: runner.os == 'Linux'
+        uses: pkgforge-dev/anylinux-setup-action@8872fabe63f9a00b35e25b2f46da62a05afc9a7d # v1
+
       - name: Install Linux dependencies
         if: runner.os == 'Linux'
         run: |
-          sudo apt-get update
-          sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf libsecret-1-dev
+          pacman -Syu --noconfirm base-devel nss webkit2gtk-4.1 libappindicator-gtk3 librsvg patchelf libsecret openssl
+          get-debloated-pkgs --add-common --prefer-nano
 
       - name: Install Rust stable
         uses: dtolnay/rust-toolchain@stable
