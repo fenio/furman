@@ -21,24 +21,17 @@
 
 ## Features
 
-- **Dual-pane navigation** with Tab to switch between panes (single-pane mode available via Cmd+P)
-- **[S3 support](S3.md)** — full-featured S3 client for 38+ S3-compatible providers (AWS, MinIO, Backblaze B2, Cloudflare R2, etc.) with multipart transfers, CRC32C checksum verification, versioning with MFA Delete, object lock, batch metadata/tag editing, lifecycle rules, CORS, bucket policies, client-side encryption (AES-256-GCM / ChaCha20), sync with exclude filters, bandwidth throttling, IAM role assumption, OIDC/Web Identity Federation, HTTP/HTTPS proxy support, CloudFront CDN management, inventory reports, replication configuration, event notifications, access points, anonymous access, and more
-- **[SFTP support](SFTP.md)** — browse, transfer, view, and edit files on remote servers via SSH with password, SSH key, or SSH agent authentication. Cross-protocol transfers between local, S3, and SFTP
-- **Integrated terminal** — bottom panel (Cmd+T), Quake-style drop-down (Cmd+\`), or in-pane mode (Cmd+Shift+T)
-- **Git integration** — panel header shows repo indicator with branch name, ahead/behind status, dirty flag, pull button, and branch switcher
-- **File viewer** (F3) — text with line numbers, image preview, hex dump
-- **File editor** (F4) — built-in text editor with dirty-state tracking
-- **Search** (Cmd+F) — search by file name or file content with streaming results
-- **Archive browsing** — navigate inside zip, rar, and 7z archives as if they were directories (requires `7z` — install via `brew install 7zip` on macOS or `sudo apt install p7zip-full` on Linux)
-- **File watcher** — panels auto-refresh when files change on disk
-- **Quick filter** — type to filter the file list in real time
-- **Directory sizes** — selecting a directory calculates its recursive size (configurable in Preferences)
-- **Selection** — click, Cmd+click to toggle, Shift+click for range, or rubber-band (marquee) drag in empty space
-- **Drag and drop** — drag files between panels to copy (or Shift+drag to move)
-- **Sidebar** — favorites, workspaces, S3 bookmarks, SFTP bookmarks, mounted devices, active S3/SFTP connections, theme toggle (Cmd+B to open, press again to focus for keyboard navigation)
-- **Preferences** — icon size, hidden files, external editor, startup sound (accessible via F9 menu)
-- **Dark / Light theme** — auto-detects OS preference, toggle with Cmd+Shift+L
-- **List, icon, and column views** — switch between list, grid, and column layouts with configurable icon sizes
+- **Dual-pane layout** with [per-panel tabs](docs/tabs.md) — work in multiple directories at once
+- **[S3 cloud storage](docs/s3.md)** — connect to AWS, MinIO, Backblaze B2, Cloudflare R2, and 38+ providers
+- **[SFTP remote access](docs/sftp.md)** — browse and manage files on any SSH server
+- **Built-in terminal** — bottom panel, Quake-style drop-down, or inline per-pane
+- **Git integration** — branch, status, and pull right in the panel header
+- **[Batch rename](docs/batch-rename.md)** — find/replace, prefix/suffix, numbering, and case transforms
+- **[Right-click context menu](docs/context-menu.md)** — all file operations one click away
+- **Archive browsing** — navigate inside zip, rar, and 7z as if they were directories
+- **View, edit, search** — built-in viewer, editor, and file/content search
+- **Drag & drop, quick filter, auto-refresh** — everything you'd expect from a modern file manager
+- **Dark & light themes** — follows your OS, or toggle with a shortcut
 
 ## Installation
 
@@ -107,61 +100,17 @@ The built package will be in `src-tauri/target/release/bundle/` (`.dmg` on macOS
 
 ## Keyboard Shortcuts
 
-### File Operations
-
-| Shortcut | F-key | Action |
-|----------|-------|--------|
-| Cmd+R | F2 | Rename |
-| Cmd+3 | F3 | View file |
-| Cmd+E | F4 | Edit file |
-| Cmd+C | F5 | Copy to other panel |
-| Cmd+M | F6 | Move to other panel |
-| Cmd+N | F7 | Create directory |
-| Cmd+Backspace | F8 | Delete |
-
-### Navigation
+A few highlights — see the [full reference](docs/keyboard-shortcuts.md) for every shortcut.
 
 | Shortcut | Action |
 |----------|--------|
-| Tab | Switch active panel |
-| Enter | Open directory / file |
-| Backspace | Go to parent directory |
-| Home / End | Jump to first / last entry |
-| PageUp / PageDown | Scroll by page |
-| Insert or Space | Toggle selection |
-
-### Connections
-
-| Shortcut | Action |
-|----------|--------|
-| Cmd+S | Connection Manager / disconnect S3 or SFTP |
-| Cmd+D | Bookmark S3 or SFTP path / Save workspace (local) |
-| Cmd+I | Properties / Connection info |
-| Cmd+Y | Sync between panels |
-
-### S3
-
-| Shortcut | Action |
-|----------|--------|
-| Cmd+U | Presigned URL to clipboard |
-| Cmd+K | Copy S3 URI to clipboard |
-| Cmd+L | Bulk storage class change |
-| Cmd+Shift+I | Bucket properties |
-
-### Terminal & UI
-
-| Shortcut | Action |
-|----------|--------|
-| Cmd+P | Toggle single / dual pane |
-| Cmd+T | Toggle bottom terminal |
-| Cmd+\` | Toggle Quake terminal |
-| Cmd+Shift+T | Toggle in-pane terminal |
-| Cmd+B | Toggle sidebar (press twice to focus for keyboard navigation) |
-| Cmd+J | Toggle transfer panel |
-| F9 | Toggle menu |
+| Tab | Switch panel |
+| F2–F8 | Rename, View, Edit, Copy, Move, Mkdir, Delete |
+| Cmd+S | Connect / disconnect S3 or SFTP |
+| Cmd+T | Terminal |
+| Cmd+Alt+T | New tab |
 | Cmd+F | Search |
-| Cmd+Shift+L | Toggle dark/light theme |
-| Cmd+Q | Quit |
+| Cmd+/ | Shortcut cheatsheet (in-app) |
 
 ## License
 

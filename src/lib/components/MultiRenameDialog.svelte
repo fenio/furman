@@ -354,7 +354,7 @@
     flex-direction: column;
     gap: 12px;
     overflow-y: auto;
-    flex: 1 1 0;
+    flex: 1 1 auto;
     min-height: 0;
   }
 
