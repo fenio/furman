@@ -32,7 +32,6 @@
   import MultiRenameDialog from '$lib/components/MultiRenameDialog.svelte';
   import TransferProgressDialog from '$lib/components/TransferProgressDialog.svelte';
   import CommandPalette from '$lib/components/CommandPalette.svelte';
-  import UndoToast from '$lib/components/UndoToast.svelte';
   import { commandRegistry } from '$lib/state/commands.svelte';
   import { connectionsState } from '$lib/state/connections.svelte';
   import { transfersState } from '$lib/state/transfers.svelte';
@@ -414,8 +413,6 @@
       onClose={() => appState.closeModal()}
     />
   {/if}
-
-  <UndoToast onUndo={() => window.dispatchEvent(new CustomEvent('undo-last-operation'))} />
 
   {#if transfersState.dialogVisible}
     <TransferProgressDialog />
