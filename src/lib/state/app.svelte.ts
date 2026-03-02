@@ -70,6 +70,10 @@ class AppState {
   multiRenameS3ConnectionId = $state('');
   multiRenameSftpConnectionId = $state('');
 
+  showCommandPalette() {
+    this.modal = 'command-palette';
+  }
+
   showSearch(root: string, backend: PanelBackend = 'local', s3ConnectionId: string = '') {
     this.searchRoot = root;
     this.searchBackend = backend;

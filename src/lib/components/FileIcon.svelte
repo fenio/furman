@@ -1,5 +1,6 @@
 <script lang="ts">
   import type { FileEntry, PanelBackend } from '$lib/types';
+  import type { ComparisonStatus } from '$lib/state/comparison.svelte';
   import { convertFileSrc } from '@tauri-apps/api/core';
   import { startLocalFileDrag, startS3FileDrag, dragState } from '$lib/services/drag';
   import { statusState } from '$lib/state/status.svelte';
@@ -13,13 +14,14 @@
     panelSide?: 'left' | 'right';
     backend?: PanelBackend;
     s3ConnectionId?: string;
+    comparisonStatus?: ComparisonStatus;
     getSelectedPaths?: () => string[];
     onclick?: (e: MouseEvent) => void;
     ondblclick?: () => void;
     oncontextmenu?: (e: MouseEvent) => void;
   }
 
-  let { entry, isSelected, isCursor, isActive, panelSide, backend, s3ConnectionId, getSelectedPaths, onclick, ondblclick, oncontextmenu }: Props = $props();
+  let { entry, isSelected, isCursor, isActive, panelSide, backend, s3ConnectionId, comparisonStatus, getSelectedPaths, onclick, ondblclick, oncontextmenu }: Props = $props();
 
   const archiveExtensions = new Set(['zip', 'rar', '7z', 'tar', 'gz', 'tgz', 'bz2', 'xz']);
   const imageExtensions = new Set(['png', 'jpg', 'jpeg', 'gif', 'bmp', 'svg', 'webp', 'ico']);
@@ -104,6 +106,14 @@
     if (entry.is_dir) cls += ' directory';
     return cls;
   });
+
+  const comparisonBorderColor = $derived.by(() => {
+    if (!comparisonStatus || comparisonStatus === 'same') return '';
+    if (comparisonStatus === 'new') return 'var(--git-added)';
+    if (comparisonStatus === 'modified') return 'var(--git-modified)';
+    if (comparisonStatus === 'deleted') return 'var(--git-deleted)';
+    return '';
+  });
 </script>
 
 <!-- svelte-ignore a11y_click_events_have_key_events -->
@@ -111,6 +121,7 @@
   class={tileClass}
   role="gridcell"
   tabindex="-1"
+  style={comparisonBorderColor ? `border-left: 3px solid ${comparisonBorderColor}` : ''}
   onmousedown={handleDragGesture}
   {onclick}
   {ondblclick}

@@ -12,6 +12,7 @@
   import ColumnView from './ColumnView.svelte';
   import BreadcrumbBar from './BreadcrumbBar.svelte';
   import ContextMenu from './ContextMenu.svelte';
+  import { comparisonState, type ComparisonStatus } from '$lib/state/comparison.svelte';
 
   interface Props {
     panel: PanelData;
@@ -108,6 +109,35 @@
     if (panel.filterText && filterInput) {
       tick().then(() => filterInput?.focus());
     }
+  });
+
+  // Comparison: derive a map from entry name → ComparisonStatus for this panel
+  const comparisonStatusMap = $derived.by((): Map<string, ComparisonStatus> => {
+    if (!comparisonState.active) return new Map();
+    const statusMap = side === 'right' ? comparisonState.rightStatuses : comparisonState.leftStatuses;
+    const result = new Map<string, ComparisonStatus>();
+    for (const entry of panel.filteredSortedEntries) {
+      if (entry.name === '..') continue;
+      // Try exact name match first
+      const status = statusMap.get(entry.name);
+      if (status) {
+        result.set(entry.name, status);
+      } else if (entry.is_dir) {
+        // For directories, aggregate child statuses
+        const prefix = entry.name + '/';
+        let hasModified = false;
+        let hasAny = false;
+        for (const [key, val] of statusMap) {
+          if (key.startsWith(prefix) && val !== 'same') {
+            hasAny = true;
+            if (val === 'modified') { hasModified = true; break; }
+          }
+        }
+        if (hasModified) result.set(entry.name, 'modified');
+        else if (hasAny) result.set(entry.name, 'modified');
+      }
+    }
+    return result;
   });
 
   function handleColumnClick(field: SortField) {
@@ -567,6 +597,7 @@
         {panel}
         {isActive}
         {side}
+        {comparisonStatusMap}
         onEntryClick={(i, e) => handleRowClick(i, e)}
         onEntryDblClick={(i) => handleRowDblClick(i)}
         onEntryContextMenu={(i, e) => handleContextMenu(i, e)}
@@ -597,6 +628,7 @@
             panelSide={side}
             backend={panel.backend}
             s3ConnectionId={panel.s3Connection?.connectionId}
+            comparisonStatus={comparisonStatusMap.get(entry.name)}
             getSelectedPaths={() => panel.getSelectedOrCurrent()}
             onclick={(e) => handleRowClick(i, e)}
             ondblclick={() => handleRowDblClick(i)}
@@ -615,6 +647,7 @@
             encrypted={panel.encryptionCache[entry.path] === true}
             backend={panel.backend}
             s3ConnectionId={panel.s3Connection?.connectionId}
+            comparisonStatus={comparisonStatusMap.get(entry.name)}
             getSelectedPaths={() => panel.getSelectedOrCurrent()}
             onclick={(e) => handleRowClick(i, e)}
             ondblclick={() => handleRowDblClick(i)}

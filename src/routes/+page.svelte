@@ -30,6 +30,9 @@
   import S3BatchEditDialog from '$lib/components/S3BatchEditDialog.svelte';
   import MultiRenameDialog from '$lib/components/MultiRenameDialog.svelte';
   import TransferProgressDialog from '$lib/components/TransferProgressDialog.svelte';
+  import CommandPalette from '$lib/components/CommandPalette.svelte';
+  import UndoToast from '$lib/components/UndoToast.svelte';
+  import { commandRegistry } from '$lib/state/commands.svelte';
   import { connectionsState } from '$lib/state/connections.svelte';
   import { transfersState } from '$lib/state/transfers.svelte';
   import { s3BookmarksState } from '$lib/state/s3bookmarks.svelte';
@@ -403,6 +406,15 @@
       onClose={() => appState.closeModal()}
     />
   {/if}
+
+  {#if appState.modal === 'command-palette'}
+    <CommandPalette
+      commands={commandRegistry}
+      onClose={() => appState.closeModal()}
+    />
+  {/if}
+
+  <UndoToast onUndo={() => window.dispatchEvent(new CustomEvent('undo-last-operation'))} />
 
   {#if transfersState.dialogVisible}
     <TransferProgressDialog />

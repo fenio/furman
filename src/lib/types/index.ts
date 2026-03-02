@@ -70,7 +70,8 @@ export type ModalType =
   | 'properties'
   | 'batch-edit'
   | 'shortcuts'
-  | 'multi-rename';
+  | 'multi-rename'
+  | 'command-palette';
 
 export type SearchMode = 'name' | 'content';
 

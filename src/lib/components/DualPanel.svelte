@@ -5,6 +5,8 @@
   import FilePanel from './FilePanel.svelte';
   import TerminalPanel from './TerminalPanel.svelte';
   import TabBar from './TabBar.svelte';
+  import ComparisonBar from './ComparisonBar.svelte';
+  import { comparisonState } from '$lib/state/comparison.svelte';
 
   interface Props {
     onEntryActivate?: (index: number) => void;
@@ -93,6 +95,9 @@
             onAdd={() => { const path = panels.left.path; const tab = panels.addTab('left'); tab.loadDirectory(path); }}
           />
         {/if}
+        {#if comparisonState.active}
+          <ComparisonBar />
+        {/if}
         <FilePanel
           panel={panels.left}
           isActive={panels.activePanel === 'left'}
@@ -118,6 +123,9 @@
             onClose={(i) => panels.closeTab('right', i)}
             onAdd={() => { const path = panels.right.path; const tab = panels.addTab('right'); tab.loadDirectory(path); }}
           />
+        {/if}
+        {#if comparisonState.active}
+          <ComparisonBar />
         {/if}
         <FilePanel
           panel={panels.right}

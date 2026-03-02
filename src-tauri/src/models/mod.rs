@@ -23,6 +23,14 @@ pub struct FileEntry {
     pub storage_class: Option<String>,
 }
 
+// ── TrashInfo ────────────────────────────────────────────────────────────────
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TrashInfo {
+    pub original_path: String,
+    pub trash_path: String,
+}
+
 // ── DirListing ───────────────────────────────────────────────────────────────
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

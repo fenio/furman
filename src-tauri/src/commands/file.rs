@@ -1,4 +1,4 @@
-use crate::models::{FmError, ProgressEvent, TransferCheckpoint};
+use crate::models::{FmError, ProgressEvent, TrashInfo, TransferCheckpoint};
 use std::collections::HashMap;
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -340,6 +340,98 @@ pub fn delete_files(paths: Vec<String>, use_trash: bool) -> Result<(), FmError> 
         } else {
             fs::remove_file(&path)?;
         }
+    }
+    Ok(())
+}
+
+/// Delete files and return trash location info for undo support.
+///
+/// On macOS, uses NSFileManager.trashItemAtURL to get the resulting trash URL.
+/// On Linux, uses the trash crate.
+#[tauri::command]
+pub fn delete_files_undoable(paths: Vec<String>) -> Result<Vec<TrashInfo>, FmError> {
+    let mut results = Vec::new();
+
+    for p in &paths {
+        let path = PathBuf::from(p);
+        if !path.exists() {
+            return Err(FmError::NotFound(p.clone()));
+        }
+
+        let trash_path = trash_item_platform(&path)?;
+        results.push(TrashInfo {
+            original_path: p.clone(),
+            trash_path,
+        });
+    }
+
+    Ok(results)
+}
+
+#[cfg(target_os = "macos")]
+fn trash_item_platform(path: &Path) -> Result<String, FmError> {
+    use objc2::rc::Retained;
+    use objc2_foundation::{NSFileManager, NSString, NSURL};
+
+    let abs = path.canonicalize().map_err(|e| FmError::Io(e))?;
+    let path_str = abs.to_string_lossy();
+    let ns_path = NSString::from_str(&path_str);
+    let url = NSURL::fileURLWithPath(&ns_path);
+
+    let fm = NSFileManager::defaultManager();
+    let mut resulting_url: Option<Retained<NSURL>> = None;
+
+    let ok = fm.trashItemAtURL_resultingItemURL_error(
+        &url,
+        Some(&mut resulting_url),
+    );
+
+    if !ok.is_ok() {
+        return Err(FmError::Other(format!("Failed to trash: {}", path_str)));
+    }
+
+    let trash_url = resulting_url
+        .ok_or_else(|| FmError::Other("No resulting trash URL".into()))?;
+    let trash_path_ns = trash_url.path()
+        .ok_or_else(|| FmError::Other("Trash URL has no path".into()))?;
+    Ok(trash_path_ns.to_string())
+}
+
+#[cfg(not(target_os = "macos"))]
+fn trash_item_platform(path: &Path) -> Result<String, FmError> {
+    // On Linux, use the trash crate and record the original path
+    // The trash crate moves items but doesn't easily return the trash location
+    trash::delete(path)?;
+    // Return a sentinel — undo on Linux would need trash::os_limited which is
+    // not reliably available, so we return the original path as a marker
+    Ok(path.to_string_lossy().into_owned())
+}
+
+/// Restore files from trash by moving them back to their original locations.
+///
+/// On macOS, this simply renames the trash path back to the original path.
+/// The caller is responsible for ensuring the original parent directory exists.
+#[tauri::command]
+pub fn restore_from_trash(items: Vec<TrashInfo>) -> Result<(), FmError> {
+    for item in &items {
+        let trash_path = PathBuf::from(&item.trash_path);
+        let original_path = PathBuf::from(&item.original_path);
+
+        if !trash_path.exists() {
+            return Err(FmError::NotFound(format!(
+                "Trash item not found: {}",
+                item.trash_path
+            )));
+        }
+
+        // Ensure the parent directory exists
+        if let Some(parent) = original_path.parent() {
+            if !parent.exists() {
+                fs::create_dir_all(parent)?;
+            }
+        }
+
+        fs::rename(&trash_path, &original_path)?;
     }
     Ok(())
 }

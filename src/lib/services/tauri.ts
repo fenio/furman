@@ -75,6 +75,23 @@ export async function checkConflicts(
   return await invoke<string[]>('check_conflicts', { sources, destination });
 }
 
+export interface TrashInfo {
+  original_path: string;
+  trash_path: string;
+}
+
+export async function deleteFilesUndoable(
+  paths: string[]
+): Promise<TrashInfo[]> {
+  return await invoke<TrashInfo[]>('delete_files_undoable', { paths });
+}
+
+export async function restoreFromTrash(
+  items: TrashInfo[]
+): Promise<void> {
+  await invoke('restore_from_trash', { items });
+}
+
 export async function renameFile(
   path: string,
   newName: string

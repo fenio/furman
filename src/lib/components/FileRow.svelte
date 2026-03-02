@@ -7,6 +7,8 @@
   import { statusState } from '$lib/state/status.svelte';
   import { error as logError } from '$lib/services/log';
 
+  import type { ComparisonStatus } from '$lib/state/comparison.svelte';
+
   interface Props {
     entry: FileEntry;
     isSelected: boolean;
@@ -19,13 +21,14 @@
     encrypted?: boolean;
     backend?: PanelBackend;
     s3ConnectionId?: string;
+    comparisonStatus?: ComparisonStatus;
     getSelectedPaths?: () => string[];
     onclick?: (e: MouseEvent) => void;
     ondblclick?: () => void;
     oncontextmenu?: (e: MouseEvent) => void;
   }
 
-  let { entry, isSelected, isCursor, isActive, rowIndex, panelSide, isS3, dirSize, encrypted, backend, s3ConnectionId, getSelectedPaths, onclick, ondblclick, oncontextmenu }: Props = $props();
+  let { entry, isSelected, isCursor, isActive, rowIndex, panelSide, isS3, dirSize, encrypted, backend, s3ConnectionId, comparisonStatus, getSelectedPaths, onclick, ondblclick, oncontextmenu }: Props = $props();
 
   const archiveExtensions = new Set(['zip', 'rar', '7z', 'tar', 'gz', 'tgz', 'bz2', 'xz']);
   const imageExtensions = new Set(['png', 'jpg', 'jpeg', 'gif', 'bmp', 'svg', 'webp', 'ico']);
@@ -96,6 +99,14 @@
       case 'U': return 'git-U';
       default: return '';
     }
+  });
+
+  const comparisonBorderColor = $derived.by(() => {
+    if (!comparisonStatus || comparisonStatus === 'same') return '';
+    if (comparisonStatus === 'new') return 'var(--git-added)';
+    if (comparisonStatus === 'modified') return 'var(--git-modified)';
+    if (comparisonStatus === 'deleted') return 'var(--git-deleted)';
+    return '';
   });
 
   const rowClass = $derived.by(() => {
@@ -181,6 +192,7 @@
   class={rowClass}
   role="row"
   tabindex="-1"
+  style={comparisonBorderColor ? `border-left: 3px solid ${comparisonBorderColor}` : ''}
   onmousedown={handleDragGesture}
   onmouseenter={onMouseEnter}
   onmouseleave={onMouseLeave}

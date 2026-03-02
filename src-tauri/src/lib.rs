@@ -104,6 +104,8 @@ pub fn run() {
             commands::file::delete_files,
             commands::file::rename_file,
             commands::file::check_conflicts,
+            commands::file::delete_files_undoable,
+            commands::file::restore_from_trash,
             commands::file::cancel_file_operation,
             commands::file::pause_file_operation,
             // metadata / content commands

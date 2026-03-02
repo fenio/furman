@@ -1,17 +1,19 @@
 <script lang="ts">
   import type { PanelData } from '$lib/state/panels.svelte';
   import type { FileEntry } from '$lib/types';
+  import type { ComparisonStatus } from '$lib/state/comparison.svelte';
 
   interface Props {
     panel: PanelData;
     isActive: boolean;
     side?: 'left' | 'right';
+    comparisonStatusMap?: Map<string, ComparisonStatus>;
     onEntryClick?: (index: number, e: MouseEvent) => void;
     onEntryDblClick?: (index: number) => void;
     onEntryContextMenu?: (index: number, e: MouseEvent) => void;
   }
 
-  let { panel, isActive, side, onEntryClick, onEntryDblClick, onEntryContextMenu }: Props = $props();
+  let { panel, isActive, side, comparisonStatusMap, onEntryClick, onEntryDblClick, onEntryContextMenu }: Props = $props();
 
   let gridContainer: HTMLDivElement | undefined = $state(undefined);
   let visibleRows = $state(20);
@@ -48,6 +50,16 @@
     panel.gridColumns = rowsPerCol;
   });
 
+  function getComparisonBorder(entry: FileEntry): string {
+    if (!comparisonStatusMap) return '';
+    const status = comparisonStatusMap.get(entry.name);
+    if (!status || status === 'same') return '';
+    if (status === 'new') return 'border-left: 3px solid var(--git-added)';
+    if (status === 'modified') return 'border-left: 3px solid var(--git-modified)';
+    if (status === 'deleted') return 'border-left: 3px solid var(--git-deleted)';
+    return '';
+  }
+
   function getIcon(entry: FileEntry): string {
     if (entry.name === '..') return '\u2B06';
     if (entry.is_dir) return '\u{1F4C1}';
@@ -78,6 +90,7 @@
       class:cursor-active={i === panel.cursorIndex && isActive}
       class:cursor-inactive={i === panel.cursorIndex && !isActive}
       class:selected={panel.selectedPaths.has(entry.path)}
+      style={getComparisonBorder(entry)}
       onclick={(e) => onEntryClick?.(i, e)}
       ondblclick={() => onEntryDblClick?.(i)}
       oncontextmenu={(e) => onEntryContextMenu?.(i, e)}

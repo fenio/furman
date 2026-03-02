@@ -10,7 +10,8 @@
   import { s3BookmarksState } from '$lib/state/s3bookmarks.svelte';
   import { sftpBookmarksState } from '$lib/state/sftpbookmarks.svelte';
   import { connectionsState } from '$lib/state/connections.svelte';
-  import { copyFiles, moveFiles, deleteFiles, renameFile, createDirectory, openFileDefault, openInEditor, checkConflicts } from '$lib/services/tauri';
+  import { copyFiles, moveFiles, deleteFiles, renameFile, createDirectory, openFileDefault, openInEditor, checkConflicts, deleteFilesUndoable, restoreFromTrash } from '$lib/services/tauri';
+  import { operationsState } from '$lib/state/operations.svelte';
   import { statusState } from '$lib/state/status.svelte';
   import { transfersState } from '$lib/state/transfers.svelte';
   import { s3Download, s3Upload, s3CopyObjects, s3DeleteObjects, s3RenameObject, s3CreateFolder, s3PresignUrl, s3DownloadToTemp, s3BulkChangeStorageClass, s3IsObjectEncrypted, type EncryptionConfig } from '$lib/services/s3';
@@ -23,6 +24,9 @@
   import { dragState } from '$lib/services/drag';
   import type { PanelData } from '$lib/state/panels.svelte';
   import type { ProgressEvent, S3ConnectionInfo, S3ProviderCapabilities, SyncEntry } from '$lib/types';
+  import { commandRegistry, type Command } from '$lib/state/commands.svelte';
+  import { platform } from '$lib/state/platform.svelte';
+  import { comparisonState } from '$lib/state/comparison.svelte';
 
   let { children } = $props();
 
@@ -122,6 +126,168 @@
     }
   });
 
+  // ── Command Palette Registry ──────────────────────────────────────────────
+  function populateCommandRegistry() {
+    const mod = platform.mod;
+    const shift = platform.shift;
+    const alt = platform.alt;
+    const isS3 = () => panels.active.backend === 's3';
+    const isSftp = () => panels.active.backend === 'sftp';
+    const isLocal = () => panels.active.backend === 'local';
+
+    const cmds: Command[] = [
+      // File operations
+      { id: 'rename', label: 'Rename', shortcut: `${mod}R`, category: 'File', execute: () => handleRename() },
+      { id: 'copy', label: 'Copy to other panel', shortcut: `${mod}C`, category: 'File', execute: () => handleCopy() },
+      { id: 'move', label: 'Move to other panel', shortcut: `${mod}M`, category: 'File', execute: () => handleMove() },
+      { id: 'delete', label: 'Delete', shortcut: `${mod}⌫`, category: 'File', execute: () => handleDelete() },
+      { id: 'mkdir', label: 'Create directory', shortcut: `${mod}N`, category: 'File', execute: () => handleMkDir() },
+      { id: 'properties', label: 'Properties', shortcut: `${mod}I`, category: 'File', execute: () => handleProperties() },
+      { id: 'view', label: 'View file', shortcut: `${mod}3`, category: 'File', execute: () => quickLook() },
+      { id: 'edit', label: 'Edit file', shortcut: `${mod}E`, category: 'File', execute: () => {
+        const entry = panels.active.currentEntry;
+        if (entry && !entry.is_dir && entry.name !== '..') {
+          if (panels.active.backend === 's3' && panels.active.s3Connection) {
+            openS3Editor(entry.path, panels.active.s3Connection.connectionId);
+          } else if (panels.active.backend === 'sftp' && panels.active.sftpConnection) {
+            openSftpEditor(entry.path, panels.active.sftpConnection.connectionId);
+          } else {
+            openEditor(entry.path);
+          }
+        }
+      }},
+      { id: 'select-all', label: 'Select / Deselect all', shortcut: '*', category: 'File', execute: () => {
+        const active = panels.active;
+        const allCount = active.entries.filter(e => e.name !== '..').length;
+        if (active.selectedPaths.size === allCount) active.deselectAll(); else active.selectAll();
+      }},
+
+      // Navigation
+      { id: 'go-parent', label: 'Go to parent directory', shortcut: 'Backspace', category: 'Navigation', execute: () => {
+        const parentEntry = panels.active.filteredSortedEntries.find((en) => en.name === '..');
+        if (parentEntry) {
+          const currentDirName = panels.active.path.replace(/\/+$/, '').split('/').pop() ?? '';
+          panels.active.loadDirectory(parentEntry.path, currentDirName);
+        }
+      }},
+      { id: 'switch-panel', label: 'Switch active panel', shortcut: 'Tab', category: 'Navigation', execute: () => panels.switchPanel() },
+      { id: 'go-home', label: 'Jump to first entry', shortcut: 'Home', category: 'Navigation', execute: () => panels.active.moveCursorTo(0) },
+      { id: 'go-end', label: 'Jump to last entry', shortcut: 'End', category: 'Navigation', execute: () => {
+        panels.active.moveCursorTo(panels.active.filteredSortedEntries.length - 1);
+      }},
+
+      // Panel
+      { id: 'toggle-layout', label: 'Toggle single / dual pane', shortcut: `${mod}P`, category: 'Panel', execute: () => appState.toggleLayout() },
+      { id: 'toggle-sidebar', label: 'Toggle sidebar', shortcut: `${mod}B`, category: 'Panel', execute: () => {
+        if (sidebarState.focused) sidebarState.toggle();
+        else if (sidebarState.visible) sidebarState.focus();
+        else sidebarState.toggle();
+      }},
+      { id: 'save-workspace', label: 'Save workspace', shortcut: `${mod}D`, category: 'Panel', execute: () => {
+        appState.showInput('Workspace name:', '', (name) => {
+          appState.closeModal();
+          if (!name) return;
+          workspacesState.save({
+            name,
+            leftPath: panels.left.path,
+            rightPath: panels.right.path,
+            activePanel: panels.activePanel,
+            leftTabs: panels.leftTabs.map(t => t.path),
+            rightTabs: panels.rightTabs.map(t => t.path),
+            leftActiveTab: panels.leftActiveTab,
+            rightActiveTab: panels.rightActiveTab,
+          });
+        });
+      }, enabled: isLocal },
+      { id: 'toggle-transfers', label: 'Toggle transfer panel', shortcut: `${mod}J`, category: 'Panel', execute: () => transfersState.toggle() },
+      { id: 'sync', label: 'Sync directories', shortcut: `${mod}Y`, category: 'Panel', execute: () => {
+        const src = panels.active;
+        const dst = panels.inactive;
+        if (src.backend !== 'archive' && dst.backend !== 'archive') {
+          appState.showSync(
+            { backend: src.backend, path: src.path, s3Id: src.s3Connection?.connectionId ?? '' },
+            { backend: dst.backend, path: dst.path, s3Id: dst.s3Connection?.connectionId ?? '' },
+          );
+        }
+      }},
+      { id: 'new-tab', label: 'New tab', shortcut: `${mod}${alt}T`, category: 'Panel', execute: () => {
+        const side = panels.activePanel;
+        const path = panels.active.path;
+        const tab = panels.addTab(side);
+        tab.loadDirectory(path);
+      }},
+      { id: 'close-tab', label: 'Close tab', shortcut: `${mod}${alt}W`, category: 'Panel', execute: () => {
+        const side = panels.activePanel;
+        const tabs = side === 'left' ? panels.leftTabs : panels.rightTabs;
+        const activeIdx = side === 'left' ? panels.leftActiveTab : panels.rightActiveTab;
+        if (tabs.length > 1) panels.closeTab(side, activeIdx);
+      }},
+
+      // Terminal
+      { id: 'terminal-bottom', label: 'Bottom terminal', shortcut: `${mod}T`, category: 'Terminal', execute: () => terminalState.toggle('bottom') },
+      { id: 'terminal-inpane', label: 'In-pane terminal', shortcut: `${mod}${shift}T`, category: 'Terminal', execute: () => {
+        terminalState.inPaneSlot = panels.activePanel === 'left' ? 'right' : 'left';
+        terminalState.toggle('in-pane');
+      }},
+      { id: 'terminal-quake', label: 'Quake console', shortcut: `${mod}\``, category: 'Terminal', execute: () => terminalState.toggle('quake') },
+
+      // Display
+      { id: 'toggle-theme', label: 'Toggle dark / light theme', shortcut: `${mod}${shift}L`, category: 'Display', execute: () => appState.toggleTheme() },
+      { id: 'preferences', label: 'Preferences', category: 'Display', execute: () => appState.showPreferences() },
+      { id: 'shortcuts', label: 'Keyboard shortcuts', shortcut: `${mod}/`, category: 'Display', execute: () => { appState.modal = 'shortcuts'; } },
+
+      // Search
+      { id: 'search', label: 'Search files', shortcut: `${mod}F`, category: 'Search', execute: () => {
+        const active = panels.active;
+        if (active.backend === 'local' || active.backend === 's3') {
+          appState.showSearch(active.path, active.backend, active.s3Connection?.connectionId ?? '');
+        }
+      }},
+
+      // Connection
+      { id: 'connect', label: 'Connect / Disconnect', shortcut: `${mod}S`, category: 'Connection', execute: () => {
+        const active = panels.active;
+        if (active.backend === 's3') active.disconnectS3();
+        else if (active.backend === 'sftp') active.disconnectSftp();
+        else appState.showConnectionManager();
+      }},
+      { id: 'connection-manager', label: 'Connection Manager', category: 'Connection', execute: () => appState.showConnectionManager() },
+
+      // S3
+      { id: 's3-presign', label: 'Generate presigned URL', shortcut: `${mod}U`, category: 'S3', execute: () => handlePresignUrl(), enabled: isS3 },
+      { id: 's3-copy-uri', label: 'Copy S3 URI', shortcut: `${mod}K`, category: 'S3', execute: () => handleCopyS3Uri(), enabled: isS3 },
+      { id: 's3-storage-class', label: 'Bulk change storage class', shortcut: `${mod}L`, category: 'S3', execute: () => handleBulkStorageClassChange(), enabled: isS3 },
+      { id: 's3-bucket-props', label: 'Bucket properties', shortcut: `${mod}${shift}I`, category: 'S3', execute: () => handleBucketProperties(), enabled: isS3 },
+      { id: 's3-bookmark', label: 'Bookmark S3 path', shortcut: `${mod}D`, category: 'S3', execute: () => handleBookmarkS3(), enabled: isS3 },
+      { id: 'sftp-bookmark', label: 'Bookmark SFTP path', shortcut: `${mod}D`, category: 'S3', execute: () => handleBookmarkSftp(), enabled: isSftp },
+
+      // Undo
+      { id: 'undo', label: 'Undo last operation', shortcut: `${mod}Z`, category: 'File', execute: () => executeUndo() },
+
+      // Compare
+      { id: 'compare', label: 'Compare directories', shortcut: `${mod}${shift}D`, category: 'Panel', execute: () => {
+        if (comparisonState.active) {
+          comparisonState.stopComparison();
+        } else {
+          const left = panels.left;
+          const right = panels.right;
+          comparisonState.startComparison(
+            left.path, left.backend, left.s3Connection?.connectionId ?? '',
+            right.path, right.backend, right.s3Connection?.connectionId ?? '',
+          );
+        }
+      }},
+
+      // Quit
+      { id: 'quit', label: 'Quit Furman', shortcut: `${mod}Q`, category: 'File', execute: () => handleQuit() },
+    ];
+
+    commandRegistry.length = 0;
+    commandRegistry.push(...cmds);
+  }
+
+  populateCommandRegistry();
+
   function handleSyncExecuteEvent(e: Event) {
     const detail = (e as CustomEvent).detail as {
       entries: SyncEntry[];
@@ -142,6 +308,37 @@
     else if (key === 'bulk-storage') handleBulkStorageClassChange();
   }
 
+  async function executeUndo() {
+    const op = operationsState.undo();
+    if (!op) return;
+
+    try {
+      if (op.type === 'delete' && op.trashItems && op.trashItems.length > 0) {
+        await restoreFromTrash(op.trashItems);
+        statusState.setMessage(`Restored ${op.trashItems.length} file(s)`);
+      } else if (op.type === 'rename' && op.newPath && op.originalName) {
+        await renameFile(op.newPath, op.originalName);
+        statusState.setMessage(`Renamed back to ${op.originalName}`);
+      } else {
+        statusState.setMessage('Cannot undo this operation');
+        return;
+      }
+      // Reload both panels
+      const reloads: Promise<void>[] = [];
+      if (panels.active.backend !== 'archive') reloads.push(panels.active.loadDirectory(panels.active.path));
+      if (panels.inactive.backend !== 'archive') reloads.push(panels.inactive.loadDirectory(panels.inactive.path));
+      await Promise.all(reloads);
+    } catch (err: unknown) {
+      error(String(err));
+      statusState.setMessage('Undo failed: ' + String(err));
+    }
+  }
+
+  function handleUndoEvent() {
+    executeUndo();
+  }
+
+  window.addEventListener('undo-last-operation', handleUndoEvent);
   window.addEventListener('sync-execute', handleSyncExecuteEvent);
   window.addEventListener('context-action', handleContextAction);
 
@@ -156,6 +353,7 @@
 
   onDestroy(() => {
     dragDropUnlisten?.();
+    window.removeEventListener('undo-last-operation', handleUndoEvent);
     window.removeEventListener('sync-execute', handleSyncExecuteEvent);
     window.removeEventListener('transfer-done', handleTransferDone);
     window.removeEventListener('context-action', handleContextAction);
@@ -794,21 +992,45 @@
     appState.showConfirm(`Delete ${sources.length} item(s)?\n${names}`, async () => {
       appState.closeModal();
       const fileCount = sources.length;
+      const backend = active.backend;
       try {
-        if (active.backend === 's3' && active.s3Connection) {
+        if (backend === 's3' && active.s3Connection) {
           await s3DeleteObjects(active.s3Connection.connectionId, sources);
-        } else if (active.backend === 'sftp' && active.sftpConnection) {
+        } else if (backend === 'sftp' && active.sftpConnection) {
           await sftpDelete(active.sftpConnection.connectionId, sources);
         } else {
-          await deleteFiles(sources, true);
+          // Local: use undoable delete to get trash info
+          const trashItems = await deleteFilesUndoable(sources);
+          operationsState.push({
+            id: Date.now().toString(36),
+            type: 'delete',
+            timestamp: Date.now(),
+            backend: 'local',
+            trashItems,
+            sourcePaths: sources,
+            undone: false,
+          });
+          statusState.setMessage(`Deleted ${fileCount} file(s)`);
+          await active.loadDirectory(active.path);
+          return;
         }
       } catch (err: unknown) {
         error(String(err));
         statusState.setMessage('Delete failed');
-      } finally {
-        statusState.setMessage(`Deleted ${fileCount} file(s)`);
         await active.loadDirectory(active.path);
+        return;
       }
+      // Non-local: push operation without undo support
+      operationsState.push({
+        id: Date.now().toString(36),
+        type: 'delete',
+        timestamp: Date.now(),
+        backend,
+        sourcePaths: sources,
+        undone: false,
+      });
+      statusState.setMessage(`Deleted ${fileCount} file(s)`);
+      await active.loadDirectory(active.path);
     });
   }
 
@@ -850,14 +1072,31 @@
     appState.showInput('Rename to:', entry.name, async (newName: string) => {
       appState.closeModal();
       if (!newName || newName === entry.name) return;
+      const backend = active.backend;
+      const originalName = entry.name;
+      const originalPath = entry.path;
       try {
-        if (active.backend === 's3' && active.s3Connection) {
+        if (backend === 's3' && active.s3Connection) {
           await s3RenameObject(active.s3Connection.connectionId, entry.path, newName);
-        } else if (active.backend === 'sftp' && active.sftpConnection) {
+        } else if (backend === 'sftp' && active.sftpConnection) {
           await sftpRename(active.sftpConnection.connectionId, entry.path, newName);
         } else {
           await renameFile(entry.path, newName);
         }
+        // Compute new path for undo
+        const parent = originalPath.substring(0, originalPath.lastIndexOf('/'));
+        const newPath = parent + '/' + newName;
+        operationsState.push({
+          id: Date.now().toString(36),
+          type: 'rename',
+          timestamp: Date.now(),
+          backend,
+          originalPath,
+          newPath,
+          originalName,
+          newName,
+          undone: false,
+        });
       } catch (err: unknown) {
         error(String(err));
       } finally {
@@ -1382,11 +1621,43 @@
       }
     }
 
+    // Command Palette — Cmd+Shift+P (before modal guard)
+    if (cmd && e.shiftKey && e.code === 'KeyP') {
+      e.preventDefault();
+      appState.showCommandPalette();
+      return;
+    }
+
+    // Directory Comparison — Cmd+Shift+D (before modal guard)
+    if (cmd && e.shiftKey && e.code === 'KeyD') {
+      e.preventDefault();
+      if (comparisonState.active) {
+        comparisonState.stopComparison();
+      } else {
+        const left = panels.left;
+        const right = panels.right;
+        comparisonState.startComparison(
+          left.path, left.backend, left.s3Connection?.connectionId ?? '',
+          right.path, right.backend, right.s3Connection?.connectionId ?? '',
+        );
+      }
+      return;
+    }
+
     // ESC hides quake console
     if (e.key === 'Escape' && terminalState.displayMode === 'quake') {
       e.preventDefault();
       terminalState.displayMode = 'none';
       return;
+    }
+
+    // Undo — Cmd+Z (before modal guard, after xterm check)
+    if (cmd && e.key === 'z' && !e.shiftKey && !isXtermFocused()) {
+      if (appState.modal === 'none' || appState.modal === 'menu' || appState.modal === 'volume-selector') {
+        e.preventDefault();
+        executeUndo();
+        return;
+      }
     }
 
     // If xterm is focused, let all other keys pass through to the terminal
@@ -1606,7 +1877,10 @@
 
     switch (e.key) {
       case 'Escape':
-        if (active.filterText) {
+        if (comparisonState.active) {
+          e.preventDefault();
+          comparisonState.stopComparison();
+        } else if (active.filterText) {
           e.preventDefault();
           active.clearFilter();
         }
