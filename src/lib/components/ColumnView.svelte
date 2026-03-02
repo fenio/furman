@@ -13,7 +13,7 @@
     onEntryContextMenu?: (index: number, e: MouseEvent) => void;
   }
 
-  let { panel, isActive, side, comparisonStatusMap, onEntryClick, onEntryDblClick, onEntryContextMenu }: Props = $props();
+  let { panel, isActive, side: _side, comparisonStatusMap, onEntryClick, onEntryDblClick, onEntryContextMenu }: Props = $props();
 
   let gridContainer: HTMLDivElement | undefined = $state(undefined);
   let visibleRows = $state(20);

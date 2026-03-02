@@ -44,10 +44,7 @@ pub fn search_files(
 }
 
 #[tauri::command]
-pub fn cancel_search(
-    id: String,
-    state: tauri::State<'_, SearchState>,
-) -> Result<(), FmError> {
+pub fn cancel_search(id: String, state: tauri::State<'_, SearchState>) -> Result<(), FmError> {
     let map = state.0.lock().map_err(|e| FmError::Other(e.to_string()))?;
     if let Some(flag) = map.get(&id) {
         flag.store(true, Ordering::Relaxed);

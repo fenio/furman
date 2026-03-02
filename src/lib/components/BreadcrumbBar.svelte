@@ -104,6 +104,7 @@
   // Auto-scroll to the right end on path change
   $effect(() => {
     // Track path to re-run on change
+    // eslint-disable-next-line @typescript-eslint/no-unused-expressions
     path;
     tick().then(() => {
       if (scrollContainer) {

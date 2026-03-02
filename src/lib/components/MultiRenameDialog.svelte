@@ -1,5 +1,6 @@
 <script lang="ts">
   import type { FileEntry, PanelBackend } from '$lib/types';
+  import { SvelteMap } from 'svelte/reactivity';
   import { renameFile } from '$lib/services/tauri';
   import { s3RenameObject } from '$lib/services/s3';
   import { sftpRename } from '$lib/services/sftp';
@@ -109,7 +110,7 @@
   });
 
   const conflicts = $derived.by(() => {
-    const names = new Map<string, number>();
+    const names = new SvelteMap<string, number>();
     const result: boolean[] = [];
     for (const item of preview) {
       const count = (names.get(item.newName) ?? 0) + 1;
@@ -189,7 +190,6 @@
   }
 </script>
 
-<!-- svelte-ignore a11y_no_noninteractive_tabindex -->
 <div
   class="dialog-overlay no-select"
   tabindex="0"
@@ -293,7 +293,7 @@
         </div>
         {#if errors.length > 0}
           <div class="error-list">
-            {#each errors as err}
+            {#each errors as err (err.name)}
               <div class="error-item">
                 <span class="error-name">{err.name}</span>: {err.error}
               </div>

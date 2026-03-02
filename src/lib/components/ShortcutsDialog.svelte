@@ -144,7 +144,6 @@
   const currentTab = $derived(tabs.find((t) => t.id === activeTab)!);
 </script>
 
-<!-- svelte-ignore a11y_no_noninteractive_tabindex -->
 <div
   class="dialog-overlay no-select"
   onkeydown={handleKeydown}
@@ -156,7 +155,7 @@
   <div class="dialog-box">
     <div class="dialog-title">Keyboard Shortcuts</div>
     <div class="tab-bar">
-      {#each tabs as tab}
+      {#each tabs as tab (tab.id)}
         <button
           class="tab-btn"
           class:active={activeTab === tab.id}
@@ -165,9 +164,9 @@
       {/each}
     </div>
     <div class="dialog-body">
-      {#each currentTab.groups as group}
+      {#each currentTab.groups as group (group.title)}
         <div class="section-title">{group.title}</div>
-        {#each group.shortcuts as shortcut}
+        {#each group.shortcuts as shortcut (shortcut.keys)}
           <div class="shortcut-row">
             <kbd class="keys">{shortcut.keys}</kbd>
             <span class="desc">{shortcut.desc}</span>

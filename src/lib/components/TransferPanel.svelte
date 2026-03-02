@@ -90,7 +90,6 @@
     <span class="transfer-title">
       Transfers{#if activeCount > 0} ({activeCount} active{#if queuedCount > 0}, {queuedCount} queued{/if}){:else if queuedCount > 0} ({queuedCount} queued){/if}
     </span>
-    <!-- svelte-ignore a11y_click_events_have_key_events -->
     <div class="transfer-header-buttons" onclick={(e) => e.stopPropagation()} role="none">
       <select class="tp-concurrency" value={transfersState.maxConcurrent} onchange={handleConcurrencyChange} title="Max concurrent transfers">
         <option value={1}>1</option>

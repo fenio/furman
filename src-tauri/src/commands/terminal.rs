@@ -83,9 +83,13 @@ pub fn terminal_spawn(
     // Detect shell from $SHELL, fallback to platform default
     let shell = std::env::var("SHELL").unwrap_or_else(|_| {
         #[cfg(target_os = "macos")]
-        { "/bin/zsh".to_string() }
+        {
+            "/bin/zsh".to_string()
+        }
         #[cfg(target_os = "linux")]
-        { "/bin/bash".to_string() }
+        {
+            "/bin/bash".to_string()
+        }
     });
 
     let mut cmd = CommandBuilder::new(&shell);
@@ -232,10 +236,7 @@ pub fn terminal_resize(
 
 /// Close (kill) a PTY session and remove it from state.
 #[tauri::command]
-pub fn terminal_close(
-    id: String,
-    state: State<'_, TerminalState>,
-) -> Result<(), FmError> {
+pub fn terminal_close(id: String, state: State<'_, TerminalState>) -> Result<(), FmError> {
     let mut map = state
         .0
         .lock()

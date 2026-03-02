@@ -192,7 +192,6 @@
   let hasTagValues = $derived(tags.some(t => t.key.trim() !== ''));
 </script>
 
-<!-- svelte-ignore a11y_no_noninteractive_tabindex -->
 <div
   class="dialog-overlay no-select"
   role="dialog"
@@ -238,7 +237,7 @@
               <span class="meta-label">Custom Metadata</span>
               <button class="version-action-btn" onclick={addCustomMeta}>+ Add</button>
             </div>
-            {#each customMeta as meta, i}
+            {#each customMeta as meta, i (i)}
               <div class="tag-row">
                 <input class="tag-input" type="text" bind:value={meta.key} placeholder="key" />
                 <input class="tag-input" type="text" bind:value={meta.value} placeholder="value" />
@@ -265,7 +264,7 @@
             </label>
           </div>
           <div class="tag-editor">
-            {#each tags as tag, i}
+            {#each tags as tag, i (i)}
               <div class="tag-row">
                 <input class="tag-input" type="text" bind:value={tag.key} placeholder="key" />
                 <input class="tag-input" type="text" bind:value={tag.value} placeholder="value" />
@@ -312,7 +311,7 @@
             </button>
             {#if showFailedList}
               <div class="failed-list">
-                {#each failedKeys as key}
+                {#each failedKeys as key (key)}
                   <div class="failed-key">{key}</div>
                 {/each}
               </div>

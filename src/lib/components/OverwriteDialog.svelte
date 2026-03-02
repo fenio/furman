@@ -70,7 +70,7 @@
         {files.length} file(s) already exist at destination:
       </p>
       <div class="file-list">
-        {#each files as f}
+        {#each files as f (f)}
           <div class="file-item">{f}</div>
         {/each}
       </div>

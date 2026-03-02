@@ -26,7 +26,9 @@ pub fn git_repo_info(path: String) -> Result<Option<GitRepoInfo>, FmError> {
         .args(["-C", &path, "branch", "--show-current"])
         .output()
         .map_err(|e| FmError::Other(e.to_string()))?;
-    let branch = String::from_utf8_lossy(&branch_out.stdout).trim().to_string();
+    let branch = String::from_utf8_lossy(&branch_out.stdout)
+        .trim()
+        .to_string();
     let branch = if branch.is_empty() {
         // Detached HEAD — show short SHA
         let head_out = Command::new("git")
@@ -34,14 +36,25 @@ pub fn git_repo_info(path: String) -> Result<Option<GitRepoInfo>, FmError> {
             .output()
             .map_err(|e| FmError::Other(e.to_string()))?;
         let sha = String::from_utf8_lossy(&head_out.stdout).trim().to_string();
-        if sha.is_empty() { "HEAD".to_string() } else { sha }
+        if sha.is_empty() {
+            "HEAD".to_string()
+        } else {
+            sha
+        }
     } else {
         branch
     };
 
     // Ahead / behind
     let (ahead, behind) = match Command::new("git")
-        .args(["-C", &path, "rev-list", "--count", "--left-right", "@{upstream}...HEAD"])
+        .args([
+            "-C",
+            &path,
+            "rev-list",
+            "--count",
+            "--left-right",
+            "@{upstream}...HEAD",
+        ])
         .output()
     {
         Ok(o) if o.status.success() => {
@@ -87,10 +100,10 @@ pub fn git_pull(path: String) -> Result<String, FmError> {
     let stderr = String::from_utf8_lossy(&output.stderr).to_string();
 
     if !output.status.success() {
-        return Err(FmError::Other(format!("{}{}", stdout, stderr)));
+        return Err(FmError::Other(format!("{stdout}{stderr}")));
     }
 
-    Ok(format!("{}{}", stdout, stderr))
+    Ok(format!("{stdout}{stderr}"))
 }
 
 #[tauri::command]
@@ -126,8 +139,8 @@ pub fn git_checkout(path: String, branch: String) -> Result<String, FmError> {
     let stderr = String::from_utf8_lossy(&output.stderr).to_string();
 
     if !output.status.success() {
-        return Err(FmError::Other(format!("{}{}", stdout, stderr)));
+        return Err(FmError::Other(format!("{stdout}{stderr}")));
     }
 
-    Ok(format!("{}{}", stdout, stderr).trim().to_string())
+    Ok(format!("{stdout}{stderr}").trim().to_string())
 }

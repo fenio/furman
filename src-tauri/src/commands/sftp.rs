@@ -1,7 +1,7 @@
 use crate::commands::file::{FileOpState, OpFlags};
 use crate::models::{DirListing, FmError, ProgressEvent, TransferCheckpoint};
-use crate::sftp::{self, sftperr, SftpService, SftpState};
 use crate::sftp::helpers::strip_sftp_prefix;
+use crate::sftp::{self, sftperr, SftpService, SftpState};
 use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 use tauri::ipc::Channel;
@@ -13,7 +13,9 @@ use tauri::State;
 /// before any async work (same pattern as S3's get_service).
 fn get_service(state: &State<'_, SftpState>, id: &str) -> Result<SftpService, FmError> {
     let map = state.0.lock().map_err(|e| sftperr(e.to_string()))?;
-    let conn = map.get(id).ok_or_else(|| sftperr("SFTP connection not found"))?;
+    let conn = map
+        .get(id)
+        .ok_or_else(|| sftperr("SFTP connection not found"))?;
     Ok(SftpService::new(
         conn.session.clone(),
         conn.host.clone(),
@@ -64,10 +66,7 @@ pub async fn sftp_connect(
             // often fails before the user can approve it, so retry once
             // after a short pause.
             log::info!(
-                "SFTP connect to {}:{} failed ({}), retrying once…",
-                host,
-                port,
-                first_err
+                "SFTP connect to {host}:{port} failed ({first_err}), retrying once…"
             );
             tokio::time::sleep(std::time::Duration::from_secs(3)).await;
             sftp::client::build_sftp_client(
@@ -120,7 +119,10 @@ pub async fn sftp_delete(
     paths: Vec<String>,
 ) -> Result<(), FmError> {
     let svc = get_service(&state, &id)?;
-    let remote_paths: Vec<String> = paths.iter().map(|p| strip_sftp_prefix(p).to_string()).collect();
+    let remote_paths: Vec<String> = paths
+        .iter()
+        .map(|p| strip_sftp_prefix(p).to_string())
+        .collect();
     svc.delete(&remote_paths).await
 }
 
@@ -158,10 +160,7 @@ pub async fn sftp_download(
     channel: Channel<ProgressEvent>,
 ) -> Result<Option<TransferCheckpoint>, FmError> {
     let flags = {
-        let mut ops = file_op_state
-            .0
-            .lock()
-            .map_err(|e| sftperr(e.to_string()))?;
+        let mut ops = file_op_state.0.lock().map_err(|e| sftperr(e.to_string()))?;
         let flags = Arc::new(OpFlags {
             cancel: AtomicBool::new(false),
             pause: AtomicBool::new(false),
@@ -171,16 +170,15 @@ pub async fn sftp_download(
     };
 
     let svc = get_service(&state, &id)?;
-    let remote_paths: Vec<String> = keys.iter().map(|p| strip_sftp_prefix(p).to_string()).collect();
+    let remote_paths: Vec<String> = keys
+        .iter()
+        .map(|p| strip_sftp_prefix(p).to_string())
+        .collect();
 
     let result = svc
-        .download(
-            &remote_paths,
-            &destination,
-            &op_id,
-            &flags.cancel,
-            &|evt| { let _ = channel.send(evt); },
-        )
+        .download(&remote_paths, &destination, &op_id, &flags.cancel, &|evt| {
+            let _ = channel.send(evt);
+        })
         .await;
 
     // Clean up
@@ -204,10 +202,7 @@ pub async fn sftp_upload(
     channel: Channel<ProgressEvent>,
 ) -> Result<Option<TransferCheckpoint>, FmError> {
     let flags = {
-        let mut ops = file_op_state
-            .0
-            .lock()
-            .map_err(|e| sftperr(e.to_string()))?;
+        let mut ops = file_op_state.0.lock().map_err(|e| sftperr(e.to_string()))?;
         let flags = Arc::new(OpFlags {
             cancel: AtomicBool::new(false),
             pause: AtomicBool::new(false),
@@ -220,13 +215,9 @@ pub async fn sftp_upload(
     let remote_dest = strip_sftp_prefix(&remote_prefix);
 
     let result = svc
-        .upload(
-            &sources,
-            remote_dest,
-            &op_id,
-            &flags.cancel,
-            &|evt| { let _ = channel.send(evt); },
-        )
+        .upload(&sources, remote_dest, &op_id, &flags.cancel, &|evt| {
+            let _ = channel.send(evt);
+        })
         .await;
 
     // Clean up

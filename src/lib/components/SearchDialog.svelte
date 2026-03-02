@@ -236,7 +236,7 @@
       {/if}
 
       <div class="results-list" bind:this={resultsEl}>
-        {#each results as r, i}
+        {#each results as r, i (i)}
           <!-- svelte-ignore a11y_click_events_have_key_events -->
           <div
             class="result-row"

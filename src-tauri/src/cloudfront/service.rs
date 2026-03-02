@@ -1,14 +1,14 @@
-use aws_sdk_cloudfront::Client as CfClient;
-use aws_sdk_cloudfront::types::{
-    Aliases, AllowedMethods, CustomErrorResponse as AwsCustomErrorResponse,
-    CustomErrorResponses, DefaultCacheBehavior, DistributionConfig, InvalidationBatch,
-    Method, Origin, Origins, Paths, ViewerProtocolPolicy,
-};
 use crate::models::{
     CfCustomErrorResponse, CfDistribution, CfDistributionConfig, CfDistributionSummary,
     CfInvalidation, FmError,
 };
 use crate::s3::s3err;
+use aws_sdk_cloudfront::types::{
+    Aliases, AllowedMethods, CustomErrorResponse as AwsCustomErrorResponse, CustomErrorResponses,
+    DefaultCacheBehavior, DistributionConfig, InvalidationBatch, Method, Origin, Origins, Paths,
+    ViewerProtocolPolicy,
+};
+use aws_sdk_cloudfront::Client as CfClient;
 
 /// AWS Managed CachingOptimized cache policy ID.
 const CACHING_OPTIMIZED_POLICY: &str = "658327ea-f89d-4fab-a63d-7e88639e58f6";
@@ -28,7 +28,11 @@ fn format_datetime(dt: &aws_sdk_cloudfront::primitives::DateTime) -> String {
 
 impl CloudFrontService {
     pub fn new(client: CfClient, bucket: String, region: String) -> Self {
-        Self { client, bucket, region }
+        Self {
+            client,
+            bucket,
+            region,
+        }
     }
 
     fn origin_domain(&self) -> String {
@@ -51,13 +55,21 @@ impl CloudFrontService {
             if let Some(m) = &marker {
                 req = req.marker(m.as_str());
             }
-            let resp = req.send().await.map_err(|e| s3err(format!("CloudFront ListDistributions: {e}")))?;
+            let resp = req
+                .send()
+                .await
+                .map_err(|e| s3err(format!("CloudFront ListDistributions: {e}")))?;
 
             if let Some(list) = resp.distribution_list() {
                 for item in list.items() {
                     // Filter: only include distributions whose origins reference this bucket
-                    let matches = item.origins()
-                        .map(|o| o.items().iter().any(|origin| origin.domain_name() == origin_domain))
+                    let matches = item
+                        .origins()
+                        .map(|o| {
+                            o.items()
+                                .iter()
+                                .any(|origin| origin.domain_name() == origin_domain)
+                        })
                         .unwrap_or(false);
                     if !matches {
                         continue;
@@ -65,7 +77,7 @@ impl CloudFrontService {
 
                     let aliases: Vec<String> = item
                         .aliases()
-                        .map(|a| a.items().iter().map(|s| s.to_string()).collect())
+                        .map(|a| a.items().to_vec())
                         .unwrap_or_default();
 
                     results.push(CfDistributionSummary {
@@ -82,7 +94,7 @@ impl CloudFrontService {
                 }
 
                 if list.is_truncated() {
-                    marker = list.next_marker().map(|s| s.to_string());
+                    marker = list.next_marker().map(std::string::ToString::to_string);
                     if marker.is_none() {
                         break;
                     }
@@ -100,7 +112,8 @@ impl CloudFrontService {
     // ── Get Distribution ──────────────────────────────────────────────────
 
     pub async fn get_distribution(&self, id: &str) -> Result<CfDistribution, FmError> {
-        let resp = self.client
+        let resp = self
+            .client
             .get_distribution()
             .id(id)
             .send()
@@ -108,13 +121,16 @@ impl CloudFrontService {
             .map_err(|e| s3err(format!("CloudFront GetDistribution: {e}")))?;
 
         let etag = resp.e_tag().unwrap_or_default().to_string();
-        let dist = resp.distribution().ok_or_else(|| s3err("No distribution in response"))?;
-        let config = dist.distribution_config()
+        let dist = resp
+            .distribution()
+            .ok_or_else(|| s3err("No distribution in response"))?;
+        let config = dist
+            .distribution_config()
             .ok_or_else(|| s3err("No distribution config"))?;
 
         let aliases: Vec<String> = config
             .aliases()
-            .map(|a| a.items().iter().map(|s| s.to_string()).collect())
+            .map(|a| a.items().to_vec())
             .unwrap_or_default();
 
         let custom_error_responses: Vec<CfCustomErrorResponse> = config
@@ -124,23 +140,26 @@ impl CloudFrontService {
                     .iter()
                     .map(|e| CfCustomErrorResponse {
                         error_code: e.error_code(),
-                        response_page_path: e.response_page_path().map(|s| s.to_string()),
-                        response_code: e.response_code().map(|s| s.to_string()),
+                        response_page_path: e.response_page_path().map(std::string::ToString::to_string),
+                        response_code: e.response_code().map(std::string::ToString::to_string),
                         error_caching_min_ttl: e.error_caching_min_ttl(),
                     })
                     .collect()
             })
             .unwrap_or_default();
 
-        let viewer_policy = config.default_cache_behavior()
+        let viewer_policy = config
+            .default_cache_behavior()
             .map(|dcb| dcb.viewer_protocol_policy().as_str().to_string())
             .unwrap_or_else(|| "allow-all".to_string());
 
-        let price_class = config.price_class()
+        let price_class = config
+            .price_class()
             .map(|pc| pc.as_str().to_string())
             .unwrap_or_else(|| "PriceClass_All".to_string());
 
-        let http_version = config.http_version()
+        let http_version = config
+            .http_version()
             .map(|hv| hv.as_str().to_string())
             .unwrap_or_else(|| "http2".to_string());
 
@@ -164,11 +183,15 @@ impl CloudFrontService {
 
     // ── Create Distribution ───────────────────────────────────────────────
 
-    pub async fn create_distribution(&self, cfg: CfDistributionConfig) -> Result<CfDistribution, FmError> {
+    pub async fn create_distribution(
+        &self,
+        cfg: CfDistributionConfig,
+    ) -> Result<CfDistribution, FmError> {
         let caller_ref = uuid::Uuid::new_v4().to_string();
         let dist_config = self.build_distribution_config(&caller_ref, &cfg)?;
 
-        let resp = self.client
+        let resp = self
+            .client
             .create_distribution()
             .distribution_config(dist_config)
             .send()
@@ -176,7 +199,9 @@ impl CloudFrontService {
             .map_err(|e| s3err(format!("CloudFront CreateDistribution: {e}")))?;
 
         let etag = resp.e_tag().unwrap_or_default().to_string();
-        let dist = resp.distribution().ok_or_else(|| s3err("No distribution in response"))?;
+        let dist = resp
+            .distribution()
+            .ok_or_else(|| s3err("No distribution in response"))?;
 
         Ok(CfDistribution {
             id: dist.id().to_string(),
@@ -196,21 +221,26 @@ impl CloudFrontService {
         etag: &str,
     ) -> Result<CfDistribution, FmError> {
         // Fetch existing to preserve CallerReference
-        let existing = self.client
+        let existing = self
+            .client
             .get_distribution()
             .id(id)
             .send()
             .await
             .map_err(|e| s3err(format!("CloudFront GetDistribution: {e}")))?;
 
-        let existing_dist = existing.distribution().ok_or_else(|| s3err("No distribution"))?;
-        let existing_config = existing_dist.distribution_config()
+        let existing_dist = existing
+            .distribution()
+            .ok_or_else(|| s3err("No distribution"))?;
+        let existing_config = existing_dist
+            .distribution_config()
             .ok_or_else(|| s3err("No distribution config"))?;
         let caller_ref = existing_config.caller_reference().to_string();
 
         let dist_config = self.build_distribution_config(&caller_ref, &cfg)?;
 
-        let resp = self.client
+        let resp = self
+            .client
             .update_distribution()
             .id(id)
             .distribution_config(dist_config)
@@ -220,7 +250,9 @@ impl CloudFrontService {
             .map_err(|e| s3err(format!("CloudFront UpdateDistribution: {e}")))?;
 
         let new_etag = resp.e_tag().unwrap_or_default().to_string();
-        let dist = resp.distribution().ok_or_else(|| s3err("No distribution in response"))?;
+        let dist = resp
+            .distribution()
+            .ok_or_else(|| s3err("No distribution in response"))?;
 
         Ok(CfDistribution {
             id: dist.id().to_string(),
@@ -265,7 +297,8 @@ impl CloudFrontService {
             .build()
             .map_err(|e| s3err(format!("CloudFront build InvalidationBatch: {e}")))?;
 
-        let resp = self.client
+        let resp = self
+            .client
             .create_invalidation()
             .distribution_id(dist_id)
             .invalidation_batch(batch)
@@ -273,7 +306,9 @@ impl CloudFrontService {
             .await
             .map_err(|e| s3err(format!("CloudFront CreateInvalidation: {e}")))?;
 
-        let inv = resp.invalidation().ok_or_else(|| s3err("No invalidation in response"))?;
+        let inv = resp
+            .invalidation()
+            .ok_or_else(|| s3err("No invalidation in response"))?;
 
         let caller_ref_from_batch = inv
             .invalidation_batch()
@@ -291,7 +326,8 @@ impl CloudFrontService {
     // ── List Invalidations ────────────────────────────────────────────────
 
     pub async fn list_invalidations(&self, dist_id: &str) -> Result<Vec<CfInvalidation>, FmError> {
-        let resp = self.client
+        let resp = self
+            .client
             .list_invalidations()
             .distribution_id(dist_id)
             .max_items(20)
@@ -299,7 +335,8 @@ impl CloudFrontService {
             .await
             .map_err(|e| s3err(format!("CloudFront ListInvalidations: {e}")))?;
 
-        let list = resp.invalidation_list()
+        let list = resp
+            .invalidation_list()
             .ok_or_else(|| s3err("No invalidation list in response"))?;
 
         let mut results = Vec::new();
@@ -392,8 +429,7 @@ impl CloudFrontService {
         if !cfg.custom_error_responses.is_empty() {
             let mut items = Vec::new();
             for er in &cfg.custom_error_responses {
-                let mut b = AwsCustomErrorResponse::builder()
-                    .error_code(er.error_code);
+                let mut b = AwsCustomErrorResponse::builder().error_code(er.error_code);
                 if let Some(ref path) = er.response_page_path {
                     b = b.response_page_path(path);
                 }
@@ -403,7 +439,10 @@ impl CloudFrontService {
                 if let Some(ttl) = er.error_caching_min_ttl {
                     b = b.error_caching_min_ttl(ttl);
                 }
-                items.push(b.build().map_err(|e| s3err(format!("CloudFront build CustomErrorResponse: {e}")))?);
+                items
+                    .push(b.build().map_err(|e| {
+                        s3err(format!("CloudFront build CustomErrorResponse: {e}"))
+                    })?);
             }
             let custom_errors = CustomErrorResponses::builder()
                 .quantity(items.len() as i32)

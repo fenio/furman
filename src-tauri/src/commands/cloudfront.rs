@@ -1,7 +1,7 @@
+use crate::cloudfront::CloudFrontService;
 use crate::models::{
     CfDistribution, CfDistributionConfig, CfDistributionSummary, CfInvalidation, FmError,
 };
-use crate::cloudfront::CloudFrontService;
 use crate::s3::{s3err, S3State};
 use tauri::State;
 
@@ -9,9 +9,15 @@ use tauri::State;
 
 fn get_cf_service(state: &State<'_, S3State>, id: &str) -> Result<CloudFrontService, FmError> {
     let map = state.0.lock().map_err(|e| s3err(e.to_string()))?;
-    let conn = map.get(id).ok_or_else(|| s3err("S3 connection not found"))?;
+    let conn = map
+        .get(id)
+        .ok_or_else(|| s3err("S3 connection not found"))?;
     let cf_client = aws_sdk_cloudfront::Client::new(&conn.sdk_config);
-    Ok(CloudFrontService::new(cf_client, conn.bucket.clone(), conn.region.clone()))
+    Ok(CloudFrontService::new(
+        cf_client,
+        conn.bucket.clone(),
+        conn.region.clone(),
+    ))
 }
 
 // ── Commands ────────────────────────────────────────────────────────────────

@@ -50,14 +50,14 @@
 
 <div class="terminal-panel">
   <div class="tab-bar">
-    {#each terminalState.instances as instance, i}
+    {#each terminalState.instances as instance, i (instance.id)}
       <button
         class="tab"
         class:active={i === terminalState.activeIndex}
         onclick={() => switchTab(i)}
       >
         <span class="tab-label">Terminal {i + 1}</span>
-        <!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->
+        <!-- svelte-ignore a11y_click_events_have_key_events -->
         <span class="tab-close" role="button" tabindex="-1" onclick={(e) => closeTab(instance.id, e)}>&times;</span>
       </button>
     {/each}

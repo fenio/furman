@@ -327,7 +327,7 @@
 
     <div class="cf-field">
       <span class="cf-label">Custom Error Responses</span>
-      {#each formErrorResponses as er, i}
+      {#each formErrorResponses as er, i (i)}
         <div class="cf-error-row">
           <input class="cf-input cf-small" type="number" bind:value={er.error_code} placeholder="Error code" />
           <input class="cf-input cf-small" type="text" bind:value={er.response_page_path} placeholder="/error.html" />
@@ -360,7 +360,7 @@
       <div class="cf-empty">No CloudFront distributions found for this bucket.</div>
     {:else}
       <div class="cf-dist-list">
-        {#each distributions as dist}
+        {#each distributions as dist (dist.id)}
           <button
             class="cf-dist-row"
             class:selected={selectedDist?.id === dist.id}
@@ -425,7 +425,7 @@
               <tr>
                 <td class="cf-prop-label">Error Responses</td>
                 <td class="cf-prop-value">
-                  {#each selectedDist.config.custom_error_responses as er}
+                  {#each selectedDist.config.custom_error_responses as er (er.error_code)}
                     <div class="cf-error-detail">{er.error_code} → {er.response_page_path ?? '—'} ({er.response_code ?? '—'})</div>
                   {/each}
                 </td>
@@ -465,7 +465,7 @@
             {:else if invalidations.length > 0}
               <div class="cf-inv-list">
                 <div class="section-title">Recent Invalidations</div>
-                {#each invalidations as inv}
+                {#each invalidations as inv (inv.id)}
                   <div class="cf-inv-row">
                     <span class="cf-inv-id mono">{inv.id}</span>
                     <span class="cf-badge" class:deployed={inv.status === 'Completed'} class:progress={inv.status === 'InProgress'}>

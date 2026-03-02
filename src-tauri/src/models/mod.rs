@@ -224,7 +224,9 @@ pub struct SyncEntry {
 #[serde(tag = "type")]
 pub enum SyncEvent {
     Entry(SyncEntry),
-    Progress { scanned: u32 },
+    Progress {
+        scanned: u32,
+    },
     Done {
         total: u32,
         new_count: u32,
@@ -404,7 +406,7 @@ pub struct S3BucketOwnership {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct S3ObjectLockConfig {
     pub enabled: bool,
-    pub default_retention_mode: Option<String>,  // "GOVERNANCE" | "COMPLIANCE"
+    pub default_retention_mode: Option<String>, // "GOVERNANCE" | "COMPLIANCE"
     pub default_retention_days: Option<i32>,
     pub default_retention_years: Option<i32>,
 }

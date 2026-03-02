@@ -9,12 +9,9 @@
 
   let { prompt, value, inputType = 'text', onSubmit, onCancel }: Props = $props();
 
-  let inputValue = $state('');
+  // svelte-ignore state_referenced_locally
+  let inputValue = $state(value);
   let inputEl: HTMLInputElement | undefined = $state(undefined);
-
-  $effect(() => {
-    inputValue = value;
-  });
 
   $effect(() => {
     if (inputEl) {

@@ -14,7 +14,7 @@
     onEmpty?: boolean;
   }
 
-  let { x, y, onClose, onAction, isS3 = false, isFile = false, isArchive = false, onEmpty = false }: Props = $props();
+  let { x, y, onClose, onAction, isS3 = false, isFile = false, isArchive: _isArchive = false, onEmpty = false }: Props = $props();
 
   let menuEl: HTMLDivElement | undefined = $state(undefined);
   let adjustX = $state(0);
@@ -48,13 +48,11 @@
   }
 </script>
 
-<!-- svelte-ignore a11y_click_events_have_key_events -->
 <div
   class="ctx-backdrop"
   role="presentation"
   onclick={onClose}
 >
-  <!-- svelte-ignore a11y_click_events_have_key_events -->
   <div
     bind:this={menuEl}
     class="ctx-menu no-select"

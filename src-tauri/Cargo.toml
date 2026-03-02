@@ -58,6 +58,17 @@ async-trait = "0.1"
 glob-match = "0.2"
 aws-smithy-http-client = { version = "1", features = ["rustls-aws-lc", "default-client"] }
 
+[lints.clippy]
+needless_pass_by_value = "allow"  # Most are Tauri commands requiring owned types
+redundant_closure_for_method_calls = "warn"
+cloned_instead_of_copied = "warn"
+manual_let_else = "warn"
+implicit_clone = "warn"
+uninlined_format_args = "warn"
+semicolon_if_nothing_returned = "warn"
+wildcard_imports = "warn"
+too_many_arguments = "allow"  # build_s3_client and Tauri commands have many params
+
 [dev-dependencies]
 tokio = { version = "1", features = ["full"] }
 tempfile = "3"

@@ -112,7 +112,6 @@
   }
 </script>
 
-<!-- svelte-ignore a11y_no_noninteractive_tabindex -->
 <div
   class="viewer-overlay no-select"
   onkeydown={handleKeydown}
@@ -135,10 +134,10 @@
     {:else if error}
       <div class="viewer-error">Error: {error}</div>
     {:else if mode === 'text'}
-      <pre class="viewer-text hljs">{#each highlightedLines as line, i}<span class="line-num">{String(i + 1).padStart(5)} </span>{@html line}
+      <pre class="viewer-text hljs">{#each highlightedLines as line, i (i)}<span class="line-num">{String(i + 1).padStart(5)} </span>{@html line}
 {/each}</pre>
     {:else if mode === 'hex'}
-      <pre class="viewer-hex">{#each hexLines as line}{line}
+      <pre class="viewer-hex">{#each hexLines as line, i (i)}{line}
 {/each}</pre>
     {:else if mode === 'image'}
       <div class="viewer-image-container">

@@ -197,7 +197,7 @@
   }
 
   // Versioning (object-level)
-  let versionsExpanded = $state(false);
+  let _versionsExpanded = $state(false);
   let versions = $state<S3ObjectVersion[]>([]);
   let versionsLoading = $state(false);
   let versionsError = $state('');
@@ -364,7 +364,7 @@
   let savingLegalHold = $state(false);
 
   // Object-level: Metadata
-  let metadataExpanded = $state(false);
+  let _metadataExpanded = $state(false);
   let objectMetadata = $state<S3ObjectMetadata | null>(null);
   let metadataLoading = $state(false);
   let metadataMessage = $state('');
@@ -377,7 +377,7 @@
   let metaOriginal = $state('');
 
   // Object-level: Tags
-  let objTagsExpanded = $state(false);
+  let _objTagsExpanded = $state(false);
   let objTagsLoaded = $state(false);
   let objectTags = $state<S3Tag[]>([]);
   let objTagsOriginal = $state<string>('');
@@ -423,7 +423,7 @@
 
   async function loadVersions() {
     if (versionsLoading) return;
-    versionsExpanded = true;
+    _versionsExpanded = true;
     if (versions.length > 0) return;
     versionsLoading = true;
     versionsError = '';
@@ -536,7 +536,7 @@
     }
   }
 
-  async function loadBucketTags() {
+  async function _loadBucketTags() {
     if (bucketTagsLoading) return;
     bucketTagsExpanded = !bucketTagsExpanded;
     if (!bucketTagsExpanded || bucketTags.length > 0) return;
@@ -577,7 +577,7 @@
     }
   }
 
-  async function loadMultipartUploads() {
+  async function _loadMultipartUploads() {
     if (uploadsLoading) return;
     uploadsExpanded = !uploadsExpanded;
     if (!uploadsExpanded) return;
@@ -623,7 +623,7 @@
 
   // ── Bucket-level: Lifecycle functions ────────────────────────────────────
 
-  async function loadLifecycleRules() {
+  async function _loadLifecycleRules() {
     if (lifecycleLoading) return;
     lifecycleExpanded = !lifecycleExpanded;
     if (!lifecycleExpanded || lifecycleRules.length > 0) return;
@@ -719,7 +719,7 @@
 
   // ── Bucket-level: CORS functions ────────────────────────────────────────
 
-  async function loadCorsRules() {
+  async function _loadCorsRules() {
     if (corsLoading) return;
     corsExpanded = !corsExpanded;
     if (!corsExpanded || corsRules.length > 0 || corsOriginal) return;
@@ -813,7 +813,7 @@
 
   // ── Bucket-level: Bucket Policy functions ─────────────────────────────
 
-  async function loadBucketPolicy() {
+  async function _loadBucketPolicy() {
     if (policyLoading) return;
     policyExpanded = !policyExpanded;
     if (!policyExpanded || policyOriginal) return;
@@ -869,7 +869,7 @@
 
   // ── Bucket-level: ACL functions ───────────────────────────────────────
 
-  async function loadBucketAcl() {
+  async function _loadBucketAcl() {
     if (aclLoading) return;
     aclExpanded = !aclExpanded;
     if (!aclExpanded || bucketAcl) return;
@@ -1125,7 +1125,7 @@
 
   async function loadMetadata() {
     if (metadataLoading) return;
-    metadataExpanded = true;
+    _metadataExpanded = true;
     if (objectMetadata) return;
     metadataLoading = true;
     metadataMessage = '';
@@ -1181,7 +1181,7 @@
 
   async function loadObjectTags() {
     if (objTagsLoading) return;
-    objTagsExpanded = true;
+    _objTagsExpanded = true;
     if (objTagsLoaded) return;
     objTagsLoading = true;
     objTagsMessage = '';
@@ -1576,10 +1576,10 @@
             />
           </div>
           <div class="rwx-grid">
-            {#each ['Owner', 'Group', 'Other'] as rowLabel}
+            {#each ['Owner', 'Group', 'Other'] as rowLabel (rowLabel)}
               <div class="rwx-row">
                 <span class="rwx-label">{rowLabel}</span>
-                {#each permBits.filter((b) => b.row === rowLabel) as pb}
+                {#each permBits.filter((b) => b.row === rowLabel) as pb (pb.bit)}
                   <label class="rwx-checkbox" class:checked={hasBit(pb.bit)}>
                     <input
                       type="checkbox"
@@ -1630,7 +1630,7 @@
           <div class="storage-class-section">
             <div class="sc-row">
               <select class="sc-select" bind:value={selectedStorageClass}>
-                {#each storageClasses as sc}
+                {#each storageClasses as sc (sc)}
                   <option value={sc}>{sc}</option>
                 {/each}
               </select>
@@ -1819,7 +1819,7 @@
                     <span class="meta-label">Custom Metadata</span>
                     <button class="version-action-btn" onclick={addCustomMeta}>+ Add</button>
                   </div>
-                  {#each metaCustom as meta, i}
+                  {#each metaCustom as meta, i (i)}
                     <div class="tag-row">
                       <input class="tag-input" type="text" bind:value={meta.key} placeholder="key" />
                       <input class="tag-input" type="text" bind:value={meta.value} placeholder="value" />
@@ -1849,7 +1849,7 @@
                 <div class="loading">Loading tags...</div>
               {:else}
                 <div class="tag-editor">
-                  {#each objectTags as tag, i}
+                  {#each objectTags as tag, i (i)}
                     <div class="tag-row">
                       <input class="tag-input" type="text" bind:value={tag.key} placeholder="key" />
                       <input class="tag-input" type="text" bind:value={tag.value} placeholder="value" />
@@ -1890,7 +1890,7 @@
                 <div class="versions-empty">No version history (versioning may not be enabled on this bucket)</div>
               {:else}
                 <div class="versions-list">
-                  {#each versions as ver}
+                  {#each versions as ver (ver.version_id)}
                     <div class="version-row" class:version-latest={ver.is_latest} class:version-delete-marker={ver.is_delete_marker}>
                       <div class="version-info">
                         <span class="version-id mono" title={ver.version_id}>{truncateVid(ver.version_id)}</span>
@@ -2102,7 +2102,7 @@
                     {:else}
                       <select class="meta-input" bind:value={encEditKmsKeyId}>
                         <option value="">Default (AWS managed key)</option>
-                        {#each kmsKeys as key}
+                        {#each kmsKeys as key (key.key_id)}
                           <option value={key.arn}>{key.alias ? `${key.alias} (${key.key_id.slice(0, 8)}...)` : key.key_id}</option>
                         {/each}
                         <option value="__custom__">Custom ARN...</option>
@@ -2319,7 +2319,7 @@
                 <div class="loading">Loading tags...</div>
               {:else}
                 <div class="tag-editor">
-                  {#each bucketTags as tag, i}
+                  {#each bucketTags as tag, i (i)}
                     <div class="tag-row">
                       <input class="tag-input" type="text" bind:value={tag.key} placeholder="key" />
                       <input class="tag-input" type="text" bind:value={tag.value} placeholder="value" />
@@ -2354,7 +2354,7 @@
                 <div class="loading">Loading lifecycle rules...</div>
               {:else}
                 <div class="tag-editor">
-                  {#each lifecycleRules as rule, i}
+                  {#each lifecycleRules as rule, i (i)}
                     <div class="lifecycle-rule" class:lifecycle-disabled={!rule.enabled}>
                       <div class="lifecycle-rule-header">
                         <label class="lifecycle-enabled-label">
@@ -2388,14 +2388,14 @@
                             <span class="meta-label">Transitions</span>
                             <button class="version-action-btn" onclick={() => addTransition(i)}>+ Add</button>
                           </div>
-                          {#each rule.transitions as t, ti}
+                          {#each rule.transitions as t, ti (ti)}
                             <div class="tag-row">
                               <label class="lifecycle-days-label">
                                 Days:
                                 <input class="lifecycle-days-input" type="number" min="0" bind:value={t.days} onchange={() => { lifecycleRules = [...lifecycleRules]; }} />
                               </label>
                               <select class="sc-select" bind:value={t.storage_class} onchange={() => { lifecycleRules = [...lifecycleRules]; }}>
-                                {#each lifecycleStorageClasses as sc}
+                                {#each lifecycleStorageClasses as sc (sc)}
                                   <option value={sc}>{sc}</option>
                                 {/each}
                               </select>
@@ -2428,14 +2428,14 @@
                             <span class="meta-label">Noncurrent Version Transitions</span>
                             <button class="version-action-btn" onclick={() => addNoncurrentTransition(i)}>+ Add</button>
                           </div>
-                          {#each rule.noncurrent_transitions as t, ti}
+                          {#each rule.noncurrent_transitions as t, ti (ti)}
                             <div class="tag-row">
                               <label class="lifecycle-days-label">
                                 Days:
                                 <input class="lifecycle-days-input" type="number" min="0" bind:value={t.days} onchange={() => { lifecycleRules = [...lifecycleRules]; }} />
                               </label>
                               <select class="sc-select" bind:value={t.storage_class} onchange={() => { lifecycleRules = [...lifecycleRules]; }}>
-                                {#each lifecycleStorageClasses as sc}
+                                {#each lifecycleStorageClasses as sc (sc)}
                                   <option value={sc}>{sc}</option>
                                 {/each}
                               </select>
@@ -2523,7 +2523,7 @@
                       {abortingAll ? 'Aborting...' : 'Abort All'}
                     </button>
                   </div>
-                  {#each multipartUploads as upload}
+                  {#each multipartUploads as upload (upload.upload_id)}
                     <div class="version-row">
                       <div class="version-info">
                         <span class="version-id mono" title={upload.key}>{upload.key.length > 40 ? upload.key.slice(0, 40) + '\u2026' : upload.key}</span>
@@ -2552,7 +2552,7 @@
                 <div class="loading">Loading CORS rules...</div>
               {:else}
                 <div class="tag-editor">
-                  {#each corsRules as rule, i}
+                  {#each corsRules as rule, i (i)}
                     <div class="lifecycle-rule">
                       <div class="lifecycle-rule-header">
                         <span class="lifecycle-rule-id">Rule {i + 1}</span>
@@ -2578,7 +2578,7 @@
                           <span class="meta-label">Allowed Methods</span>
                         </div>
                         <div class="cors-methods">
-                          {#each corsMethods as method}
+                          {#each corsMethods as method (method)}
                             <label class="rwx-checkbox" class:checked={rule.allowed_methods.includes(method)}>
                               <input type="checkbox" checked={rule.allowed_methods.includes(method)} onchange={() => toggleCorsMethod(i, method)} />
                               {method}
@@ -2708,7 +2708,7 @@
                     <div class="versions-empty">No grants</div>
                   {:else}
                     <div class="versions-list">
-                      {#each bucketAcl.grants as grant}
+                      {#each bucketAcl.grants as grant (grant.permission)}
                         <div class="version-row">
                           <div class="version-info">
                             <span class="acl-grantee">{friendlyGrantee(grant)}</span>

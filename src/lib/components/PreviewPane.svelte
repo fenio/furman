@@ -11,7 +11,7 @@
     panelPath: string;
   }
 
-  let { entry, backend, panelPath }: Props = $props();
+  let { entry, backend, panelPath: _panelPath }: Props = $props();
 
   const imageExtensions = new Set(['png', 'jpg', 'jpeg', 'gif', 'svg', 'webp', 'bmp', 'ico']);
   const textExtensions = new Set([

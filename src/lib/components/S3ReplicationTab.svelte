@@ -99,7 +99,7 @@
     const rule = localRules[index];
     editingIndex = index;
     ruleId = rule.id ?? '';
-    rulePriority = rule.priority != null ? String(rule.priority) : '';
+    rulePriority = rule.priority !== null ? String(rule.priority) : '';
     ruleStatus = rule.status;
     ruleFilterPrefix = rule.filter_prefix ?? '';
     ruleDestBucket = rule.destination.bucket_arn;
@@ -131,7 +131,7 @@
       delete_marker_replication: ruleDeleteMarkers,
     };
 
-    if (editingIndex != null) {
+    if (editingIndex !== null) {
       localRules[editingIndex] = rule;
       localRules = [...localRules];
     } else {
@@ -199,7 +199,7 @@
 
 {#if mode === 'edit'}
   <!-- ── Rule Edit Form ──────────────────────────────────────── -->
-  <div class="section-title">{editingIndex != null ? 'Edit Replication Rule' : 'Add Replication Rule'}</div>
+  <div class="section-title">{editingIndex !== null ? 'Edit Replication Rule' : 'Add Replication Rule'}</div>
   <div class="repl-form">
     <div class="repl-field">
       <label class="repl-label">Rule ID <span class="repl-hint">(optional)</span>
@@ -237,7 +237,7 @@
     <div class="repl-field">
       <label class="repl-label">Storage Class Override <span class="repl-hint">(optional)</span>
         <select class="repl-input" bind:value={ruleStorageClass}>
-          {#each STORAGE_CLASSES as sc}
+          {#each STORAGE_CLASSES as sc (sc)}
             <option value={sc}>{sc || '(same as source)'}</option>
           {/each}
         </select>
@@ -264,7 +264,7 @@
 
     <div class="repl-actions">
       <button class="dialog-btn apply-btn" onclick={saveRule}>
-        {editingIndex != null ? 'Save Rule' : 'Add Rule'}
+        {editingIndex !== null ? 'Save Rule' : 'Add Rule'}
       </button>
       <button class="dialog-btn" onclick={cancelRuleEdit}>Cancel</button>
     </div>
@@ -289,7 +289,7 @@
       <div class="repl-empty">No replication rules configured.</div>
     {:else}
       <div class="repl-list">
-        {#each localRules as rule, i}
+        {#each localRules as rule, i (i)}
           <div class="repl-row">
             <div class="repl-row-info">
               <span class="repl-row-id">{rule.id || `Rule ${i + 1}`}</span>
@@ -300,7 +300,7 @@
               </span>
             </div>
             <div class="repl-row-meta">
-              {#if rule.priority != null}
+              {#if rule.priority !== null}
                 <span class="repl-priority">P{rule.priority}</span>
               {/if}
               <span class="repl-badge" class:enabled={rule.status === 'Enabled'} class:disabled={rule.status !== 'Enabled'}>

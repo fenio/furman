@@ -20,7 +20,7 @@
     if (e.key === 'Enter') {
       e.preventDefault();
       e.stopPropagation();
-      alertOnly ? onCancel() : onConfirm();
+      if (alertOnly) { onCancel(); } else { onConfirm(); }
     } else if (e.key === 'Escape') {
       e.preventDefault();
       e.stopPropagation();
@@ -29,7 +29,6 @@
   }
 </script>
 
-<!-- svelte-ignore a11y_no_noninteractive_tabindex -->
 <div
   class="dialog-overlay no-select"
   onkeydown={handleKeydown}

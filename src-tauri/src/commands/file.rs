@@ -1,4 +1,4 @@
-use crate::models::{FmError, ProgressEvent, TrashInfo, TransferCheckpoint};
+use crate::models::{FmError, ProgressEvent, TransferCheckpoint, TrashInfo};
 use std::collections::HashMap;
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -373,7 +373,7 @@ fn trash_item_platform(path: &Path) -> Result<String, FmError> {
     use objc2::rc::Retained;
     use objc2_foundation::{NSFileManager, NSString, NSURL};
 
-    let abs = path.canonicalize().map_err(|e| FmError::Io(e))?;
+    let abs = path.canonicalize().map_err(FmError::Io)?;
     let path_str = abs.to_string_lossy();
     let ns_path = NSString::from_str(&path_str);
     let url = NSURL::fileURLWithPath(&ns_path);
@@ -381,18 +381,15 @@ fn trash_item_platform(path: &Path) -> Result<String, FmError> {
     let fm = NSFileManager::defaultManager();
     let mut resulting_url: Option<Retained<NSURL>> = None;
 
-    let ok = fm.trashItemAtURL_resultingItemURL_error(
-        &url,
-        Some(&mut resulting_url),
-    );
+    let ok = fm.trashItemAtURL_resultingItemURL_error(&url, Some(&mut resulting_url));
 
-    if !ok.is_ok() {
-        return Err(FmError::Other(format!("Failed to trash: {}", path_str)));
+    if ok.is_err() {
+        return Err(FmError::Other(format!("Failed to trash: {path_str}")));
     }
 
-    let trash_url = resulting_url
-        .ok_or_else(|| FmError::Other("No resulting trash URL".into()))?;
-    let trash_path_ns = trash_url.path()
+    let trash_url = resulting_url.ok_or_else(|| FmError::Other("No resulting trash URL".into()))?;
+    let trash_path_ns = trash_url
+        .path()
         .ok_or_else(|| FmError::Other("Trash URL has no path".into()))?;
     Ok(trash_path_ns.to_string())
 }

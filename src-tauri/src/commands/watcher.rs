@@ -21,7 +21,11 @@ impl From<&Event> for FsChangeEvent {
     fn from(event: &Event) -> Self {
         FsChangeEvent {
             kind: format!("{:?}", event.kind),
-            paths: event.paths.iter().map(|p| p.to_string_lossy().into_owned()).collect(),
+            paths: event
+                .paths
+                .iter()
+                .map(|p| p.to_string_lossy().into_owned())
+                .collect(),
         }
     }
 }
@@ -43,8 +47,8 @@ pub fn watch_directory(
 
     // Build a new watcher that forwards events via the Tauri event bus.
     let handle = app_handle.clone();
-    let mut watcher = notify::recommended_watcher(move |res: Result<Event, notify::Error>| {
-        match res {
+    let mut watcher =
+        notify::recommended_watcher(move |res: Result<Event, notify::Error>| match res {
             Ok(event) => {
                 let payload = FsChangeEvent::from(&event);
                 let _ = handle.emit("fs-change", &payload);
@@ -52,8 +56,7 @@ pub fn watch_directory(
             Err(e) => {
                 log::warn!("fs watcher error: {e}");
             }
-        }
-    })?;
+        })?;
 
     watcher.watch(&dir, RecursiveMode::NonRecursive)?;
 
@@ -68,10 +71,7 @@ pub fn watch_directory(
 
 /// Stop watching a previously-watched directory identified by `id`.
 #[tauri::command]
-pub fn unwatch_directory(
-    id: String,
-    state: State<'_, WatcherState>,
-) -> Result<(), FmError> {
+pub fn unwatch_directory(id: String, state: State<'_, WatcherState>) -> Result<(), FmError> {
     let mut map = state
         .0
         .lock()

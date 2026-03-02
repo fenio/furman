@@ -10,7 +10,7 @@
     onAdd: () => void;
   }
 
-  let { tabs, activeIndex, side, onSwitch, onClose, onAdd }: Props = $props();
+  let { tabs, activeIndex, side: _side, onSwitch, onClose, onAdd }: Props = $props();
 
   function getTabLabel(panel: PanelData): string {
     if (panel.backend === 's3' && panel.s3Connection) {
@@ -39,7 +39,6 @@
 <div class="tab-bar" role="tablist">
   {#each tabs as tab, i (tab.tabId)}
     <!-- svelte-ignore a11y_click_events_have_key_events -->
-    <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
     <div
       class="tab"
       class:active={i === activeIndex}

@@ -1,5 +1,6 @@
 <script lang="ts">
   import { onMount, onDestroy } from 'svelte';
+  import { SvelteSet } from 'svelte/reactivity';
   import { syncDiff, cancelSync } from '$lib/services/tauri';
   import { appState } from '$lib/state/app.svelte';
   import type { SyncEntry, SyncEvent, PanelBackend } from '$lib/types';
@@ -30,7 +31,7 @@
   let scanning = $state(false);
   let scanComplete = $state(false);
   let filter = $state<'all' | 'new' | 'modified' | 'deleted'>('all');
-  let selectedPaths = $state(new Set<string>());
+  let selectedPaths = $state(new SvelteSet<string>());
   let cursorIndex = $state(0);
   let currentSyncId = $state('');
   let listEl: HTMLDivElement | undefined = $state(undefined);
@@ -77,7 +78,7 @@
 
     currentSyncId = id;
     allEntries = [];
-    selectedPaths = new Set();
+    selectedPaths = new SvelteSet<string>();
     cursorIndex = 0;
     scanning = true;
     scanComplete = false;
@@ -98,7 +99,7 @@
         allEntries = [...allEntries, event as SyncEntry];
         // Auto-select new and modified entries
         if (event.status === 'new' || event.status === 'modified') {
-          selectedPaths = new Set([...selectedPaths, event.relative_path]);
+          selectedPaths = new SvelteSet([...selectedPaths, event.relative_path]);
         }
       } else if (event.type === 'Done') {
         newCount = event.new_count;
@@ -129,7 +130,7 @@
   }
 
   function toggleSelection(path: string) {
-    const next = new Set(selectedPaths);
+    const next = new SvelteSet(selectedPaths);
     if (next.has(path)) {
       next.delete(path);
     } else {
@@ -139,13 +140,13 @@
   }
 
   function selectAll() {
-    selectedPaths = new Set(filtered.map((e) => e.relative_path));
+    selectedPaths = new SvelteSet(filtered.map((e) => e.relative_path));
   }
 
   function selectNone() {
     // Only deselect entries visible in the current filter
-    const visiblePaths = new Set(filtered.map((e) => e.relative_path));
-    selectedPaths = new Set([...selectedPaths].filter((p) => !visiblePaths.has(p)));
+    const visiblePaths = new SvelteSet(filtered.map((e) => e.relative_path));
+    selectedPaths = new SvelteSet([...selectedPaths].filter((p) => !visiblePaths.has(p)));
   }
 
   function handleSync() {
@@ -268,7 +269,7 @@
     cursorIndex = 0;
   }
 
-  let selectedCount = $derived([...selectedPaths].filter((p) => filtered.some((e) => e.relative_path === p)).length);
+  let _selectedCount = $derived([...selectedPaths].filter((p) => filtered.some((e) => e.relative_path === p)).length);
 </script>
 
 <div
@@ -339,7 +340,7 @@
 
       <!-- Entry list -->
       <div class="entry-list" bind:this={listEl}>
-        {#each filtered as entry, i}
+        {#each filtered as entry, i (entry.relative_path)}
           <!-- svelte-ignore a11y_click_events_have_key_events -->
           <div
             class="entry-row"

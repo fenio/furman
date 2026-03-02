@@ -21,7 +21,9 @@ async fn test_create_and_delete_bucket() {
         .expect("create_bucket failed");
 
     // Verify it appears in list
-    let buckets = service::list_buckets(&ctx.client).await.expect("list_buckets failed");
+    let buckets = service::list_buckets(&ctx.client)
+        .await
+        .expect("list_buckets failed");
     assert!(
         buckets.iter().any(|b| b.name == new_bucket),
         "Newly created bucket not found in list"
@@ -33,7 +35,9 @@ async fn test_create_and_delete_bucket() {
         .expect("delete_bucket failed");
 
     // Verify it's gone
-    let buckets = service::list_buckets(&ctx.client).await.expect("list_buckets failed");
+    let buckets = service::list_buckets(&ctx.client)
+        .await
+        .expect("list_buckets failed");
     assert!(
         !buckets.iter().any(|b| b.name == new_bucket),
         "Deleted bucket still appears in list"
@@ -52,7 +56,11 @@ async fn test_list_objects() {
     ctx.put_object("subdir/file3.txt", b"nested").await;
 
     // List root — should see file1.txt, file2.txt, and subdir/ prefix
-    let listing = ctx.service.list_objects("").await.expect("list_objects failed");
+    let listing = ctx
+        .service
+        .list_objects("")
+        .await
+        .expect("list_objects failed");
 
     let names: Vec<&str> = listing.entries.iter().map(|e| e.name.as_str()).collect();
     assert!(names.contains(&".."), "Missing '..' entry");
@@ -65,9 +73,20 @@ async fn test_list_objects() {
     assert!(subdir_entry.is_dir, "subdir should be marked as directory");
 
     // List subdir/ — should see file3.txt
-    let sub_listing = ctx.service.list_objects("subdir/").await.expect("list subdir failed");
-    let sub_names: Vec<&str> = sub_listing.entries.iter().map(|e| e.name.as_str()).collect();
-    assert!(sub_names.contains(&"file3.txt"), "Missing file3.txt in subdir");
+    let sub_listing = ctx
+        .service
+        .list_objects("subdir/")
+        .await
+        .expect("list subdir failed");
+    let sub_names: Vec<&str> = sub_listing
+        .entries
+        .iter()
+        .map(|e| e.name.as_str())
+        .collect();
+    assert!(
+        sub_names.contains(&"file3.txt"),
+        "Missing file3.txt in subdir"
+    );
 
     ctx.cleanup().await;
 }
@@ -82,7 +101,11 @@ async fn test_create_folder() {
         .expect("create_folder failed");
 
     // Verify it appears in listing
-    let listing = ctx.service.list_objects("").await.expect("list_objects failed");
+    let listing = ctx
+        .service
+        .list_objects("")
+        .await
+        .expect("list_objects failed");
     let names: Vec<&str> = listing.entries.iter().map(|e| e.name.as_str()).collect();
     assert!(names.contains(&"myfolder"), "Folder not found in listing");
 
@@ -442,7 +465,10 @@ async fn test_list_versions() {
     let ctx = TestContext::new().await;
 
     // Enable versioning
-    ctx.service.put_bucket_versioning(true, None, None).await.unwrap();
+    ctx.service
+        .put_bucket_versioning(true, None, None)
+        .await
+        .unwrap();
 
     // Upload same key 3 times
     ctx.put_object("versioned.txt", b"version1").await;
@@ -473,7 +499,10 @@ async fn test_download_version() {
     let ctx = TestContext::new().await;
 
     // Enable versioning
-    ctx.service.put_bucket_versioning(true, None, None).await.unwrap();
+    ctx.service
+        .put_bucket_versioning(true, None, None)
+        .await
+        .unwrap();
 
     // Upload 2 versions
     ctx.put_object("vdl.txt", b"old content").await;
@@ -505,7 +534,10 @@ async fn test_download_version() {
 async fn test_restore_version() {
     let ctx = TestContext::new().await;
 
-    ctx.service.put_bucket_versioning(true, None, None).await.unwrap();
+    ctx.service
+        .put_bucket_versioning(true, None, None)
+        .await
+        .unwrap();
 
     ctx.put_object("restore.txt", b"original").await;
     ctx.put_object("restore.txt", b"modified").await;
@@ -524,7 +556,11 @@ async fn test_restore_version() {
         .expect("restore_version failed");
 
     // Current version should now be "original"
-    let temp = ctx.service.download_temp("restore.txt", None).await.unwrap();
+    let temp = ctx
+        .service
+        .download_temp("restore.txt", None)
+        .await
+        .unwrap();
     let content = std::fs::read_to_string(&temp).unwrap();
     assert_eq!(content, "original");
     let _ = std::fs::remove_file(&temp);
@@ -536,7 +572,10 @@ async fn test_restore_version() {
 async fn test_delete_version() {
     let ctx = TestContext::new().await;
 
-    ctx.service.put_bucket_versioning(true, None, None).await.unwrap();
+    ctx.service
+        .put_bucket_versioning(true, None, None)
+        .await
+        .unwrap();
 
     ctx.put_object("delver.txt", b"v1").await;
     ctx.put_object("delver.txt", b"v2").await;
@@ -598,7 +637,9 @@ async fn test_object_tags_roundtrip() {
 
     assert_eq!(got.len(), 2);
     assert!(got.iter().any(|t| t.key == "env" && t.value == "test"));
-    assert!(got.iter().any(|t| t.key == "project" && t.value == "furman"));
+    assert!(got
+        .iter()
+        .any(|t| t.key == "project" && t.value == "furman"));
 
     ctx.cleanup().await;
 }
@@ -1021,10 +1062,7 @@ async fn test_delete_nonempty_bucket() {
 
     // Try to delete the bucket directly — should fail
     let result = service::delete_bucket(&ctx.client, &ctx.bucket).await;
-    assert!(
-        result.is_err(),
-        "Deleting non-empty bucket should fail"
-    );
+    assert!(result.is_err(), "Deleting non-empty bucket should fail");
 
     ctx.cleanup().await;
 }
@@ -1040,7 +1078,11 @@ async fn test_list_empty_bucket() {
         .expect("list empty bucket failed");
 
     // Should only have the ".." entry
-    assert_eq!(listing.entries.len(), 1, "Empty bucket should only have '..' entry");
+    assert_eq!(
+        listing.entries.len(),
+        1,
+        "Empty bucket should only have '..' entry"
+    );
     assert_eq!(listing.entries[0].name, "..");
 
     ctx.cleanup().await;
@@ -1138,7 +1180,11 @@ async fn test_encryption_roundtrip() {
     let ctx = TestContext::new().await;
 
     // MinIO may not support bucket encryption — skip if unsupported
-    match ctx.service.put_bucket_encryption("AES256", None, false).await {
+    match ctx
+        .service
+        .put_bucket_encryption("AES256", None, false)
+        .await
+    {
         Ok(()) => {
             let enc = ctx
                 .service
@@ -1146,7 +1192,10 @@ async fn test_encryption_roundtrip() {
                 .await
                 .expect("get_bucket_encryption failed");
 
-            assert!(!enc.rules.is_empty(), "Should have at least one encryption rule");
+            assert!(
+                !enc.rules.is_empty(),
+                "Should have at least one encryption rule"
+            );
             assert_eq!(enc.rules[0].sse_algorithm, "AES256");
             assert!(!enc.rules[0].bucket_key_enabled);
         }
@@ -1163,7 +1212,11 @@ async fn test_encryption_bucket_key() {
     let ctx = TestContext::new().await;
 
     // MinIO may not support bucket encryption — skip if unsupported
-    match ctx.service.put_bucket_encryption("AES256", None, true).await {
+    match ctx
+        .service
+        .put_bucket_encryption("AES256", None, true)
+        .await
+    {
         Ok(()) => {
             let enc = ctx
                 .service
@@ -1222,7 +1275,10 @@ async fn test_change_storage_class() {
         );
     } else {
         // MinIO: just verify the API call doesn't error
-        let result = ctx.service.change_storage_class("storageclass.txt", "STANDARD_IA").await;
+        let result = ctx
+            .service
+            .change_storage_class("storageclass.txt", "STANDARD_IA")
+            .await;
         if let Err(e) = result {
             eprintln!("change_storage_class not supported on this backend — skipping: {e}");
         }
@@ -1265,10 +1321,17 @@ async fn test_bulk_change_storage_class() {
         }
     } else {
         // MinIO: just verify it returns without panic
-        let result = ctx.service.bulk_change_storage_class(&keys, "STANDARD_IA").await;
+        let result = ctx
+            .service
+            .bulk_change_storage_class(&keys, "STANDARD_IA")
+            .await;
         match result {
             Ok(failed) => {
-                eprintln!("bulk_change_storage_class: {} failed out of {}", failed.len(), keys.len());
+                eprintln!(
+                    "bulk_change_storage_class: {} failed out of {}",
+                    failed.len(),
+                    keys.len()
+                );
             }
             Err(e) => {
                 eprintln!("bulk_change_storage_class not supported — skipping: {e}");
@@ -1299,14 +1362,20 @@ async fn test_presign_url_fetch() {
     assert!(!url.is_empty());
 
     // Actually fetch the presigned URL and verify the content matches
-    let resp = reqwest::get(&url).await.expect("HTTP GET on presigned URL failed");
+    let resp = reqwest::get(&url)
+        .await
+        .expect("HTTP GET on presigned URL failed");
     assert!(
         resp.status().is_success(),
         "Presigned URL returned status {}",
         resp.status()
     );
     let body = resp.bytes().await.expect("Failed to read response body");
-    assert_eq!(body.as_ref(), content, "Fetched content should match uploaded content");
+    assert_eq!(
+        body.as_ref(),
+        content,
+        "Fetched content should match uploaded content"
+    );
 
     ctx.cleanup().await;
 }
@@ -1417,7 +1486,10 @@ async fn test_object_lock_configuration() {
         .await
         .expect("get_object_lock_configuration after put failed");
     assert!(config2.enabled);
-    assert_eq!(config2.default_retention_mode.as_deref(), Some("GOVERNANCE"));
+    assert_eq!(
+        config2.default_retention_mode.as_deref(),
+        Some("GOVERNANCE")
+    );
     assert_eq!(config2.default_retention_days, Some(30));
 
     // Clear default retention
@@ -1447,7 +1519,10 @@ async fn test_object_lock_not_enabled() {
         .get_object_lock_configuration()
         .await
         .expect("get_object_lock_configuration on regular bucket");
-    assert!(!config.enabled, "Object Lock should not be enabled on regular bucket");
+    assert!(
+        !config.enabled,
+        "Object Lock should not be enabled on regular bucket"
+    );
     assert!(config.default_retention_mode.is_none());
 
     ctx.cleanup().await;
@@ -1567,7 +1642,11 @@ async fn test_bulk_put_object_retention() {
         )
         .await
         .expect("bulk_put_object_retention failed");
-    assert!(failed.is_empty(), "No keys should have failed: {:?}", failed);
+    assert!(
+        failed.is_empty(),
+        "No keys should have failed: {:?}",
+        failed
+    );
 
     // Verify each
     for key in &["bulk-ret-1.txt", "bulk-ret-2.txt", "bulk-ret-3.txt"] {
@@ -1608,8 +1687,14 @@ async fn test_notification_configuration_roundtrip() {
         .get_notification_configuration()
         .await
         .expect("get_notification_configuration failed");
-    assert!(config.rules.is_empty(), "Expected no notification rules initially");
-    assert!(!config.event_bridge_enabled, "EventBridge should be disabled initially");
+    assert!(
+        config.rules.is_empty(),
+        "Expected no notification rules initially"
+    );
+    assert!(
+        !config.event_bridge_enabled,
+        "EventBridge should be disabled initially"
+    );
 
     if !ctx.config.is_aws() {
         eprintln!("Notification put requires real AWS — skipping put on MinIO");
@@ -1633,7 +1718,10 @@ async fn test_notification_configuration_roundtrip() {
         .get_notification_configuration()
         .await
         .expect("get_notification_configuration after put failed");
-    assert!(updated.event_bridge_enabled, "EventBridge should be enabled after put");
+    assert!(
+        updated.event_bridge_enabled,
+        "EventBridge should be enabled after put"
+    );
     assert!(updated.rules.is_empty(), "No rules should be present");
 
     // Clear — disable EventBridge
@@ -1651,7 +1739,10 @@ async fn test_notification_configuration_roundtrip() {
         .get_notification_configuration()
         .await
         .expect("get_notification_configuration after clear failed");
-    assert!(!cleared.event_bridge_enabled, "EventBridge should be disabled after clear");
+    assert!(
+        !cleared.event_bridge_enabled,
+        "EventBridge should be disabled after clear"
+    );
 
     ctx.cleanup().await;
 }
@@ -1701,9 +1792,16 @@ async fn test_access_point_roundtrip() {
         block_public_policy: true,
         restrict_public_buckets: true,
     };
-    service::create_access_point(&s3control, account_id, &ap_name, &ctx.bucket, None, Some(&pab))
-        .await
-        .expect("create_access_point failed");
+    service::create_access_point(
+        &s3control,
+        account_id,
+        &ap_name,
+        &ctx.bucket,
+        None,
+        Some(&pab),
+    )
+    .await
+    .expect("create_access_point failed");
 
     // Get detail — verify fields
     let detail = service::get_access_point(&s3control, account_id, &ap_name)
@@ -1737,7 +1835,10 @@ async fn test_access_point_roundtrip() {
     let got_policy = service::get_access_point_policy(&s3control, account_id, &ap_name)
         .await
         .expect("get_access_point_policy (after put) failed");
-    assert!(!got_policy.is_empty(), "policy should be non-empty after put");
+    assert!(
+        !got_policy.is_empty(),
+        "policy should be non-empty after put"
+    );
 
     service::delete_access_point_policy(&s3control, account_id, &ap_name)
         .await
@@ -1746,7 +1847,10 @@ async fn test_access_point_roundtrip() {
     let cleared_policy = service::get_access_point_policy(&s3control, account_id, &ap_name)
         .await
         .expect("get_access_point_policy (after delete) failed");
-    assert!(cleared_policy.is_empty(), "policy should be empty after delete");
+    assert!(
+        cleared_policy.is_empty(),
+        "policy should be empty after delete"
+    );
 
     // Delete access point
     service::delete_access_point(&s3control, account_id, &ap_name)

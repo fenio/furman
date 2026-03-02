@@ -1,17 +1,17 @@
-mod commands;
 pub mod cloudfront;
+mod commands;
 pub mod models;
 pub mod oidc;
 pub mod s3;
 pub mod sftp;
 
 use commands::file::FileOpState;
-use s3::S3State;
-use sftp::SftpState;
 use commands::search::SearchState;
 use commands::sync::SyncState;
 use commands::terminal::TerminalState;
 use commands::watcher::WatcherState;
+use s3::S3State;
+use sftp::SftpState;
 use std::collections::HashMap;
 use std::sync::Mutex;
 
@@ -58,12 +58,16 @@ pub fn run() {
         .manage(SyncState(Mutex::new(HashMap::new())))
         .plugin(tauri_plugin_drag::init())
         .setup(|app| {
-            let mut targets = vec![
-                tauri_plugin_log::Target::new(tauri_plugin_log::TargetKind::LogDir { file_name: None }),
-            ];
+            let mut targets = vec![tauri_plugin_log::Target::new(
+                tauri_plugin_log::TargetKind::LogDir { file_name: None },
+            )];
             if cfg!(debug_assertions) {
-                targets.push(tauri_plugin_log::Target::new(tauri_plugin_log::TargetKind::Stdout));
-                targets.push(tauri_plugin_log::Target::new(tauri_plugin_log::TargetKind::Webview));
+                targets.push(tauri_plugin_log::Target::new(
+                    tauri_plugin_log::TargetKind::Stdout,
+                ));
+                targets.push(tauri_plugin_log::Target::new(
+                    tauri_plugin_log::TargetKind::Webview,
+                ));
             }
             app.handle().plugin(
                 tauri_plugin_log::Builder::default()
@@ -86,7 +90,9 @@ pub fn run() {
                 if let Some(image) = NSImage::initWithData(NSImage::alloc(), &data) {
                     if let Some(mtm) = MainThreadMarker::new() {
                         let ns_app = NSApplication::sharedApplication(mtm);
-                        unsafe { ns_app.setApplicationIconImage(Some(&image)); }
+                        unsafe {
+                            ns_app.setApplicationIconImage(Some(&image));
+                        }
                     }
                 }
             }

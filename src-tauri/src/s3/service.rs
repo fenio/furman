@@ -1,5 +1,5 @@
-use aws_credential_types::provider::ProvideCredentials;
 use aws_config::BehaviorVersion;
+use aws_credential_types::provider::ProvideCredentials;
 use aws_sdk_s3::Client as S3Client;
 use std::collections::HashMap;
 use std::path::PathBuf;
@@ -8,18 +8,17 @@ use std::sync::Arc;
 use tokio::io::AsyncWriteExt;
 
 use crate::models::{
-    DirListing, FileEntry, FmError, ProgressEvent, S3AccessPoint, S3AccessPointDetail,
-    S3AclGrant, S3BucketAcl, S3BucketEncryption,
-    S3BucketLogging, S3BucketOwnership, S3BucketVersioning, S3BucketWebsite, S3CorsRule,
-    S3EncryptionRule, S3InventoryConfiguration, S3InventoryDestination, S3LifecycleRule,
-    S3LifecycleTransition, S3MultipartUpload, S3ObjectLegalHold, S3ObjectLockConfig,
+    DirListing, FileEntry, FmError, ProgressEvent, S3AccessPoint, S3AccessPointDetail, S3AclGrant,
+    S3BucketAcl, S3BucketEncryption, S3BucketLogging, S3BucketOwnership, S3BucketVersioning,
+    S3BucketWebsite, S3CorsRule, S3EncryptionRule, S3InventoryConfiguration,
+    S3InventoryDestination, S3LifecycleRule, S3LifecycleTransition, S3MultipartUpload,
+    S3NotificationConfiguration, S3NotificationRule, S3ObjectLegalHold, S3ObjectLockConfig,
     S3ObjectMetadata, S3ObjectProperties, S3ObjectRetention, S3ObjectVersion, S3PublicAccessBlock,
-    S3NotificationConfiguration, S3NotificationRule, S3ReplicationConfiguration,
-    S3ReplicationDestination, S3ReplicationRule, S3Tag, SearchDone, SearchEvent, SearchResult,
-    TransferCheckpoint,
+    S3ReplicationConfiguration, S3ReplicationDestination, S3ReplicationRule, S3Tag, SearchDone,
+    SearchEvent, SearchResult, TransferCheckpoint,
 };
 
-use super::helpers::*;
+use super::helpers::{s3err, s3_path, strip_s3_prefix, list_all_objects, throttle, collect_local_files, MULTIPART_THRESHOLD, upload_file_multipart, copy_single_or_multipart, PREVIEW_MAX_SIZE, COPY_MULTIPART_THRESHOLD};
 
 use super::crypto::EncryptionConfig;
 
@@ -52,7 +51,7 @@ pub async fn list_buckets(client: &S3Client) -> Result<Vec<S3Bucket>, FmError> {
         .list_buckets()
         .send()
         .await
-        .map_err(|e| s3err(format!("Could not list buckets: {}", e)))?;
+        .map_err(|e| s3err(format!("Could not list buckets: {e}")))?;
 
     let buckets = resp
         .buckets()
@@ -84,7 +83,7 @@ pub async fn create_bucket(client: &S3Client, name: &str, region: &str) -> Resul
 
     req.send()
         .await
-        .map_err(|e| s3err(format!("Could not create bucket '{}': {}", name, e)))?;
+        .map_err(|e| s3err(format!("Could not create bucket '{name}': {e}")))?;
 
     Ok(())
 }
@@ -96,7 +95,7 @@ pub async fn delete_bucket(client: &S3Client, name: &str) -> Result<(), FmError>
         .bucket(name)
         .send()
         .await
-        .map_err(|e| s3err(format!("Could not delete bucket '{}': {}", name, e)))?;
+        .map_err(|e| s3err(format!("Could not delete bucket '{name}': {e}")))?;
 
     Ok(())
 }
@@ -205,10 +204,7 @@ impl S3Service {
                 if key == prefix {
                     continue;
                 }
-                let name = key
-                    .strip_prefix(prefix)
-                    .unwrap_or(key)
-                    .to_string();
+                let name = key.strip_prefix(prefix).unwrap_or(key).to_string();
                 if name.is_empty() || name.ends_with('/') {
                     continue;
                 }
@@ -219,7 +215,7 @@ impl S3Service {
                     .and_then(|t| t.to_millis().ok())
                     .unwrap_or(0);
                 let extension = if name.contains('.') {
-                    name.rsplit('.').next().map(|s| s.to_string())
+                    name.rsplit('.').next().map(std::string::ToString::to_string)
                 } else {
                     None
                 };
@@ -242,7 +238,7 @@ impl S3Service {
             }
 
             if resp.is_truncated() == Some(true) {
-                continuation_token = resp.next_continuation_token().map(|s| s.to_string());
+                continuation_token = resp.next_continuation_token().map(std::string::ToString::to_string);
             } else {
                 break;
             }
@@ -342,11 +338,14 @@ impl S3Service {
                 .map_err(|e| s3err(e.to_string()))?;
 
             let etag = resp.e_tag().map(|s| s.trim_matches('"').to_string());
-            let expected_crc32c = resp.checksum_crc32_c().map(|s| s.to_string());
-            let obj_metadata: HashMap<String, String> = resp.metadata().cloned().unwrap_or_default();
+            let expected_crc32c = resp.checksum_crc32_c().map(std::string::ToString::to_string);
+            let obj_metadata: HashMap<String, String> =
+                resp.metadata().cloned().unwrap_or_default();
             let expected_size = *_size;
             let mut body = resp.body;
-            let mut file = tokio::fs::File::create(&local_path).await.map_err(FmError::Io)?;
+            let mut file = tokio::fs::File::create(&local_path)
+                .await
+                .map_err(FmError::Io)?;
             let mut hasher = md5::Context::new();
             let mut crc_state: u32 = 0;
             let mut file_bytes: u64 = 0;
@@ -386,13 +385,12 @@ impl S3Service {
                 if !expected.contains('-') {
                     // Single-part CRC32C: compare base64-encoded value
                     use base64::Engine;
-                    let computed = base64::engine::general_purpose::STANDARD
-                        .encode(crc_state.to_be_bytes());
+                    let computed =
+                        base64::engine::general_purpose::STANDARD.encode(crc_state.to_be_bytes());
                     if computed != *expected {
                         let _ = tokio::fs::remove_file(&local_path).await;
                         return Err(s3err(format!(
-                            "CRC32C mismatch for '{}': expected {} got {}",
-                            key, expected, computed
+                            "CRC32C mismatch for '{key}': expected {expected} got {computed}"
                         )));
                     }
                 } else {
@@ -400,8 +398,7 @@ impl S3Service {
                     if expected_size > 0 && file_bytes != expected_size {
                         let _ = tokio::fs::remove_file(&local_path).await;
                         return Err(s3err(format!(
-                            "Size mismatch for '{}': expected {} got {}",
-                            key, expected_size, file_bytes
+                            "Size mismatch for '{key}': expected {expected_size} got {file_bytes}"
                         )));
                     }
                 }
@@ -412,8 +409,7 @@ impl S3Service {
                     if computed != *etag_val {
                         let _ = tokio::fs::remove_file(&local_path).await;
                         return Err(s3err(format!(
-                            "Checksum mismatch for '{}': expected {} got {}",
-                            key, etag_val, computed
+                            "Checksum mismatch for '{key}': expected {etag_val} got {computed}"
                         )));
                     }
                 } else {
@@ -421,8 +417,7 @@ impl S3Service {
                     if expected_size > 0 && file_bytes != expected_size {
                         let _ = tokio::fs::remove_file(&local_path).await;
                         return Err(s3err(format!(
-                            "Size mismatch for '{}': expected {} got {}",
-                            key, expected_size, file_bytes
+                            "Size mismatch for '{key}': expected {expected_size} got {file_bytes}"
                         )));
                     }
                 }
@@ -430,14 +425,15 @@ impl S3Service {
 
             // Decrypt if encrypted and password provided
             if let Some(pw) = password {
-                if let Some(enc_params) = super::crypto::EncryptionParams::from_metadata(&obj_metadata) {
+                if let Some(enc_params) =
+                    super::crypto::EncryptionParams::from_metadata(&obj_metadata)
+                {
                     super::crypto::decrypt_file(&local_path, pw, &enc_params)?;
                 }
             } else if super::crypto::EncryptionParams::is_encrypted(&obj_metadata) {
                 let _ = tokio::fs::remove_file(&local_path).await;
                 return Err(s3err(format!(
-                    "File '{}' is encrypted — password required for download",
-                    key
+                    "File '{key}' is encrypted — password required for download"
                 )));
             }
 
@@ -479,9 +475,13 @@ impl S3Service {
                 .unwrap_or_default();
 
             if src_path.is_dir() {
-                collect_local_files(&src_path, &format!("{}{}", dest_prefix, name), &mut file_list)?;
+                collect_local_files(
+                    &src_path,
+                    &format!("{dest_prefix}{name}"),
+                    &mut file_list,
+                )?;
             } else {
-                let key = format!("{}{}", dest_prefix, name);
+                let key = format!("{dest_prefix}{name}");
                 file_list.push((src_path, key));
             }
         }
@@ -509,9 +509,7 @@ impl S3Service {
                 }));
             }
 
-            let file_size = std::fs::metadata(local_path)
-                .map(|m| m.len())
-                .unwrap_or(0);
+            let file_size = std::fs::metadata(local_path).map(|m| m.len()).unwrap_or(0);
             let filename = local_path
                 .file_name()
                 .map(|n| n.to_string_lossy().to_string())
@@ -553,7 +551,8 @@ impl S3Service {
                 let data = std::fs::read(local_path)?;
                 let size = data.len() as u64;
 
-                let mut req = self.client
+                let mut req = self
+                    .client
                     .put_object()
                     .bucket(&self.bucket)
                     .key(key)
@@ -564,9 +563,7 @@ impl S3Service {
                         req = req.metadata(mk, mv);
                     }
                 }
-                req.send()
-                    .await
-                    .map_err(|e| s3err(e.to_string()))?;
+                req.send().await.map_err(|e| s3err(e.to_string()))?;
 
                 throttle(size).await;
                 bytes_done += size;
@@ -611,9 +608,13 @@ impl S3Service {
                 .map(|n| n.to_string_lossy().to_string())
                 .unwrap_or_default();
             if src_path.is_dir() {
-                collect_local_files(&src_path, &format!("{}{}", dest_prefix, name), &mut file_list)?;
+                collect_local_files(
+                    &src_path,
+                    &format!("{dest_prefix}{name}"),
+                    &mut file_list,
+                )?;
             } else {
-                let key = format!("{}{}", dest_prefix, name);
+                let key = format!("{dest_prefix}{name}");
                 file_list.push((src_path, key));
             }
         }
@@ -653,7 +654,7 @@ impl S3Service {
                 id: op_id.to_string(),
                 bytes_done,
                 bytes_total,
-                current_file: format!("Encrypting {}", filename),
+                current_file: format!("Encrypting {filename}"),
                 files_done,
                 files_total,
             });
@@ -669,9 +670,7 @@ impl S3Service {
             temp_files.push(enc_path.clone());
             let metadata = params.to_metadata();
 
-            let enc_size = std::fs::metadata(&enc_path)
-                .map(|m| m.len())
-                .unwrap_or(0);
+            let enc_size = std::fs::metadata(&enc_path).map(|m| m.len()).unwrap_or(0);
 
             let upload_result = if enc_size > MULTIPART_THRESHOLD {
                 let atomic_bytes_done = Arc::new(AtomicU64::new(bytes_done));
@@ -689,10 +688,17 @@ impl S3Service {
                     });
                 };
                 let r = upload_file_multipart(
-                    &self.client, &self.bucket, key, &enc_path,
-                    enc_size, &cancel_arc, &atomic_bytes_done, &progress_cb,
+                    &self.client,
+                    &self.bucket,
+                    key,
+                    &enc_path,
+                    enc_size,
+                    &cancel_arc,
+                    &atomic_bytes_done,
+                    &progress_cb,
                     Some(&metadata),
-                ).await;
+                )
+                .await;
                 if r.is_ok() {
                     bytes_done = atomic_bytes_done.load(Ordering::Relaxed);
                 }
@@ -706,7 +712,8 @@ impl S3Service {
                     }
                 };
                 let size = data.len() as u64;
-                let mut req = self.client
+                let mut req = self
+                    .client
                     .put_object()
                     .bucket(&self.bucket)
                     .key(key)
@@ -747,7 +754,8 @@ impl S3Service {
     /// Check if an object has client-side encryption metadata.
     pub async fn is_object_encrypted(&self, key: &str) -> Result<bool, FmError> {
         let actual_key = strip_s3_prefix(key, &self.bucket);
-        let head = self.client
+        let head = self
+            .client
             .head_object()
             .bucket(&self.bucket)
             .key(&actual_key)
@@ -816,10 +824,16 @@ impl S3Service {
             }
 
             let filename = key.rsplit('/').next().unwrap_or(key);
-            let dest_key = format!("{}{}", dest_prefix, filename);
+            let dest_key = format!("{dest_prefix}{filename}");
 
             copy_single_or_multipart(
-                src_client, src_bucket, key, dest_client, dest_bucket, &dest_key, *size,
+                src_client,
+                src_bucket,
+                key,
+                dest_client,
+                dest_bucket,
+                &dest_key,
+                *size,
             )
             .await?;
 
@@ -860,11 +874,11 @@ impl S3Service {
             .last_modified()
             .and_then(|t| t.to_millis().ok())
             .unwrap_or(0);
-        let content_type = head.content_type().map(|s| s.to_string());
-        let etag = head.e_tag().map(|s| s.to_string());
+        let content_type = head.content_type().map(std::string::ToString::to_string);
+        let etag = head.e_tag().map(std::string::ToString::to_string);
         let storage_class = head.storage_class().map(|s| s.as_str().to_string());
-        let restore_status = head.restore().map(|s| s.to_string());
-        let version_id = head.version_id().map(|s| s.to_string());
+        let restore_status = head.restore().map(std::string::ToString::to_string);
+        let version_id = head.version_id().map(std::string::ToString::to_string);
 
         Ok(S3ObjectProperties {
             key: actual_key,
@@ -928,7 +942,7 @@ impl S3Service {
         let folder_key = if key.ends_with('/') {
             key.to_string()
         } else {
-            format!("{}/", key)
+            format!("{key}/")
         };
 
         // Check if anything already exists under this prefix
@@ -1009,7 +1023,13 @@ impl S3Service {
         let object_size = src_head.content_length().unwrap_or(0) as u64;
 
         copy_single_or_multipart(
-            &self.client, &self.bucket, key, &self.client, &self.bucket, &dest_key, object_size,
+            &self.client,
+            &self.bucket,
+            key,
+            &self.client,
+            &self.bucket,
+            &dest_key,
+            object_size,
         )
         .await?;
 
@@ -1030,7 +1050,7 @@ impl S3Service {
         let trimmed = old_prefix.trim_end_matches('/');
         let new_prefix = match trimmed.rfind('/') {
             Some(pos) => format!("{}/{}/", &trimmed[..pos], new_name),
-            None => format!("{}/", new_name),
+            None => format!("{new_name}/"),
         };
 
         // Check target prefix is empty
@@ -1056,13 +1076,17 @@ impl S3Service {
 
         // Copy each object to new prefix
         for (child_key, size, _) in &children {
-            let relative = child_key
-                .strip_prefix(old_prefix)
-                .unwrap_or(child_key);
-            let dest_key = format!("{}{}", new_prefix, relative);
+            let relative = child_key.strip_prefix(old_prefix).unwrap_or(child_key);
+            let dest_key = format!("{new_prefix}{relative}");
 
             copy_single_or_multipart(
-                &self.client, &self.bucket, child_key, &self.client, &self.bucket, &dest_key, *size,
+                &self.client,
+                &self.bucket,
+                child_key,
+                &self.client,
+                &self.bucket,
+                &dest_key,
+                *size,
             )
             .await?;
         }
@@ -1170,7 +1194,7 @@ impl S3Service {
             }
 
             if resp.is_truncated() == Some(true) {
-                continuation_token = resp.next_continuation_token().map(|s| s.to_string());
+                continuation_token = resp.next_continuation_token().map(std::string::ToString::to_string);
             } else {
                 break;
             }
@@ -1187,7 +1211,11 @@ impl S3Service {
     // ── File Editing & Preview ──────────────────────────────────────────
 
     /// Download a single S3 object to a temp file and return the local path.
-    pub async fn download_temp(&self, key: &str, password: Option<&str>) -> Result<String, FmError> {
+    pub async fn download_temp(
+        &self,
+        key: &str,
+        password: Option<&str>,
+    ) -> Result<String, FmError> {
         let stripped_key = strip_s3_prefix(key, &self.bucket);
 
         // Check object size via head_object
@@ -1243,7 +1271,8 @@ impl S3Service {
 
         // Decrypt if encrypted
         if let Some(pw) = password {
-            if let Some(enc_params) = super::crypto::EncryptionParams::from_metadata(&obj_metadata) {
+            if let Some(enc_params) = super::crypto::EncryptionParams::from_metadata(&obj_metadata)
+            {
                 super::crypto::decrypt_file(&temp_path, pw, &enc_params)?;
             }
         } else if super::crypto::EncryptionParams::is_encrypted(&obj_metadata) {
@@ -1273,11 +1302,7 @@ impl S3Service {
     // ── Storage Class Management ────────────────────────────────────────
 
     /// Change the storage class of an S3 object by copying it to itself.
-    pub async fn change_storage_class(
-        &self,
-        key: &str,
-        target_class: &str,
-    ) -> Result<(), FmError> {
+    pub async fn change_storage_class(&self, key: &str, target_class: &str) -> Result<(), FmError> {
         let actual_key = strip_s3_prefix(key, &self.bucket);
 
         // Check object size — reject >5 GiB (copy_object limit)
@@ -1350,12 +1375,7 @@ impl S3Service {
     // ── Glacier & Archive ───────────────────────────────────────────────
 
     /// Restore an object from Glacier or Deep Archive.
-    pub async fn restore_object(
-        &self,
-        key: &str,
-        days: i32,
-        tier: &str,
-    ) -> Result<(), FmError> {
+    pub async fn restore_object(&self, key: &str, days: i32, tier: &str) -> Result<(), FmError> {
         let actual_key = strip_s3_prefix(key, &self.bucket);
 
         let glacier_tier = aws_sdk_s3::types::Tier::from(tier);
@@ -1421,7 +1441,7 @@ impl S3Service {
                         .last_modified()
                         .and_then(|t| t.to_millis().ok())
                         .unwrap_or(0),
-                    etag: v.e_tag().map(|s| s.to_string()),
+                    etag: v.e_tag().map(std::string::ToString::to_string),
                     storage_class: v.storage_class().map(|s| s.as_str().to_string()),
                 });
             }
@@ -1446,8 +1466,8 @@ impl S3Service {
             }
 
             if resp.is_truncated() == Some(true) {
-                key_marker = resp.next_key_marker().map(|s| s.to_string());
-                version_id_marker = resp.next_version_id_marker().map(|s| s.to_string());
+                key_marker = resp.next_key_marker().map(std::string::ToString::to_string);
+                version_id_marker = resp.next_version_id_marker().map(std::string::ToString::to_string);
             } else {
                 break;
             }
@@ -1460,11 +1480,7 @@ impl S3Service {
     }
 
     /// Download a specific version of an S3 object to a temp file.
-    pub async fn download_version(
-        &self,
-        key: &str,
-        version_id: &str,
-    ) -> Result<String, FmError> {
+    pub async fn download_version(&self, key: &str, version_id: &str) -> Result<String, FmError> {
         let stripped_key = strip_s3_prefix(key, &self.bucket);
 
         let resp = self
@@ -1478,8 +1494,12 @@ impl S3Service {
             .map_err(|e| s3err(e.to_string()))?;
 
         let filename = stripped_key.rsplit('/').next().unwrap_or(&stripped_key);
-        let short_vid = if version_id.len() > 8 { &version_id[..8] } else { version_id };
-        let safe_name = format!("{}-{}", short_vid, filename);
+        let short_vid = if version_id.len() > 8 {
+            &version_id[..8]
+        } else {
+            version_id
+        };
+        let safe_name = format!("{short_vid}-{filename}");
         let temp_path = std::env::temp_dir().join("furman-preview").join(&safe_name);
 
         if let Some(parent) = temp_path.parent() {
@@ -1497,11 +1517,7 @@ impl S3Service {
     }
 
     /// Restore a specific version by copying it as the current version.
-    pub async fn restore_version(
-        &self,
-        key: &str,
-        version_id: &str,
-    ) -> Result<(), FmError> {
+    pub async fn restore_version(&self, key: &str, version_id: &str) -> Result<(), FmError> {
         let actual_key = strip_s3_prefix(key, &self.bucket);
 
         let copy_source = format!(
@@ -1551,11 +1567,7 @@ impl S3Service {
     // ── Presigned URLs ──────────────────────────────────────────────────
 
     /// Generate a presigned GET URL for an S3 object.
-    pub async fn presign_url(
-        &self,
-        key: &str,
-        expires_in_secs: u64,
-    ) -> Result<String, FmError> {
+    pub async fn presign_url(&self, key: &str, expires_in_secs: u64) -> Result<String, FmError> {
         let actual_key = strip_s3_prefix(key, &self.bucket);
 
         let presign_config = aws_sdk_s3::presigning::PresigningConfig::expires_in(
@@ -1613,8 +1625,8 @@ impl S3Service {
             aws_sdk_s3::types::BucketVersioningStatus::Suspended
         };
 
-        let mut config_builder = aws_sdk_s3::types::VersioningConfiguration::builder()
-            .status(status);
+        let mut config_builder =
+            aws_sdk_s3::types::VersioningConfiguration::builder().status(status);
 
         if let Some(true) = mfa_delete {
             config_builder = config_builder.mfa_delete(aws_sdk_s3::types::MfaDelete::Enabled);
@@ -1659,13 +1671,8 @@ impl S3Service {
                             .filter_map(|rule| {
                                 let default = rule.apply_server_side_encryption_by_default()?;
                                 Some(S3EncryptionRule {
-                                    sse_algorithm: default
-                                        .sse_algorithm()
-                                        .as_str()
-                                        .to_string(),
-                                    kms_key_id: default
-                                        .kms_master_key_id()
-                                        .map(|s| s.to_string()),
+                                    sse_algorithm: default.sse_algorithm().as_str().to_string(),
+                                    kms_key_id: default.kms_master_key_id().map(std::string::ToString::to_string),
                                     bucket_key_enabled: rule.bucket_key_enabled().unwrap_or(false),
                                 })
                             })
@@ -1712,10 +1719,10 @@ impl S3Service {
             .unwrap_or_default();
 
         Ok(S3ObjectMetadata {
-            content_type: head.content_type().map(|s| s.to_string()),
-            content_disposition: head.content_disposition().map(|s| s.to_string()),
-            cache_control: head.cache_control().map(|s| s.to_string()),
-            content_encoding: head.content_encoding().map(|s| s.to_string()),
+            content_type: head.content_type().map(std::string::ToString::to_string),
+            content_disposition: head.content_disposition().map(std::string::ToString::to_string),
+            cache_control: head.cache_control().map(std::string::ToString::to_string),
+            content_encoding: head.content_encoding().map(std::string::ToString::to_string),
             custom,
         })
     }
@@ -1777,9 +1784,7 @@ impl S3Service {
             req = req.metadata(k, v);
         }
 
-        req.send()
-            .await
-            .map_err(|e| s3err(e.to_string()))?;
+        req.send().await.map_err(|e| s3err(e.to_string()))?;
 
         Ok(())
     }
@@ -1826,11 +1831,7 @@ impl S3Service {
     }
 
     /// Set tags on an S3 object (max 10 tags).
-    pub async fn put_object_tags(
-        &self,
-        key: &str,
-        tags: &[S3Tag],
-    ) -> Result<(), FmError> {
+    pub async fn put_object_tags(&self, key: &str, tags: &[S3Tag]) -> Result<(), FmError> {
         if tags.len() > 10 {
             return Err(s3err("Maximum 10 tags per object"));
         }
@@ -1978,8 +1979,8 @@ impl S3Service {
             }
 
             if resp.is_truncated() == Some(true) {
-                key_marker = resp.next_key_marker().map(|s| s.to_string());
-                upload_id_marker = resp.next_upload_id_marker().map(|s| s.to_string());
+                key_marker = resp.next_key_marker().map(std::string::ToString::to_string);
+                upload_id_marker = resp.next_upload_id_marker().map(std::string::ToString::to_string);
             } else {
                 break;
             }
@@ -1989,11 +1990,7 @@ impl S3Service {
     }
 
     /// Abort a specific multipart upload.
-    pub async fn abort_multipart_upload(
-        &self,
-        key: &str,
-        upload_id: &str,
-    ) -> Result<(), FmError> {
+    pub async fn abort_multipart_upload(&self, key: &str, upload_id: &str) -> Result<(), FmError> {
         self.client
             .abort_multipart_upload()
             .bucket(&self.bucket)
@@ -2027,11 +2024,11 @@ impl S3Service {
 
                         let prefix = rule
                             .filter()
-                            .and_then(|f| f.prefix().map(|s| s.to_string()))
+                            .and_then(|f| f.prefix().map(std::string::ToString::to_string))
                             .unwrap_or_default();
 
-                        let enabled = rule.status()
-                            == &aws_sdk_s3::types::ExpirationStatus::Enabled;
+                        let enabled =
+                            rule.status() == &aws_sdk_s3::types::ExpirationStatus::Enabled;
 
                         let transitions: Vec<S3LifecycleTransition> = rule
                             .transitions()
@@ -2047,10 +2044,7 @@ impl S3Service {
                             })
                             .collect();
 
-                        let expiration_days = rule
-                            .expiration()
-                            .and_then(|e| e.days())
-                            .map(|d| d);
+                        let expiration_days = rule.expiration().and_then(aws_sdk_s3::types::LifecycleExpiration::days).map(|d| d);
 
                         let noncurrent_transitions: Vec<S3LifecycleTransition> = rule
                             .noncurrent_version_transitions()
@@ -2068,12 +2062,12 @@ impl S3Service {
 
                         let noncurrent_expiration_days = rule
                             .noncurrent_version_expiration()
-                            .and_then(|e| e.noncurrent_days())
+                            .and_then(aws_sdk_s3::types::NoncurrentVersionExpiration::noncurrent_days)
                             .map(|d| d);
 
                         let abort_incomplete_days = rule
                             .abort_incomplete_multipart_upload()
-                            .and_then(|a| a.days_after_initiation())
+                            .and_then(aws_sdk_s3::types::AbortIncompleteMultipartUpload::days_after_initiation)
                             .map(|d| d);
 
                         S3LifecycleRule {
@@ -2107,10 +2101,7 @@ impl S3Service {
     }
 
     /// Set bucket lifecycle configuration rules.
-    pub async fn put_bucket_lifecycle(
-        &self,
-        rules: &[S3LifecycleRule],
-    ) -> Result<(), FmError> {
+    pub async fn put_bucket_lifecycle(&self, rules: &[S3LifecycleRule]) -> Result<(), FmError> {
         if rules.is_empty() {
             self.client
                 .delete_bucket_lifecycle()
@@ -2138,7 +2129,9 @@ impl S3Service {
                     });
 
                 for t in &r.transitions {
-                    let sc = t.storage_class.parse::<aws_sdk_s3::types::TransitionStorageClass>()
+                    let sc = t
+                        .storage_class
+                        .parse::<aws_sdk_s3::types::TransitionStorageClass>()
                         .unwrap_or(aws_sdk_s3::types::TransitionStorageClass::StandardIa);
                     builder = builder.transitions(
                         aws_sdk_s3::types::Transition::builder()
@@ -2157,7 +2150,9 @@ impl S3Service {
                 }
 
                 for t in &r.noncurrent_transitions {
-                    let sc = t.storage_class.parse::<aws_sdk_s3::types::TransitionStorageClass>()
+                    let sc = t
+                        .storage_class
+                        .parse::<aws_sdk_s3::types::TransitionStorageClass>()
                         .unwrap_or(aws_sdk_s3::types::TransitionStorageClass::StandardIa);
                     builder = builder.noncurrent_version_transitions(
                         aws_sdk_s3::types::NoncurrentVersionTransition::builder()
@@ -2207,7 +2202,12 @@ impl S3Service {
 
     /// Get CORS configuration for the bucket.
     pub async fn get_bucket_cors(&self) -> Result<Vec<S3CorsRule>, FmError> {
-        let resp = self.client.get_bucket_cors().bucket(&self.bucket).send().await;
+        let resp = self
+            .client
+            .get_bucket_cors()
+            .bucket(&self.bucket)
+            .send()
+            .await;
 
         match resp {
             Ok(r) => {
@@ -2215,11 +2215,15 @@ impl S3Service {
                     .cors_rules()
                     .iter()
                     .map(|rule| S3CorsRule {
-                        allowed_origins: rule.allowed_origins().iter().map(|s| s.to_string()).collect(),
-                        allowed_methods: rule.allowed_methods().iter().map(|s| s.to_string()).collect(),
-                        allowed_headers: rule.allowed_headers().iter().map(|s| s.to_string()).collect(),
-                        expose_headers: rule.expose_headers().iter().map(|s| s.to_string()).collect(),
-                        max_age_seconds: rule.max_age_seconds().map(|v| v as i32),
+                        allowed_origins: rule
+                            .allowed_origins().to_vec(),
+                        allowed_methods: rule
+                            .allowed_methods().to_vec(),
+                        allowed_headers: rule
+                            .allowed_headers().to_vec(),
+                        expose_headers: rule
+                            .expose_headers().to_vec(),
+                        max_age_seconds: rule.max_age_seconds().map(|v| v),
                     })
                     .collect();
                 Ok(rules)
@@ -2286,7 +2290,12 @@ impl S3Service {
 
     /// Get public access block configuration for the bucket.
     pub async fn get_public_access_block(&self) -> Result<S3PublicAccessBlock, FmError> {
-        let resp = self.client.get_public_access_block().bucket(&self.bucket).send().await;
+        let resp = self
+            .client
+            .get_public_access_block()
+            .bucket(&self.bucket)
+            .send()
+            .await;
 
         match resp {
             Ok(r) => {
@@ -2353,7 +2362,12 @@ impl S3Service {
 
     /// Get bucket policy as a JSON string.
     pub async fn get_bucket_policy(&self) -> Result<String, FmError> {
-        let resp = self.client.get_bucket_policy().bucket(&self.bucket).send().await;
+        let resp = self
+            .client
+            .get_bucket_policy()
+            .bucket(&self.bucket)
+            .send()
+            .await;
 
         match resp {
             Ok(r) => Ok(r.policy().unwrap_or_default().to_string()),
@@ -2386,7 +2400,7 @@ impl S3Service {
 
         // Validate JSON
         let _: serde_json::Value =
-            serde_json::from_str(policy).map_err(|e| s3err(format!("Invalid JSON: {}", e)))?;
+            serde_json::from_str(policy).map_err(|e| s3err(format!("Invalid JSON: {e}")))?;
 
         self.client
             .put_bucket_policy()
@@ -2419,7 +2433,7 @@ impl S3Service {
         let owner_display_name = resp
             .owner()
             .and_then(|o| o.display_name())
-            .map(|s| s.to_string());
+            .map(std::string::ToString::to_string);
 
         let grants = resp
             .grants()
@@ -2430,10 +2444,10 @@ impl S3Service {
                         let gt = grantee.r#type().as_str().to_string();
                         (
                             gt,
-                            grantee.id().map(|s| s.to_string()),
-                            grantee.uri().map(|s| s.to_string()),
-                            grantee.email_address().map(|s| s.to_string()),
-                            grantee.display_name().map(|s| s.to_string()),
+                            grantee.id().map(std::string::ToString::to_string),
+                            grantee.uri().map(std::string::ToString::to_string),
+                            grantee.email_address().map(std::string::ToString::to_string),
+                            grantee.display_name().map(std::string::ToString::to_string),
                         )
                     } else {
                         (String::new(), None, None, None, None)
@@ -2470,7 +2484,7 @@ impl S3Service {
             "public-read" => BucketCannedAcl::PublicRead,
             "public-read-write" => BucketCannedAcl::PublicReadWrite,
             "authenticated-read" => BucketCannedAcl::AuthenticatedRead,
-            other => return Err(s3err(format!("Unknown canned ACL: {}", other))),
+            other => return Err(s3err(format!("Unknown canned ACL: {other}"))),
         };
         self.client
             .put_bucket_acl()
@@ -2486,7 +2500,12 @@ impl S3Service {
 
     /// Get static website hosting configuration.
     pub async fn get_bucket_website(&self) -> Result<S3BucketWebsite, FmError> {
-        let resp = self.client.get_bucket_website().bucket(&self.bucket).send().await;
+        let resp = self
+            .client
+            .get_bucket_website()
+            .bucket(&self.bucket)
+            .send()
+            .await;
 
         match resp {
             Ok(r) => {
@@ -2494,9 +2513,7 @@ impl S3Service {
                     .index_document()
                     .map(|d| d.suffix().to_string())
                     .unwrap_or_else(|| "index.html".to_string());
-                let error_doc = r
-                    .error_document()
-                    .map(|d| d.key().to_string());
+                let error_doc = r.error_document().map(|d| d.key().to_string());
                 Ok(S3BucketWebsite {
                     enabled: true,
                     index_document: index,
@@ -2651,7 +2668,7 @@ impl S3Service {
             "BucketOwnerEnforced" => ObjectOwnership::BucketOwnerEnforced,
             "BucketOwnerPreferred" => ObjectOwnership::BucketOwnerPreferred,
             "ObjectWriter" => ObjectOwnership::ObjectWriter,
-            other => return Err(s3err(format!("Unknown ownership: {}", other))),
+            other => return Err(s3err(format!("Unknown ownership: {other}"))),
         };
 
         let rule = aws_sdk_s3::types::OwnershipControlsRule::builder()
@@ -2714,16 +2731,15 @@ impl S3Service {
                 .as_deref()
                 .ok_or_else(|| s3err("Target bucket is required when enabling logging"))?;
 
-            let mut logging = aws_sdk_s3::types::LoggingEnabled::builder()
-                .target_bucket(target_bucket);
+            let mut logging =
+                aws_sdk_s3::types::LoggingEnabled::builder().target_bucket(target_bucket);
 
             if let Some(prefix) = &config.target_prefix {
                 logging = logging.target_prefix(prefix);
             }
 
-            status_builder = status_builder.logging_enabled(
-                logging.build().map_err(|e| s3err(e.to_string()))?,
-            );
+            status_builder =
+                status_builder.logging_enabled(logging.build().map_err(|e| s3err(e.to_string()))?);
         }
 
         let status = status_builder.build();
@@ -2754,11 +2770,11 @@ impl S3Service {
         let algorithm = match sse_algorithm {
             "AES256" | "aws:kms:dsse" => ServerSideEncryption::Aes256,
             "aws:kms" => ServerSideEncryption::AwsKms,
-            other => return Err(s3err(format!("Unknown SSE algorithm: {}", other))),
+            other => return Err(s3err(format!("Unknown SSE algorithm: {other}"))),
         };
 
-        let mut default_encryption = ServerSideEncryptionByDefault::builder()
-            .sse_algorithm(algorithm);
+        let mut default_encryption =
+            ServerSideEncryptionByDefault::builder().sse_algorithm(algorithm);
 
         if let Some(key_id) = kms_key_id {
             if !key_id.is_empty() {
@@ -2767,7 +2783,11 @@ impl S3Service {
         }
 
         let rule = ServerSideEncryptionRule::builder()
-            .apply_server_side_encryption_by_default(default_encryption.build().map_err(|e| s3err(e.to_string()))?)
+            .apply_server_side_encryption_by_default(
+                default_encryption
+                    .build()
+                    .map_err(|e| s3err(e.to_string()))?,
+            )
             .bucket_key_enabled(bucket_key_enabled)
             .build();
 
@@ -2813,8 +2833,8 @@ impl S3Service {
                     .and_then(|r| r.default_retention())
                     .map(|dr| {
                         let m = dr.mode().map(|m| m.as_str().to_string());
-                        let d = dr.days().map(|d| d as i32);
-                        let y = dr.years().map(|y| y as i32);
+                        let d = dr.days().map(|d| d);
+                        let y = dr.years().map(|y| y);
                         (m, d, y)
                     })
                     .unwrap_or((None, None, None));
@@ -2857,11 +2877,11 @@ impl S3Service {
             let retention_mode = match m {
                 "GOVERNANCE" => aws_sdk_s3::types::ObjectLockRetentionMode::Governance,
                 "COMPLIANCE" => aws_sdk_s3::types::ObjectLockRetentionMode::Compliance,
-                other => return Err(s3err(format!("Unknown retention mode: {}", other))),
+                other => return Err(s3err(format!("Unknown retention mode: {other}"))),
             };
 
-            let mut dr_builder = aws_sdk_s3::types::DefaultRetention::builder()
-                .mode(retention_mode);
+            let mut dr_builder =
+                aws_sdk_s3::types::DefaultRetention::builder().mode(retention_mode);
             if let Some(d) = days {
                 dr_builder = dr_builder.days(d);
             }
@@ -2913,9 +2933,10 @@ impl S3Service {
                 let mode = retention
                     .and_then(|r| r.mode())
                     .map(|m| m.as_str().to_string());
-                let retain_until = retention
-                    .and_then(|r| r.retain_until_date())
-                    .map(|d| d.fmt(aws_sdk_s3::primitives::DateTimeFormat::DateTime).unwrap_or_default());
+                let retain_until = retention.and_then(|r| r.retain_until_date()).map(|d| {
+                    d.fmt(aws_sdk_s3::primitives::DateTimeFormat::DateTime)
+                        .unwrap_or_default()
+                });
 
                 Ok(S3ObjectRetention {
                     mode,
@@ -2955,14 +2976,14 @@ impl S3Service {
         let retention_mode = match mode {
             "GOVERNANCE" => aws_sdk_s3::types::ObjectLockRetentionMode::Governance,
             "COMPLIANCE" => aws_sdk_s3::types::ObjectLockRetentionMode::Compliance,
-            other => return Err(s3err(format!("Unknown retention mode: {}", other))),
+            other => return Err(s3err(format!("Unknown retention mode: {other}"))),
         };
 
         let date = aws_sdk_s3::primitives::DateTime::from_str(
             retain_until_date,
             aws_sdk_s3::primitives::DateTimeFormat::DateTime,
         )
-        .map_err(|e| s3err(format!("Invalid date: {}", e)))?;
+        .map_err(|e| s3err(format!("Invalid date: {e}")))?;
 
         let retention = aws_sdk_s3::types::ObjectLockRetention::builder()
             .mode(retention_mode)
@@ -2980,9 +3001,7 @@ impl S3Service {
             req = req.bypass_governance_retention(true);
         }
 
-        req.send()
-            .await
-            .map_err(|e| s3err(e.to_string()))?;
+        req.send().await.map_err(|e| s3err(e.to_string()))?;
 
         Ok(())
     }
@@ -3028,17 +3047,13 @@ impl S3Service {
     }
 
     /// Set legal hold on a specific object.
-    pub async fn put_object_legal_hold(
-        &self,
-        key: &str,
-        status: &str,
-    ) -> Result<(), FmError> {
+    pub async fn put_object_legal_hold(&self, key: &str, status: &str) -> Result<(), FmError> {
         let actual_key = strip_s3_prefix(key, &self.bucket);
 
         let hold_status = match status {
             "ON" => aws_sdk_s3::types::ObjectLockLegalHoldStatus::On,
             "OFF" => aws_sdk_s3::types::ObjectLockLegalHoldStatus::Off,
-            other => return Err(s3err(format!("Unknown legal hold status: {}", other))),
+            other => return Err(s3err(format!("Unknown legal hold status: {other}"))),
         };
 
         let legal_hold = aws_sdk_s3::types::ObjectLockLegalHold::builder()
@@ -3068,14 +3083,14 @@ impl S3Service {
         let retention_mode = match mode {
             "GOVERNANCE" => aws_sdk_s3::types::ObjectLockRetentionMode::Governance,
             "COMPLIANCE" => aws_sdk_s3::types::ObjectLockRetentionMode::Compliance,
-            other => return Err(s3err(format!("Unknown retention mode: {}", other))),
+            other => return Err(s3err(format!("Unknown retention mode: {other}"))),
         };
 
         let date = aws_sdk_s3::primitives::DateTime::from_str(
             retain_until_date,
             aws_sdk_s3::primitives::DateTimeFormat::DateTime,
         )
-        .map_err(|e| s3err(format!("Invalid date: {}", e)))?;
+        .map_err(|e| s3err(format!("Invalid date: {e}")))?;
 
         let mut failed: Vec<String> = Vec::new();
 
@@ -3195,10 +3210,8 @@ impl S3Service {
             let final_tags = if merge {
                 match self.get_object_tags(key).await {
                     Ok(existing) => {
-                        let mut merged: HashMap<String, String> = existing
-                            .into_iter()
-                            .map(|t| (t.key, t.value))
-                            .collect();
+                        let mut merged: HashMap<String, String> =
+                            existing.into_iter().map(|t| (t.key, t.value)).collect();
                         for t in tags {
                             merged.insert(t.key.clone(), t.value.clone());
                         }
@@ -3273,11 +3286,9 @@ impl S3Service {
                                 continue;
                             };
                             let bucket_arn = s3_dest.bucket().to_string();
-                            let prefix =
-                                s3_dest.prefix().map(|s: &str| s.to_string());
+                            let prefix = s3_dest.prefix().map(|s: &str| s.to_string());
                             let format = s3_dest.format().as_str().to_string();
-                            let account_id =
-                                s3_dest.account_id().map(|s: &str| s.to_string());
+                            let account_id = s3_dest.account_id().map(|s: &str| s.to_string());
 
                             // Schedule
                             let schedule = ic
@@ -3286,10 +3297,8 @@ impl S3Service {
                                 .unwrap_or_else(|| "Daily".to_string());
 
                             // Included object versions
-                            let included_object_versions = ic
-                                .included_object_versions()
-                                .as_str()
-                                .to_string();
+                            let included_object_versions =
+                                ic.included_object_versions().as_str().to_string();
 
                             // Optional fields
                             let optional_fields: Vec<String> = ic
@@ -3299,8 +3308,7 @@ impl S3Service {
                                 .collect();
 
                             // Filter prefix
-                            let filter_prefix =
-                                ic.filter().map(|f| f.prefix().to_string());
+                            let filter_prefix = ic.filter().map(|f| f.prefix().to_string());
 
                             all_configs.push(S3InventoryConfiguration {
                                 id,
@@ -3417,7 +3425,7 @@ impl S3Service {
             .inventory_configuration(sdk_config)
             .send()
             .await
-            .map_err(|e| s3err(format!("Failed to put inventory configuration: {}", e)))?;
+            .map_err(|e| s3err(format!("Failed to put inventory configuration: {e}")))?;
 
         Ok(())
     }
@@ -3430,7 +3438,7 @@ impl S3Service {
             .id(config_id)
             .send()
             .await
-            .map_err(|e| s3err(format!("Failed to delete inventory configuration: {}", e)))?;
+            .map_err(|e| s3err(format!("Failed to delete inventory configuration: {e}")))?;
 
         Ok(())
     }
@@ -3458,40 +3466,37 @@ impl S3Service {
                 let mut rules = Vec::new();
 
                 for rule in repl_config.rules() {
-                    let id = rule.id().map(|s| s.to_string());
+                    let id = rule.id().map(std::string::ToString::to_string);
                     let priority = rule.priority();
-                    let status = rule
-                        .status()
-                        .as_str()
-                        .to_string();
+                    let status = rule.status().as_str().to_string();
 
                     // Extract filter prefix from filter.prefix() or filter.and().prefix()
                     let filter_prefix = rule.filter().and_then(|f| {
                         if let Some(p) = f.prefix() {
-                            if !p.is_empty() { return Some(p.to_string()); }
+                            if !p.is_empty() {
+                                return Some(p.to_string());
+                            }
                         }
                         if let Some(and) = f.and() {
                             if let Some(p) = and.prefix() {
-                                if !p.is_empty() { return Some(p.to_string()); }
+                                if !p.is_empty() {
+                                    return Some(p.to_string());
+                                }
                             }
                         }
                         None
                     });
 
                     let dest = rule.destination();
-                    let bucket_arn = dest
-                        .map(|d| d.bucket().to_string())
-                        .unwrap_or_default();
+                    let bucket_arn = dest.map(|d| d.bucket().to_string()).unwrap_or_default();
                     let storage_class = dest
                         .and_then(|d| d.storage_class())
                         .map(|sc| sc.as_str().to_string());
-                    let account = dest
-                        .and_then(|d| d.account())
-                        .map(|a| a.to_string());
+                    let account = dest.and_then(|d| d.account()).map(std::string::ToString::to_string);
                     let kms_key_id = dest
                         .and_then(|d| d.encryption_configuration())
                         .and_then(|ec| ec.replica_kms_key_id())
-                        .map(|k| k.to_string());
+                        .map(std::string::ToString::to_string);
 
                     let delete_marker_replication = rule
                         .delete_marker_replication()
@@ -3559,9 +3564,7 @@ impl S3Service {
                 dest_builder = dest_builder.encryption_configuration(enc);
             }
 
-            let destination = dest_builder
-                .build()
-                .map_err(|e| s3err(e.to_string()))?;
+            let destination = dest_builder.build().map_err(|e| s3err(e.to_string()))?;
 
             let status = match rule.status.as_str() {
                 "Disabled" => ReplicationRuleStatus::Disabled,
@@ -3613,7 +3616,7 @@ impl S3Service {
             .replication_configuration(sdk_config)
             .send()
             .await
-            .map_err(|e| s3err(format!("Failed to put replication configuration: {}", e)))?;
+            .map_err(|e| s3err(format!("Failed to put replication configuration: {e}")))?;
 
         Ok(())
     }
@@ -3625,7 +3628,7 @@ impl S3Service {
             .bucket(&self.bucket)
             .send()
             .await
-            .map_err(|e| s3err(format!("Failed to delete replication configuration: {}", e)))?;
+            .map_err(|e| s3err(format!("Failed to delete replication configuration: {e}")))?;
 
         Ok(())
     }
@@ -3642,14 +3645,14 @@ impl S3Service {
             .bucket(&self.bucket)
             .send()
             .await
-            .map_err(|e| s3err(format!("Failed to get notification configuration: {}", e)))?;
+            .map_err(|e| s3err(format!("Failed to get notification configuration: {e}")))?;
 
         let mut rules = Vec::new();
 
         // SNS topic configurations
         for tc in resp.topic_configurations() {
             rules.push(S3NotificationRule {
-                id: tc.id().map(|s| s.to_string()),
+                id: tc.id().map(std::string::ToString::to_string),
                 destination_type: "sns".to_string(),
                 destination_arn: tc.topic_arn().to_string(),
                 events: tc.events().iter().map(|e| e.as_str().to_string()).collect(),
@@ -3661,7 +3664,7 @@ impl S3Service {
         // SQS queue configurations
         for qc in resp.queue_configurations() {
             rules.push(S3NotificationRule {
-                id: qc.id().map(|s| s.to_string()),
+                id: qc.id().map(std::string::ToString::to_string),
                 destination_type: "sqs".to_string(),
                 destination_arn: qc.queue_arn().to_string(),
                 events: qc.events().iter().map(|e| e.as_str().to_string()).collect(),
@@ -3673,7 +3676,7 @@ impl S3Service {
         // Lambda function configurations
         for lc in resp.lambda_function_configurations() {
             rules.push(S3NotificationRule {
-                id: lc.id().map(|s| s.to_string()),
+                id: lc.id().map(std::string::ToString::to_string),
                 destination_type: "lambda".to_string(),
                 destination_arn: lc.lambda_function_arn().to_string(),
                 events: lc.events().iter().map(|e| e.as_str().to_string()).collect(),
@@ -3696,8 +3699,8 @@ impl S3Service {
         config: &S3NotificationConfiguration,
     ) -> Result<(), FmError> {
         use aws_sdk_s3::types::{
-            Event, EventBridgeConfiguration, LambdaFunctionConfiguration,
-            QueueConfiguration, TopicConfiguration,
+            Event, EventBridgeConfiguration, LambdaFunctionConfiguration, QueueConfiguration,
+            TopicConfiguration,
         };
 
         let mut topic_configs = Vec::new();
@@ -3780,8 +3783,8 @@ impl S3Service {
             });
 
         if config.event_bridge_enabled {
-            notif_builder =
-                notif_builder.event_bridge_configuration(EventBridgeConfiguration::builder().build());
+            notif_builder = notif_builder
+                .event_bridge_configuration(EventBridgeConfiguration::builder().build());
         }
 
         let notif_config = notif_builder.build();
@@ -3792,12 +3795,7 @@ impl S3Service {
             .notification_configuration(notif_config)
             .send()
             .await
-            .map_err(|e| {
-                s3err(format!(
-                    "Failed to put notification configuration: {}",
-                    e
-                ))
-            })?;
+            .map_err(|e| s3err(format!("Failed to put notification configuration: {e}")))?;
 
         Ok(())
     }
@@ -3845,8 +3843,8 @@ fn build_notification_filter(
         FilterRule, FilterRuleName, NotificationConfigurationFilter, S3KeyFilter,
     };
 
-    let has_prefix = prefix.map_or(false, |p| !p.is_empty());
-    let has_suffix = suffix.map_or(false, |s| !s.is_empty());
+    let has_prefix = prefix.is_some_and(|p| !p.is_empty());
+    let has_suffix = suffix.is_some_and(|s| !s.is_empty());
 
     if !has_prefix && !has_suffix {
         return None;
@@ -3911,9 +3909,7 @@ pub async fn list_access_points(
             .map_err(|e| s3err(format!("ListAccessPoints: {e}")))?;
 
         for ap in resp.access_point_list() {
-            let vpc_id = ap
-                .vpc_configuration()
-                .map(|v| v.vpc_id().to_string());
+            let vpc_id = ap.vpc_configuration().map(|v| v.vpc_id().to_string());
             let network = if vpc_id.is_some() { "VPC" } else { "Internet" };
             results.push(S3AccessPoint {
                 name: ap.name().to_string(),
@@ -3925,7 +3921,7 @@ pub async fn list_access_points(
             });
         }
 
-        next_token = resp.next_token().map(|s| s.to_string());
+        next_token = resp.next_token().map(std::string::ToString::to_string);
         if next_token.is_none() {
             break;
         }
@@ -3947,21 +3943,19 @@ pub async fn get_access_point(
         .await
         .map_err(|e| s3err(format!("GetAccessPoint: {e}")))?;
 
-    let vpc_id = resp
-        .vpc_configuration()
-        .map(|v| v.vpc_id().to_string());
+    let vpc_id = resp.vpc_configuration().map(|v| v.vpc_id().to_string());
     let network = if vpc_id.is_some() { "VPC" } else { "Internet" };
 
-    let pab = resp.public_access_block_configuration().map(|b| S3PublicAccessBlock {
-        block_public_acls: b.block_public_acls().unwrap_or(false),
-        ignore_public_acls: b.ignore_public_acls().unwrap_or(false),
-        block_public_policy: b.block_public_policy().unwrap_or(false),
-        restrict_public_buckets: b.restrict_public_buckets().unwrap_or(false),
-    });
+    let pab = resp
+        .public_access_block_configuration()
+        .map(|b| S3PublicAccessBlock {
+            block_public_acls: b.block_public_acls().unwrap_or(false),
+            ignore_public_acls: b.ignore_public_acls().unwrap_or(false),
+            block_public_policy: b.block_public_policy().unwrap_or(false),
+            restrict_public_buckets: b.restrict_public_buckets().unwrap_or(false),
+        });
 
-    let creation_date = resp
-        .creation_date()
-        .map(|d| d.to_string());
+    let creation_date = resp.creation_date().map(std::string::ToString::to_string);
 
     let endpoints = resp
         .endpoints()

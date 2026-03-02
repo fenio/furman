@@ -1,5 +1,5 @@
-use crate::s3::S3State;
 use crate::models::{FmError, SyncEntry, SyncEvent};
+use crate::s3::S3State;
 use glob_match::glob_match;
 use std::collections::HashMap;
 use std::fs;
@@ -23,14 +23,14 @@ type FileInfo = (u64, i64, Option<String>);
 #[tauri::command]
 pub async fn sync_diff(
     id: String,
-    source_backend: String,  // "local" | "s3"
-    source_path: String,     // local dir path or s3://bucket/prefix
-    source_s3_id: String,    // "" for local
+    source_backend: String, // "local" | "s3"
+    source_path: String,    // local dir path or s3://bucket/prefix
+    source_s3_id: String,   // "" for local
     dest_backend: String,
     dest_path: String,
     dest_s3_id: String,
     exclude_patterns: Vec<String>,
-    compare_mode: String,    // "size_mtime" | "checksum"
+    compare_mode: String, // "size_mtime" | "checksum"
     channel: Channel<SyncEvent>,
     s3_state: State<'_, S3State>,
     sync_state: State<'_, SyncState>,
@@ -99,8 +99,10 @@ pub async fn sync_diff(
         let entry = if let Some((dst_size, dst_modified, ref dst_etag)) = dest_files.get(rel_path) {
             let is_modified = if use_checksum {
                 files_differ_checksum(
-                    *src_size, src_etag.as_deref(),
-                    *dst_size, dst_etag.as_deref(),
+                    *src_size,
+                    src_etag.as_deref(),
+                    *dst_size,
+                    dst_etag.as_deref(),
                 )
             } else {
                 src_size != dst_size || *src_modified > *dst_modified
@@ -195,10 +197,7 @@ pub async fn sync_diff(
 
 #[tauri::command]
 pub fn cancel_sync(id: String, state: State<'_, SyncState>) -> Result<(), FmError> {
-    let map = state
-        .0
-        .lock()
-        .map_err(|e| FmError::Other(e.to_string()))?;
+    let map = state.0.lock().map_err(|e| FmError::Other(e.to_string()))?;
     if let Some(flag) = map.get(&id) {
         flag.store(true, Ordering::Relaxed);
     }
@@ -239,8 +238,10 @@ fn apply_excludes(files: &mut HashMap<String, FileInfo>, patterns: &[String]) {
 /// Compare files in checksum mode. Handles S3 multipart ETags (contain '-')
 /// by falling back to size comparison.
 fn files_differ_checksum(
-    src_size: u64, src_etag: Option<&str>,
-    dst_size: u64, dst_etag: Option<&str>,
+    src_size: u64,
+    src_etag: Option<&str>,
+    dst_size: u64,
+    dst_etag: Option<&str>,
 ) -> bool {
     let src_tag = src_etag.unwrap_or("");
     let dst_tag = dst_etag.unwrap_or("");
@@ -273,7 +274,7 @@ async fn collect_files(
     match backend {
         "local" => collect_local_files_recursive(Path::new(path), use_checksum),
         "s3" => collect_s3_files(s3_id, path, s3_state).await,
-        _ => Err(FmError::Other(format!("Unknown backend: {}", backend))),
+        _ => Err(FmError::Other(format!("Unknown backend: {backend}"))),
     }
 }
 
@@ -317,8 +318,7 @@ fn walk_local(
         } else {
             let full = path.to_string_lossy().to_string();
             // Build relative path by stripping root prefix
-            let rel = if full.starts_with(root) {
-                let r = &full[root.len()..];
+            let rel = if let Some(r) = full.strip_prefix(root) {
                 if r.starts_with('/') {
                     r[1..].to_string()
                 } else {
@@ -364,7 +364,7 @@ fn compute_file_md5(path: &Path) -> Result<String, FmError> {
     }
 
     let digest = context.compute();
-    Ok(format!("{:x}", digest))
+    Ok(format!("{digest:x}"))
 }
 
 /// Collect S3 objects under a prefix, returning relative paths with size, mtime, and ETag.
@@ -453,19 +453,13 @@ async fn list_all_objects(
     let mut continuation_token: Option<String> = None;
 
     loop {
-        let mut req = client
-            .list_objects_v2()
-            .bucket(bucket)
-            .prefix(prefix);
+        let mut req = client.list_objects_v2().bucket(bucket).prefix(prefix);
 
         if let Some(token) = &continuation_token {
             req = req.continuation_token(token);
         }
 
-        let resp = req
-            .send()
-            .await
-            .map_err(|e| FmError::S3(e.to_string()))?;
+        let resp = req.send().await.map_err(|e| FmError::S3(e.to_string()))?;
 
         for obj in resp.contents() {
             let key = obj.key().unwrap_or_default().to_string();
@@ -474,12 +468,12 @@ async fn list_all_objects(
                 .last_modified()
                 .and_then(|t| t.to_millis().ok())
                 .unwrap_or(0);
-            let etag = obj.e_tag().map(|s| s.to_string());
+            let etag = obj.e_tag().map(std::string::ToString::to_string);
             results.push((key, size, modified, etag));
         }
 
         if resp.is_truncated() == Some(true) {
-            continuation_token = resp.next_continuation_token().map(|s| s.to_string());
+            continuation_token = resp.next_continuation_token().map(std::string::ToString::to_string);
         } else {
             break;
         }

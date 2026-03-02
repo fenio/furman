@@ -1,4 +1,5 @@
 import type { FileEntry, SortField, SortDirection, ViewMode, PanelBackend, S3ConnectionInfo, SftpConnectionInfo, ArchiveInfo, GitRepoInfo } from '$lib/types';
+import { SvelteSet } from 'svelte/reactivity';
 import { sortEntries } from '$lib/utils/sort';
 import { listDirectory, listArchive, watchDirectory, unwatchDirectory, getGitRepoInfo, getDirectorySize } from '$lib/services/tauri';
 import { s3Connect, s3Disconnect, s3ListObjects, s3IsObjectEncrypted } from '$lib/services/s3';
@@ -15,7 +16,7 @@ export class PanelData {
   tabId: number;
   cursorIndex = $state(0);
   selectionAnchor = $state(0);
-  selectedPaths = $state<Set<string>>(new Set());
+  selectedPaths = $state<Set<string>>(new SvelteSet());
   sortField = $state<SortField>(appState.sortField);
   sortDirection = $state<SortDirection>(appState.sortDirection);
   viewMode = $state<ViewMode>('list');
@@ -76,11 +77,11 @@ export class PanelData {
 
   /** Cache of computed recursive directory sizes (path → bytes). */
   dirSizeCache = $state<Record<string, number>>({});
-  private dirSizePending = new Set<string>();
+  private dirSizePending = new SvelteSet<string>();
 
   /** Cache of encryption status for S3 objects (key → encrypted). */
   encryptionCache = $state<Record<string, boolean>>({});
-  private encryptionPending = new Set<string>();
+  private encryptionPending = new SvelteSet<string>();
   private encryptionDebounceTimer: ReturnType<typeof setTimeout> | null = null;
 
   constructor(side: string) {
@@ -150,13 +151,13 @@ export class PanelData {
         this.cursorIndex = Math.max(0, this.filteredSortedEntries.length - 1);
       }
       // Prune selections that no longer exist
-      const validPaths = new Set(listing.entries.map(e => e.path));
+      const validPaths = new SvelteSet(listing.entries.map(e => e.path));
       let pruned = false;
       for (const p of this.selectedPaths) {
         if (!validPaths.has(p)) { pruned = true; break; }
       }
       if (pruned) {
-        this.selectedPaths = new Set([...this.selectedPaths].filter(p => validPaths.has(p)));
+        this.selectedPaths = new SvelteSet([...this.selectedPaths].filter(p => validPaths.has(p)));
       }
     } catch {
       // Ignore — the directory may have been removed; a full loadDirectory will handle errors
@@ -209,7 +210,7 @@ export class PanelData {
       this.freeSpace = listing.free_space;
       // Rust backend already provides ".." entry — use entries as-is
       this.entries = listing.entries;
-      this.selectedPaths = new Set();
+      this.selectedPaths = new SvelteSet();
       // Fetch git info non-blocking for local backends
       if (this.backend === 'local') {
         getGitRepoInfo(listing.path).then((info) => {
@@ -360,7 +361,7 @@ export class PanelData {
   }
 
   toggleSelection(path: string) {
-    const next = new Set(this.selectedPaths);
+    const next = new SvelteSet(this.selectedPaths);
     if (next.has(path)) {
       next.delete(path);
     } else {
@@ -370,7 +371,7 @@ export class PanelData {
   }
 
   selectAll() {
-    const next = new Set<string>();
+    const next = new SvelteSet<string>();
     for (const entry of this.entries) {
       if (entry.name !== '..') {
         next.add(entry.path);
@@ -380,11 +381,11 @@ export class PanelData {
   }
 
   deselectAll() {
-    this.selectedPaths = new Set();
+    this.selectedPaths = new SvelteSet();
   }
 
   invertSelection() {
-    const next = new Set<string>();
+    const next = new SvelteSet<string>();
     for (const entry of this.entries) {
       if (entry.name !== '..' && !this.selectedPaths.has(entry.path)) {
         next.add(entry.path);
@@ -394,7 +395,7 @@ export class PanelData {
   }
 
   selectRange(from: number, to: number) {
-    const next = new Set<string>();
+    const next = new SvelteSet<string>();
     const start = Math.min(from, to);
     const end = Math.max(from, to);
     for (let i = start; i <= end; i++) {
@@ -434,7 +435,7 @@ export class PanelData {
   }
 }
 
-function parentPath(p: string): string {
+function _parentPath(p: string): string {
   // Remove trailing slash
   let clean = p.replace(/\/+$/, '');
   const lastSlash = clean.lastIndexOf('/');

@@ -52,7 +52,11 @@ async fn test_create_folder() {
     let names: Vec<&str> = listing.entries.iter().map(|e| e.name.as_str()).collect();
     assert!(names.contains(&"new-folder"), "Should contain new-folder");
 
-    let folder_entry = listing.entries.iter().find(|e| e.name == "new-folder").unwrap();
+    let folder_entry = listing
+        .entries
+        .iter()
+        .find(|e| e.name == "new-folder")
+        .unwrap();
     assert!(folder_entry.is_dir, "new-folder should be a directory");
 
     ctx.cleanup().await;
@@ -146,7 +150,10 @@ async fn test_put_text_and_download_temp() {
     let ctx = SftpTestContext::new().await;
 
     let remote = format!("{}/hello.txt", ctx.test_dir);
-    ctx.service.put_text(&remote, "hello from put_text").await.unwrap();
+    ctx.service
+        .put_text(&remote, "hello from put_text")
+        .await
+        .unwrap();
 
     let local = ctx.service.download_temp(&remote).await.unwrap();
     let content = tokio::fs::read_to_string(&local).await.unwrap();
@@ -242,7 +249,10 @@ async fn test_download_progress_events() {
 
     ctx.service
         .download(
-            &remotes.iter().map(|s| s.as_str().to_string()).collect::<Vec<_>>(),
+            &remotes
+                .iter()
+                .map(|s| s.as_str().to_string())
+                .collect::<Vec<_>>(),
             tmp.path().to_str().unwrap(),
             "op-dl-progress",
             &cancel,
@@ -260,7 +270,10 @@ async fn test_download_progress_events() {
     let final_evt = evts.iter().filter(|e| e.files_total > 0).last().unwrap();
     assert!(final_evt.bytes_total > 0, "bytes_total should be > 0");
     assert_eq!(final_evt.files_total, 2, "files_total should be 2");
-    assert_eq!(final_evt.files_done, 2, "files_done should reach files_total");
+    assert_eq!(
+        final_evt.files_done, 2,
+        "files_done should reach files_total"
+    );
 
     ctx.cleanup().await;
 }
@@ -306,7 +319,8 @@ async fn test_download_cancel_during_transfer() {
 
     // Create several files so cancel has time to trigger
     for i in 0..5 {
-        ctx.put_file(&format!("cancel-{}.txt", i), &vec![0u8; 1024]).await;
+        ctx.put_file(&format!("cancel-{}.txt", i), &vec![0u8; 1024])
+            .await;
     }
 
     let tmp = tempfile::tempdir().unwrap();
@@ -391,7 +405,9 @@ async fn test_upload_single_file() {
 
     let tmp = tempfile::tempdir().unwrap();
     let local_file = tmp.path().join("upload-me.txt");
-    tokio::fs::write(&local_file, b"upload content").await.unwrap();
+    tokio::fs::write(&local_file, b"upload content")
+        .await
+        .unwrap();
 
     let cancel = AtomicBool::new(false);
     ctx.service
@@ -408,7 +424,10 @@ async fn test_upload_single_file() {
     // Verify file exists on server
     let listing = ctx.service.list_objects(&ctx.test_dir).await.unwrap();
     let names: Vec<&str> = listing.entries.iter().map(|e| e.name.as_str()).collect();
-    assert!(names.contains(&"upload-me.txt"), "Uploaded file should appear");
+    assert!(
+        names.contains(&"upload-me.txt"),
+        "Uploaded file should appear"
+    );
 
     // Verify content by downloading
     let remote_path = format!("{}/upload-me.txt", ctx.test_dir);
@@ -428,8 +447,12 @@ async fn test_upload_directory() {
     let tmp = tempfile::tempdir().unwrap();
     let dir = tmp.path().join("upload-dir");
     tokio::fs::create_dir_all(dir.join("sub")).await.unwrap();
-    tokio::fs::write(dir.join("root.txt"), b"root file").await.unwrap();
-    tokio::fs::write(dir.join("sub/nested.txt"), b"nested file").await.unwrap();
+    tokio::fs::write(dir.join("root.txt"), b"root file")
+        .await
+        .unwrap();
+    tokio::fs::write(dir.join("sub/nested.txt"), b"nested file")
+        .await
+        .unwrap();
 
     let cancel = AtomicBool::new(false);
     ctx.service
@@ -465,8 +488,12 @@ async fn test_upload_progress_events() {
     let ctx = SftpTestContext::new().await;
 
     let tmp = tempfile::tempdir().unwrap();
-    tokio::fs::write(tmp.path().join("up1.txt"), b"upload1").await.unwrap();
-    tokio::fs::write(tmp.path().join("up2.txt"), b"upload2").await.unwrap();
+    tokio::fs::write(tmp.path().join("up1.txt"), b"upload1")
+        .await
+        .unwrap();
+    tokio::fs::write(tmp.path().join("up2.txt"), b"upload2")
+        .await
+        .unwrap();
 
     let sources: Vec<String> = vec![
         tmp.path().join("up1.txt").to_str().unwrap().to_string(),
@@ -477,7 +504,13 @@ async fn test_upload_progress_events() {
     let (events, on_progress) = collect_progress();
 
     ctx.service
-        .upload(&sources, &ctx.test_dir, "op-ul-progress", &cancel, &on_progress)
+        .upload(
+            &sources,
+            &ctx.test_dir,
+            "op-ul-progress",
+            &cancel,
+            &on_progress,
+        )
         .await
         .unwrap();
 
@@ -487,7 +520,10 @@ async fn test_upload_progress_events() {
     let final_evt = evts.last().unwrap();
     assert!(final_evt.bytes_total > 0, "bytes_total should be > 0");
     assert_eq!(final_evt.files_total, 2, "files_total should be 2");
-    assert_eq!(final_evt.files_done, 2, "files_done should reach files_total");
+    assert_eq!(
+        final_evt.files_done, 2,
+        "files_done should reach files_total"
+    );
 
     ctx.cleanup().await;
 }
@@ -498,7 +534,9 @@ async fn test_upload_creates_parent_dirs() {
 
     let tmp = tempfile::tempdir().unwrap();
     let local_file = tmp.path().join("deep.txt");
-    tokio::fs::write(&local_file, b"deep content").await.unwrap();
+    tokio::fs::write(&local_file, b"deep content")
+        .await
+        .unwrap();
 
     // Upload to a deeply nested path that doesn't exist yet
     let deep_dest = format!("{}/a/b/c", ctx.test_dir);
@@ -536,7 +574,8 @@ async fn test_download_many_files() {
     for i in 0..file_count {
         let dir = format!("many/dir-{}", i / 10);
         let name = format!("{}/file-{}.txt", dir, i);
-        ctx.put_file_at(&name, format!("content-{}", i).as_bytes()).await;
+        ctx.put_file_at(&name, format!("content-{}", i).as_bytes())
+            .await;
     }
 
     let tmp = tempfile::tempdir().unwrap();

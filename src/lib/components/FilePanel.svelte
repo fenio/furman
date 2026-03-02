@@ -1,6 +1,7 @@
 <script lang="ts">
   import type { PanelData } from '$lib/state/panels.svelte';
   import type { SortField, ColumnId } from '$lib/types';
+  import { SvelteMap, SvelteSet } from 'svelte/reactivity';
   import { appState } from '$lib/state/app.svelte';
   import { statusState } from '$lib/state/status.svelte';
   import { formatSize } from '$lib/utils/format';
@@ -101,6 +102,7 @@
   // Compute directory sizes when selection changes
   $effect(() => {
     // Access selectedPaths to create a reactive dependency
+    // eslint-disable-next-line @typescript-eslint/no-unused-expressions
     panel.selectedPaths;
     panel.computeSelectedDirSizes();
   });
@@ -114,9 +116,9 @@
 
   // Comparison: derive a map from entry name → ComparisonStatus for this panel
   const comparisonStatusMap = $derived.by((): Map<string, ComparisonStatus> => {
-    if (!comparisonState.active) return new Map();
+    if (!comparisonState.active) return new SvelteMap();
     const statusMap = side === 'right' ? comparisonState.rightStatuses : comparisonState.leftStatuses;
-    const result = new Map<string, ComparisonStatus>();
+    const result = new SvelteMap<string, ComparisonStatus>();
     for (const entry of panel.filteredSortedEntries) {
       if (entry.name === '..') continue;
       // Try exact name match first
@@ -258,7 +260,7 @@
 
     const selector = panel.viewMode === 'icon' ? '.file-tile' : '.file-row';
     const elements = listContainer.querySelectorAll(selector);
-    const next = new Set(prevSelected);
+    const next = new SvelteSet(prevSelected);
 
     elements.forEach((el, i) => {
       const htmlEl = el as HTMLElement;
@@ -297,7 +299,7 @@
     rubberCurrent = coords;
     rubberBanding = true;
 
-    const prevSelected = (e.metaKey || e.ctrlKey) ? new Set(panel.selectedPaths) : new Set<string>();
+    const prevSelected = (e.metaKey || e.ctrlKey) ? new SvelteSet(panel.selectedPaths) : new SvelteSet<string>();
     if (!(e.metaKey || e.ctrlKey)) {
       panel.deselectAll();
     }
@@ -486,24 +488,24 @@
         </svg>
         <button class="git-branch-btn" onclick={handleBranchClick} title="Switch branch">
           {panel.gitInfo.branch.length > 20 ? panel.gitInfo.branch.slice(0, 20) + '\u2026' : panel.gitInfo.branch}
-          <span class="git-branch-caret">{'\u25BE'}</span>
+          <span class="git-branch-caret">&#x25BE;</span>
         </button>
-        {#if panel.gitInfo.ahead > 0}<span class="git-ahead">{'\u2191'}{panel.gitInfo.ahead}</span>{/if}
-        {#if panel.gitInfo.behind > 0}<span class="git-behind">{'\u2193'}{panel.gitInfo.behind}</span>{/if}
-        {#if panel.gitInfo.dirty}<span class="git-dirty">{'\u25CF'}</span>{/if}
+        {#if panel.gitInfo.ahead > 0}<span class="git-ahead">&#x2191;{panel.gitInfo.ahead}</span>{/if}
+        {#if panel.gitInfo.behind > 0}<span class="git-behind">&#x2193;{panel.gitInfo.behind}</span>{/if}
+        {#if panel.gitInfo.dirty}<span class="git-dirty">&#x25CF;</span>{/if}
         <button class="git-pull-btn" onclick={(e) => { e.stopPropagation(); handleGitPull(); }} disabled={pulling} title="Git pull">
           {pulling ? '\u21BB' : '\u2913'}
         </button>
         {#if branchPickerOpen}
           <div class="branch-picker" bind:this={branchPickerEl}>
-            {#each branchList as branch}
+            {#each branchList as branch (branch)}
               <button
                 class="branch-option"
                 class:current={branch === panel.gitInfo?.branch}
                 onclick={() => handleBranchSelect(branch)}
               >
                 {branch}
-                {#if branch === panel.gitInfo?.branch}<span class="branch-check">{'\u2713'}</span>{/if}
+                {#if branch === panel.gitInfo?.branch}<span class="branch-check">&#x2713;</span>{/if}
               </button>
             {/each}
           </div>
@@ -593,7 +595,7 @@
 
   <!-- Column headers -->
   {#if panel.viewMode === 'list'}
-  <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
+  <!-- svelte-ignore a11y_interactive_supports_focus -->
   <div class="column-headers" role="row" oncontextmenu={handleColumnHeaderContextMenu}>
     {#each activeColumns as col (col.id)}
       {@const sortF = isS3 && col.s3SortField ? col.s3SortField : col.sortField}
@@ -606,6 +608,7 @@
     <!-- svelte-ignore a11y_click_events_have_key_events -->
     <div class="col-picker-backdrop" role="presentation" onclick={() => { columnPickerOpen = false; }}>
       <!-- svelte-ignore a11y_click_events_have_key_events -->
+      <!-- svelte-ignore a11y_interactive_supports_focus -->
       <div class="col-picker" role="menu" style="left: {columnPickerX}px; top: {columnPickerY}px" onclick={(e) => e.stopPropagation()}>
         {#each ALL_COLUMNS as col (col.id)}
           <label class="col-picker-item">

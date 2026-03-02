@@ -91,7 +91,6 @@
   };
 </script>
 
-<!-- svelte-ignore a11y_no_noninteractive_tabindex -->
 <div
   class="palette-overlay no-select"
   onkeydown={handleKeydown}
@@ -111,7 +110,7 @@
       autocomplete="off"
     />
     <div class="palette-results" bind:this={resultsEl}>
-      {#each filteredCommands as cmd, i}
+      {#each filteredCommands as cmd, i (i)}
         <button
           class="cmd-row"
           class:cursor-active={i === cursorIndex}

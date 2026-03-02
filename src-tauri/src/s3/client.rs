@@ -3,8 +3,8 @@ use aws_sdk_s3::Client as S3Client;
 use std::collections::HashMap;
 use std::sync::Mutex;
 
-use crate::models::FmError;
 use super::helpers::s3err;
+use crate::models::FmError;
 
 // ── State ────────────────────────────────────────────────────────────────────
 
@@ -35,8 +35,8 @@ fn apply_proxy(
             let pc = if url == "system" {
                 ProxyConfig::from_env()
             } else {
-                let mut pc = ProxyConfig::all(url)
-                    .map_err(|e| s3err(format!("Invalid proxy URL: {e}")))?;
+                let mut pc =
+                    ProxyConfig::all(url).map_err(|e| s3err(format!("Invalid proxy URL: {e}")))?;
                 if let (Some(u), Some(p)) = (proxy_username, proxy_password) {
                     if !u.is_empty() {
                         pc = pc.with_basic_auth(u, p);
@@ -45,15 +45,16 @@ fn apply_proxy(
                 pc
             };
 
-            let http_client = aws_smithy_http_client::Builder::new()
-                .build_with_connector_fn(move |_settings, _runtime_components| {
+            let http_client = aws_smithy_http_client::Builder::new().build_with_connector_fn(
+                move |_settings, _runtime_components| {
                     aws_smithy_http_client::Connector::builder()
                         .proxy_config(pc.clone())
                         .tls_provider(tls::Provider::Rustls(
                             tls::rustls_provider::CryptoMode::AwsLc,
                         ))
                         .build()
-                });
+                },
+            );
 
             Ok(loader.http_client(http_client))
         }
@@ -133,7 +134,7 @@ pub async fn build_s3_client(
         let creds = resp
             .credentials()
             .ok_or_else(|| s3err("No credentials returned from AssumeRoleWithWebIdentity"))?;
-        let expiry = std::time::SystemTime::try_from(creds.expiration().clone()).ok();
+        let expiry = std::time::SystemTime::try_from(*creds.expiration()).ok();
         let aws_creds = aws_credential_types::Credentials::new(
             creds.access_key_id(),
             creds.secret_access_key(),
@@ -171,13 +172,13 @@ pub async fn build_s3_client(
         let assume_resp = assume_req
             .send()
             .await
-            .map_err(|e| s3err(format!("AssumeRole failed: {}", e)))?;
+            .map_err(|e| s3err(format!("AssumeRole failed: {e}")))?;
 
         let sts_creds = assume_resp
             .credentials()
             .ok_or_else(|| s3err("AssumeRole returned no credentials"))?;
 
-        let expiry = std::time::SystemTime::try_from(sts_creds.expiration().clone()).ok();
+        let expiry = std::time::SystemTime::try_from(*sts_creds.expiration()).ok();
 
         let assumed_creds = aws_credential_types::Credentials::new(
             sts_creds.access_key_id(),
@@ -208,7 +209,7 @@ pub async fn build_s3_client(
     if endpoint.is_some_and(|ep| !ep.is_empty()) {
         s3_config_builder = s3_config_builder.force_path_style(true);
     }
-    if use_transfer_acceleration.unwrap_or(false) && endpoint.is_none_or(|ep| ep.is_empty()) {
+    if use_transfer_acceleration.unwrap_or(false) && endpoint.is_none_or(str::is_empty) {
         s3_config_builder.set_accelerate(Some(true));
     }
     Ok((S3Client::from_conf(s3_config_builder.build()), final_config))

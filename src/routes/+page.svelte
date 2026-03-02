@@ -1,5 +1,6 @@
 <script lang="ts">
   import { onMount } from 'svelte';
+  import { SvelteMap } from 'svelte/reactivity';
   import { listen } from '@tauri-apps/api/event';
   import { panels } from '$lib/state/panels.svelte';
   import { appState } from '$lib/state/app.svelte';
@@ -39,12 +40,12 @@
   import { sftpBookmarksState } from '$lib/state/sftpbookmarks.svelte';
   import type { SyncEntry } from '$lib/types';
 
-  let bottomResizing = $state(false);
-  let quakeResizing = $state(false);
+  let _bottomResizing = $state(false);
+  let _quakeResizing = $state(false);
 
   onMount(() => {
     let unlisten: (() => void) | undefined;
-    const reloadTimers = new Map<string, ReturnType<typeof setTimeout>>();
+    const reloadTimers = new SvelteMap<string, ReturnType<typeof setTimeout>>();
 
     function scheduleRefresh(tab: import('$lib/state/panels.svelte').PanelData) {
       if (tab.backend !== 'local') return;
@@ -64,7 +65,7 @@
         new Audio('/whip.mp3').play().catch(() => {});
       }
 
-      let homePath = '';
+      let homePath: string;
       try {
         const { homeDir } = await import('@tauri-apps/api/path');
         homePath = await homeDir();
@@ -144,7 +145,7 @@
   // Bottom panel resize
   function startBottomResize(e: MouseEvent) {
     e.preventDefault();
-    bottomResizing = true;
+    _bottomResizing = true;
     const startY = e.clientY;
     const startHeight = terminalState.bottomPanelHeight;
 
@@ -153,7 +154,7 @@
       terminalState.bottomPanelHeight = Math.max(100, Math.min(600, startHeight + delta));
     }
     function onUp() {
-      bottomResizing = false;
+      _bottomResizing = false;
       window.removeEventListener('mousemove', onMove);
       window.removeEventListener('mouseup', onUp);
     }
@@ -164,7 +165,7 @@
   // Quake console resize
   function startQuakeResize(e: MouseEvent) {
     e.preventDefault();
-    quakeResizing = true;
+    _quakeResizing = true;
     const startY = e.clientY;
     const startHeight = terminalState.quakeHeight;
 
@@ -174,7 +175,7 @@
       terminalState.quakeHeight = Math.max(15, Math.min(80, startHeight + vh));
     }
     function onUp() {
-      quakeResizing = false;
+      _quakeResizing = false;
       window.removeEventListener('mousemove', onMove);
       window.removeEventListener('mouseup', onUp);
     }
@@ -323,7 +324,7 @@
     <ConnectionManager
       initialTab={appState.connectionManagerTab}
       initialData={appState.connectionManagerInitialData}
-      onConnect={(bucket, region, endpoint, profile, accessKey, secretKey, provider, customCapabilities, roleArn, externalId, sessionName, sessionDurationSecs, useTransferAcceleration) => {
+      onConnect={(bucket, region, endpoint, profile, accessKey, secretKey, provider, customCapabilities, _roleArn, _externalId, _sessionName, _sessionDurationSecs, _useTransferAcceleration) => {
         const cb = appState.connectCallback;
         appState.closeModal();
         if (cb) cb(bucket, region, endpoint, profile, accessKey, secretKey, provider, customCapabilities);

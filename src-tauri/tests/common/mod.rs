@@ -138,7 +138,10 @@ impl TestContext {
         let bucket = format!("test-lock-{}", Uuid::new_v4());
 
         // Create bucket with Object Lock enabled
-        let mut req = client.create_bucket().bucket(&bucket).object_lock_enabled_for_bucket(true);
+        let mut req = client
+            .create_bucket()
+            .bucket(&bucket)
+            .object_lock_enabled_for_bucket(true);
 
         if config.region != "us-east-1" {
             let constraint = aws_sdk_s3::types::CreateBucketConfiguration::builder()
@@ -206,7 +209,12 @@ impl TestContext {
         Self::delete_all_objects(&self.client, &self.bucket).await;
 
         // Delete main bucket
-        let _ = self.client.delete_bucket().bucket(&self.bucket).send().await;
+        let _ = self
+            .client
+            .delete_bucket()
+            .bucket(&self.bucket)
+            .send()
+            .await;
 
         // Delete extra buckets
         for bucket in &self.extra_buckets {
@@ -286,12 +294,7 @@ impl TestContext {
 
         // Also try plain list + delete for non-versioned buckets
         loop {
-            let resp = match client
-                .list_objects_v2()
-                .bucket(bucket)
-                .send()
-                .await
-            {
+            let resp = match client.list_objects_v2().bucket(bucket).send().await {
                 Ok(r) => r,
                 Err(_) => break,
             };
@@ -385,11 +388,7 @@ impl SftpTestContext {
         .await
         .expect("Failed to connect to SFTP test server");
 
-        let service = SftpService::new(
-            conn.session.clone(),
-            config.host.clone(),
-            config.port,
-        );
+        let service = SftpService::new(conn.session.clone(), config.host.clone(), config.port);
 
         // Use the resolved home dir (accounts for chroot jails like atmoz/sftp)
         let home = conn.home_dir.trim_end_matches('/');
@@ -410,9 +409,15 @@ impl SftpTestContext {
     /// Write a file inside the test directory.
     pub async fn put_file(&self, name: &str, data: &[u8]) {
         let path = format!("{}/{}", self.test_dir, name);
-        let mut file = self.service.session.create(&path).await
+        let mut file = self
+            .service
+            .session
+            .create(&path)
+            .await
             .expect("Failed to create test file");
-        file.write_all(data).await.expect("Failed to write test file data");
+        file.write_all(data)
+            .await
+            .expect("Failed to write test file data");
     }
 
     /// Write a file at an arbitrary subpath, creating parent dirs.
@@ -422,9 +427,15 @@ impl SftpTestContext {
         if let Some((parent, _)) = path.rsplit_once('/') {
             self.ensure_dir(parent).await;
         }
-        let mut file = self.service.session.create(&path).await
+        let mut file = self
+            .service
+            .session
+            .create(&path)
+            .await
             .expect("Failed to create test file");
-        file.write_all(data).await.expect("Failed to write test file data");
+        file.write_all(data)
+            .await
+            .expect("Failed to write test file data");
     }
 
     /// Create a subdirectory inside the test directory.
@@ -451,9 +462,6 @@ impl SftpTestContext {
 
     /// Clean up: delete the test directory and all its contents.
     pub async fn cleanup(self) {
-        let _ = self
-            .service
-            .delete(&[self.test_dir.clone()])
-            .await;
+        let _ = self.service.delete(&[self.test_dir.clone()]).await;
     }
 }

@@ -1,276 +1,260 @@
 <script lang="ts">
-  import { readFileText, writeFileText } from '$lib/services/tauri';
-  import { s3PutText } from '$lib/services/s3';
-  import { sftpPutText } from '$lib/services/sftp';
-  import { appState } from '$lib/state/app.svelte';
-  import { onMount } from 'svelte';
+	import { readFileText, writeFileText } from '$lib/services/tauri';
+	import { s3PutText } from '$lib/services/s3';
+	import { sftpPutText } from '$lib/services/sftp';
+	import { appState } from '$lib/state/app.svelte';
+	import { onMount, untrack } from 'svelte';
+	import { EditorView, keymap } from '@codemirror/view';
+	import { EditorState, Prec } from '@codemirror/state';
+	import { basicSetup } from 'codemirror';
+	import { getLanguageExtension, editorTheme, getSyntaxHighlighting } from '$lib/utils/codemirror';
 
-  interface Props {
-    path: string;
-    onClose: () => void;
-  }
+	interface Props {
+		path: string;
+		onClose: () => void;
+	}
 
-  let { path, onClose }: Props = $props();
+	let { path, onClose }: Props = $props();
 
-  let content = $state('');
-  let originalContent = $state('');
-  let dirty = $state(false);
-  let loading = $state(true);
-  let error = $state<string | null>(null);
-  let saving = $state(false);
-  let textareaEl: HTMLTextAreaElement | undefined = $state(undefined);
-  let wrapperEl: HTMLDivElement | undefined = $state(undefined);
+	let content = $state('');
+	let originalContent = $state('');
+	let dirty = $state(false);
+	let loading = $state(true);
+	let error = $state<string | null>(null);
+	let saving = $state(false);
+	let editorContainer: HTMLDivElement | undefined = $state(undefined);
+	let view: EditorView | undefined = $state(undefined);
 
-  const fileName = $derived(path.split('/').pop() ?? path);
+	const fileName = $derived(path.split('/').pop() ?? path);
 
-  const lineCount = $derived(content.split('\n').length);
+	onMount(async () => {
+		try {
+			content = await readFileText(path);
+			originalContent = content;
+		} catch (err: unknown) {
+			error = err instanceof Error ? err.message : String(err);
+		} finally {
+			loading = false;
+		}
+	});
 
-  const lineNumbers = $derived.by(() => {
-    const count = lineCount;
-    const lines: string[] = [];
-    for (let i = 1; i <= count; i++) {
-      lines.push(String(i));
-    }
-    return lines.join('\n');
-  });
+	$effect(() => {
+		appState.editorDirty = dirty;
+	});
 
-  onMount(async () => {
-    try {
-      content = await readFileText(path);
-      originalContent = content;
-    } catch (err: unknown) {
-      error = err instanceof Error ? err.message : String(err);
-    } finally {
-      loading = false;
-    }
-  });
+	// Create CodeMirror view once content is loaded and container is ready.
+	// Only track loading + editorContainer; read everything else untracked
+	// so the effect doesn't re-run (and destroy the view) on content changes.
+	$effect(() => {
+		if (loading || !editorContainer) return;
 
-  $effect(() => {
-    dirty = content !== originalContent;
-    appState.editorDirty = dirty;
-  });
+		return untrack(() => {
+			if (view) return;
+			if (error && !content) return;
 
-  $effect(() => {
-    if (textareaEl && !loading) {
-      textareaEl.focus();
-    }
-  });
+			const lang = getLanguageExtension(fileName);
+			const extensions = [
+				basicSetup,
+				editorTheme,
+				getSyntaxHighlighting(),
+				Prec.highest(
+					keymap.of([
+						{
+							key: 'Mod-s',
+							run: () => {
+								save();
+								return true;
+							},
+						},
+						{
+							key: 'F2',
+							run: () => {
+								save();
+								return true;
+							},
+						},
+					]),
+				),
+				EditorView.updateListener.of((update) => {
+					if (update.docChanged) {
+						const current = update.state.doc.toString();
+						dirty = current !== originalContent;
+					}
+				}),
+			];
+			if (lang) extensions.push(lang);
 
-  async function save() {
-    if (saving) return;
-    saving = true;
-    try {
-      await writeFileText(path, content);
-      if (appState.editorS3ConnectionId) {
-        await s3PutText(
-          appState.editorS3ConnectionId,
-          appState.editorS3Key,
-          content,
-        );
-      } else if (appState.editorSftpConnectionId) {
-        await sftpPutText(
-          appState.editorSftpConnectionId,
-          appState.editorSftpPath,
-          content,
-        );
-      }
-      originalContent = content;
-      dirty = false;
-    } catch (err: unknown) {
-      error = err instanceof Error ? err.message : String(err);
-    } finally {
-      saving = false;
-    }
-  }
+			const state = EditorState.create({
+				doc: content,
+				extensions,
+			});
 
-  function handleClose() {
-    if (dirty) {
-      appState.showConfirm('File has been modified. Discard changes?', () => {
-        appState.closeModal();
-        onClose();
-      });
-    } else {
-      onClose();
-    }
-  }
+			view = new EditorView({
+				state,
+				parent: editorContainer,
+			});
 
-  function handleKeydown(e: KeyboardEvent) {
-    if (e.key === 'Escape') {
-      e.preventDefault();
-      e.stopPropagation();
-      handleClose();
-      return;
-    }
+			view.focus();
 
-    if ((e.ctrlKey || e.metaKey) && e.key === 's') {
-      e.preventDefault();
-      e.stopPropagation();
-      save();
-      return;
-    }
+			return () => {
+				view?.destroy();
+				view = undefined;
+			};
+		});
+	});
 
-    if (e.key === 'F2') {
-      e.preventDefault();
-      e.stopPropagation();
-      save();
-      return;
-    }
-  }
+	async function save() {
+		if (saving || !view) return;
+		saving = true;
+		const text = view.state.doc.toString();
+		try {
+			await writeFileText(path, text);
+			if (appState.editorS3ConnectionId) {
+				await s3PutText(appState.editorS3ConnectionId, appState.editorS3Key, text);
+			} else if (appState.editorSftpConnectionId) {
+				await sftpPutText(appState.editorSftpConnectionId, appState.editorSftpPath, text);
+			}
+			originalContent = text;
+			content = text;
+			dirty = false;
+		} catch (err: unknown) {
+			error = err instanceof Error ? err.message : String(err);
+		} finally {
+			saving = false;
+		}
+	}
 
-  function handleScroll() {
-    // Sync line numbers scroll with textarea scroll
-    const lineNumEl = wrapperEl?.querySelector('.editor-line-numbers') as HTMLElement | null;
-    if (lineNumEl && textareaEl) {
-      lineNumEl.scrollTop = textareaEl.scrollTop;
-    }
-  }
+	function handleKeydown(e: KeyboardEvent) {
+		if (e.key === 'Escape' || ((e.ctrlKey || e.metaKey) && e.key === 'w')) {
+			e.preventDefault();
+			e.stopPropagation();
+			handleClose();
+			return;
+		}
+
+		if ((e.ctrlKey || e.metaKey) && e.key === 's') {
+			e.preventDefault();
+			e.stopPropagation();
+			save();
+			return;
+		}
+
+		if (e.key === 'F2') {
+			e.preventDefault();
+			e.stopPropagation();
+			save();
+			return;
+		}
+	}
+
+	function handleClose() {
+		if (dirty) {
+			appState.showConfirm('File has been modified. Discard changes?', () => {
+				appState.closeModal();
+				onClose();
+			});
+		} else {
+			onClose();
+		}
+	}
 </script>
 
 <div
-  class="editor-overlay no-select"
-  onkeydown={handleKeydown}
-  role="dialog"
-  aria-modal="true"
-  tabindex="-1"
+	class="editor-overlay no-select"
+	onkeydown={handleKeydown}
+	role="dialog"
+	aria-modal="true"
+	tabindex="-1"
 >
-  <!-- Header -->
-  <div class="editor-header">
-    <span class="editor-filename">{fileName}</span>
-    {#if dirty}
-      <span class="editor-modified">[Modified]</span>
-    {/if}
-    {#if saving}
-      <span class="editor-saving">[Saving...]</span>
-    {/if}
-    <span class="editor-help">Ctrl+S/F2=Save  ESC=Close</span>
-  </div>
+	<!-- Header -->
+	<div class="editor-header">
+		<span class="editor-filename">{fileName}</span>
+		{#if dirty}
+			<span class="editor-modified">[Modified]</span>
+		{/if}
+		{#if saving}
+			<span class="editor-saving">[Saving...]</span>
+		{/if}
+		<span class="editor-help">Ctrl+S/F2=Save  Ctrl+F=Search  ESC=Close</span>
+	</div>
 
-  <!-- Content -->
-  {#if loading}
-    <div class="editor-loading">Loading...</div>
-  {:else if error && !content}
-    <div class="editor-error">Error: {error}</div>
-  {:else}
-    <div class="editor-body" bind:this={wrapperEl}>
-      <pre class="editor-line-numbers">{lineNumbers}</pre>
-      <textarea
-        class="editor-textarea"
-        bind:value={content}
-        bind:this={textareaEl}
-        onscroll={handleScroll}
-        spellcheck="false"
-       
-        autocapitalize="off"
-        {...{ autocorrect: 'off' }}
-      ></textarea>
-    </div>
-  {/if}
+	<!-- Content -->
+	{#if loading}
+		<div class="editor-loading">Loading...</div>
+	{:else if error && !content}
+		<div class="editor-error">Error: {error}</div>
+	{:else}
+		<div class="editor-body" bind:this={editorContainer}></div>
+	{/if}
 
-  {#if error && content}
-    <div class="editor-status-error">Error: {error}</div>
-  {/if}
+	{#if error && content}
+		<div class="editor-status-error">Error: {error}</div>
+	{/if}
 </div>
 
 <style>
-  .editor-overlay {
-    position: fixed;
-    top: 0;
-    left: 0;
-    right: 0;
-    bottom: 0;
-    background: var(--bg-primary);
-    display: flex;
-    flex-direction: column;
-    z-index: 200;
-  }
+	.editor-overlay {
+		position: fixed;
+		top: 0;
+		left: 0;
+		right: 0;
+		bottom: 0;
+		background: var(--bg-primary);
+		display: flex;
+		flex-direction: column;
+		z-index: 200;
+	}
 
-  .editor-header {
-    display: flex;
-    gap: 2ch;
-    background: var(--bg-header);
-    color: var(--text-primary);
-    padding: 4px 12px;
-    flex: 0 0 auto;
-    border-bottom: 1px solid var(--border-subtle);
-  }
+	.editor-header {
+		display: flex;
+		gap: 2ch;
+		background: var(--bg-header);
+		color: var(--text-primary);
+		padding: 4px 12px;
+		flex: 0 0 auto;
+		border-bottom: 1px solid var(--border-subtle);
+	}
 
-  .editor-filename {
-    font-weight: 600;
-  }
+	.editor-filename {
+		font-weight: 600;
+	}
 
-  .editor-modified {
-    color: var(--error-color);
-  }
+	.editor-modified {
+		color: var(--error-color);
+	}
 
-  .editor-saving {
-    color: var(--text-accent);
-  }
+	.editor-saving {
+		color: var(--text-accent);
+	}
 
-  .editor-help {
-    margin-left: auto;
-    font-size: 12px;
-    color: var(--text-secondary);
-  }
+	.editor-help {
+		margin-left: auto;
+		font-size: 12px;
+		color: var(--text-secondary);
+	}
 
-  .editor-loading,
-  .editor-error {
-    padding: 16px;
-    color: var(--text-secondary);
-  }
+	.editor-loading,
+	.editor-error {
+		padding: 16px;
+		color: var(--text-secondary);
+	}
 
-  .editor-error {
-    color: var(--error-color);
-  }
+	.editor-error {
+		color: var(--error-color);
+	}
 
-  .editor-body {
-    display: flex;
-    flex-direction: row;
-    flex: 1 1 0;
-    min-height: 0;
-    overflow: hidden;
-  }
+	.editor-body {
+		flex: 1 1 0;
+		min-height: 0;
+		overflow: hidden;
+	}
 
-  .editor-line-numbers {
-    flex: 0 0 5ch;
-    margin: 0;
-    padding: 4px 4px 4px 0;
-    text-align: right;
-    color: var(--text-secondary);
-    background: var(--bg-panel);
-    overflow: hidden;
-    border-right: 1px solid var(--border-subtle);
-    line-height: inherit;
-    font-family: 'Menlo', 'Consolas', 'Courier New', monospace;
-    font-size: 13px;
-  }
-
-  .editor-textarea {
-    flex: 1 1 0;
-    min-width: 0;
-    resize: none;
-    border: none;
-    background: var(--bg-primary);
-    color: var(--text-primary);
-    font-family: 'Menlo', 'Consolas', 'Courier New', monospace;
-    font-size: 13px;
-    line-height: inherit;
-    padding: 4px;
-    margin: 0;
-    tab-size: 4;
-    white-space: pre;
-    overflow: auto;
-  }
-
-  .editor-textarea:focus {
-    outline: none;
-  }
-
-  .editor-status-error {
-    background: var(--error-bg);
-    color: var(--error-color);
-    padding: 2px 12px;
-    flex: 0 0 auto;
-    font-size: 12px;
-    border-top: 1px solid var(--border-subtle);
-  }
+	.editor-status-error {
+		background: var(--error-bg);
+		color: var(--error-color);
+		padding: 2px 12px;
+		flex: 0 0 auto;
+		font-size: 12px;
+		border-top: 1px solid var(--border-subtle);
+	}
 </style>

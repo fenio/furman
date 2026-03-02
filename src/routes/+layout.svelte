@@ -10,12 +10,12 @@
   import { s3BookmarksState } from '$lib/state/s3bookmarks.svelte';
   import { sftpBookmarksState } from '$lib/state/sftpbookmarks.svelte';
   import { connectionsState } from '$lib/state/connections.svelte';
-  import { copyFiles, moveFiles, deleteFiles, renameFile, createDirectory, openFileDefault, openInEditor, checkConflicts, deleteFilesUndoable, restoreFromTrash, extractArchiveToTemp } from '$lib/services/tauri';
+  import { copyFiles, deleteFiles, renameFile, createDirectory, openFileDefault, openInEditor, checkConflicts, deleteFilesUndoable, restoreFromTrash, extractArchiveToTemp } from '$lib/services/tauri';
   import { operationsState } from '$lib/state/operations.svelte';
   import { statusState } from '$lib/state/status.svelte';
   import { transfersState } from '$lib/state/transfers.svelte';
   import { s3Download, s3Upload, s3CopyObjects, s3DeleteObjects, s3RenameObject, s3CreateFolder, s3PresignUrl, s3DownloadToTemp, s3BulkChangeStorageClass, s3IsObjectEncrypted, type EncryptionConfig } from '$lib/services/s3';
-  import { sftpDelete, sftpRename, sftpCreateFolder, sftpDownload, sftpUpload, sftpDownloadTemp, sftpPutText } from '$lib/services/sftp';
+  import { sftpDelete, sftpRename, sftpCreateFolder, sftpDownload, sftpUpload, sftpDownloadTemp } from '$lib/services/sftp';
   import { keychainGet } from '$lib/services/keychain';
   import { s3PathToPrefix } from '$lib/state/panels.svelte';
   import { error } from '$lib/services/log';
@@ -23,7 +23,7 @@
   import type { S3Bookmark, SftpBookmark } from '$lib/types';
   import { dragState } from '$lib/services/drag';
   import type { PanelData } from '$lib/state/panels.svelte';
-  import type { ProgressEvent, S3ConnectionInfo, S3ProviderCapabilities, SyncEntry } from '$lib/types';
+  import type { ProgressEvent, S3ConnectionInfo, SyncEntry } from '$lib/types';
   import { commandRegistry, type Command } from '$lib/state/commands.svelte';
   import { platform } from '$lib/state/platform.svelte';
   import { comparisonState } from '$lib/state/comparison.svelte';
@@ -1130,7 +1130,7 @@
     });
   }
 
-  function handleS3Connect() {
+  function _handleS3Connect() {
     const panel = panels.active;
     appState.showConnect(async (bucket, region, endpoint, profile, accessKey, secretKey, provider, customCapabilities) => {
       const connectionId = `s3-${Date.now()}`;
@@ -1575,7 +1575,7 @@
   }
 
   function restoreTabsForSide(side: 'left' | 'right', paths: string[], activeIdx: number) {
-    const tabs = side === 'left' ? panels.leftTabs : panels.rightTabs;
+    const _tabs = side === 'left' ? panels.leftTabs : panels.rightTabs;
     // Close extra tabs
     while ((side === 'left' ? panels.leftTabs : panels.rightTabs).length > paths.length) {
       panels.closeTab(side, (side === 'left' ? panels.leftTabs : panels.rightTabs).length - 1);

@@ -162,7 +162,7 @@
       filter_suffix: ruleFilterSuffix.trim() || null,
     };
 
-    if (editingIndex != null) {
+    if (editingIndex !== null) {
       localRules[editingIndex] = rule;
       localRules = [...localRules];
     } else {
@@ -216,7 +216,7 @@
 
 {#if mode === 'edit'}
   <!-- ── Rule Edit Form ──────────────────────────────────────── -->
-  <div class="section-title">{editingIndex != null ? 'Edit Notification Rule' : 'Add Notification Rule'}</div>
+  <div class="section-title">{editingIndex !== null ? 'Edit Notification Rule' : 'Add Notification Rule'}</div>
   <div class="notif-form">
     <div class="notif-field">
       <label class="notif-label">Rule ID <span class="notif-hint">(optional)</span>
@@ -244,10 +244,10 @@
     <div class="notif-field">
       <span class="notif-label">Events</span>
       <div class="notif-events">
-        {#each EVENT_GROUPS as group}
+        {#each EVENT_GROUPS as group (group.label)}
           <div class="notif-event-group">
             <div class="notif-event-group-label">{group.label}</div>
-            {#each group.events as evt}
+            {#each group.events as evt (evt.value)}
               <label class="notif-checkbox">
                 <input type="checkbox" checked={ruleEvents.includes(evt.value)} onchange={() => toggleEvent(evt.value)} />
                 {evt.label}
@@ -272,7 +272,7 @@
 
     <div class="notif-actions">
       <button class="dialog-btn apply-btn" onclick={saveRule}>
-        {editingIndex != null ? 'Save Rule' : 'Add Rule'}
+        {editingIndex !== null ? 'Save Rule' : 'Add Rule'}
       </button>
       <button class="dialog-btn" onclick={cancelRuleEdit}>Cancel</button>
     </div>
@@ -298,7 +298,7 @@
       <div class="notif-empty">No notification rules configured.</div>
     {:else}
       <div class="notif-list">
-        {#each localRules as rule, i}
+        {#each localRules as rule, i (i)}
           <div class="notif-row">
             <div class="notif-row-info">
               <span class="notif-row-id">{rule.id || `Rule ${i + 1}`}</span>

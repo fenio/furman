@@ -64,7 +64,7 @@ pub fn open_file_default(path: String) -> Result<(), FmError> {
         let mut cmd = std::process::Command::new("open");
         if p.is_dir()
             && p.extension()
-                .map_or(false, |ext| ext.eq_ignore_ascii_case("app"))
+                .is_some_and(|ext| ext.eq_ignore_ascii_case("app"))
         {
             cmd.args(["-a", "Finder"]);
         }
@@ -129,9 +129,8 @@ pub fn open_in_editor(path: String, editor: String) -> Result<(), FmError> {
     let exe = parts[0];
     let extra_args = &parts[1..];
 
-    const TERMINAL_EDITORS: &[&str] = &[
-        "vim", "nvim", "vi", "nano", "emacs", "helix", "hx", "micro",
-    ];
+    const TERMINAL_EDITORS: &[&str] =
+        &["vim", "nvim", "vi", "nano", "emacs", "helix", "hx", "micro"];
 
     let exe_basename = std::path::Path::new(exe)
         .file_name()
@@ -143,7 +142,7 @@ pub fn open_in_editor(path: String, editor: String) -> Result<(), FmError> {
         {
             // Wrap in a new Terminal.app window via osascript
             let mut cmd_parts: Vec<String> = vec![exe.to_string()];
-            cmd_parts.extend(extra_args.iter().map(|s| s.to_string()));
+            cmd_parts.extend(extra_args.iter().map(std::string::ToString::to_string));
             cmd_parts.push(p.to_string_lossy().into_owned());
 
             // Shell-escape each part for the AppleScript string

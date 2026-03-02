@@ -50,7 +50,11 @@ fn higher_priority(a: char, b: char) -> char {
             _ => 0,
         }
     }
-    if rank(a) >= rank(b) { a } else { b }
+    if rank(a) >= rank(b) {
+        a
+    } else {
+        b
+    }
 }
 
 fn get_git_statuses(dir_path: &Path) -> HashMap<String, char> {
@@ -58,7 +62,12 @@ fn get_git_statuses(dir_path: &Path) -> HashMap<String, char> {
 
     // Find repo root
     let root_out = match Command::new("git")
-        .args(["-C", &dir_path.to_string_lossy(), "rev-parse", "--show-toplevel"])
+        .args([
+            "-C",
+            &dir_path.to_string_lossy(),
+            "rev-parse",
+            "--show-toplevel",
+        ])
         .output()
     {
         Ok(o) if o.status.success() => o,
@@ -68,7 +77,9 @@ fn get_git_statuses(dir_path: &Path) -> HashMap<String, char> {
     let repo_root = PathBuf::from(String::from_utf8_lossy(&root_out.stdout).trim());
 
     // Compute the directory path relative to repo root
-    let dir_canonical = dir_path.canonicalize().unwrap_or_else(|_| dir_path.to_path_buf());
+    let dir_canonical = dir_path
+        .canonicalize()
+        .unwrap_or_else(|_| dir_path.to_path_buf());
     let root_canonical = repo_root.canonicalize().unwrap_or(repo_root.clone());
     let dir_rel = dir_canonical
         .strip_prefix(&root_canonical)
@@ -104,10 +115,7 @@ fn get_git_statuses(dir_path: &Path) -> HashMap<String, char> {
 
         // For renames, use the destination path (after " -> ")
         let effective_path = if x == b'R' {
-            file_path_str
-                .split(" -> ")
-                .last()
-                .unwrap_or(file_path_str)
+            file_path_str.split(" -> ").last().unwrap_or(file_path_str)
         } else {
             file_path_str
         };
@@ -120,7 +128,7 @@ fn get_git_statuses(dir_path: &Path) -> HashMap<String, char> {
             // We're at the repo root
             effective_path
         } else {
-            let prefix = format!("{}/", dir_rel);
+            let prefix = format!("{dir_rel}/");
             match effective_path.strip_prefix(&prefix) {
                 Some(rest) => rest,
                 None => continue,
@@ -194,9 +202,7 @@ fn entry_from_path(path: &Path) -> Result<FileEntry, FmError> {
         .map(|n| n.to_string_lossy().into_owned())
         .unwrap_or_default();
 
-    let extension = path
-        .extension()
-        .map(|e| e.to_string_lossy().into_owned());
+    let extension = path.extension().map(|e| e.to_string_lossy().into_owned());
 
     Ok(FileEntry {
         name,
@@ -244,7 +250,7 @@ pub fn list_directory(path: String, show_hidden: bool) -> Result<DirListing, FmE
 
     // Prepend a ".." entry for parent navigation (unless we are at the root).
     let canonical = dir.canonicalize().unwrap_or_else(|_| dir.clone());
-    if canonical != PathBuf::from("/") {
+    if *canonical != *"/" {
         if let Some(parent) = canonical.parent() {
             entries.push(FileEntry {
                 name: "..".to_string(),
@@ -275,7 +281,7 @@ pub fn list_directory(path: String, show_hidden: bool) -> Result<DirListing, FmE
 
         match entry_from_path(&item.path()) {
             Ok(mut entry) => {
-                entry.git_status = git_statuses.get(&entry.name).map(|c| c.to_string());
+                entry.git_status = git_statuses.get(&entry.name).map(std::string::ToString::to_string);
                 total_size += entry.size;
                 entries.push(entry);
             }
@@ -296,7 +302,7 @@ pub fn list_directory(path: String, show_hidden: bool) -> Result<DirListing, FmE
 
     // Free space via statvfs.
     let free_space = statvfs(&dir)
-        .map(|s| s.fragment_size() as u64 * s.blocks_available() as u64)
+        .map(|s| s.fragment_size() * s.blocks_available() as u64)
         .unwrap_or(0);
 
     Ok(DirListing {

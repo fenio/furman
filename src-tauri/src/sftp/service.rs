@@ -20,7 +20,11 @@ pub struct SftpService {
 
 impl SftpService {
     pub fn new(session: Arc<SftpSession>, host: String, port: u16) -> Self {
-        Self { session, host, port }
+        Self {
+            session,
+            host,
+            port,
+        }
     }
 
     /// List directory contents, returning a DirListing with `..` entry.
@@ -29,7 +33,7 @@ impl SftpService {
             .session
             .read_dir(path)
             .await
-            .map_err(|e| sftperr(format!("readdir '{}': {}", path, e)))?;
+            .map_err(|e| sftperr(format!("readdir '{path}': {e}")))?;
 
         let mut entries = Vec::new();
 
@@ -57,12 +61,12 @@ impl SftpService {
             let meta = entry.metadata();
             let is_dir = meta.is_dir();
             let full_path = if path.ends_with('/') {
-                format!("{}{}", path, name)
+                format!("{path}{name}")
             } else {
-                format!("{}/{}", path, name)
+                format!("{path}/{name}")
             };
             let entry_path = if is_dir {
-                format!("{}/", full_path)
+                format!("{full_path}/")
             } else {
                 full_path
             };
@@ -74,10 +78,7 @@ impl SftpService {
                 None
             };
 
-            let modified = meta
-                .mtime
-                .map(|t| t as i64 * 1000)
-                .unwrap_or(0);
+            let modified = meta.mtime.map(|t| t as i64 * 1000).unwrap_or(0);
 
             let permissions = meta.permissions.unwrap_or(0);
             let size = meta.size.unwrap_or(0);
@@ -121,7 +122,7 @@ impl SftpService {
                 .session
                 .metadata(clean)
                 .await
-                .map_err(|e| sftperr(format!("stat '{}': {}", clean, e)))?;
+                .map_err(|e| sftperr(format!("stat '{clean}': {e}")))?;
 
             if meta.is_dir() {
                 Box::pin(self.delete_dir_recursive(clean)).await?;
@@ -129,7 +130,7 @@ impl SftpService {
                 self.session
                     .remove_file(clean)
                     .await
-                    .map_err(|e| sftperr(format!("remove '{}': {}", clean, e)))?;
+                    .map_err(|e| sftperr(format!("remove '{clean}': {e}")))?;
             }
         }
         Ok(())
@@ -140,14 +141,14 @@ impl SftpService {
             .session
             .read_dir(path)
             .await
-            .map_err(|e| sftperr(format!("readdir '{}': {}", path, e)))?;
+            .map_err(|e| sftperr(format!("readdir '{path}': {e}")))?;
 
         for entry in entries {
             let name = entry.file_name();
             let child = if path.ends_with('/') {
-                format!("{}{}", path, name)
+                format!("{path}{name}")
             } else {
-                format!("{}/{}", path, name)
+                format!("{path}/{name}")
             };
             let meta = entry.metadata();
             if meta.is_dir() {
@@ -156,14 +157,14 @@ impl SftpService {
                 self.session
                     .remove_file(&child)
                     .await
-                    .map_err(|e| sftperr(format!("remove '{}': {}", child, e)))?;
+                    .map_err(|e| sftperr(format!("remove '{child}': {e}")))?;
             }
         }
 
         self.session
             .remove_dir(path)
             .await
-            .map_err(|e| sftperr(format!("rmdir '{}': {}", path, e)))?;
+            .map_err(|e| sftperr(format!("rmdir '{path}': {e}")))?;
 
         Ok(())
     }
@@ -172,11 +173,11 @@ impl SftpService {
     pub async fn rename(&self, old_path: &str, new_name: &str) -> Result<(), FmError> {
         let clean = old_path.trim_end_matches('/');
         let parent = parent_path(clean);
-        let new_path = format!("{}/{}", parent, new_name);
+        let new_path = format!("{parent}/{new_name}");
         self.session
             .rename(clean, &new_path)
             .await
-            .map_err(|e| sftperr(format!("rename '{}' → '{}': {}", clean, new_path, e)))?;
+            .map_err(|e| sftperr(format!("rename '{clean}' → '{new_path}': {e}")))?;
         Ok(())
     }
 
@@ -185,7 +186,7 @@ impl SftpService {
         self.session
             .create_dir(path)
             .await
-            .map_err(|e| sftperr(format!("mkdir '{}': {}", path, e)))?;
+            .map_err(|e| sftperr(format!("mkdir '{path}': {e}")))?;
         Ok(())
     }
 
@@ -195,7 +196,7 @@ impl SftpService {
         self.session
             .metadata(clean)
             .await
-            .map_err(|e| sftperr(format!("stat '{}': {}", clean, e)))
+            .map_err(|e| sftperr(format!("stat '{clean}': {e}")))
     }
 
     /// Download remote files to a local destination directory.
@@ -218,7 +219,11 @@ impl SftpService {
         });
 
         // First pass: collect all files and calculate total size
-        log::info!("SFTP download: scanning {} paths in {}", remote_paths.len(), local_dest);
+        log::info!(
+            "SFTP download: scanning {} paths in {}",
+            remote_paths.len(),
+            local_dest
+        );
         let mut file_list: Vec<(String, String, u64)> = Vec::new(); // (remote_path, local_path, size)
         for (i, remote_path) in remote_paths.iter().enumerate() {
             if cancel.load(Ordering::Relaxed) {
@@ -226,16 +231,31 @@ impl SftpService {
             }
 
             let clean = remote_path.trim_end_matches('/');
-            log::info!("SFTP scan [{}/{}]: stat '{}'", i + 1, remote_paths.len(), clean);
+            log::info!(
+                "SFTP scan [{}/{}]: stat '{}'",
+                i + 1,
+                remote_paths.len(),
+                clean
+            );
             let meta = self.stat(clean).await?;
             let name = clean.rsplit('/').next().unwrap_or(clean);
             let local_target = format!("{}/{}", local_dest.trim_end_matches('/'), name);
 
             if meta.is_dir() {
-                log::info!("SFTP scan: recursing into '{}'", clean);
-                Box::pin(self.collect_remote_files(clean, &local_target, &mut file_list, op_id, on_progress))
-                    .await?;
-                log::info!("SFTP scan: done with '{}', {} files so far", clean, file_list.len());
+                log::info!("SFTP scan: recursing into '{clean}'");
+                Box::pin(self.collect_remote_files(
+                    clean,
+                    &local_target,
+                    &mut file_list,
+                    op_id,
+                    on_progress,
+                ))
+                .await?;
+                log::info!(
+                    "SFTP scan: done with '{}', {} files so far",
+                    clean,
+                    file_list.len()
+                );
             } else {
                 file_list.push((clean.to_string(), local_target, meta.size.unwrap_or(0)));
             }
@@ -251,7 +271,10 @@ impl SftpService {
             });
         }
 
-        log::info!("SFTP download: scan complete, {} files, starting download", file_list.len());
+        log::info!(
+            "SFTP download: scan complete, {} files, starting download",
+            file_list.len()
+        );
         let bytes_total: u64 = file_list.iter().map(|(_, _, s)| s).sum();
         let files_total = file_list.len() as u32;
         let mut bytes_done: u64 = 0;
@@ -270,7 +293,12 @@ impl SftpService {
             }
 
             // Download file
-            log::info!("SFTP download [{}/{}]: '{}'", files_done + 1, files_total, remote);
+            log::info!(
+                "SFTP download [{}/{}]: '{}'",
+                files_done + 1,
+                files_total,
+                remote
+            );
             let data = match tokio::time::timeout(
                 std::time::Duration::from_secs(60),
                 self.session.read(remote),
@@ -279,20 +307,25 @@ impl SftpService {
             {
                 Ok(Ok(d)) => d,
                 Ok(Err(e)) => {
-                    log::warn!("SFTP download: read '{}' failed: {}, skipping", remote, e);
+                    log::warn!("SFTP download: read '{remote}' failed: {e}, skipping");
                     files_done += 1;
                     on_progress(ProgressEvent {
                         id: op_id.to_string(),
                         bytes_done,
                         bytes_total,
-                        current_file: format!("Skipped: {}", remote.rsplit('/').next().unwrap_or(remote)),
+                        current_file: format!(
+                            "Skipped: {}",
+                            remote.rsplit('/').next().unwrap_or(remote)
+                        ),
                         files_done,
                         files_total,
                     });
                     continue;
                 }
                 Err(_) => {
-                    log::error!("SFTP download: read '{}' timed out after 60s — connection likely dead", remote);
+                    log::error!(
+                        "SFTP download: read '{remote}' timed out after 60s — connection likely dead"
+                    );
                     return Err(FmError::Other(format!(
                         "SFTP read timed out on '{}' — connection lost",
                         remote.rsplit('/').next().unwrap_or(remote)
@@ -327,20 +360,26 @@ impl SftpService {
         op_id: &str,
         on_progress: &(dyn Fn(ProgressEvent) + Send + Sync),
     ) -> Result<(), FmError> {
-        log::info!("SFTP collect: readdir '{}'", remote_dir);
+        log::info!("SFTP collect: readdir '{remote_dir}'");
         let entries = match self.session.read_dir(remote_dir).await {
             Ok(iter) => iter.collect::<Vec<_>>(),
             Err(e) => {
-                log::warn!("SFTP collect: readdir '{}' failed: {}, skipping", remote_dir, e);
+                log::warn!(
+                    "SFTP collect: readdir '{remote_dir}' failed: {e}, skipping"
+                );
                 return Ok(());
             }
         };
-        log::info!("SFTP collect: '{}' has {} entries", remote_dir, entries.len());
+        log::info!(
+            "SFTP collect: '{}' has {} entries",
+            remote_dir,
+            entries.len()
+        );
 
         for entry in entries {
             let name = entry.file_name();
-            let remote_child = format!("{}/{}", remote_dir, name);
-            let local_child = format!("{}/{}", local_dir, name);
+            let remote_child = format!("{remote_dir}/{name}");
+            let local_child = format!("{local_dir}/{name}");
             let meta = entry.metadata();
 
             if meta.is_dir() {
@@ -348,17 +387,27 @@ impl SftpService {
                 // can be misreported as directories by the SFTP server
                 match self.session.metadata(&remote_child).await {
                     Ok(verified) if verified.is_dir() => {
-                        Box::pin(self.collect_remote_files(&remote_child, &local_child, out, op_id, on_progress))
-                            .await?;
+                        Box::pin(self.collect_remote_files(
+                            &remote_child,
+                            &local_child,
+                            out,
+                            op_id,
+                            on_progress,
+                        ))
+                        .await?;
                     }
                     Ok(verified) if verified.is_regular() => {
                         out.push((remote_child, local_child, verified.size.unwrap_or(0)));
                     }
                     Ok(_) => {
-                        log::info!("SFTP collect: '{}' is not a regular file or dir, skipping", remote_child);
+                        log::info!(
+                            "SFTP collect: '{remote_child}' is not a regular file or dir, skipping"
+                        );
                     }
                     Err(e) => {
-                        log::warn!("SFTP collect: stat '{}' failed: {}, skipping", remote_child, e);
+                        log::warn!(
+                            "SFTP collect: stat '{remote_child}' failed: {e}, skipping"
+                        );
                     }
                 }
             } else if meta.is_regular() {
@@ -394,11 +443,7 @@ impl SftpService {
                 .file_name()
                 .map(|n| n.to_string_lossy().to_string())
                 .unwrap_or_default();
-            let remote_target = format!(
-                "{}/{}",
-                remote_dest.trim_end_matches('/'),
-                name
-            );
+            let remote_target = format!("{}/{}", remote_dest.trim_end_matches('/'), name);
 
             if path.is_dir() {
                 collect_local_files_recursive(path, &remote_target, &mut file_list)?;
@@ -426,13 +471,14 @@ impl SftpService {
             let data = tokio::fs::read(local).await.map_err(FmError::Io)?;
             let len = data.len() as u64;
 
-            let mut file = self.session
+            let mut file = self
+                .session
                 .create(remote)
                 .await
-                .map_err(|e| sftperr(format!("create '{}': {}", remote, e)))?;
+                .map_err(|e| sftperr(format!("create '{remote}': {e}")))?;
             file.write_all(&data)
                 .await
-                .map_err(|e| sftperr(format!("write '{}': {}", remote, e)))?;
+                .map_err(|e| sftperr(format!("write '{remote}': {e}")))?;
 
             bytes_done += len;
             files_done += 1;
@@ -480,7 +526,7 @@ impl SftpService {
             .session
             .read(remote_path)
             .await
-            .map_err(|e| sftperr(format!("read '{}': {}", remote_path, e)))?;
+            .map_err(|e| sftperr(format!("read '{remote_path}': {e}")))?;
 
         tokio::fs::write(&local_path, &data)
             .await
@@ -491,13 +537,14 @@ impl SftpService {
 
     /// Write text content to a remote file.
     pub async fn put_text(&self, remote_path: &str, content: &str) -> Result<(), FmError> {
-        let mut file = self.session
+        let mut file = self
+            .session
             .create(remote_path)
             .await
-            .map_err(|e| sftperr(format!("create '{}': {}", remote_path, e)))?;
+            .map_err(|e| sftperr(format!("create '{remote_path}': {e}")))?;
         file.write_all(content.as_bytes())
             .await
-            .map_err(|e| sftperr(format!("write '{}': {}", remote_path, e)))?;
+            .map_err(|e| sftperr(format!("write '{remote_path}': {e}")))?;
         Ok(())
     }
 }
@@ -522,7 +569,7 @@ fn collect_local_files_recursive(
         let entry = entry?;
         let path = entry.path();
         let name = entry.file_name().to_string_lossy().to_string();
-        let remote = format!("{}/{}", prefix, name);
+        let remote = format!("{prefix}/{name}");
 
         if path.is_dir() {
             collect_local_files_recursive(&path, &remote, out)?;

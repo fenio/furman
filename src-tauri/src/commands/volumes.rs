@@ -16,7 +16,7 @@ fn list_volumes_impl() -> Result<Vec<VolumeInfo>, FmError> {
 
     // Always include the root volume.
     if let Ok(stat) = statvfs("/") {
-        let block_size = stat.fragment_size() as u64;
+        let block_size = stat.fragment_size();
         volumes.push(VolumeInfo {
             name: "Macintosh HD".to_string(),
             mount_point: "/".to_string(),
@@ -36,24 +36,23 @@ fn list_volumes_impl() -> Result<Vec<VolumeInfo>, FmError> {
 
                 // Skip if this is just a symlink to "/" (the boot volume alias).
                 if let Ok(target) = fs::read_link(&path) {
-                    if target == PathBuf::from("/") {
+                    if *target == *"/" {
                         continue;
                     }
                 }
 
                 let name = entry.file_name().to_string_lossy().into_owned();
 
-                let (total_space, free_space, fs_type) =
-                    if let Ok(stat) = statvfs(path.as_path()) {
-                        let bs = stat.fragment_size() as u64;
-                        (
-                            bs * stat.blocks() as u64,
-                            bs * stat.blocks_available() as u64,
-                            String::new(), // fs type not easily available via statvfs
-                        )
-                    } else {
-                        (0, 0, String::new())
-                    };
+                let (total_space, free_space, fs_type) = if let Ok(stat) = statvfs(path.as_path()) {
+                    let bs = stat.fragment_size();
+                    (
+                        bs * stat.blocks() as u64,
+                        bs * stat.blocks_available() as u64,
+                        String::new(), // fs type not easily available via statvfs
+                    )
+                } else {
+                    (0, 0, String::new())
+                };
 
                 volumes.push(VolumeInfo {
                     name,
@@ -76,10 +75,28 @@ fn list_volumes_impl() -> Result<Vec<VolumeInfo>, FmError> {
 
     // Virtual/pseudo filesystem types to skip
     const SKIP_FS: &[&str] = &[
-        "proc", "sysfs", "tmpfs", "devtmpfs", "devpts", "cgroup", "cgroup2",
-        "pstore", "securityfs", "debugfs", "configfs", "fusectl", "mqueue",
-        "hugetlbfs", "autofs", "efivarfs", "binfmt_misc", "tracefs",
-        "bpf", "nsfs", "overlay", "squashfs",
+        "proc",
+        "sysfs",
+        "tmpfs",
+        "devtmpfs",
+        "devpts",
+        "cgroup",
+        "cgroup2",
+        "pstore",
+        "securityfs",
+        "debugfs",
+        "configfs",
+        "fusectl",
+        "mqueue",
+        "hugetlbfs",
+        "autofs",
+        "efivarfs",
+        "binfmt_misc",
+        "tracefs",
+        "bpf",
+        "nsfs",
+        "overlay",
+        "squashfs",
     ];
 
     let mounts = fs::read_to_string("/proc/mounts")
@@ -121,7 +138,10 @@ fn list_volumes_impl() -> Result<Vec<VolumeInfo>, FmError> {
 
         let (total_space, free_space) = if let Ok(stat) = statvfs(mount_point) {
             let bs = stat.fragment_size() as u64;
-            (bs * stat.blocks() as u64, bs * stat.blocks_available() as u64)
+            (
+                bs * stat.blocks() as u64,
+                bs * stat.blocks_available() as u64,
+            )
         } else {
             (0, 0)
         };

@@ -7,14 +7,14 @@ pub fn sftperr(msg: impl Into<String>) -> FmError {
 
 /// Build an `sftp://host:port/path` URI.
 pub fn sftp_path(host: &str, port: u16, path: &str) -> String {
-    format!("sftp://{}:{}{}", host, port, path)
+    format!("sftp://{host}:{port}{path}")
 }
 
 /// Parse an `sftp://host:port/path` URI into (host, port, remote_path).
 pub fn parse_sftp_path(path: &str) -> Option<(String, u16, String)> {
     let rest = path.strip_prefix("sftp://")?;
     let (host_port, remote) = rest.split_once('/')?;
-    let remote_path = format!("/{}", remote);
+    let remote_path = format!("/{remote}");
     if let Some((host, port_str)) = host_port.rsplit_once(':') {
         let port = port_str.parse::<u16>().ok()?;
         Some((host.to_string(), port, remote_path))

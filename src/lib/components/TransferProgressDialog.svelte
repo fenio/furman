@@ -17,7 +17,7 @@
     ),
   );
 
-  const hasAnyActive = $derived(
+  const _hasAnyActive = $derived(
     allTransfers.some((t) => t.status === 'running' || t.status === 'queued'),
   );
 
@@ -82,7 +82,6 @@
   });
 </script>
 
-<!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
 <div
   class="dialog-overlay"
   role="dialog"

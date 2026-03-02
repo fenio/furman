@@ -67,7 +67,7 @@
         <div class="pref-row column">
           <span class="pref-label">Icon Size</span>
           <div class="radio-group">
-            {#each sizes as s}
+            {#each sizes as s (s.value)}
               <label class="radio-label" class:active={appState.iconSize === s.value}>
                 <input
                   type="radio"

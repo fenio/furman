@@ -19,13 +19,11 @@
   });
 </script>
 
-<!-- svelte-ignore a11y_click_events_have_key_events -->
 <div
   class="menu-backdrop"
   role="presentation"
   onclick={() => { appState.menuActive = false; }}
 >
-  <!-- svelte-ignore a11y_click_events_have_key_events -->
   <div
     class="menu-dropdown no-select"
     role="menu"

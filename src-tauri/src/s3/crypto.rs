@@ -3,10 +3,10 @@ use std::path::{Path, PathBuf};
 
 use aes_gcm::aead::{Aead, KeyInit};
 use aes_gcm::{Aes256Gcm, Nonce as AesNonce};
-use chacha20poly1305::{ChaCha20Poly1305, Nonce as ChaChaNonce};
 use argon2::Argon2;
 use base64::engine::general_purpose::STANDARD as BASE64;
 use base64::Engine;
+use chacha20poly1305::{ChaCha20Poly1305, Nonce as ChaChaNonce};
 use rand::RngCore;
 
 use crate::models::FmError;
@@ -33,10 +33,18 @@ pub struct EncryptionConfig {
     pub secure_temp_cleanup: bool,
 }
 
-fn default_algorithm() -> String { "aes-256-gcm".to_string() }
-fn default_kdf_memory() -> u32 { 19456 }
-fn default_kdf_time() -> u32 { 2 }
-fn default_kdf_parallelism() -> u32 { 1 }
+fn default_algorithm() -> String {
+    "aes-256-gcm".to_string()
+}
+fn default_kdf_memory() -> u32 {
+    19456
+}
+fn default_kdf_time() -> u32 {
+    2
+}
+fn default_kdf_parallelism() -> u32 {
+    1
+}
 
 impl Default for EncryptionConfig {
     fn default() -> Self {
@@ -53,10 +61,10 @@ impl Default for EncryptionConfig {
 // ── Encryption parameters (stored in S3 metadata) ───────────────────────────
 
 pub struct EncryptionParams {
-    pub algorithm: String,    // "aes-256-gcm" or "chacha20-poly1305"
-    pub kdf: String,          // "argon2id"
-    pub salt: Vec<u8>,        // 16 bytes
-    pub nonce: Vec<u8>,       // 12 bytes
+    pub algorithm: String, // "aes-256-gcm" or "chacha20-poly1305"
+    pub kdf: String,       // "argon2id"
+    pub salt: Vec<u8>,     // 16 bytes
+    pub nonce: Vec<u8>,    // 12 bytes
     pub original_size: u64,
     pub kdf_memory_cost: u32,
     pub kdf_time_cost: u32,
@@ -70,7 +78,10 @@ impl EncryptionParams {
         m.insert("furman-kdf".to_string(), self.kdf.clone());
         m.insert("furman-salt".to_string(), BASE64.encode(&self.salt));
         m.insert("furman-nonce".to_string(), BASE64.encode(&self.nonce));
-        m.insert("furman-original-size".to_string(), self.original_size.to_string());
+        m.insert(
+            "furman-original-size".to_string(),
+            self.original_size.to_string(),
+        );
         m.insert("furman-kdf-m".to_string(), self.kdf_memory_cost.to_string());
         m.insert("furman-kdf-t".to_string(), self.kdf_time_cost.to_string());
         m.insert("furman-kdf-p".to_string(), self.kdf_parallelism.to_string());
@@ -84,9 +95,18 @@ impl EncryptionParams {
         let nonce = BASE64.decode(meta.get("furman-nonce")?).ok()?;
         let original_size: u64 = meta.get("furman-original-size")?.parse().ok()?;
         // KDF params — default to OWASP-recommended values for backward compat
-        let kdf_memory_cost = meta.get("furman-kdf-m").and_then(|v| v.parse().ok()).unwrap_or(19456);
-        let kdf_time_cost = meta.get("furman-kdf-t").and_then(|v| v.parse().ok()).unwrap_or(2);
-        let kdf_parallelism = meta.get("furman-kdf-p").and_then(|v| v.parse().ok()).unwrap_or(1);
+        let kdf_memory_cost = meta
+            .get("furman-kdf-m")
+            .and_then(|v| v.parse().ok())
+            .unwrap_or(19456);
+        let kdf_time_cost = meta
+            .get("furman-kdf-t")
+            .and_then(|v| v.parse().ok())
+            .unwrap_or(2);
+        let kdf_parallelism = meta
+            .get("furman-kdf-p")
+            .and_then(|v| v.parse().ok())
+            .unwrap_or(1);
         Some(Self {
             algorithm: algorithm.clone(),
             kdf: kdf.clone(),
@@ -106,22 +126,32 @@ impl EncryptionParams {
 
 // ── Key derivation ───────────────────────────────────────────────────────────
 
-fn derive_key(password: &str, salt: &[u8], m_cost: u32, t_cost: u32, p_cost: u32) -> Result<[u8; 32], FmError> {
+fn derive_key(
+    password: &str,
+    salt: &[u8],
+    m_cost: u32,
+    t_cost: u32,
+    p_cost: u32,
+) -> Result<[u8; 32], FmError> {
     let params = argon2::Params::new(m_cost, t_cost, p_cost, Some(32))
-        .map_err(|e| FmError::Other(format!("Argon2 params error: {}", e)))?;
+        .map_err(|e| FmError::Other(format!("Argon2 params error: {e}")))?;
     let argon2 = Argon2::new(argon2::Algorithm::Argon2id, argon2::Version::V0x13, params);
 
     let mut key = [0u8; 32];
     argon2
         .hash_password_into(password.as_bytes(), salt, &mut key)
-        .map_err(|e| FmError::Other(format!("Key derivation failed: {}", e)))?;
+        .map_err(|e| FmError::Other(format!("Key derivation failed: {e}")))?;
     Ok(key)
 }
 
 // ── Encrypt / Decrypt ────────────────────────────────────────────────────────
 
 /// Encrypt a file to a temp file. Returns (temp_path, params).
-pub fn encrypt_file(source: &Path, password: &str, config: &EncryptionConfig) -> Result<(PathBuf, EncryptionParams), FmError> {
+pub fn encrypt_file(
+    source: &Path,
+    password: &str,
+    config: &EncryptionConfig,
+) -> Result<(PathBuf, EncryptionParams), FmError> {
     let plaintext = std::fs::read(source)?;
     let original_size = plaintext.len() as u64;
 
@@ -130,25 +160,31 @@ pub fn encrypt_file(source: &Path, password: &str, config: &EncryptionConfig) ->
     rand::thread_rng().fill_bytes(&mut salt);
     rand::thread_rng().fill_bytes(&mut nonce_bytes);
 
-    let key = derive_key(password, &salt, config.kdf_memory_cost, config.kdf_time_cost, config.kdf_parallelism)?;
+    let key = derive_key(
+        password,
+        &salt,
+        config.kdf_memory_cost,
+        config.kdf_time_cost,
+        config.kdf_parallelism,
+    )?;
 
     let ciphertext = match config.algorithm.as_str() {
         "chacha20-poly1305" => {
             let cipher = ChaCha20Poly1305::new_from_slice(&key)
-                .map_err(|e| FmError::Other(format!("Cipher init failed: {}", e)))?;
+                .map_err(|e| FmError::Other(format!("Cipher init failed: {e}")))?;
             let nonce = ChaChaNonce::from_slice(&nonce_bytes);
             cipher
                 .encrypt(nonce, plaintext.as_ref())
-                .map_err(|e| FmError::Other(format!("Encryption failed: {}", e)))?
+                .map_err(|e| FmError::Other(format!("Encryption failed: {e}")))?
         }
         _ => {
             // Default: AES-256-GCM
             let cipher = Aes256Gcm::new_from_slice(&key)
-                .map_err(|e| FmError::Other(format!("Cipher init failed: {}", e)))?;
+                .map_err(|e| FmError::Other(format!("Cipher init failed: {e}")))?;
             let nonce = AesNonce::from_slice(&nonce_bytes);
             cipher
                 .encrypt(nonce, plaintext.as_ref())
-                .map_err(|e| FmError::Other(format!("Encryption failed: {}", e)))?
+                .map_err(|e| FmError::Other(format!("Encryption failed: {e}")))?
         }
     };
 
@@ -157,9 +193,11 @@ pub fn encrypt_file(source: &Path, password: &str, config: &EncryptionConfig) ->
         .file_name()
         .map(|n| n.to_string_lossy().to_string())
         .unwrap_or_else(|| "encrypted".to_string());
-    let temp_path = std::env::temp_dir()
-        .join("furman-encrypt")
-        .join(format!("{}-{}", &BASE64.encode(&salt)[..8], filename));
+    let temp_path = std::env::temp_dir().join("furman-encrypt").join(format!(
+        "{}-{}",
+        &BASE64.encode(salt)[..8],
+        filename
+    ));
 
     if let Some(parent) = temp_path.parent() {
         std::fs::create_dir_all(parent)?;
@@ -190,24 +228,30 @@ pub fn encrypt_file(source: &Path, password: &str, config: &EncryptionConfig) ->
 pub fn decrypt_file(path: &Path, password: &str, params: &EncryptionParams) -> Result<(), FmError> {
     let ciphertext = std::fs::read(path)?;
 
-    let key = derive_key(password, &params.salt, params.kdf_memory_cost, params.kdf_time_cost, params.kdf_parallelism)?;
+    let key = derive_key(
+        password,
+        &params.salt,
+        params.kdf_memory_cost,
+        params.kdf_time_cost,
+        params.kdf_parallelism,
+    )?;
 
     let plaintext = match params.algorithm.as_str() {
         "chacha20-poly1305" => {
             let cipher = ChaCha20Poly1305::new_from_slice(&key)
-                .map_err(|e| FmError::Other(format!("Cipher init failed: {}", e)))?;
+                .map_err(|e| FmError::Other(format!("Cipher init failed: {e}")))?;
             let nonce = ChaChaNonce::from_slice(&params.nonce);
-            cipher
-                .decrypt(nonce, ciphertext.as_ref())
-                .map_err(|_| FmError::Other("Decryption failed — wrong password or corrupted data".to_string()))?
+            cipher.decrypt(nonce, ciphertext.as_ref()).map_err(|_| {
+                FmError::Other("Decryption failed — wrong password or corrupted data".to_string())
+            })?
         }
         _ => {
             let cipher = Aes256Gcm::new_from_slice(&key)
-                .map_err(|e| FmError::Other(format!("Cipher init failed: {}", e)))?;
+                .map_err(|e| FmError::Other(format!("Cipher init failed: {e}")))?;
             let nonce = AesNonce::from_slice(&params.nonce);
-            cipher
-                .decrypt(nonce, ciphertext.as_ref())
-                .map_err(|_| FmError::Other("Decryption failed — wrong password or corrupted data".to_string()))?
+            cipher.decrypt(nonce, ciphertext.as_ref()).map_err(|_| {
+                FmError::Other("Decryption failed — wrong password or corrupted data".to_string())
+            })?
         }
     };
 
@@ -220,7 +264,7 @@ pub fn secure_delete(path: &Path) -> std::io::Result<()> {
     if let Ok(meta) = std::fs::metadata(path) {
         let size = meta.len() as usize;
         if size > 0 {
-            std::fs::write(path, &vec![0u8; size])?;
+            std::fs::write(path, vec![0u8; size])?;
         }
     }
     std::fs::remove_file(path)

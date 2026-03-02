@@ -302,7 +302,7 @@
     {#if Object.keys(detail.endpoints).length > 0}
       <div class="section-title" style="margin-top: 12px;">Endpoints</div>
       <div class="ap-info-grid">
-        {#each Object.entries(detail.endpoints) as [key, value]}
+        {#each Object.entries(detail.endpoints) as [key, value] (key)}
           <div class="ap-info-row"><span class="ap-info-label">{key}</span><span class="ap-info-value ap-mono">{value}</span></div>
         {/each}
       </div>
@@ -350,7 +350,7 @@
     <div class="ap-empty">No access points configured for this bucket.</div>
   {:else}
     <div class="ap-list">
-      {#each accessPoints as ap}
+      {#each accessPoints as ap (ap.name)}
         <div class="ap-row">
           <div class="ap-row-info">
             <span class="ap-row-name">{ap.name}</span>

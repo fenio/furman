@@ -33,7 +33,7 @@ pub fn s3err(msg: impl Into<String>) -> FmError {
 
 /// Extract the key portion from an s3://bucket/key path.
 pub fn strip_s3_prefix(path: &str, bucket: &str) -> String {
-    let prefix = format!("s3://{}/", bucket);
+    let prefix = format!("s3://{bucket}/");
     if let Some(rest) = path.strip_prefix(&prefix) {
         rest.to_string()
     } else {
@@ -43,7 +43,7 @@ pub fn strip_s3_prefix(path: &str, bucket: &str) -> String {
 
 /// Build an s3://bucket/key path.
 pub fn s3_path(bucket: &str, key: &str) -> String {
-    format!("s3://{}/{}", bucket, key)
+    format!("s3://{bucket}/{key}")
 }
 
 // ── Multipart upload constants ──────────────────────────────────────────────
@@ -69,10 +69,7 @@ pub async fn list_all_objects(
     let mut continuation_token: Option<String> = None;
 
     loop {
-        let mut req = client
-            .list_objects_v2()
-            .bucket(bucket)
-            .prefix(prefix);
+        let mut req = client.list_objects_v2().bucket(bucket).prefix(prefix);
 
         if let Some(token) = &continuation_token {
             req = req.continuation_token(token);
@@ -91,7 +88,7 @@ pub async fn list_all_objects(
         }
 
         if resp.is_truncated() == Some(true) {
-            continuation_token = resp.next_continuation_token().map(|s| s.to_string());
+            continuation_token = resp.next_continuation_token().map(std::string::ToString::to_string);
         } else {
             break;
         }
@@ -125,8 +122,10 @@ pub async fn upload_part_with_retry(
         // Read chunk from disk (re-read on each retry to avoid holding data during backoff)
         let mut file = tokio::fs::File::open(file_path)
             .await
-            .map_err(|e| FmError::Io(e))?;
-        file.seek(std::io::SeekFrom::Start(offset)).await.map_err(FmError::Io)?;
+            .map_err(FmError::Io)?;
+        file.seek(std::io::SeekFrom::Start(offset))
+            .await
+            .map_err(FmError::Io)?;
         let mut buf = vec![0u8; length as usize];
         file.read_exact(&mut buf).await.map_err(FmError::Io)?;
 
@@ -147,7 +146,7 @@ pub async fn upload_part_with_retry(
                     .e_tag()
                     .ok_or_else(|| s3err("Missing ETag in upload_part response"))?
                     .to_string();
-                let crc32c = resp.checksum_crc32_c().map(|s| s.to_string());
+                let crc32c = resp.checksum_crc32_c().map(std::string::ToString::to_string);
                 throttle(length).await;
                 return Ok((part_number, etag, crc32c));
             }
@@ -193,10 +192,7 @@ pub async fn upload_file_multipart(
             create_req = create_req.metadata(k, v);
         }
     }
-    let create_resp = create_req
-        .send()
-        .await
-        .map_err(|e| s3err(e.to_string()))?;
+    let create_resp = create_req.send().await.map_err(|e| s3err(e.to_string()))?;
 
     let upload_id = create_resp
         .upload_id()
@@ -205,7 +201,7 @@ pub async fn upload_file_multipart(
 
     // 2. Calculate parts with dynamic part size (handle files > 80 GiB within 10k part limit)
     let part_size = std::cmp::max(PART_SIZE, file_size / 10_000 + 1);
-    let num_parts = ((file_size + part_size - 1) / part_size) as i32;
+    let num_parts = file_size.div_ceil(part_size) as i32;
 
     let semaphore = Arc::new(Semaphore::new(MAX_CONCURRENT_PARTS));
     let mut handles = Vec::with_capacity(num_parts as usize);
@@ -254,7 +250,8 @@ pub async fn upload_file_multipart(
     }
 
     // 4. Join all handles, collect results
-    let mut completed_parts: Vec<(i32, String, Option<String>)> = Vec::with_capacity(num_parts as usize);
+    let mut completed_parts: Vec<(i32, String, Option<String>)> =
+        Vec::with_capacity(num_parts as usize);
     let mut first_error: Option<FmError> = None;
 
     for handle in handles {
@@ -270,7 +267,7 @@ pub async fn upload_file_multipart(
             }
             Err(e) => {
                 if first_error.is_none() {
-                    first_error = Some(FmError::Other(format!("Task join error: {}", e)));
+                    first_error = Some(FmError::Other(format!("Task join error: {e}")));
                 }
             }
         }
@@ -348,8 +345,8 @@ pub async fn copy_object_multipart(
 
     // 2. Calculate part size (dynamic sizing to stay within 10k part limit)
     let part_size = std::cmp::max(PART_SIZE, object_size / 10_000 + 1);
-    let num_parts = ((object_size + part_size - 1) / part_size) as i32;
-    let copy_source = format!("{}/{}", src_bucket, src_key);
+    let num_parts = object_size.div_ceil(part_size) as i32;
+    let copy_source = format!("{src_bucket}/{src_key}");
 
     let mut completed_parts: Vec<(i32, String)> = Vec::with_capacity(num_parts as usize);
 
@@ -366,7 +363,7 @@ pub async fn copy_object_multipart(
             .upload_id(&upload_id)
             .part_number(part_number)
             .copy_source(&copy_source)
-            .copy_source_range(format!("bytes={}-{}", offset, end))
+            .copy_source_range(format!("bytes={offset}-{end}"))
             .send()
             .await;
 
@@ -436,7 +433,7 @@ pub async fn copy_single_or_multipart(
     object_size: u64,
 ) -> Result<(), FmError> {
     if object_size < COPY_MULTIPART_THRESHOLD {
-        let copy_source = format!("{}/{}", src_bucket, src_key);
+        let copy_source = format!("{src_bucket}/{src_key}");
         let result = dest_client
             .copy_object()
             .bucket(dest_bucket)
@@ -445,29 +442,45 @@ pub async fn copy_single_or_multipart(
             .send()
             .await;
         match result {
-            Ok(_) => return Ok(()),
+            Ok(_) => Ok(()),
             Err(_) => {
                 // Server-side copy failed — fall back to download + upload
                 return copy_via_download(
-                    src_client, src_bucket, src_key,
-                    dest_client, dest_bucket, dest_key,
+                    src_client,
+                    src_bucket,
+                    src_key,
+                    dest_client,
+                    dest_bucket,
+                    dest_key,
                     object_size,
-                ).await;
+                )
+                .await;
             }
         }
     } else {
         let result = copy_object_multipart(
-            src_bucket, src_key, dest_client, dest_bucket, dest_key, object_size,
-        ).await;
+            src_bucket,
+            src_key,
+            dest_client,
+            dest_bucket,
+            dest_key,
+            object_size,
+        )
+        .await;
         match result {
-            Ok(()) => return Ok(()),
+            Ok(()) => Ok(()),
             Err(_) => {
                 // Server-side multipart copy failed — fall back to download + upload
                 return copy_via_download(
-                    src_client, src_bucket, src_key,
-                    dest_client, dest_bucket, dest_key,
+                    src_client,
+                    src_bucket,
+                    src_key,
+                    dest_client,
+                    dest_bucket,
+                    dest_key,
                     object_size,
-                ).await;
+                )
+                .await;
             }
         }
     }
@@ -494,7 +507,10 @@ async fn copy_via_download(
             .send()
             .await
             .map_err(|e| s3err(e.to_string()))?;
-        let body = resp.body.collect().await
+        let body = resp
+            .body
+            .collect()
+            .await
             .map_err(|e| s3err(e.to_string()))?;
         dest_client
             .put_object()
@@ -520,7 +536,7 @@ async fn copy_via_download(
             .to_string();
 
         let part_size = std::cmp::max(PART_SIZE, object_size / 10_000 + 1);
-        let num_parts = ((object_size + part_size - 1) / part_size) as i32;
+        let num_parts = object_size.div_ceil(part_size) as i32;
         let mut completed_parts: Vec<(i32, String)> = Vec::with_capacity(num_parts as usize);
 
         for i in 0..num_parts {
@@ -534,14 +550,15 @@ async fn copy_via_download(
                 .get_object()
                 .bucket(src_bucket)
                 .key(src_key)
-                .range(format!("bytes={}-{}", start, end))
+                .range(format!("bytes={start}-{end}"))
                 .send()
                 .await
-                .map_err(|e| {
-                    s3err(format!("Range GET failed for part {}: {}", part_number, e))
-                })?;
+                .map_err(|e| s3err(format!("Range GET failed for part {part_number}: {e}")))?;
 
-            let chunk = get_resp.body.collect().await
+            let chunk = get_resp
+                .body
+                .collect()
+                .await
                 .map_err(|e| s3err(e.to_string()))?;
 
             // Upload chunk as part
@@ -618,7 +635,7 @@ pub fn collect_local_files(
         let entry = entry?;
         let path = entry.path();
         let name = entry.file_name().to_string_lossy().to_string();
-        let key = format!("{}/{}", prefix, name);
+        let key = format!("{prefix}/{name}");
 
         if path.is_dir() {
             collect_local_files(&path, &key, out)?;

@@ -1,15 +1,14 @@
 use crate::commands::file::FileOpState;
 use crate::models::{
     DirListing, FmError, KmsKeyInfo, ProgressEvent, S3AccessPoint, S3AccessPointDetail,
-    S3BucketAcl, S3BucketEncryption,
-    S3BucketLogging, S3BucketOwnership, S3BucketVersioning, S3BucketWebsite, S3CorsRule,
-    S3InventoryConfiguration, S3LifecycleRule, S3MultipartUpload, S3NotificationConfiguration,
-    S3ObjectLegalHold, S3ObjectLockConfig, S3ObjectMetadata, S3ObjectProperties, S3ObjectRetention,
-    S3ObjectVersion, S3PublicAccessBlock, S3ReplicationConfiguration, S3Tag, SearchEvent,
-    TransferCheckpoint,
+    S3BucketAcl, S3BucketEncryption, S3BucketLogging, S3BucketOwnership, S3BucketVersioning,
+    S3BucketWebsite, S3CorsRule, S3InventoryConfiguration, S3LifecycleRule, S3MultipartUpload,
+    S3NotificationConfiguration, S3ObjectLegalHold, S3ObjectLockConfig, S3ObjectMetadata,
+    S3ObjectProperties, S3ObjectRetention, S3ObjectVersion, S3PublicAccessBlock,
+    S3ReplicationConfiguration, S3Tag, SearchEvent, TransferCheckpoint,
 };
-use crate::s3::{self, build_s3_client, s3err, S3State, BANDWIDTH_LIMIT};
 use crate::s3::service::{S3Bucket, S3Service};
+use crate::s3::{self, build_s3_client, s3err, S3State, BANDWIDTH_LIMIT};
 use std::collections::HashMap;
 use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
@@ -21,7 +20,9 @@ use tauri::State;
 /// Extract an S3Service from the connection state for the given id.
 fn get_service(state: &State<'_, S3State>, id: &str) -> Result<S3Service, FmError> {
     let map = state.0.lock().map_err(|e| s3err(e.to_string()))?;
-    let conn = map.get(id).ok_or_else(|| s3err("S3 connection not found"))?;
+    let conn = map
+        .get(id)
+        .ok_or_else(|| s3err("S3 connection not found"))?;
     Ok(S3Service::new(conn.client.clone(), conn.bucket.clone()))
 }
 
@@ -117,14 +118,14 @@ pub async fn s3_connect(
             .max_keys(1)
             .send()
             .await
-            .map_err(|e| s3err(format!("Cannot access public bucket '{}': {}", bucket, e)))?;
+            .map_err(|e| s3err(format!("Cannot access public bucket '{bucket}': {e}")))?;
     } else {
         client
             .head_bucket()
             .bucket(&bucket)
             .send()
             .await
-            .map_err(|e| s3err(format!("Cannot access bucket '{}': {}", bucket, e)))?;
+            .map_err(|e| s3err(format!("Cannot access bucket '{bucket}': {e}")))?;
     }
 
     let conn = s3::S3Connection {
@@ -175,7 +176,10 @@ pub async fn s3_download(
         pause: AtomicBool::new(false),
     });
     {
-        let mut map = file_op_state.0.lock().map_err(|e| FmError::Other(e.to_string()))?;
+        let mut map = file_op_state
+            .0
+            .lock()
+            .map_err(|e| FmError::Other(e.to_string()))?;
         map.insert(op_id.clone(), flags.clone());
     }
 
@@ -186,7 +190,9 @@ pub async fn s3_download(
             &op_id,
             &flags.cancel,
             &flags.pause,
-            &|evt| { let _ = channel.send(evt); },
+            &|evt| {
+                let _ = channel.send(evt);
+            },
             password.as_deref(),
         )
         .await;
@@ -215,7 +221,10 @@ pub async fn s3_upload(
         pause: AtomicBool::new(false),
     });
     {
-        let mut map = file_op_state.0.lock().map_err(|e| FmError::Other(e.to_string()))?;
+        let mut map = file_op_state
+            .0
+            .lock()
+            .map_err(|e| FmError::Other(e.to_string()))?;
         map.insert(op_id.clone(), flags.clone());
     }
 
@@ -226,7 +235,9 @@ pub async fn s3_upload(
             &op_id,
             &flags.cancel,
             &flags.pause,
-            &|evt| { let _ = channel.send(evt); },
+            &|evt| {
+                let _ = channel.send(evt);
+            },
             None,
         )
         .await;
@@ -258,7 +269,10 @@ pub async fn s3_upload_encrypted(
         pause: AtomicBool::new(false),
     });
     {
-        let mut map = file_op_state.0.lock().map_err(|e| FmError::Other(e.to_string()))?;
+        let mut map = file_op_state
+            .0
+            .lock()
+            .map_err(|e| FmError::Other(e.to_string()))?;
         map.insert(op_id.clone(), flags.clone());
     }
 
@@ -271,7 +285,9 @@ pub async fn s3_upload_encrypted(
             &op_id,
             &flags.cancel,
             &flags.pause,
-            &|evt| { let _ = channel.send(evt); },
+            &|evt| {
+                let _ = channel.send(evt);
+            },
         )
         .await;
 
@@ -295,8 +311,12 @@ pub async fn s3_copy_objects(
 ) -> Result<Option<TransferCheckpoint>, FmError> {
     let (src_client, src_bucket, dest_client, dest_bucket) = {
         let map = state.0.lock().map_err(|e| s3err(e.to_string()))?;
-        let src_conn = map.get(&src_id).ok_or_else(|| s3err("Source S3 connection not found"))?;
-        let dest_conn = map.get(&dest_id).ok_or_else(|| s3err("Dest S3 connection not found"))?;
+        let src_conn = map
+            .get(&src_id)
+            .ok_or_else(|| s3err("Source S3 connection not found"))?;
+        let dest_conn = map
+            .get(&dest_id)
+            .ok_or_else(|| s3err("Dest S3 connection not found"))?;
         (
             src_conn.client.clone(),
             src_conn.bucket.clone(),
@@ -310,7 +330,10 @@ pub async fn s3_copy_objects(
         pause: AtomicBool::new(false),
     });
     {
-        let mut map = file_op_state.0.lock().map_err(|e| FmError::Other(e.to_string()))?;
+        let mut map = file_op_state
+            .0
+            .lock()
+            .map_err(|e| FmError::Other(e.to_string()))?;
         map.insert(op_id.clone(), flags.clone());
     }
 
@@ -328,7 +351,9 @@ pub async fn s3_copy_objects(
             &op_id,
             &flags.cancel,
             &flags.pause,
-            &|evt| { let _ = channel.send(evt); },
+            &|evt| {
+                let _ = channel.send(evt);
+            },
         )
         .await;
 
@@ -394,7 +419,10 @@ pub async fn s3_search_objects(
 
     let cancel_flag = Arc::new(AtomicBool::new(false));
     {
-        let mut map = search_state.0.lock().map_err(|e| FmError::Other(e.to_string()))?;
+        let mut map = search_state
+            .0
+            .lock()
+            .map_err(|e| FmError::Other(e.to_string()))?;
         map.insert(search_id.clone(), cancel_flag.clone());
     }
 
@@ -501,7 +529,9 @@ pub async fn s3_delete_version(
     mfa: Option<String>,
 ) -> Result<(), FmError> {
     let service = get_service(&state, &id)?;
-    service.delete_version(&key, &version_id, mfa.as_deref()).await
+    service
+        .delete_version(&key, &version_id, mfa.as_deref())
+        .await
 }
 
 #[tauri::command]
@@ -609,7 +639,9 @@ pub async fn s3_put_bucket_versioning(
     mfa: Option<String>,
 ) -> Result<(), FmError> {
     let service = get_service(&state, &id)?;
-    service.put_bucket_versioning(enabled, mfa_delete, mfa.as_deref()).await
+    service
+        .put_bucket_versioning(enabled, mfa_delete, mfa.as_deref())
+        .await
 }
 
 #[tauri::command]
@@ -762,7 +794,9 @@ pub async fn s3_bulk_change_storage_class(
     target_class: String,
 ) -> Result<Vec<String>, FmError> {
     let service = get_service(&state, &id)?;
-    service.bulk_change_storage_class(&keys, &target_class).await
+    service
+        .bulk_change_storage_class(&keys, &target_class)
+        .await
 }
 
 #[tauri::command]
@@ -925,7 +959,9 @@ pub async fn s3_list_kms_keys(
 ) -> Result<Vec<KmsKeyInfo>, FmError> {
     let sdk_config = {
         let map = state.0.lock().map_err(|e| s3err(e.to_string()))?;
-        let conn = map.get(&id).ok_or_else(|| s3err("S3 connection not found"))?;
+        let conn = map
+            .get(&id)
+            .ok_or_else(|| s3err("S3 connection not found"))?;
         conn.sdk_config.clone()
     };
 
@@ -939,14 +975,17 @@ pub async fn s3_list_kms_keys(
         if let Some(m) = &marker {
             req = req.marker(m);
         }
-        let resp = req.send().await.map_err(|e| s3err(format!("KMS ListKeys: {}", e)))?;
+        let resp = req
+            .send()
+            .await
+            .map_err(|e| s3err(format!("KMS ListKeys: {e}")))?;
         for entry in resp.keys() {
             if let (Some(kid), Some(arn)) = (entry.key_id(), entry.key_arn()) {
                 keys.push((kid.to_string(), arn.to_string()));
             }
         }
         if resp.truncated() {
-            marker = resp.next_marker().map(|s| s.to_string());
+            marker = resp.next_marker().map(std::string::ToString::to_string);
         } else {
             break;
         }
@@ -960,14 +999,17 @@ pub async fn s3_list_kms_keys(
         if let Some(m) = &alias_marker {
             req = req.marker(m);
         }
-        let resp = req.send().await.map_err(|e| s3err(format!("KMS ListAliases: {}", e)))?;
+        let resp = req
+            .send()
+            .await
+            .map_err(|e| s3err(format!("KMS ListAliases: {e}")))?;
         for alias in resp.aliases() {
             if let (Some(name), Some(kid)) = (alias.alias_name(), alias.target_key_id()) {
                 alias_map.insert(kid.to_string(), name.to_string());
             }
         }
         if resp.truncated() {
-            alias_marker = resp.next_marker().map(|s| s.to_string());
+            alias_marker = resp.next_marker().map(std::string::ToString::to_string);
         } else {
             break;
         }
@@ -1092,7 +1134,10 @@ pub async fn s3_batch_put_object_metadata(
         pause: AtomicBool::new(false),
     });
     {
-        let mut map = file_op_state.0.lock().map_err(|e| FmError::Other(e.to_string()))?;
+        let mut map = file_op_state
+            .0
+            .lock()
+            .map_err(|e| FmError::Other(e.to_string()))?;
         map.insert(op_id.clone(), flags.clone());
     }
 
@@ -1105,7 +1150,9 @@ pub async fn s3_batch_put_object_metadata(
             content_encoding.as_deref(),
             &custom,
             &flags.cancel,
-            &|evt| { let _ = channel.send(evt); },
+            &|evt| {
+                let _ = channel.send(evt);
+            },
             &op_id,
         )
         .await;
@@ -1135,7 +1182,10 @@ pub async fn s3_batch_put_object_tags(
         pause: AtomicBool::new(false),
     });
     {
-        let mut map = file_op_state.0.lock().map_err(|e| FmError::Other(e.to_string()))?;
+        let mut map = file_op_state
+            .0
+            .lock()
+            .map_err(|e| FmError::Other(e.to_string()))?;
         map.insert(op_id.clone(), flags.clone());
     }
 
@@ -1145,7 +1195,9 @@ pub async fn s3_batch_put_object_tags(
             &tags,
             merge,
             &flags.cancel,
-            &|evt| { let _ = channel.send(evt); },
+            &|evt| {
+                let _ = channel.send(evt);
+            },
             &op_id,
         )
         .await;
@@ -1244,7 +1296,9 @@ async fn get_account_id(state: &State<'_, S3State>, id: &str) -> Result<String, 
     // Check cache first
     {
         let map = state.0.lock().map_err(|e| s3err(e.to_string()))?;
-        let conn = map.get(id).ok_or_else(|| s3err("S3 connection not found"))?;
+        let conn = map
+            .get(id)
+            .ok_or_else(|| s3err("S3 connection not found"))?;
         if let Some(ref acct) = conn.account_id {
             return Ok(acct.clone());
         }
@@ -1253,7 +1307,9 @@ async fn get_account_id(state: &State<'_, S3State>, id: &str) -> Result<String, 
     // Fetch via STS
     let sdk_config = {
         let map = state.0.lock().map_err(|e| s3err(e.to_string()))?;
-        let conn = map.get(id).ok_or_else(|| s3err("S3 connection not found"))?;
+        let conn = map
+            .get(id)
+            .ok_or_else(|| s3err("S3 connection not found"))?;
         conn.sdk_config.clone()
     };
     let sts = aws_sdk_sts::Client::new(&sdk_config);
@@ -1279,16 +1335,23 @@ async fn get_account_id(state: &State<'_, S3State>, id: &str) -> Result<String, 
 }
 
 /// Build an S3ControlClient from the stored sdk_config.
-fn get_s3control_client(state: &State<'_, S3State>, id: &str) -> Result<aws_sdk_s3control::Client, FmError> {
+fn get_s3control_client(
+    state: &State<'_, S3State>,
+    id: &str,
+) -> Result<aws_sdk_s3control::Client, FmError> {
     let map = state.0.lock().map_err(|e| s3err(e.to_string()))?;
-    let conn = map.get(id).ok_or_else(|| s3err("S3 connection not found"))?;
+    let conn = map
+        .get(id)
+        .ok_or_else(|| s3err("S3 connection not found"))?;
     Ok(aws_sdk_s3control::Client::new(&conn.sdk_config))
 }
 
 /// Get the bucket name from the connection.
 fn get_bucket(state: &State<'_, S3State>, id: &str) -> Result<String, FmError> {
     let map = state.0.lock().map_err(|e| s3err(e.to_string()))?;
-    let conn = map.get(id).ok_or_else(|| s3err("S3 connection not found"))?;
+    let conn = map
+        .get(id)
+        .ok_or_else(|| s3err("S3 connection not found"))?;
     Ok(conn.bucket.clone())
 }
 

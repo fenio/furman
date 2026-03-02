@@ -228,7 +228,7 @@
     <div class="inv-field">
       <span class="inv-label">Optional Fields</span>
       <div class="inv-fields-grid">
-        {#each OPTIONAL_FIELDS as field}
+        {#each OPTIONAL_FIELDS as field (field)}
           <label class="inv-checkbox">
             <input type="checkbox" checked={formOptionalFields.includes(field)} onchange={() => toggleField(field)} />
             {field}
@@ -258,7 +258,7 @@
       <div class="inv-empty">No inventory configurations found for this bucket.</div>
     {:else}
       <div class="inv-list">
-        {#each configs as config}
+        {#each configs as config (config.id)}
           <div class="inv-row">
             <div class="inv-row-info">
               <span class="inv-row-id">{config.id}</span>

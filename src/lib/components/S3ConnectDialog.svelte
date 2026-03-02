@@ -3,7 +3,7 @@
   import { s3CheckCredentials, s3ListBuckets, s3CreateBucket, s3DeleteBucket, oidcStartAuth } from '$lib/services/s3';
   import { connectionsState } from '$lib/state/connections.svelte';
   import { S3_PROVIDERS, getProvider, inferProviderFromEndpoint } from '$lib/data/s3-providers';
-  import type { S3ProviderProfile, S3ProviderRegion } from '$lib/data/s3-providers';
+  import type { S3ProviderProfile } from '$lib/data/s3-providers';
   import type { S3Bucket, S3Profile, S3ProviderCapabilities } from '$lib/types';
 
   interface Props {
@@ -50,7 +50,7 @@
   let roleArn = $state(init?.roleArn ?? '');
   let externalIdVal = $state(init?.externalId ?? '');
   let sessionDuration = $state(init?.sessionDurationSecs ?? 3600);
-  let showAssumeRole = $state(!!(init?.roleArn));
+  let _showAssumeRole = $state(!!(init?.roleArn));
   let useAcceleration = $state(init?.useTransferAcceleration ?? false);
   let defaultEncryption = $state(init?.defaultClientEncryption ?? false);
   let encryptionCipher = $state<'aes-256-gcm' | 'chacha20-poly1305'>(init?.encryptionCipher ?? 'aes-256-gcm');
@@ -59,7 +59,7 @@
   let kdfParallelism = $state(init?.kdfParallelism ?? 1);
   let autoEncryptMinSize = $state(init?.autoEncryptMinSize ?? 0);
   let autoEncryptExtensions = $state(init?.autoEncryptExtensions?.join(', ') ?? '');
-  let showEncryptionSettings = $state(false);
+  let _showEncryptionSettings = $state(false);
 
   // Proxy
   let useProxy = $state(!!(init?.proxyUrl));
@@ -545,7 +545,7 @@
             />
             {#if providerDropdownOpen}
               <div class="provider-dropdown" bind:this={providerListEl}>
-                {#each filteredProviders as p, i}
+                {#each filteredProviders as p, i (p.id)}
                   <button
                     class="provider-option"
                     class:highlighted={i === providerHighlight}
@@ -570,7 +570,7 @@
           Region Preset
           <select class="dialog-input" value={selectedRegionId} onchange={handleRegionChange}>
             <option value="_custom">(Custom / manual entry)</option>
-            {#each providerRegions as r}
+            {#each providerRegions as r (r.id)}
               <option value={r.id === '' ? `${r.id}::${r.name}` : r.id}>
                 {r.name}{r.id ? ` (${r.id})` : ''}
               </option>
@@ -600,7 +600,7 @@
         </div>
         {#if showBucketList && buckets.length > 0}
           <div class="bucket-list">
-            {#each buckets as b}
+            {#each buckets as b (b.name)}
               <div class="bucket-item-row">
                 <button class="bucket-item" onclick={() => selectBucket(b.name)}>
                   <span class="bucket-name">{b.name}</span>
@@ -1018,7 +1018,6 @@
     {@render formButtons()}
   </div>
 {:else}
-  <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
   <div
     class="dialog-overlay no-select"
     role="dialog"

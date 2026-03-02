@@ -5,8 +5,8 @@ use russh::client;
 use russh_keys::ssh_key;
 use russh_sftp::client::SftpSession;
 
-use crate::models::FmError;
 use super::helpers::sftperr;
+use crate::models::FmError;
 
 // ── State ────────────────────────────────────────────────────────────────────
 

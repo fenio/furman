@@ -17,7 +17,7 @@
     <span class="badge green">{comparisonState.counts.new}</span>
     <span class="badge yellow">{comparisonState.counts.modified}</span>
     <span class="badge red">{comparisonState.counts.deleted}</span>
-    {#each filters as f}
+    {#each filters as f (f.id)}
       <button
         class="filter-btn"
         class:active={comparisonState.filter === f.id}
