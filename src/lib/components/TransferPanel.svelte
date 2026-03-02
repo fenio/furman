@@ -86,7 +86,7 @@
 
 {#if visible}
 <div class="transfer-panel">
-  <div class="transfer-header" onclick={() => transfersState.showDialog()} role="button" tabindex="-1">
+  <div class="transfer-header" onclick={() => transfersState.showDialog()} onkeydown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); transfersState.showDialog(); } }} role="button" tabindex="-1">
     <span class="transfer-title">
       Transfers{#if activeCount > 0} ({activeCount} active{#if queuedCount > 0}, {queuedCount} queued{/if}){:else if queuedCount > 0} ({queuedCount} queued){/if}
     </span>
