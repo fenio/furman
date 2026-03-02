@@ -49,6 +49,7 @@
             { keys: 'Insert', desc: 'Toggle select and move down' },
             { keys: 'Type any letter', desc: 'Quick filter' },
             { keys: 'Esc', desc: 'Clear filter' },
+            { keys: `${platform.mod}/`, desc: 'This cheatsheet' },
           ],
         },
       ],
@@ -109,7 +110,6 @@
           title: 'Search',
           shortcuts: [
             { keys: `${platform.mod}F`, desc: 'Search files' },
-            { keys: `${platform.mod}/`, desc: 'This cheatsheet' },
           ],
         },
       ],
