@@ -13,6 +13,7 @@ Complete keyboard shortcut reference for Furman. On Linux, replace Cmd with Ctrl
 | Backspace | Go to parent directory |
 | Tab | Switch active panel |
 | Space | Toggle select and move down |
+| Alt+← / Alt+→ | History back / forward |
 
 ## Selection
 
@@ -35,6 +36,9 @@ Complete keyboard shortcut reference for Furman. On Linux, replace Cmd with Ctrl
 | Cmd+M | F6 | Move to other panel |
 | Cmd+N | F7 | Create directory |
 | Cmd+Backspace | F8 | Delete |
+| Cmd+Shift+C | — | Copy to clipboard |
+| Cmd+Shift+X | — | Cut to clipboard |
+| Cmd+Shift+V | — | Paste from clipboard |
 | Cmd+Z | — | Undo last operation (delete/rename) |
 | Cmd+I | F9 | Properties |
 | Cmd+Q | F10 | Quit |
@@ -56,6 +60,7 @@ Complete keyboard shortcut reference for Furman. On Linux, replace Cmd with Ctrl
 | Cmd+J | Toggle transfer panel |
 | Cmd+Y | Sync directories |
 | Cmd+Shift+D | Compare directories |
+| Alt+P | Toggle preview pane |
 | Cmd+Shift+L | Toggle dark / light theme |
 
 ## Terminal

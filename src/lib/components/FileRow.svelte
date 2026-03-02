@@ -1,5 +1,5 @@
 <script lang="ts">
-  import type { FileEntry, PanelBackend } from '$lib/types';
+  import type { FileEntry, PanelBackend, ColumnId } from '$lib/types';
   import { formatSize, formatDate, formatPermissions } from '$lib/utils/format';
   import { convertFileSrc } from '@tauri-apps/api/core';
   import ImageTooltip from './ImageTooltip.svelte';
@@ -22,13 +22,17 @@
     backend?: PanelBackend;
     s3ConnectionId?: string;
     comparisonStatus?: ComparisonStatus;
+    visibleColumns?: ColumnId[];
     getSelectedPaths?: () => string[];
     onclick?: (e: MouseEvent) => void;
     ondblclick?: () => void;
     oncontextmenu?: (e: MouseEvent) => void;
   }
 
-  let { entry, isSelected, isCursor, isActive, rowIndex, panelSide, isS3, dirSize, encrypted, backend, s3ConnectionId, comparisonStatus, getSelectedPaths, onclick, ondblclick, oncontextmenu }: Props = $props();
+  let { entry, isSelected, isCursor, isActive, rowIndex, panelSide, isS3, dirSize, encrypted, backend, s3ConnectionId, comparisonStatus, visibleColumns, getSelectedPaths, onclick, ondblclick, oncontextmenu }: Props = $props();
+
+  const defaultCols: ColumnId[] = ['name', 'size', 'modified', 'extension'];
+  const cols = $derived(visibleColumns ?? defaultCols);
 
   const archiveExtensions = new Set(['zip', 'rar', '7z', 'tar', 'gz', 'tgz', 'bz2', 'xz']);
   const imageExtensions = new Set(['png', 'jpg', 'jpeg', 'gif', 'bmp', 'svg', 'webp', 'ico']);
@@ -207,10 +211,23 @@
   {#if encrypted}
     <span class="col-encrypted" title="Client-side encrypted">&#x1F512;</span>
   {/if}
-  <span class="col-name">{displayName}</span>
-  <span class="col-size">{sizeDisplay}</span>
-  <span class="col-date">{dateDisplay}</span>
-  <span class="col-perm">{lastColDisplay}</span>
+  {#each cols as colId (colId)}
+    {#if colId === 'name'}
+      <span class="col-name">{displayName}</span>
+    {:else if colId === 'size'}
+      <span class="col-size">{sizeDisplay}</span>
+    {:else if colId === 'modified'}
+      <span class="col-date">{dateDisplay}</span>
+    {:else if colId === 'extension'}
+      <span class="col-perm">{lastColDisplay}</span>
+    {:else if colId === 'permissions'}
+      <span class="col-extra">{permDisplay}</span>
+    {:else if colId === 'owner'}
+      <span class="col-extra">{entry.owner || ''}</span>
+    {:else if colId === 'group'}
+      <span class="col-extra">{entry.group || ''}</span>
+    {/if}
+  {/each}
 </div>
 {#if showTooltip && rowEl}
   <ImageTooltip src={convertFileSrc(entry.path)} anchorRect={rowEl.getBoundingClientRect()} />
@@ -324,6 +341,11 @@
   }
 
   .col-perm {
+    flex: 0 0 9ch;
+    text-align: left;
+  }
+
+  .col-extra {
     flex: 0 0 9ch;
     text-align: left;
   }

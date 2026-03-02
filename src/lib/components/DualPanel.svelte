@@ -6,7 +6,9 @@
   import TerminalPanel from './TerminalPanel.svelte';
   import TabBar from './TabBar.svelte';
   import ComparisonBar from './ComparisonBar.svelte';
+  import PreviewPane from './PreviewPane.svelte';
   import { comparisonState } from '$lib/state/comparison.svelte';
+  import { previewState } from '$lib/state/preview.svelte';
 
   interface Props {
     onEntryActivate?: (index: number) => void;
@@ -78,6 +80,13 @@
         </div>
       {/if}
     {/if}
+    {#if previewState.visible}
+      <PreviewPane
+        entry={panels.active.currentEntry}
+        backend={panels.active.backend}
+        panelPath={panels.active.path}
+      />
+    {/if}
   {:else}
     {#if replaceLeft}
       <div class="in-pane-terminal">
@@ -107,6 +116,13 @@
           {onDrop}
         />
       </div>
+    {/if}
+    {#if previewState.visible}
+      <PreviewPane
+        entry={panels.active.currentEntry}
+        backend={panels.active.backend}
+        panelPath={panels.active.path}
+      />
     {/if}
     {#if replaceRight}
       <div class="in-pane-terminal">

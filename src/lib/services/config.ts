@@ -1,7 +1,7 @@
 import { readFileText, writeFileText } from '$lib/services/tauri';
 import type { FavoriteItem } from '$lib/state/sidebar.svelte';
 import type { Workspace } from '$lib/state/workspaces.svelte';
-import type { S3Bookmark, SftpBookmark, ConnectionProfile, SortField, SortDirection } from '$lib/types';
+import type { S3Bookmark, SftpBookmark, ConnectionProfile, SortField, SortDirection, ColumnId } from '$lib/types';
 import { inferProviderFromEndpoint } from '$lib/data/s3-providers';
 
 export interface Config {
@@ -23,6 +23,7 @@ export interface Config {
   sortField: SortField;
   sortDirection: SortDirection;
   syncExcludePatterns: string;
+  visibleColumns?: ColumnId[];
 }
 
 export const DEFAULT_CONFIG: Config = {

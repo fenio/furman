@@ -1,4 +1,5 @@
-import type { ModalType, ViewerMode, PanelBackend, S3ProviderCapabilities, S3ConnectionInfo, SftpConnectionInfo, S3Profile, SortField, SortDirection, ArchiveInfo, FileEntry } from '$lib/types';
+import type { ModalType, ViewerMode, PanelBackend, S3ProviderCapabilities, S3ConnectionInfo, SftpConnectionInfo, S3Profile, SortField, SortDirection, ArchiveInfo, FileEntry, ColumnId } from '$lib/types';
+import { DEFAULT_VISIBLE_COLUMNS } from '$lib/utils/columns';
 import type { Theme } from '@tauri-apps/api/window';
 import { saveConfig, type Config } from '$lib/services/config';
 import { sidebarState } from '$lib/state/sidebar.svelte';
@@ -69,6 +70,14 @@ class AppState {
   multiRenameBackend = $state<PanelBackend>('local');
   multiRenameS3ConnectionId = $state('');
   multiRenameSftpConnectionId = $state('');
+  visibleColumns = $state<ColumnId[]>([...DEFAULT_VISIBLE_COLUMNS]);
+
+  setVisibleColumns(cols: ColumnId[]) {
+    // Name is always required
+    if (!cols.includes('name')) cols = ['name', ...cols];
+    this.visibleColumns = cols;
+    this.persistConfig();
+  }
 
   showCommandPalette() {
     this.modal = 'command-palette';
@@ -246,6 +255,7 @@ class AppState {
     transfersState.maxConcurrent = config.maxConcurrent ?? 2;
     this.secureTempCleanup = config.secureTempCleanup ?? false;
     this.syncExcludePatterns = config.syncExcludePatterns ?? '.DS_Store, Thumbs.db, .git/**';
+    this.visibleColumns = config.visibleColumns ?? [...DEFAULT_VISIBLE_COLUMNS];
     s3SetBandwidthLimit(transfersState.bandwidthLimit).catch(() => {});
   }
 
@@ -275,6 +285,7 @@ class AppState {
       sortField: this.sortField,
       sortDirection: this.sortDirection,
       syncExcludePatterns: this.syncExcludePatterns,
+      visibleColumns: this.visibleColumns,
     });
   }
 

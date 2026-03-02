@@ -1,5 +1,6 @@
 <script lang="ts">
   import { platform } from '$lib/state/platform.svelte';
+  import { clipboardState } from '$lib/state/clipboard.svelte';
   import { onMount } from 'svelte';
 
   interface Props {
@@ -95,6 +96,21 @@
       <button class="menu-row" role="menuitem" onclick={() => act('move')}>
         Move
         <span class="menu-shortcut">F6</span>
+      </button>
+
+      <div class="menu-divider"></div>
+
+      <button class="menu-row" role="menuitem" onclick={() => act('clipboard-copy')}>
+        Copy to Clipboard
+        <span class="menu-shortcut">{platform.mod}{platform.shift}C</span>
+      </button>
+      <button class="menu-row" role="menuitem" onclick={() => act('clipboard-cut')}>
+        Cut to Clipboard
+        <span class="menu-shortcut">{platform.mod}{platform.shift}X</span>
+      </button>
+      <button class="menu-row" role="menuitem" disabled={clipboardState.isEmpty} onclick={() => act('clipboard-paste')}>
+        Paste from Clipboard
+        <span class="menu-shortcut">{platform.mod}{platform.shift}V</span>
       </button>
 
       <div class="menu-divider"></div>

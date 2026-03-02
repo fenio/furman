@@ -27,6 +27,8 @@
   import { commandRegistry, type Command } from '$lib/state/commands.svelte';
   import { platform } from '$lib/state/platform.svelte';
   import { comparisonState } from '$lib/state/comparison.svelte';
+  import { clipboardState } from '$lib/state/clipboard.svelte';
+  import { previewState } from '$lib/state/preview.svelte';
 
   let { children } = $props();
 
@@ -982,6 +984,68 @@
     });
   }
 
+  function handleClipboardPaste() {
+    const dest = panels.active.path;
+    const destBackend = panels.active.backend;
+    const sources = clipboardState.paths;
+    const srcBackend = clipboardState.sourceBackend;
+    const mode = clipboardState.mode;
+
+    const allNames = sources.map((s) => s.replace(/\/+$/, '').split('/').pop() ?? s);
+    const names = allNames.length > 5
+      ? allNames.slice(0, 5).join(', ') + ` … and ${allNames.length - 5} more`
+      : allNames.join(', ');
+
+    const action = mode === 'cut' ? 'Move' : 'Paste';
+    appState.showConfirm(`${action} ${sources.length} item(s) to ${dest}?\n${names}`, () => {
+      appState.closeModal();
+
+      if (mode === 'copy') {
+        withConflictCheck(sources, dest, destBackend, (finalSources) => {
+          const opId = 'clipboard-' + Date.now() + '-' + Math.random().toString(36).slice(2, 6);
+          transfersState.enqueue({
+            id: opId,
+            type: 'copy',
+            sources: finalSources,
+            destination: dest,
+            srcBackend,
+            destBackend,
+            s3SrcConnectionId: srcBackend === 's3' ? clipboardState.sourceS3ConnectionId : undefined,
+            s3DestConnectionId: destBackend === 's3' ? panels.active.s3Connection?.connectionId : undefined,
+            s3DestPrefix: destBackend === 's3' && panels.active.s3Connection
+              ? s3PathToPrefix(dest, panels.active.s3Connection.bucket)
+              : undefined,
+            sftpSrcConnectionId: srcBackend === 'sftp' ? clipboardState.sourceSftpConnectionId : undefined,
+            sftpDestConnectionId: destBackend === 'sftp' ? panels.active.sftpConnection?.connectionId : undefined,
+            sftpDestPath: destBackend === 'sftp' ? dest : undefined,
+          });
+        });
+      } else {
+        // cut = move
+        withConflictCheck(sources, dest, destBackend, (finalSources) => {
+          const opId = 'clipboard-' + Date.now() + '-' + Math.random().toString(36).slice(2, 6);
+          transfersState.enqueue({
+            id: opId,
+            type: 'move',
+            sources: finalSources,
+            destination: dest,
+            srcBackend,
+            destBackend,
+            s3SrcConnectionId: srcBackend === 's3' ? clipboardState.sourceS3ConnectionId : undefined,
+            s3DestConnectionId: destBackend === 's3' ? panels.active.s3Connection?.connectionId : undefined,
+            s3DestPrefix: destBackend === 's3' && panels.active.s3Connection
+              ? s3PathToPrefix(dest, panels.active.s3Connection.bucket)
+              : undefined,
+            sftpSrcConnectionId: srcBackend === 'sftp' ? clipboardState.sourceSftpConnectionId : undefined,
+            sftpDestConnectionId: destBackend === 'sftp' ? panels.active.sftpConnection?.connectionId : undefined,
+            sftpDestPath: destBackend === 'sftp' ? dest : undefined,
+          });
+          clipboardState.clear();
+        });
+      }
+    });
+  }
+
   async function handleDelete() {
     const active = panels.active;
     const sources = active.getSelectedOrCurrent();
@@ -1598,6 +1662,58 @@
         }
         return;
       }
+    }
+
+    // Directory history — Alt+Left / Alt+Right (before modal guard)
+    if (e.altKey && !cmd && e.key === 'ArrowLeft') {
+      e.preventDefault();
+      panels.active.goBack();
+      return;
+    }
+    if (e.altKey && !cmd && e.key === 'ArrowRight') {
+      e.preventDefault();
+      panels.active.goForward();
+      return;
+    }
+
+    // Preview pane toggle — Alt+P (before modal guard)
+    if (e.altKey && !cmd && e.code === 'KeyP') {
+      e.preventDefault();
+      previewState.toggle();
+      return;
+    }
+
+    // Clipboard — Cmd+Shift+C / Cmd+Shift+X / Cmd+Shift+V (before modal guard)
+    if (cmd && e.shiftKey && e.code === 'KeyC') {
+      e.preventDefault();
+      const paths = panels.active.getSelectedOrCurrent();
+      if (paths.length > 0) {
+        clipboardState.copy(paths, panels.active.backend, {
+          s3ConnectionId: panels.active.s3Connection?.connectionId,
+          sftpConnectionId: panels.active.sftpConnection?.connectionId,
+        });
+        statusState.setMessage(`Copied ${paths.length} item(s) to clipboard`);
+      }
+      return;
+    }
+    if (cmd && e.shiftKey && e.code === 'KeyX') {
+      e.preventDefault();
+      const paths = panels.active.getSelectedOrCurrent();
+      if (paths.length > 0) {
+        clipboardState.cut(paths, panels.active.backend, {
+          s3ConnectionId: panels.active.s3Connection?.connectionId,
+          sftpConnectionId: panels.active.sftpConnection?.connectionId,
+        });
+        statusState.setMessage(`Cut ${paths.length} item(s) to clipboard`);
+      }
+      return;
+    }
+    if (cmd && e.shiftKey && e.code === 'KeyV') {
+      e.preventDefault();
+      if (!clipboardState.isEmpty) {
+        handleClipboardPaste();
+      }
+      return;
     }
 
     // Terminal toggle shortcuts — always active regardless of focus

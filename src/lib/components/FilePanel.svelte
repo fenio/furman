@@ -1,6 +1,6 @@
 <script lang="ts">
   import type { PanelData } from '$lib/state/panels.svelte';
-  import type { SortField } from '$lib/types';
+  import type { SortField, ColumnId } from '$lib/types';
   import { appState } from '$lib/state/app.svelte';
   import { statusState } from '$lib/state/status.svelte';
   import { formatSize } from '$lib/utils/format';
@@ -13,6 +13,7 @@
   import BreadcrumbBar from './BreadcrumbBar.svelte';
   import ContextMenu from './ContextMenu.svelte';
   import { comparisonState, type ComparisonStatus } from '$lib/state/comparison.svelte';
+  import { ALL_COLUMNS } from '$lib/utils/columns';
 
   interface Props {
     panel: PanelData;
@@ -219,6 +220,19 @@
       window.dispatchEvent(new KeyboardEvent('keydown', { key: fKey }));
       return;
     }
+    // Clipboard actions via keyboard simulation
+    if (key === 'clipboard-copy') {
+      window.dispatchEvent(new KeyboardEvent('keydown', { key: 'C', code: 'KeyC', metaKey: true, shiftKey: true }));
+      return;
+    }
+    if (key === 'clipboard-cut') {
+      window.dispatchEvent(new KeyboardEvent('keydown', { key: 'X', code: 'KeyX', metaKey: true, shiftKey: true }));
+      return;
+    }
+    if (key === 'clipboard-paste') {
+      window.dispatchEvent(new KeyboardEvent('keydown', { key: 'V', code: 'KeyV', metaKey: true, shiftKey: true }));
+      return;
+    }
     // S3-specific actions via custom event
     if (key === 'presign' || key === 'copy-uri' || key === 'bulk-storage') {
       window.dispatchEvent(new CustomEvent('context-action', { detail: key }));
@@ -377,6 +391,32 @@
   }
 
   const isS3 = $derived(panel.backend === 's3');
+
+  // Column configuration
+  const activeColumns = $derived(ALL_COLUMNS.filter(col => appState.visibleColumns.includes(col.id)));
+
+  let columnPickerOpen = $state(false);
+  let columnPickerX = $state(0);
+  let columnPickerY = $state(0);
+
+  function handleColumnHeaderContextMenu(e: MouseEvent) {
+    e.preventDefault();
+    columnPickerX = e.clientX;
+    columnPickerY = e.clientY;
+    columnPickerOpen = true;
+  }
+
+  function toggleColumn(id: ColumnId) {
+    if (id === 'name') return; // Name is always visible
+    const current = [...appState.visibleColumns];
+    const idx = current.indexOf(id);
+    if (idx >= 0) {
+      current.splice(idx, 1);
+    } else {
+      current.push(id);
+    }
+    appState.setVisibleColumns(current);
+  }
 </script>
 
 <!-- svelte-ignore a11y_click_events_have_key_events -->
@@ -434,6 +474,10 @@
       archiveInfo={panel.archiveInfo}
       {homePath}
       onNavigate={(p) => panel.loadDirectory(p)}
+      canGoBack={panel.canGoBack}
+      canGoForward={panel.canGoForward}
+      onGoBack={() => panel.goBack()}
+      onGoForward={() => panel.goForward()}
     />
     {#if panel.gitInfo}
       <span class="backend-indicator">
@@ -549,20 +593,34 @@
 
   <!-- Column headers -->
   {#if panel.viewMode === 'list'}
-  <div class="column-headers">
-    <button class="col-header col-name" onclick={() => handleColumnClick('name')}>
-      Name{sortIndicator('name')}
-    </button>
-    <button class="col-header col-size" onclick={() => handleColumnClick('size')}>
-      Size{sortIndicator('size')}
-    </button>
-    <button class="col-header col-date" onclick={() => handleColumnClick('modified')}>
-      Date{sortIndicator('modified')}
-    </button>
-    <button class="col-header col-perm" onclick={() => handleColumnClick(isS3 ? 'storage_class' : 'extension')}>
-      {isS3 ? 'Class' : 'Ext'}{sortIndicator(isS3 ? 'storage_class' : 'extension')}
-    </button>
+  <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
+  <div class="column-headers" role="row" oncontextmenu={handleColumnHeaderContextMenu}>
+    {#each activeColumns as col (col.id)}
+      {@const sortF = isS3 && col.s3SortField ? col.s3SortField : col.sortField}
+      <button class="col-header" style="flex:{col.flex};text-align:{col.textAlign}{col.id === 'size' ? ';padding-right:1ch' : ''}" onclick={() => handleColumnClick(sortF)}>
+        {isS3 && col.s3Label ? col.s3Label : col.label}{sortIndicator(sortF)}
+      </button>
+    {/each}
   </div>
+  {#if columnPickerOpen}
+    <!-- svelte-ignore a11y_click_events_have_key_events -->
+    <div class="col-picker-backdrop" role="presentation" onclick={() => { columnPickerOpen = false; }}>
+      <!-- svelte-ignore a11y_click_events_have_key_events -->
+      <div class="col-picker" role="menu" style="left: {columnPickerX}px; top: {columnPickerY}px" onclick={(e) => e.stopPropagation()}>
+        {#each ALL_COLUMNS as col (col.id)}
+          <label class="col-picker-item">
+            <input
+              type="checkbox"
+              checked={appState.visibleColumns.includes(col.id)}
+              disabled={col.id === 'name'}
+              onchange={() => toggleColumn(col.id)}
+            />
+            {col.label}
+          </label>
+        {/each}
+      </div>
+    </div>
+  {/if}
   {/if}
 
   <!-- Filter bar -->
@@ -649,6 +707,7 @@
             s3ConnectionId={panel.s3Connection?.connectionId}
             comparisonStatus={comparisonStatusMap.get(entry.name)}
             getSelectedPaths={() => panel.getSelectedOrCurrent()}
+            visibleColumns={appState.visibleColumns}
             onclick={(e) => handleRowClick(i, e)}
             ondblclick={() => handleRowDblClick(i)}
             oncontextmenu={(e) => handleContextMenu(i, e)}
@@ -966,6 +1025,7 @@
     letter-spacing: 0.5px;
     opacity: 0.5;
     transition: opacity var(--transition-fast);
+    min-width: 0;
   }
 
   .col-header:hover {
@@ -973,26 +1033,42 @@
     color: var(--border-active);
   }
 
-  .col-header.col-name {
-    flex: 1 1 0;
-    min-width: 0;
+  .col-picker-backdrop {
+    position: fixed;
+    inset: 0;
+    z-index: 90;
   }
 
-  .col-header.col-size {
-    flex: 0 0 9ch;
-    text-align: right;
-    padding-right: 1ch;
+  .col-picker {
+    position: fixed;
+    background: var(--dialog-bg);
+    border: 1px solid var(--dialog-border);
+    border-radius: var(--radius-md);
+    box-shadow: var(--shadow-dialog);
+    padding: 8px 12px;
+    z-index: 91;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    min-width: 120px;
   }
 
-  .col-header.col-date {
-    flex: 0 0 16ch;
-    text-align: left;
-    padding-right: 1ch;
+  .col-picker-item {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 12px;
+    color: var(--text-primary);
+    cursor: pointer;
+    padding: 2px 0;
   }
 
-  .col-header.col-perm {
-    flex: 0 0 9ch;
-    text-align: left;
+  .col-picker-item input[type="checkbox"] {
+    margin: 0;
+  }
+
+  .col-picker-item input:disabled {
+    opacity: 0.4;
   }
 
   .filter-bar {

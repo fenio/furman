@@ -10,9 +10,13 @@
     archiveInfo: ArchiveInfo | null;
     homePath: string;
     onNavigate: (path: string) => void;
+    canGoBack?: boolean;
+    canGoForward?: boolean;
+    onGoBack?: () => void;
+    onGoForward?: () => void;
   }
 
-  let { path, backend, s3Connection, sftpConnection, archiveInfo, homePath, onNavigate }: Props = $props();
+  let { path, backend, s3Connection, sftpConnection, archiveInfo, homePath, onNavigate, canGoBack = false, canGoForward = false, onGoBack, onGoForward }: Props = $props();
 
   let scrollContainer: HTMLDivElement | undefined = $state(undefined);
 
@@ -110,6 +114,8 @@
 </script>
 
 <div class="breadcrumb-bar" bind:this={scrollContainer}>
+  <button class="nav-btn" disabled={!canGoBack} onclick={() => onGoBack?.()} title="Back (Alt+←)">◀</button>
+  <button class="nav-btn" disabled={!canGoForward} onclick={() => onGoForward?.()} title="Forward (Alt+→)">▶</button>
   {#each segments as segment, i (segment.path)}
     {#if i > 0}
       <span class="breadcrumb-sep">/</span>
@@ -134,6 +140,28 @@
     padding-right: 28px;
     scrollbar-width: none;
     gap: 2px;
+  }
+
+  .nav-btn {
+    background: none;
+    border: none;
+    color: var(--text-accent);
+    font-size: 10px;
+    cursor: pointer;
+    padding: 2px 3px;
+    line-height: 1;
+    opacity: 0.6;
+    transition: opacity var(--transition-fast);
+    flex-shrink: 0;
+  }
+
+  .nav-btn:hover:not(:disabled) {
+    opacity: 1;
+  }
+
+  .nav-btn:disabled {
+    opacity: 0.2;
+    cursor: default;
   }
 
   .breadcrumb-bar::-webkit-scrollbar {

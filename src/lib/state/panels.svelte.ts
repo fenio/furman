@@ -30,6 +30,14 @@ export class PanelData {
   archiveInfo = $state<ArchiveInfo | null>(null);
   gitInfo = $state<GitRepoInfo | null>(null);
 
+  // Directory history (browser-like back/forward)
+  history = $state<string[]>([]);
+  historyIndex = $state(-1);
+  private navigatingHistory = false;
+
+  canGoBack = $derived(this.historyIndex > 0);
+  canGoForward = $derived(this.historyIndex < this.history.length - 1);
+
   sortedEntries = $derived(sortEntries(this.entries, this.sortField, this.sortDirection));
 
   filteredSortedEntries = $derived.by(() => {
@@ -225,16 +233,46 @@ export class PanelData {
     } finally {
       this.loading = false;
     }
+    // Track history
+    if (!this.navigatingHistory && !this.error) {
+      this.history = [...this.history.slice(0, this.historyIndex + 1), this.path];
+      this.historyIndex = this.history.length - 1;
+    }
+    this.navigatingHistory = false;
     this.startWatching();
   }
 
+  goBack() {
+    if (this.historyIndex <= 0) return;
+    this.historyIndex--;
+    this.navigatingHistory = true;
+    const target = this.history[this.historyIndex];
+    this.loadDirectory(target);
+  }
+
+  goForward() {
+    if (this.historyIndex >= this.history.length - 1) return;
+    this.historyIndex++;
+    this.navigatingHistory = true;
+    const target = this.history[this.historyIndex];
+    this.loadDirectory(target);
+  }
+
+  private clearHistory() {
+    this.history = [];
+    this.historyIndex = -1;
+    this.navigatingHistory = false;
+  }
+
   async enterArchive(archivePath: string) {
+    this.clearHistory();
     this.backend = 'archive';
     this.archiveInfo = { archivePath, internalPath: '' };
     await this.loadDirectory(`archive://${archivePath}#`);
   }
 
   private async exitArchive(realPath: string, focusName?: string) {
+    this.clearHistory();
     const archiveName = this.archiveInfo
       ? this.archiveInfo.archivePath.replace(/\/+$/, '').split('/').pop() ?? ''
       : '';
@@ -244,6 +282,7 @@ export class PanelData {
   }
 
   async connectS3(info: S3ConnectionInfo, endpoint?: string, profile?: string, accessKey?: string, secretKey?: string, roleArn?: string, externalId?: string, sessionName?: string, sessionDurationSecs?: number, useTransferAcceleration?: boolean, anonymous?: boolean, webIdentityToken?: string, proxyUrl?: string, proxyUsername?: string, proxyPassword?: string) {
+    this.clearHistory();
     this.loading = true;
     this.error = null;
     try {
@@ -259,6 +298,7 @@ export class PanelData {
   }
 
   async disconnectS3(homePath?: string) {
+    this.clearHistory();
     if (this.s3Connection) {
       try {
         await s3Disconnect(this.s3Connection.connectionId);
@@ -273,6 +313,7 @@ export class PanelData {
   }
 
   async connectSftp(info: SftpConnectionInfo, password?: string, keyPath?: string, keyPassphrase?: string) {
+    this.clearHistory();
     this.loading = true;
     this.error = null;
     try {
@@ -287,6 +328,7 @@ export class PanelData {
   }
 
   async disconnectSftp(homePath?: string) {
+    this.clearHistory();
     if (this.sftpConnection) {
       try {
         await sftpDisconnect(this.sftpConnection.connectionId);
