@@ -5,6 +5,10 @@ export interface Workspace {
   leftPath: string;
   rightPath: string;
   activePanel: 'left' | 'right';
+  leftTabs?: string[];
+  rightTabs?: string[];
+  leftActiveTab?: number;
+  rightActiveTab?: number;
 }
 
 class WorkspacesState {

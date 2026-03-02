@@ -8,9 +8,10 @@
     side?: 'left' | 'right';
     onEntryClick?: (index: number, e: MouseEvent) => void;
     onEntryDblClick?: (index: number) => void;
+    onEntryContextMenu?: (index: number, e: MouseEvent) => void;
   }
 
-  let { panel, isActive, side, onEntryClick, onEntryDblClick }: Props = $props();
+  let { panel, isActive, side, onEntryClick, onEntryDblClick, onEntryContextMenu }: Props = $props();
 
   let gridContainer: HTMLDivElement | undefined = $state(undefined);
   let visibleRows = $state(20);
@@ -79,6 +80,7 @@
       class:selected={panel.selectedPaths.has(entry.path)}
       onclick={(e) => onEntryClick?.(i, e)}
       ondblclick={() => onEntryDblClick?.(i)}
+      oncontextmenu={(e) => onEntryContextMenu?.(i, e)}
     >
       <span class="entry-icon">{getIcon(entry)}</span>
       <span class="entry-name">{entry.name}</span>

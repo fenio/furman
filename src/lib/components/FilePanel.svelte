@@ -11,6 +11,7 @@
   import FileIcon from './FileIcon.svelte';
   import ColumnView from './ColumnView.svelte';
   import BreadcrumbBar from './BreadcrumbBar.svelte';
+  import ContextMenu from './ContextMenu.svelte';
 
   interface Props {
     panel: PanelData;
@@ -27,6 +28,12 @@
   let filterInput: HTMLInputElement | undefined = $state(undefined);
   let homePath = $state('');
   let isDragOver = $state(false);
+
+  // Context menu state
+  let contextMenuOpen = $state(false);
+  let contextMenuX = $state(0);
+  let contextMenuY = $state(0);
+  let contextMenuOnEmpty = $state(false);
 
   // Rubber-band (marquee) selection state
   let rubberBanding = $state(false);
@@ -137,6 +144,55 @@
     onActivate?.();
     panel.moveCursorTo(index);
     onEntryActivate?.(index);
+  }
+
+  function handleContextMenu(index: number, e: MouseEvent) {
+    e.preventDefault();
+    onActivate?.();
+    panel.moveCursorTo(index);
+    const entry = panel.filteredSortedEntries[index];
+    if (entry && entry.name !== '..' && !panel.selectedPaths.has(entry.path)) {
+      panel.selectedPaths = new Set([entry.path]);
+    }
+    contextMenuX = e.clientX;
+    contextMenuY = e.clientY;
+    contextMenuOnEmpty = false;
+    contextMenuOpen = true;
+  }
+
+  function handleEmptyContextMenu(e: MouseEvent) {
+    const target = e.target as HTMLElement;
+    if (target.closest('.file-row') || target.closest('.file-tile') || target.closest('.column-entry')) return;
+    e.preventDefault();
+    onActivate?.();
+    contextMenuX = e.clientX;
+    contextMenuY = e.clientY;
+    contextMenuOnEmpty = true;
+    contextMenuOpen = true;
+  }
+
+  function handleContextMenuAction(key: string) {
+    contextMenuOpen = false;
+    const keyMap: Record<string, string> = {
+      'open': 'Enter',
+      'view': 'F3',
+      'edit': 'F4',
+      'copy': 'F5',
+      'move': 'F6',
+      'rename': 'F2',
+      'delete': 'F8',
+      'mkdir': 'F7',
+      'properties': 'F9',
+    };
+    const fKey = keyMap[key];
+    if (fKey) {
+      window.dispatchEvent(new KeyboardEvent('keydown', { key: fKey }));
+      return;
+    }
+    // S3-specific actions via custom event
+    if (key === 'presign' || key === 'copy-uri' || key === 'bulk-storage') {
+      window.dispatchEvent(new CustomEvent('context-action', { detail: key }));
+    }
   }
 
   function getContentCoords(e: MouseEvent) {
@@ -513,6 +569,7 @@
         {side}
         onEntryClick={(i, e) => handleRowClick(i, e)}
         onEntryDblClick={(i) => handleRowDblClick(i)}
+        onEntryContextMenu={(i, e) => handleContextMenu(i, e)}
       />
     {/if}
   {:else}
@@ -523,6 +580,7 @@
     role="list"
     style={panel.viewMode === 'icon' ? `--icon-size: ${appState.iconSize}px; --grid-min: ${appState.iconSize + 32}px` : ''}
     onmousedown={handleListMouseDown}
+    oncontextmenu={handleEmptyContextMenu}
   >
     {#if panel.loading}
       <div class="loading-msg">Loading...</div>
@@ -542,6 +600,7 @@
             getSelectedPaths={() => panel.getSelectedOrCurrent()}
             onclick={(e) => handleRowClick(i, e)}
             ondblclick={() => handleRowDblClick(i)}
+            oncontextmenu={(e) => handleContextMenu(i, e)}
           />
         {:else}
           <FileRow
@@ -559,6 +618,7 @@
             getSelectedPaths={() => panel.getSelectedOrCurrent()}
             onclick={(e) => handleRowClick(i, e)}
             ondblclick={() => handleRowDblClick(i)}
+            oncontextmenu={(e) => handleContextMenu(i, e)}
           />
         {/if}
       {/each}
@@ -593,6 +653,19 @@
     {/if}
     <span class="free-space">{isS3 ? `S3 ${panel.s3Connection?.bucket ?? ''}` : panel.backend === 'sftp' && panel.sftpConnection ? `SFTP ${panel.sftpConnection.host}` : `${formatSize(panel.freeSpace)} free`}</span>
   </div>
+
+  {#if contextMenuOpen}
+    <ContextMenu
+      x={contextMenuX}
+      y={contextMenuY}
+      onClose={() => { contextMenuOpen = false; }}
+      onAction={handleContextMenuAction}
+      isS3={isS3}
+      isFile={!!(panel.currentEntry && !panel.currentEntry.is_dir && panel.currentEntry.name !== '..')}
+      isArchive={panel.backend === 'archive'}
+      onEmpty={contextMenuOnEmpty}
+    />
+  {/if}
 </div>
 
 <style>

@@ -69,7 +69,8 @@ export type ModalType =
   | 'preferences'
   | 'properties'
   | 'batch-edit'
-  | 'shortcuts';
+  | 'shortcuts'
+  | 'multi-rename';
 
 export type SearchMode = 'name' | 'content';
 

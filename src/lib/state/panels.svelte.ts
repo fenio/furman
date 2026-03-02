@@ -6,10 +6,13 @@ import { sftpConnect, sftpDisconnect, sftpListObjects } from '$lib/services/sftp
 import { appState } from '$lib/state/app.svelte';
 
 
+let nextTabId = 0;
+
 export class PanelData {
   path = $state('');
   entries = $state<FileEntry[]>([]);
   watchId: string;
+  tabId: number;
   cursorIndex = $state(0);
   selectionAnchor = $state(0);
   selectedPaths = $state<Set<string>>(new Set());
@@ -73,7 +76,12 @@ export class PanelData {
   private encryptionDebounceTimer: ReturnType<typeof setTimeout> | null = null;
 
   constructor(side: string) {
-    this.watchId = `watch-${side}`;
+    this.tabId = nextTabId++;
+    this.watchId = `watch-${side}-${this.tabId}`;
+  }
+
+  static createTab(side: 'left' | 'right'): PanelData {
+    return new PanelData(side);
   }
 
   /** Compute recursive sizes for any selected directories not yet cached. */
@@ -434,24 +442,73 @@ function entriesEqual(a: FileEntry[], b: FileEntry[]): boolean {
 }
 
 class PanelsState {
-  left = $state(new PanelData('left'));
-  right = $state(new PanelData('right'));
+  leftTabs = $state<PanelData[]>([PanelData.createTab('left')]);
+  rightTabs = $state<PanelData[]>([PanelData.createTab('right')]);
+  leftActiveTab = $state(0);
+  rightActiveTab = $state(0);
   activePanel = $state<'left' | 'right'>('left');
 
-  active = $derived(this.activePanel === 'left' ? this.left : this.right);
-  inactive = $derived(this.activePanel === 'left' ? this.right : this.left);
+  // Backwards-compatible getters — return active tab's PanelData
+  get left(): PanelData {
+    return this.leftTabs[this.leftActiveTab];
+  }
+
+  get right(): PanelData {
+    return this.rightTabs[this.rightActiveTab];
+  }
+
+  active = $derived(this.activePanel === 'left' ? this.leftTabs[this.leftActiveTab] : this.rightTabs[this.rightActiveTab]);
+  inactive = $derived(this.activePanel === 'left' ? this.rightTabs[this.rightActiveTab] : this.leftTabs[this.leftActiveTab]);
 
   switchPanel() {
     this.activePanel = this.activePanel === 'left' ? 'right' : 'left';
   }
 
+  addTab(side: 'left' | 'right'): PanelData {
+    const tab = PanelData.createTab(side);
+    if (side === 'left') {
+      this.leftTabs = [...this.leftTabs, tab];
+      this.leftActiveTab = this.leftTabs.length - 1;
+    } else {
+      this.rightTabs = [...this.rightTabs, tab];
+      this.rightActiveTab = this.rightTabs.length - 1;
+    }
+    return tab;
+  }
+
+  closeTab(side: 'left' | 'right', index: number) {
+    const tabs = side === 'left' ? this.leftTabs : this.rightTabs;
+    if (tabs.length <= 1) return; // Can't close last tab
+    const tab = tabs[index];
+    tab.stopWatching();
+    const next = tabs.filter((_, i) => i !== index);
+    if (side === 'left') {
+      this.leftTabs = next;
+      if (this.leftActiveTab >= next.length) this.leftActiveTab = next.length - 1;
+    } else {
+      this.rightTabs = next;
+      if (this.rightActiveTab >= next.length) this.rightActiveTab = next.length - 1;
+    }
+  }
+
+  switchTab(side: 'left' | 'right', index: number) {
+    if (side === 'left') {
+      this.leftActiveTab = index;
+    } else {
+      this.rightActiveTab = index;
+    }
+  }
+
   swapPanels() {
-    const tmp = this.left;
-    this.left = this.right;
-    this.right = tmp;
-    // Fix watch IDs so file-watcher events still route correctly
-    this.left.watchId = 'watch-left';
-    this.right.watchId = 'watch-right';
+    const tmpTabs = this.leftTabs;
+    const tmpActive = this.leftActiveTab;
+    this.leftTabs = this.rightTabs;
+    this.leftActiveTab = this.rightActiveTab;
+    this.rightTabs = tmpTabs;
+    this.rightActiveTab = tmpActive;
+    // Fix watch IDs
+    for (const tab of this.leftTabs) tab.watchId = `watch-left-${tab.tabId}`;
+    for (const tab of this.rightTabs) tab.watchId = `watch-right-${tab.tabId}`;
   }
 }
 

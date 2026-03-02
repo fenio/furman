@@ -22,9 +22,10 @@
     getSelectedPaths?: () => string[];
     onclick?: (e: MouseEvent) => void;
     ondblclick?: () => void;
+    oncontextmenu?: (e: MouseEvent) => void;
   }
 
-  let { entry, isSelected, isCursor, isActive, rowIndex, panelSide, isS3, dirSize, encrypted, backend, s3ConnectionId, getSelectedPaths, onclick, ondblclick }: Props = $props();
+  let { entry, isSelected, isCursor, isActive, rowIndex, panelSide, isS3, dirSize, encrypted, backend, s3ConnectionId, getSelectedPaths, onclick, ondblclick, oncontextmenu }: Props = $props();
 
   const archiveExtensions = new Set(['zip', 'rar', '7z', 'tar', 'gz', 'tgz', 'bz2', 'xz']);
   const imageExtensions = new Set(['png', 'jpg', 'jpeg', 'gif', 'bmp', 'svg', 'webp', 'ico']);
@@ -185,6 +186,7 @@
   onmouseleave={onMouseLeave}
   {onclick}
   {ondblclick}
+  {oncontextmenu}
 >
   <span class="col-icon">{icon}</span>
   {#if entry.git_status}

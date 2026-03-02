@@ -113,13 +113,44 @@
     sidebarState.addFavorite(name, path);
   }
 
-  async function navigateWorkspace(ws: { name: string; leftPath: string; rightPath: string; activePanel: 'left' | 'right' }) {
+  async function navigateWorkspace(ws: { name: string; leftPath: string; rightPath: string; activePanel: 'left' | 'right'; leftTabs?: string[]; rightTabs?: string[]; leftActiveTab?: number; rightActiveTab?: number }) {
     sidebarState.blur();
     panels.activePanel = ws.activePanel;
-    await Promise.all([
-      panels.left.loadDirectory(ws.leftPath),
-      panels.right.loadDirectory(ws.rightPath),
-    ]);
+
+    if (ws.leftTabs && ws.leftTabs.length > 0) {
+      // Restore tabs: close extra tabs, add missing ones, load paths
+      while (panels.leftTabs.length > ws.leftTabs.length) {
+        panels.closeTab('left', panels.leftTabs.length - 1);
+      }
+      const loads: Promise<void>[] = [];
+      for (let i = 0; i < ws.leftTabs.length; i++) {
+        if (i >= panels.leftTabs.length) {
+          panels.addTab('left');
+        }
+        loads.push(panels.leftTabs[i].loadDirectory(ws.leftTabs[i]));
+      }
+      panels.leftActiveTab = ws.leftActiveTab ?? 0;
+      await Promise.all(loads);
+    } else {
+      await panels.left.loadDirectory(ws.leftPath);
+    }
+
+    if (ws.rightTabs && ws.rightTabs.length > 0) {
+      while (panels.rightTabs.length > ws.rightTabs.length) {
+        panels.closeTab('right', panels.rightTabs.length - 1);
+      }
+      const loads: Promise<void>[] = [];
+      for (let i = 0; i < ws.rightTabs.length; i++) {
+        if (i >= panels.rightTabs.length) {
+          panels.addTab('right');
+        }
+        loads.push(panels.rightTabs[i].loadDirectory(ws.rightTabs[i]));
+      }
+      panels.rightActiveTab = ws.rightActiveTab ?? 0;
+      await Promise.all(loads);
+    } else {
+      await panels.right.loadDirectory(ws.rightPath);
+    }
   }
 
   function saveCurrentWorkspace() {
@@ -132,6 +163,10 @@
         leftPath: panels.left.path,
         rightPath: panels.right.path,
         activePanel: panels.activePanel,
+        leftTabs: panels.leftTabs.map(t => t.path),
+        rightTabs: panels.rightTabs.map(t => t.path),
+        leftActiveTab: panels.leftActiveTab,
+        rightActiveTab: panels.rightActiveTab,
       });
     });
   }

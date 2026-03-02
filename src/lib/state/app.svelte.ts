@@ -1,4 +1,4 @@
-import type { ModalType, ViewerMode, PanelBackend, S3ProviderCapabilities, S3ConnectionInfo, SftpConnectionInfo, S3Profile, SortField, SortDirection, ArchiveInfo } from '$lib/types';
+import type { ModalType, ViewerMode, PanelBackend, S3ProviderCapabilities, S3ConnectionInfo, SftpConnectionInfo, S3Profile, SortField, SortDirection, ArchiveInfo, FileEntry } from '$lib/types';
 import type { Theme } from '@tauri-apps/api/window';
 import { saveConfig, type Config } from '$lib/services/config';
 import { sidebarState } from '$lib/state/sidebar.svelte';
@@ -65,6 +65,10 @@ class AppState {
   batchEditKeys = $state<string[]>([]);
   batchEditS3ConnectionId = $state('');
   batchEditCapabilities = $state<S3ProviderCapabilities | undefined>(undefined);
+  multiRenameEntries = $state<FileEntry[]>([]);
+  multiRenameBackend = $state<PanelBackend>('local');
+  multiRenameS3ConnectionId = $state('');
+  multiRenameSftpConnectionId = $state('');
 
   showSearch(root: string, backend: PanelBackend = 'local', s3ConnectionId: string = '') {
     this.searchRoot = root;
@@ -184,6 +188,14 @@ class AppState {
     this.modal = 'batch-edit';
   }
 
+  showMultiRename(entries: FileEntry[], backend: PanelBackend, opts?: { s3ConnectionId?: string; sftpConnectionId?: string }) {
+    this.multiRenameEntries = entries;
+    this.multiRenameBackend = backend;
+    this.multiRenameS3ConnectionId = opts?.s3ConnectionId ?? '';
+    this.multiRenameSftpConnectionId = opts?.sftpConnectionId ?? '';
+    this.modal = 'multi-rename';
+  }
+
   showOverwrite(files: string[], callback: (action: 'overwrite' | 'skip') => void) {
     this.overwriteFiles = files;
     this.overwriteCallback = callback;
@@ -290,6 +302,10 @@ class AppState {
     this.batchEditKeys = [];
     this.batchEditS3ConnectionId = '';
     this.batchEditCapabilities = undefined;
+    this.multiRenameEntries = [];
+    this.multiRenameBackend = 'local';
+    this.multiRenameS3ConnectionId = '';
+    this.multiRenameSftpConnectionId = '';
     this.syncSourceBackend = 'local';
     this.syncSourcePath = '';
     this.syncSourceS3Id = '';

@@ -90,6 +90,13 @@
           ],
         },
         {
+          title: 'Tabs',
+          shortcuts: [
+            { keys: `${platform.mod}${platform.alt}T`, desc: 'New tab' },
+            { keys: `${platform.mod}${platform.alt}W`, desc: 'Close tab' },
+          ],
+        },
+        {
           title: 'Terminal',
           shortcuts: [
             { keys: `${platform.mod}T`, desc: 'Bottom terminal' },

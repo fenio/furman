@@ -135,7 +135,15 @@
     executeSyncTransfer(detail);
   }
 
+  function handleContextAction(e: Event) {
+    const key = (e as CustomEvent).detail as string;
+    if (key === 'presign') handlePresignUrl();
+    else if (key === 'copy-uri') handleCopyS3Uri();
+    else if (key === 'bulk-storage') handleBulkStorageClassChange();
+  }
+
   window.addEventListener('sync-execute', handleSyncExecuteEvent);
+  window.addEventListener('context-action', handleContextAction);
 
   function handleTransferDone() {
     const reloads: Promise<void>[] = [];
@@ -150,6 +158,7 @@
     dragDropUnlisten?.();
     window.removeEventListener('sync-execute', handleSyncExecuteEvent);
     window.removeEventListener('transfer-done', handleTransferDone);
+    window.removeEventListener('context-action', handleContextAction);
   });
 
   function executeSyncTransfer(detail: {
@@ -824,6 +833,20 @@
     const entry = active.currentEntry;
     if (!entry || entry.name === '..') return;
 
+    // Multi-rename: if multiple files selected and not in archive mode
+    if (active.selectedPaths.size > 1 && active.backend !== 'archive') {
+      const entries = active.filteredSortedEntries.filter(
+        (e) => e.name !== '..' && active.selectedPaths.has(e.path),
+      );
+      if (entries.length > 1) {
+        appState.showMultiRename(entries, active.backend, {
+          s3ConnectionId: active.s3Connection?.connectionId,
+          sftpConnectionId: active.sftpConnection?.connectionId,
+        });
+        return;
+      }
+    }
+
     appState.showInput('Rename to:', entry.name, async (newName: string) => {
       appState.closeModal();
       if (!newName || newName === entry.name) return;
@@ -1085,7 +1108,7 @@
   type SidebarAction =
     | { type: 'favorite'; path: string }
     | { type: 'add-favorite' }
-    | { type: 'workspace'; name: string; leftPath: string; rightPath: string; activePanel: 'left' | 'right' }
+    | { type: 'workspace'; name: string; leftPath: string; rightPath: string; activePanel: 'left' | 'right'; leftTabs?: string[]; rightTabs?: string[]; leftActiveTab?: number; rightActiveTab?: number }
     | { type: 'save-workspace' }
     | { type: 's3-bookmark'; id: string; name: string; profileId: string; path: string }
     | { type: 'sftp-bookmark'; id: string; name: string; profileId: string; path: string }
@@ -1100,7 +1123,7 @@
     }
     list.push({ type: 'add-favorite' });
     for (const ws of workspacesState.workspaces) {
-      list.push({ type: 'workspace', name: ws.name, leftPath: ws.leftPath, rightPath: ws.rightPath, activePanel: ws.activePanel });
+      list.push({ type: 'workspace', name: ws.name, leftPath: ws.leftPath, rightPath: ws.rightPath, activePanel: ws.activePanel, leftTabs: ws.leftTabs, rightTabs: ws.rightTabs, leftActiveTab: ws.leftActiveTab, rightActiveTab: ws.rightActiveTab });
     }
     list.push({ type: 'save-workspace' });
     for (const bm of s3BookmarksState.bookmarks) {
@@ -1216,6 +1239,25 @@
     }
   }
 
+  function restoreTabsForSide(side: 'left' | 'right', paths: string[], activeIdx: number) {
+    const tabs = side === 'left' ? panels.leftTabs : panels.rightTabs;
+    // Close extra tabs
+    while ((side === 'left' ? panels.leftTabs : panels.rightTabs).length > paths.length) {
+      panels.closeTab(side, (side === 'left' ? panels.leftTabs : panels.rightTabs).length - 1);
+    }
+    // Load existing tabs and add missing ones
+    const loads: Promise<void>[] = [];
+    for (let i = 0; i < paths.length; i++) {
+      if (i >= (side === 'left' ? panels.leftTabs : panels.rightTabs).length) {
+        panels.addTab(side);
+      }
+      loads.push((side === 'left' ? panels.leftTabs : panels.rightTabs)[i].loadDirectory(paths[i]));
+    }
+    if (side === 'left') panels.leftActiveTab = activeIdx;
+    else panels.rightActiveTab = activeIdx;
+    Promise.all(loads);
+  }
+
   function activateSidebarItem(action: SidebarAction) {
     if (!action) return;
     switch (action.type) {
@@ -1232,10 +1274,16 @@
       case 'workspace':
         sidebarState.blur();
         panels.activePanel = action.activePanel;
-        Promise.all([
-          panels.left.loadDirectory(action.leftPath),
-          panels.right.loadDirectory(action.rightPath),
-        ]);
+        if (action.leftTabs && action.leftTabs.length > 0) {
+          restoreTabsForSide('left', action.leftTabs, action.leftActiveTab ?? 0);
+        } else {
+          panels.left.loadDirectory(action.leftPath);
+        }
+        if (action.rightTabs && action.rightTabs.length > 0) {
+          restoreTabsForSide('right', action.rightTabs, action.rightActiveTab ?? 0);
+        } else {
+          panels.right.loadDirectory(action.rightPath);
+        }
         break;
       case 'save-workspace':
         sidebarState.blur();
@@ -1247,6 +1295,10 @@
             leftPath: panels.left.path,
             rightPath: panels.right.path,
             activePanel: panels.activePanel,
+            leftTabs: panels.leftTabs.map(t => t.path),
+            rightTabs: panels.rightTabs.map(t => t.path),
+            leftActiveTab: panels.leftActiveTab,
+            rightActiveTab: panels.rightActiveTab,
           });
         });
         break;
@@ -1284,6 +1336,28 @@
       e.preventDefault();
       appState.toggleTheme();
       return;
+    }
+
+    // Tab shortcuts — Cmd+Alt+T / Cmd+Alt+W
+    if (cmd && e.altKey) {
+      if (e.key === 't') {
+        e.preventDefault();
+        const side = panels.activePanel;
+        const currentPath = panels.active.path;
+        const tab = panels.addTab(side);
+        tab.loadDirectory(currentPath);
+        return;
+      }
+      if (e.key === 'w') {
+        e.preventDefault();
+        const side = panels.activePanel;
+        const tabs = side === 'left' ? panels.leftTabs : panels.rightTabs;
+        const activeIdx = side === 'left' ? panels.leftActiveTab : panels.rightActiveTab;
+        if (tabs.length > 1) {
+          panels.closeTab(side, activeIdx);
+        }
+        return;
+      }
     }
 
     // Terminal toggle shortcuts — always active regardless of focus
@@ -1435,6 +1509,10 @@
                 leftPath: panels.left.path,
                 rightPath: panels.right.path,
                 activePanel: panels.activePanel,
+                leftTabs: panels.leftTabs.map(t => t.path),
+                rightTabs: panels.rightTabs.map(t => t.path),
+                leftActiveTab: panels.leftActiveTab,
+                rightActiveTab: panels.rightActiveTab,
               });
             });                                  // Cmd+D = Save workspace
           }

@@ -28,6 +28,7 @@
   import SyncDialog from '$lib/components/SyncDialog.svelte';
   import ShortcutsDialog from '$lib/components/ShortcutsDialog.svelte';
   import S3BatchEditDialog from '$lib/components/S3BatchEditDialog.svelte';
+  import MultiRenameDialog from '$lib/components/MultiRenameDialog.svelte';
   import TransferProgressDialog from '$lib/components/TransferProgressDialog.svelte';
   import { connectionsState } from '$lib/state/connections.svelte';
   import { transfersState } from '$lib/state/transfers.svelte';
@@ -40,8 +41,17 @@
 
   onMount(() => {
     let unlisten: (() => void) | undefined;
-    let reloadLeftTimer: ReturnType<typeof setTimeout> | null = null;
-    let reloadRightTimer: ReturnType<typeof setTimeout> | null = null;
+    const reloadTimers = new Map<string, ReturnType<typeof setTimeout>>();
+
+    function scheduleRefresh(tab: import('$lib/state/panels.svelte').PanelData) {
+      if (tab.backend !== 'local') return;
+      const key = tab.watchId;
+      if (reloadTimers.has(key)) return;
+      reloadTimers.set(key, setTimeout(() => {
+        reloadTimers.delete(key);
+        tab.refresh();
+      }, 300));
+    }
 
     (async () => {
       await initLogging();
@@ -69,40 +79,29 @@
         panels.right.loadDirectory(homePath)
       ]);
 
-      // Listen for filesystem changes and debounce-reload affected panels
+      // Listen for filesystem changes and debounce-reload affected tabs
       unlisten = await listen<{ kind: string; paths: string[] }>('fs-change', (event) => {
         const { paths } = event.payload;
-        let needLeft = false;
-        let needRight = false;
+        const allTabs = [...panels.leftTabs, ...panels.rightTabs];
 
         for (const p of paths) {
           const lastSlash = p.lastIndexOf('/');
           const parent = lastSlash <= 0 ? '/' : p.substring(0, lastSlash);
-          if (parent === panels.left.path) needLeft = true;
-          if (parent === panels.right.path) needRight = true;
-        }
-
-        if (needLeft && !reloadLeftTimer) {
-          reloadLeftTimer = setTimeout(() => {
-            reloadLeftTimer = null;
-            panels.left.refresh();
-          }, 300);
-        }
-        if (needRight && !reloadRightTimer) {
-          reloadRightTimer = setTimeout(() => {
-            reloadRightTimer = null;
-            panels.right.refresh();
-          }, 300);
+          for (const tab of allTabs) {
+            if (tab.backend === 'local' && parent === tab.path) {
+              scheduleRefresh(tab);
+            }
+          }
         }
       });
     })();
 
     return () => {
       unlisten?.();
-      panels.left.stopWatching();
-      panels.right.stopWatching();
-      if (reloadLeftTimer) clearTimeout(reloadLeftTimer);
-      if (reloadRightTimer) clearTimeout(reloadRightTimer);
+      for (const tab of panels.leftTabs) tab.stopWatching();
+      for (const tab of panels.rightTabs) tab.stopWatching();
+      for (const timer of reloadTimers.values()) clearTimeout(timer);
+      reloadTimers.clear();
     };
   });
 
@@ -376,6 +375,20 @@
 
   {#if appState.modal === 'shortcuts'}
     <ShortcutsDialog onClose={() => appState.closeModal()} />
+  {/if}
+
+  {#if appState.modal === 'multi-rename'}
+    <MultiRenameDialog
+      entries={appState.multiRenameEntries}
+      backend={appState.multiRenameBackend}
+      s3ConnectionId={appState.multiRenameS3ConnectionId}
+      sftpConnectionId={appState.multiRenameSftpConnectionId}
+      onClose={() => appState.closeModal()}
+      onDone={() => {
+        appState.closeModal();
+        panels.active.loadDirectory(panels.active.path);
+      }}
+    />
   {/if}
 
   {#if appState.modal === 'sync'}

@@ -16,9 +16,10 @@
     getSelectedPaths?: () => string[];
     onclick?: (e: MouseEvent) => void;
     ondblclick?: () => void;
+    oncontextmenu?: (e: MouseEvent) => void;
   }
 
-  let { entry, isSelected, isCursor, isActive, panelSide, backend, s3ConnectionId, getSelectedPaths, onclick, ondblclick }: Props = $props();
+  let { entry, isSelected, isCursor, isActive, panelSide, backend, s3ConnectionId, getSelectedPaths, onclick, ondblclick, oncontextmenu }: Props = $props();
 
   const archiveExtensions = new Set(['zip', 'rar', '7z', 'tar', 'gz', 'tgz', 'bz2', 'xz']);
   const imageExtensions = new Set(['png', 'jpg', 'jpeg', 'gif', 'bmp', 'svg', 'webp', 'ico']);
@@ -113,6 +114,7 @@
   onmousedown={handleDragGesture}
   {onclick}
   {ondblclick}
+  {oncontextmenu}
 >
   <div class="tile-thumb">
     {#if isImage && !imgFailed && backend === 'local'}
