@@ -136,7 +136,7 @@
         onerror={() => { imgFailed = true; }}
       />
     {:else}
-      <span class="tile-emoji">{icon}</span>
+      <span class="tile-emoji" class:dir-icon={entry.is_dir && entry.name !== '..'}>{icon}</span>
     {/if}
   </div>
   <span class="tile-name" title={entry.name}>{entry.name}</span>
@@ -207,6 +207,10 @@
   .tile-emoji {
     font-size: calc(var(--icon-size, 48px) * 0.65);
     line-height: 1;
+  }
+
+  .tile-emoji.dir-icon {
+    filter: saturate(1.6) brightness(1.15);
   }
 
   .tile-name {

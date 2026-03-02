@@ -204,7 +204,7 @@
   {ondblclick}
   {oncontextmenu}
 >
-  <span class="col-icon">{icon}</span>
+  <span class="col-icon" class:dir-icon={entry.is_dir && entry.name !== '..'}>{icon}</span>
   {#if entry.git_status}
     <span class="col-git {gitBadgeClass}">{entry.git_status}</span>
   {/if}
@@ -293,6 +293,12 @@
     font-size: 12px;
     line-height: 28px;
     opacity: 0.7;
+  }
+
+  .col-icon.dir-icon {
+    opacity: 1;
+    font-size: 13px;
+    filter: saturate(1.6) brightness(1.15);
   }
 
   .col-git {

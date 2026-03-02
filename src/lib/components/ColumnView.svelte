@@ -95,7 +95,7 @@
       ondblclick={() => onEntryDblClick?.(i)}
       oncontextmenu={(e) => onEntryContextMenu?.(i, e)}
     >
-      <span class="entry-icon">{getIcon(entry)}</span>
+      <span class="entry-icon" class:dir-icon={entry.is_dir && entry.name !== '..'}>{getIcon(entry)}</span>
       <span class="entry-name">{entry.name}</span>
     </button>
   {/each}
@@ -171,6 +171,10 @@
     flex: 0 0 auto;
     font-size: 12px;
     line-height: 1;
+  }
+
+  .entry-icon.dir-icon {
+    filter: saturate(1.6) brightness(1.15);
   }
 
   .entry-name {
