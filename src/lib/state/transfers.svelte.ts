@@ -1,5 +1,5 @@
 import type { ProgressEvent, TransferCheckpoint } from '$lib/types';
-import { cancelFileOperation, pauseFileOperation, copyFiles, moveFiles, extractArchive } from '$lib/services/tauri';
+import { cancelFileOperation, pauseFileOperation, copyFiles, moveFiles, deleteFiles, extractArchive } from '$lib/services/tauri';
 import { s3Download, s3Upload, s3CopyObjects, s3DeleteObjects, s3UploadEncrypted, type EncryptionConfig } from '$lib/services/s3';
 import { sftpDownload, sftpUpload, sftpDelete } from '$lib/services/sftp';
 import { formatSize } from '$lib/utils/format';
@@ -401,7 +401,7 @@ class TransfersState {
         } else {
           result = await s3Upload(t.s3DestConnectionId!, t.id, t.sources, t.s3DestPrefix!, onProgress);
         }
-        await deleteFiles(t.id + '-del', t.sources, () => {});
+        await deleteFiles(t.sources, true);
         return result;
       }
       if (srcBackend === 's3' && destBackend === 's3') {
@@ -420,7 +420,7 @@ class TransfersState {
       }
       if (srcBackend === 'local' && destBackend === 'sftp') {
         const result = await sftpUpload(t.sftpDestConnectionId!, t.id, t.sources, t.sftpDestPath!, onProgress);
-        await deleteFiles(t.id + '-del', t.sources, () => {});
+        await deleteFiles(t.sources, true);
         return result;
       }
       if (srcBackend === 'sftp' && destBackend === 'sftp') {
