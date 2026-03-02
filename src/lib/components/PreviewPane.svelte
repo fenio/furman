@@ -21,7 +21,7 @@
     'env', 'log', 'csv', 'sql', 'graphql', 'proto', 'lock', 'editorconfig',
   ]);
 
-  type PreviewType = 'image' | 'text' | 'directory' | 'info' | 'remote' | 'none';
+  type PreviewType = 'image' | 'text' | 'pdf' | 'directory' | 'info' | 'remote' | 'none';
 
   const previewType = $derived.by((): PreviewType => {
     if (!entry || entry.name === '..') return 'none';
@@ -29,6 +29,7 @@
     if (entry.is_dir) return 'directory';
     const ext = (entry.extension ?? '').toLowerCase();
     if (imageExtensions.has(ext)) return 'image';
+    if (ext === 'pdf') return 'pdf';
     if (textExtensions.has(ext) || entry.name.startsWith('.')) return 'text';
     return 'info';
   });
@@ -43,19 +44,21 @@
     const type = previewType;
 
     if (debounceTimer) clearTimeout(debounceTimer);
-    textContent = '';
 
     if (type !== 'text' || !currentEntry) {
-      loadedPath = '';
+      if (loadedPath) {
+        textContent = '';
+        loadedPath = '';
+      }
       return;
     }
 
     if (currentEntry.path === loadedPath) return;
 
     loading = true;
+    textContent = '';
     debounceTimer = setTimeout(() => {
       readFileText(currentEntry.path).then((content) => {
-        // Only show first 200 lines
         const lines = content.split('\n');
         textContent = lines.slice(0, 200).join('\n');
         if (lines.length > 200) textContent += '\n… (truncated)';
@@ -79,6 +82,9 @@
     <div class="preview-image">
       <img src={convertFileSrc(entry.path)} alt={entry.name} />
     </div>
+    <div class="preview-info-bar">{entry.name} — {formatSize(entry.size)}</div>
+  {:else if previewType === 'pdf' && entry}
+    <iframe class="preview-pdf" src={convertFileSrc(entry.path)} title={entry.name}></iframe>
     <div class="preview-info-bar">{entry.name} — {formatSize(entry.size)}</div>
   {:else if previewType === 'text'}
     {#if loading}
@@ -161,6 +167,13 @@
     max-height: 100%;
     object-fit: contain;
     border-radius: var(--radius-sm);
+  }
+
+  .preview-pdf {
+    flex: 1;
+    border: none;
+    min-height: 0;
+    background: white;
   }
 
   .preview-text {
