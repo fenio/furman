@@ -28,6 +28,9 @@
 - **Git integration** — branch, status, and pull right in the panel header
 - **[Batch rename](docs/batch-rename.md)** — find/replace, prefix/suffix, numbering, and case transforms
 - **[Right-click context menu](docs/context-menu.md)** — all file operations one click away
+- **[Command palette](docs/command-palette.md)** — Cmd+Shift+P to find and run any command
+- **[Undo](docs/undo.md)** — Cmd+Z to undo delete and rename operations
+- **[Directory comparison](docs/directory-comparison.md)** — Cmd+Shift+D to diff left and right panels
 - **Archive browsing** — navigate inside zip, rar, and 7z as if they were directories
 - **View, edit, search** — built-in viewer, editor, and file/content search
 - **Drag & drop, quick filter, auto-refresh** — everything you'd expect from a modern file manager
@@ -109,6 +112,9 @@ A few highlights — see the [full reference](docs/keyboard-shortcuts.md) for ev
 | Cmd+S | Connect / disconnect S3 or SFTP |
 | Cmd+T | Terminal |
 | Cmd+Alt+T | New tab |
+| Cmd+Z | Undo last operation |
+| Cmd+Shift+P | Command palette |
+| Cmd+Shift+D | Compare directories |
 | Cmd+F | Search |
 | Cmd+/ | Shortcut cheatsheet (in-app) |
 
