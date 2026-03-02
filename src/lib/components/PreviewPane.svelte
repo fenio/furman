@@ -3,6 +3,7 @@
   import { convertFileSrc } from '@tauri-apps/api/core';
   import { readFileText } from '$lib/services/tauri';
   import { formatSize, formatDate } from '$lib/utils/format';
+  import { highlightCode, detectLanguage } from '$lib/utils/highlight';
 
   interface Props {
     entry: FileEntry | null;
@@ -35,6 +36,7 @@
   });
 
   let textContent = $state('');
+  let highlightedContent = $state('');
   let loading = $state(false);
   let debounceTimer: ReturnType<typeof setTimeout> | null = null;
   let loadedPath = $state('');
@@ -48,6 +50,7 @@
     if (type !== 'text' || !currentEntry) {
       if (loadedPath) {
         textContent = '';
+        highlightedContent = '';
         loadedPath = '';
       }
       return;
@@ -57,11 +60,14 @@
 
     loading = true;
     textContent = '';
+    highlightedContent = '';
     debounceTimer = setTimeout(() => {
       readFileText(currentEntry.path).then((content) => {
         const lines = content.split('\n');
         textContent = lines.slice(0, 200).join('\n');
         if (lines.length > 200) textContent += '\n… (truncated)';
+        const lang = detectLanguage(currentEntry.name);
+        highlightedContent = highlightCode(textContent, lang);
         loadedPath = currentEntry.path;
       }).catch(() => {
         textContent = '(Unable to read file)';
@@ -90,7 +96,7 @@
     {#if loading}
       <div class="preview-loading">Loading...</div>
     {:else}
-      <pre class="preview-text">{textContent}</pre>
+      <pre class="preview-text hljs">{@html highlightedContent}</pre>
     {/if}
     {#if entry}
       <div class="preview-info-bar">{entry.name} — {formatSize(entry.size)}</div>

@@ -3,6 +3,7 @@
   import { readFileText, readFileBinary } from '$lib/services/tauri';
   import { convertFileSrc } from '@tauri-apps/api/core';
   import { onMount } from 'svelte';
+  import { highlightCode, detectLanguage } from '$lib/utils/highlight';
 
   interface Props {
     path: string;
@@ -23,9 +24,11 @@
   const modeLabel = $derived(mode === 'text' ? 'TEXT' : mode === 'hex' ? 'HEX' : 'IMAGE');
   const imageSrc = $derived(mode === 'image' ? convertFileSrc(path) : '');
 
-  const lines = $derived.by(() => {
-    if (mode !== 'text') return [];
-    return content.split('\n');
+  const highlightedLines = $derived.by(() => {
+    if (mode !== 'text' || !content) return [];
+    const lang = detectLanguage(fileName);
+    const html = highlightCode(content, lang);
+    return html.split('\n');
   });
 
   const hexLines = $derived.by(() => {
@@ -132,7 +135,7 @@
     {:else if error}
       <div class="viewer-error">Error: {error}</div>
     {:else if mode === 'text'}
-      <pre class="viewer-text">{#each lines as line, i}<span class="line-num">{String(i + 1).padStart(5)} </span>{line}
+      <pre class="viewer-text hljs">{#each highlightedLines as line, i}<span class="line-num">{String(i + 1).padStart(5)} </span>{@html line}
 {/each}</pre>
     {:else if mode === 'hex'}
       <pre class="viewer-hex">{#each hexLines as line}{line}

@@ -1,3 +1,5 @@
+@import 'highlight.js/styles/atom-one-dark.css';
+
 @font-face {
   font-family: 'Symbols Nerd Font Mono';
   src: url('/fonts/SymbolsNerdFontMono-Regular.ttf') format('truetype');
@@ -155,6 +157,74 @@ body {
 
 ::-webkit-scrollbar-thumb:hover {
   background: var(--scrollbar-thumb-hover);
+}
+
+/* highlight.js overrides — transparent bg, inherit from containers */
+.hljs {
+  background: transparent;
+}
+
+/* Light theme: override atom-one-dark token colors */
+[data-theme="light"] .hljs {
+  color: #383a42;
+}
+[data-theme="light"] .hljs-comment,
+[data-theme="light"] .hljs-quote {
+  color: #a0a1a7;
+  font-style: italic;
+}
+[data-theme="light"] .hljs-keyword,
+[data-theme="light"] .hljs-selector-tag,
+[data-theme="light"] .hljs-subst {
+  color: #a626a4;
+}
+[data-theme="light"] .hljs-number,
+[data-theme="light"] .hljs-literal,
+[data-theme="light"] .hljs-variable,
+[data-theme="light"] .hljs-template-variable,
+[data-theme="light"] .hljs-tag .hljs-attr {
+  color: #986801;
+}
+[data-theme="light"] .hljs-string,
+[data-theme="light"] .hljs-doctag {
+  color: #50a14f;
+}
+[data-theme="light"] .hljs-title,
+[data-theme="light"] .hljs-section,
+[data-theme="light"] .hljs-selector-id {
+  color: #4078f2;
+}
+[data-theme="light"] .hljs-type,
+[data-theme="light"] .hljs-class .hljs-title {
+  color: #c18401;
+}
+[data-theme="light"] .hljs-tag,
+[data-theme="light"] .hljs-name,
+[data-theme="light"] .hljs-attribute {
+  color: #e45649;
+}
+[data-theme="light"] .hljs-regexp,
+[data-theme="light"] .hljs-link {
+  color: #50a14f;
+}
+[data-theme="light"] .hljs-symbol,
+[data-theme="light"] .hljs-bullet {
+  color: #4078f2;
+}
+[data-theme="light"] .hljs-built_in,
+[data-theme="light"] .hljs-builtin-name {
+  color: #c18401;
+}
+[data-theme="light"] .hljs-meta {
+  color: #4078f2;
+}
+[data-theme="light"] .hljs-deletion {
+  background: #fce4e4;
+  color: #d32f2f;
+}
+[data-theme="light"] .hljs-addition {
+  background: #e6f6e6;
+  color: #2e7d32;
 }
 
 /* Prevent text selection globally for the file manager UI */
