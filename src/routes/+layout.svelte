@@ -1339,8 +1339,9 @@
     }
 
     // Tab shortcuts — Cmd+Alt+T / Cmd+Alt+W
+    // On macOS, Cmd+Alt produces special characters († for T, ∑ for W), so check e.code
     if (cmd && e.altKey) {
-      if (e.key === 't') {
+      if (e.code === 'KeyT') {
         e.preventDefault();
         const side = panels.activePanel;
         const currentPath = panels.active.path;
@@ -1348,7 +1349,7 @@
         tab.loadDirectory(currentPath);
         return;
       }
-      if (e.key === 'w') {
+      if (e.code === 'KeyW') {
         e.preventDefault();
         const side = panels.activePanel;
         const tabs = side === 'left' ? panels.leftTabs : panels.rightTabs;
