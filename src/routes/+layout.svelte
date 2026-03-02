@@ -10,7 +10,7 @@
   import { s3BookmarksState } from '$lib/state/s3bookmarks.svelte';
   import { sftpBookmarksState } from '$lib/state/sftpbookmarks.svelte';
   import { connectionsState } from '$lib/state/connections.svelte';
-  import { copyFiles, moveFiles, deleteFiles, renameFile, createDirectory, openFileDefault, openInEditor, checkConflicts, deleteFilesUndoable, restoreFromTrash } from '$lib/services/tauri';
+  import { copyFiles, moveFiles, deleteFiles, renameFile, createDirectory, openFileDefault, openInEditor, checkConflicts, deleteFilesUndoable, restoreFromTrash, extractArchiveToTemp } from '$lib/services/tauri';
   import { operationsState } from '$lib/state/operations.svelte';
   import { statusState } from '$lib/state/status.svelte';
   import { transfersState } from '$lib/state/transfers.svelte';
@@ -532,6 +532,8 @@
         await openS3Viewer(entry.path, entry.extension, panel.s3Connection.connectionId);
       } else if (panel.backend === 'sftp' && panel.sftpConnection) {
         await openSftpViewer(entry.path, entry.extension, panel.sftpConnection.connectionId);
+      } else if (panel.backend === 'archive' && panel.archiveInfo) {
+        await openArchiveViewer(entry.path, entry.extension, panel.archiveInfo.archivePath);
       } else {
         // Open file in viewer
         openViewer(entry.path, entry.extension);
@@ -608,6 +610,8 @@
       openS3Viewer(entry.path, entry.extension, panel.s3Connection.connectionId);
     } else if (panel.backend === 'sftp' && panel.sftpConnection) {
       openSftpViewer(entry.path, entry.extension, panel.sftpConnection.connectionId);
+    } else if (panel.backend === 'archive' && panel.archiveInfo) {
+      openArchiveViewer(entry.path, entry.extension, panel.archiveInfo.archivePath);
     } else {
       const lower = (entry.extension ?? '').toLowerCase();
       if (systemOpenExtensions.has(lower)) {
@@ -615,6 +619,34 @@
       } else {
         openViewer(entry.path, entry.extension);
       }
+    }
+  }
+
+  async function openArchiveViewer(entryPath: string, ext: string | null, archivePath: string) {
+    // Parse internal path from archive://archivePath#internalPath
+    const hashIdx = entryPath.indexOf('#');
+    if (hashIdx < 0) return;
+    const internalPath = entryPath.substring(hashIdx + 1);
+
+    statusState.setMessage('Extracting for preview...');
+    try {
+      const localPath = await extractArchiveToTemp(archivePath, internalPath);
+      const lower = (ext ?? '').toLowerCase();
+      if (systemOpenExtensions.has(lower)) {
+        await openFileDefault(localPath);
+        statusState.setMessage('');
+      } else if (imageExtensions.has(lower)) {
+        appState.viewerMode = 'image';
+        appState.viewerPath = localPath;
+        appState.modal = 'viewer';
+      } else {
+        appState.viewerMode = 'text';
+        appState.viewerPath = localPath;
+        appState.modal = 'viewer';
+      }
+    } catch (err: unknown) {
+      error(String(err));
+      statusState.setMessage('Preview failed: ' + String(err));
     }
   }
 
@@ -1845,6 +1877,8 @@
                 openS3Viewer(entry.path, entry.extension, active.s3Connection.connectionId);
               } else if (active.backend === 'sftp' && active.sftpConnection) {
                 openSftpViewer(entry.path, entry.extension, active.sftpConnection.connectionId);
+              } else if (active.backend === 'archive' && active.archiveInfo) {
+                openArchiveViewer(entry.path, entry.extension, active.archiveInfo.archivePath);
               } else {
                 openViewer(entry.path, entry.extension);  // Cmd+3 = View (F3)
               }

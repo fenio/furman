@@ -314,6 +314,60 @@ fn build_listing(
     })
 }
 
+/// Extract a single file from an archive to a temporary directory and return
+/// the path to the extracted file.  Used by the frontend viewer/editor to
+/// open files inside archives without a full extraction workflow.
+#[tauri::command]
+pub fn extract_archive_to_temp(
+    archive_path: String,
+    internal_path: String,
+) -> Result<String, FmError> {
+    let fs_path = Path::new(&archive_path);
+    if !fs_path.exists() {
+        return Err(FmError::NotFound(archive_path.clone()));
+    }
+
+    // Create a temporary directory for the extraction
+    let tmp_dir = std::env::temp_dir().join("furman-archive-preview");
+    std::fs::create_dir_all(&tmp_dir)
+        .map_err(|e| FmError::Other(format!("Failed to create temp dir: {e}")))?;
+
+    let output = Command::new("7z")
+        .args([
+            "x",
+            &archive_path,
+            &format!("-o{}", tmp_dir.display()),
+            "-y",
+            &internal_path,
+        ])
+        .output()
+        .map_err(|e| {
+            if e.kind() == std::io::ErrorKind::NotFound {
+                #[cfg(target_os = "macos")]
+                { FmError::Other("7z not found. Install with: brew install 7zip".to_string()) }
+                #[cfg(target_os = "linux")]
+                { FmError::Other("7z not found. Install with: sudo apt install p7zip-full (or your distro's equivalent)".to_string()) }
+            } else {
+                FmError::Other(format!("Failed to run 7z: {e}"))
+            }
+        })?;
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        return Err(FmError::Other(format!("7z extract failed: {stderr}")));
+    }
+
+    let extracted = tmp_dir.join(&internal_path);
+    if !extracted.exists() {
+        return Err(FmError::NotFound(format!(
+            "Extracted file not found: {}",
+            extracted.display()
+        )));
+    }
+
+    Ok(extracted.to_string_lossy().into_owned())
+}
+
 /// Extract specific files/directories from an archive to a destination directory.
 ///
 /// `archive_path` — filesystem path to the archive.

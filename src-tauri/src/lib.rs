@@ -242,6 +242,7 @@ pub fn run() {
             // archive commands
             commands::archive::list_archive,
             commands::archive::extract_archive,
+            commands::archive::extract_archive_to_temp,
             // search commands
             commands::search::search_files,
             commands::search::cancel_search,

@@ -8,6 +8,13 @@ export async function listArchive(
   return await invoke<DirListing>('list_archive', { archivePath, internalPath });
 }
 
+export async function extractArchiveToTemp(
+  archivePath: string,
+  internalPath: string
+): Promise<string> {
+  return await invoke<string>('extract_archive_to_temp', { archivePath, internalPath });
+}
+
 export async function extractArchive(
   id: string,
   archivePath: string,
