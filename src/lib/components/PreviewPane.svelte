@@ -112,15 +112,15 @@
 
 <style>
   .preview-pane {
-    flex: 0 0 280px;
-    min-width: 200px;
-    max-width: 400px;
+    flex: 1 1 0;
+    min-width: 0;
+    min-height: 0;
     display: flex;
     flex-direction: column;
     background: var(--bg-panel);
     border: 1px solid var(--border-subtle);
     border-radius: var(--radius-md);
-    margin: 4px 0;
+    margin: 4px;
     overflow: hidden;
   }
 

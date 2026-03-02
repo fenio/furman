@@ -21,6 +21,10 @@
   const isInPane = $derived(terminalState.displayMode === 'in-pane');
   const replaceLeft = $derived(isInPane && terminalState.inPaneSlot === 'left');
   const replaceRight = $derived(isInPane && terminalState.inPaneSlot === 'right');
+
+  // Preview replaces the inactive panel
+  const previewReplacesLeft = $derived(previewState.visible && panels.activePanel === 'right');
+  const previewReplacesRight = $derived(previewState.visible && panels.activePanel === 'left');
 </script>
 
 <div class="dual-panel no-select">
@@ -81,16 +85,27 @@
       {/if}
     {/if}
     {#if previewState.visible}
-      <PreviewPane
-        entry={panels.active.currentEntry}
-        backend={panels.active.backend}
-        panelPath={panels.active.path}
-      />
+      <div class="panel-column">
+        <PreviewPane
+          entry={panels.active.currentEntry}
+          backend={panels.active.backend}
+          panelPath={panels.active.path}
+        />
+      </div>
     {/if}
   {:else}
+    <!-- Left slot: terminal > preview > file panel -->
     {#if replaceLeft}
       <div class="in-pane-terminal">
         <TerminalPanel />
+      </div>
+    {:else if previewReplacesLeft}
+      <div class="panel-column">
+        <PreviewPane
+          entry={panels.active.currentEntry}
+          backend={panels.active.backend}
+          panelPath={panels.active.path}
+        />
       </div>
     {:else}
       <div class="panel-column">
@@ -117,16 +132,18 @@
         />
       </div>
     {/if}
-    {#if previewState.visible}
-      <PreviewPane
-        entry={panels.active.currentEntry}
-        backend={panels.active.backend}
-        panelPath={panels.active.path}
-      />
-    {/if}
+    <!-- Right slot: terminal > preview > file panel -->
     {#if replaceRight}
       <div class="in-pane-terminal">
         <TerminalPanel />
+      </div>
+    {:else if previewReplacesRight}
+      <div class="panel-column">
+        <PreviewPane
+          entry={panels.active.currentEntry}
+          backend={panels.active.backend}
+          panelPath={panels.active.path}
+        />
       </div>
     {:else}
       <div class="panel-column">
