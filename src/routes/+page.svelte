@@ -117,8 +117,16 @@
     if (entry.is_dir) {
       if (entry.name === '..') {
         // Navigate to parent — focus on the directory we just left
-        const currentDirName = panel.path.replace(/\/+$/, '').split('/').pop() ?? '';
-        await panel.loadDirectory(entry.path, currentDirName);
+        let focusName: string | undefined;
+        if (panel.backend === 'archive') {
+          const hashIndex = panel.path.indexOf('#');
+          const internalPath = hashIndex >= 0 ? panel.path.slice(hashIndex + 1) : '';
+          const trimmed = internalPath.replace(/\/+$/, '');
+          focusName = trimmed ? trimmed.split('/').pop() : undefined;
+        } else {
+          focusName = panel.path.replace(/\/+$/, '').split('/').pop() ?? '';
+        }
+        await panel.loadDirectory(entry.path, focusName);
       } else {
         await panel.loadDirectory(entry.path);
       }
