@@ -182,8 +182,11 @@ jobs:
           VERSION=${{ steps.version.outputs.version }}
           LINUX_SHA=${{ steps.sha.outputs.linux }}
           mkdir -p Formula
-          cat > Formula/furman.rb << FORMULA
-          class Furman < Formula
+          # Use furman-bin to avoid shadowing the macOS cask named "furman".
+          # macOS users run: brew install fenio/tap/furman  (resolves to Cask)
+          # Linux users run: brew install fenio/tap/furman-bin
+          cat > Formula/furman-bin.rb << FORMULA
+          class FurmanBin < Formula
             desc "Dual-pane file manager for macOS and Linux"
             homepage "https://github.com/fenio/furman"
             version "${VERSION}"
@@ -200,10 +203,13 @@ jobs:
           end
           FORMULA
 
+      - name: Remove old Formula/furman.rb if it exists
+        run: git rm -f Formula/furman.rb 2>/dev/null || true
+
       - name: Commit and push
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add Casks/furman.rb Formula/furman.rb
+          git add Casks/furman.rb Formula/furman-bin.rb
           git commit -m "Update furman to ${{ steps.version.outputs.version }}"
           git push
