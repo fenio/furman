@@ -32,6 +32,32 @@
   let homePath = $state('');
   let isDragOver = $state(false);
 
+  // Virtualized scrolling for list mode
+  const ROW_HEIGHT = 28;  // matches FileRow.svelte .file-row height
+  const BUFFER_ROWS = 10; // extra rows above/below viewport
+  let viewportHeight = $state(0);
+  let scrollTop = $state(0);
+
+  const totalHeight = $derived(panel.filteredSortedEntries.length * ROW_HEIGHT);
+  const startIndex = $derived(
+    Math.max(0, Math.floor(scrollTop / ROW_HEIGHT) - BUFFER_ROWS)
+  );
+  const endIndex = $derived(
+    Math.min(
+      panel.filteredSortedEntries.length,
+      Math.ceil((scrollTop + viewportHeight) / ROW_HEIGHT) + BUFFER_ROWS
+    )
+  );
+  const visibleEntries = $derived(
+    panel.filteredSortedEntries.slice(startIndex, endIndex)
+  );
+  const offsetY = $derived(startIndex * ROW_HEIGHT);
+
+  function handleListScroll(e: Event) {
+    const el = e.target as HTMLElement;
+    scrollTop = el.scrollTop;
+  }
+
   // Context menu state
   let contextMenuOpen = $state(false);
   let contextMenuX = $state(0);
@@ -52,15 +78,15 @@
       const tile = listContainer.querySelectorAll('.file-tile')[idx] as HTMLElement | undefined;
       tile?.scrollIntoView({ block: 'nearest' });
     } else {
-      const rowHeight = listContainer.querySelector('.file-row')?.getBoundingClientRect().height ?? 19.5;
-      const scrollTop = listContainer.scrollTop;
+      const rowHeight = ROW_HEIGHT;
+      const scrollTop_ = listContainer.scrollTop;
       const viewHeight = listContainer.clientHeight;
       const rowTop = idx * rowHeight;
       const rowBottom = rowTop + rowHeight;
 
-      if (rowTop < scrollTop) {
+      if (rowTop < scrollTop_) {
         listContainer.scrollTop = rowTop;
-      } else if (rowBottom > scrollTop + viewHeight) {
+      } else if (rowBottom > scrollTop_ + viewHeight) {
         listContainer.scrollTop = rowBottom - viewHeight;
       }
     }
@@ -78,6 +104,16 @@
         const cols = getComputedStyle(listContainer).gridTemplateColumns.split(' ').length;
         panel.gridColumns = cols;
       }
+    });
+    observer.observe(listContainer);
+    return () => observer.disconnect();
+  });
+
+  // Track viewport height for list-mode virtualization
+  $effect(() => {
+    if (panel.viewMode !== 'list' || !listContainer) return;
+    const observer = new ResizeObserver((entries) => {
+      viewportHeight = entries[0].contentRect.height;
     });
     observer.observe(listContainer);
     return () => observer.disconnect();
@@ -258,27 +294,39 @@
     const minY = Math.min(rubberStart.y, rubberCurrent.y);
     const maxY = Math.max(rubberStart.y, rubberCurrent.y);
 
-    const selector = panel.viewMode === 'icon' ? '.file-tile' : '.file-row';
-    const elements = listContainer.querySelectorAll(selector);
     const next = new SvelteSet(prevSelected);
 
-    elements.forEach((el, i) => {
-      const htmlEl = el as HTMLElement;
-      const top = htmlEl.offsetTop;
-      const left = htmlEl.offsetLeft;
-      const bottom = top + htmlEl.offsetHeight;
-      const right = left + htmlEl.offsetWidth;
+    if (panel.viewMode === 'icon') {
+      // Icon mode: still query DOM (not virtualized)
+      const elements = listContainer.querySelectorAll('.file-tile');
+      elements.forEach((el, i) => {
+        const htmlEl = el as HTMLElement;
+        const top = htmlEl.offsetTop;
+        const left = htmlEl.offsetLeft;
+        const bottom = top + htmlEl.offsetHeight;
+        const right = left + htmlEl.offsetWidth;
+        const intersects = !(right < minX || left > maxX || bottom < minY || top > maxY);
+        const entry = panel.filteredSortedEntries[i];
+        if (!entry || entry.name === '..') return;
+        if (intersects) next.add(entry.path);
+        else if (!prevSelected.has(entry.path)) next.delete(entry.path);
+      });
+    } else {
+      // List mode: pure math, no DOM queries (works with virtualization)
+      const containerWidth = listContainer.clientWidth;
+      const firstRow = Math.max(0, Math.floor(minY / ROW_HEIGHT));
+      const lastRow = Math.min(panel.filteredSortedEntries.length - 1, Math.floor(maxY / ROW_HEIGHT));
 
-      const intersects = !(right < minX || left > maxX || bottom < minY || top > maxY);
-
-      const entry = panel.filteredSortedEntries[i];
-      if (!entry || entry.name === '..') return;
-      if (intersects) {
-        next.add(entry.path);
-      } else if (!prevSelected.has(entry.path)) {
-        next.delete(entry.path);
+      for (let i = firstRow; i <= lastRow; i++) {
+        const rowTop = i * ROW_HEIGHT;
+        const rowBottom = rowTop + ROW_HEIGHT;
+        const intersects = !(containerWidth < minX || 0 > maxX || rowBottom < minY || rowTop > maxY);
+        const entry = panel.filteredSortedEntries[i];
+        if (!entry || entry.name === '..') continue;
+        if (intersects) next.add(entry.path);
+        else if (!prevSelected.has(entry.path)) next.delete(entry.path);
       }
-    });
+    }
 
     panel.selectedPaths = next;
   }
@@ -371,7 +419,7 @@
       panel.gitInfo = info;
       await panel.loadDirectory(panel.path);
     } catch (err: unknown) {
-      statusState.setMessage(`Checkout failed: ${err instanceof Error ? err.message : String(err)}`);
+      appState.showAlert(`Checkout failed: ${err instanceof Error ? err.message : String(err)}`);
     }
   }
 
@@ -386,7 +434,7 @@
       panel.gitInfo = info;
       await panel.loadDirectory(panel.path);
     } catch (err: unknown) {
-      statusState.setMessage(`Pull failed: ${err instanceof Error ? err.message : String(err)}`);
+      appState.showAlert(`Pull failed: ${err instanceof Error ? err.message : String(err)}`);
     } finally {
       pulling = false;
     }
@@ -673,50 +721,57 @@
     style={panel.viewMode === 'icon' ? `--icon-size: ${appState.iconSize}px; --grid-min: ${appState.iconSize + 32}px` : ''}
     onmousedown={handleListMouseDown}
     oncontextmenu={handleEmptyContextMenu}
+    onscroll={panel.viewMode === 'list' ? handleListScroll : undefined}
   >
     {#if panel.loading}
       <div class="loading-msg">Loading...</div>
     {:else if panel.error}
       <div class="error-msg">{panel.error}</div>
-    {:else}
+    {:else if panel.viewMode === 'icon'}
       {#each panel.filteredSortedEntries as entry, i (entry.path + entry.name)}
-        {#if panel.viewMode === 'icon'}
-          <FileIcon
-            {entry}
-            isSelected={panel.selectedPaths.has(entry.path)}
-            isCursor={i === panel.cursorIndex}
-            {isActive}
-            panelSide={side}
-            backend={panel.backend}
-            s3ConnectionId={panel.s3Connection?.connectionId}
-            comparisonStatus={comparisonStatusMap.get(entry.name)}
-            getSelectedPaths={() => panel.getSelectedOrCurrent()}
-            onclick={(e) => handleRowClick(i, e)}
-            ondblclick={() => handleRowDblClick(i)}
-            oncontextmenu={(e) => handleContextMenu(i, e)}
-          />
-        {:else}
-          <FileRow
-            {entry}
-            isSelected={panel.selectedPaths.has(entry.path)}
-            isCursor={i === panel.cursorIndex}
-            {isActive}
-            rowIndex={i}
-            panelSide={side}
-            {isS3}
-            dirSize={entry.is_dir ? panel.dirSizeCache[entry.path] : undefined}
-            encrypted={panel.encryptionCache[entry.path] === true}
-            backend={panel.backend}
-            s3ConnectionId={panel.s3Connection?.connectionId}
-            comparisonStatus={comparisonStatusMap.get(entry.name)}
-            getSelectedPaths={() => panel.getSelectedOrCurrent()}
-            visibleColumns={appState.visibleColumns}
-            onclick={(e) => handleRowClick(i, e)}
-            ondblclick={() => handleRowDblClick(i)}
-            oncontextmenu={(e) => handleContextMenu(i, e)}
-          />
-        {/if}
+        <FileIcon
+          {entry}
+          isSelected={panel.selectedPaths.has(entry.path)}
+          isCursor={i === panel.cursorIndex}
+          {isActive}
+          panelSide={side}
+          backend={panel.backend}
+          s3ConnectionId={panel.s3Connection?.connectionId}
+          comparisonStatus={comparisonStatusMap.get(entry.name)}
+          getSelectedPaths={() => panel.getSelectedOrCurrent()}
+          onclick={(e) => handleRowClick(i, e)}
+          ondblclick={() => handleRowDblClick(i)}
+          oncontextmenu={(e) => handleContextMenu(i, e)}
+        />
       {/each}
+    {:else}
+      <!-- Virtualized list mode: sentinel div creates full scroll height -->
+      <div style="height: {totalHeight}px; position: relative;">
+        <div style="position: absolute; top: {offsetY}px; left: 0; right: 0;">
+          {#each visibleEntries as entry, vi (entry.path + entry.name)}
+            {@const i = startIndex + vi}
+            <FileRow
+              {entry}
+              isSelected={panel.selectedPaths.has(entry.path)}
+              isCursor={i === panel.cursorIndex}
+              {isActive}
+              rowIndex={i}
+              panelSide={side}
+              {isS3}
+              dirSize={entry.is_dir ? panel.dirSizeCache[entry.path] : undefined}
+              encrypted={panel.encryptionCache[entry.path] === true}
+              backend={panel.backend}
+              s3ConnectionId={panel.s3Connection?.connectionId}
+              comparisonStatus={comparisonStatusMap.get(entry.name)}
+              getSelectedPaths={() => panel.getSelectedOrCurrent()}
+              visibleColumns={appState.visibleColumns}
+              onclick={(e) => handleRowClick(i, e)}
+              ondblclick={() => handleRowDblClick(i)}
+              oncontextmenu={(e) => handleContextMenu(i, e)}
+            />
+          {/each}
+        </div>
+      </div>
     {/if}
     {#if rubberBanding}
       <div

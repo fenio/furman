@@ -2,6 +2,8 @@
   import favicon from '$lib/assets/favicon.svg';
   import '../app.css';
   import { onMount, onDestroy } from 'svelte';
+  import { listen } from '@tauri-apps/api/event';
+  import { invoke } from '@tauri-apps/api/core';
   import { panels, s3PathToPrefix } from '$lib/state/panels.svelte';
   import { appState } from '$lib/state/app.svelte';
   import { terminalState } from '$lib/state/terminal.svelte';
@@ -177,6 +179,18 @@
         const active = panels.active;
         const allCount = active.entries.filter(e => e.name !== '..').length;
         if (active.selectedPaths.size === allCount) active.deselectAll(); else active.selectAll();
+      }},
+      { id: 'select-by-pattern', label: 'Select by pattern', shortcut: '+', category: 'File', execute: () => {
+        appState.showInput('Select by pattern:', '*', (pattern) => {
+          appState.closeModal();
+          if (pattern) panels.active.selectByPattern(pattern);
+        });
+      }},
+      { id: 'deselect-by-pattern', label: 'Deselect by pattern', shortcut: '\u2212', category: 'File', execute: () => {
+        appState.showInput('Deselect by pattern:', '*', (pattern) => {
+          appState.closeModal();
+          if (pattern) panels.active.deselectByPattern(pattern);
+        });
       }},
 
       // Navigation
@@ -369,8 +383,220 @@
 
   window.addEventListener('transfer-done', handleTransferDone);
 
+  // ── Native menu action handler ─────────────────────────────────────────
+  const alwaysAllowed = new Set([
+    'preferences', 'quit', 'toggle-theme', 'shortcuts', 'command-palette', 'github',
+  ]);
+
+  async function handleMenuAction(action: string) {
+    // Modal guard: skip file-operation actions when a modal is open or xterm is focused
+    if (!alwaysAllowed.has(action)) {
+      if (isXtermFocused()) return;
+      if (appState.modal !== 'none' && appState.modal !== 'volume-selector') return;
+    }
+
+    const active = panels.active;
+
+    switch (action) {
+      case 'preferences':
+        appState.showPreferences();
+        break;
+      case 'quit':
+        handleQuit();
+        break;
+      case 'mkdir':
+        handleMkDir();
+        break;
+      case 'rename':
+        handleRename();
+        break;
+      case 'delete':
+        handleDelete();
+        break;
+      case 'view':
+        quickLook();
+        break;
+      case 'edit': {
+        const entry = active.currentEntry;
+        if (entry && !entry.is_dir && entry.name !== '..') {
+          if (active.backend === 's3' && active.s3Connection) {
+            openS3Editor(entry.path, active.s3Connection.connectionId);
+          } else if (active.backend === 'sftp' && active.sftpConnection) {
+            openSftpEditor(entry.path, active.sftpConnection.connectionId);
+          } else {
+            openEditor(entry.path);
+          }
+        }
+        break;
+      }
+      case 'search':
+        if (active.backend === 'local' || active.backend === 's3') {
+          appState.showSearch(active.path, active.backend, active.s3Connection?.connectionId ?? '');
+        }
+        break;
+      case 'properties':
+        handleProperties();
+        break;
+      case 'copy':
+        handleCopy();
+        break;
+      case 'move':
+        handleMove();
+        break;
+      case 'clipboard-copy': {
+        const paths = active.getSelectedOrCurrent();
+        if (paths.length > 0) {
+          clipboardState.copy(paths, active.backend, {
+            s3ConnectionId: active.s3Connection?.connectionId,
+            sftpConnectionId: active.sftpConnection?.connectionId,
+          });
+          statusState.setMessage(`Copied ${paths.length} item(s) to clipboard`);
+        }
+        break;
+      }
+      case 'clipboard-cut': {
+        const paths = active.getSelectedOrCurrent();
+        if (paths.length > 0) {
+          clipboardState.cut(paths, active.backend, {
+            s3ConnectionId: active.s3Connection?.connectionId,
+            sftpConnectionId: active.sftpConnection?.connectionId,
+          });
+          statusState.setMessage(`Cut ${paths.length} item(s) to clipboard`);
+        }
+        break;
+      }
+      case 'clipboard-paste':
+        if (!clipboardState.isEmpty) handleClipboardPaste();
+        break;
+      case 'select-all': {
+        const allCount = active.entries.filter(e => e.name !== '..').length;
+        if (active.selectedPaths.size === allCount) active.deselectAll();
+        else active.selectAll();
+        break;
+      }
+      case 'undo':
+        executeUndo();
+        break;
+      case 'toggle-sidebar':
+        if (sidebarState.focused) sidebarState.toggle();
+        else if (sidebarState.visible) sidebarState.focus();
+        else sidebarState.toggle();
+        break;
+      case 'toggle-layout':
+        appState.toggleLayout();
+        break;
+      case 'toggle-preview':
+        previewState.toggle();
+        break;
+      case 'toggle-theme':
+        appState.toggleTheme();
+        break;
+      case 'refresh':
+        panels.left.loadDirectory(panels.left.path);
+        panels.right.loadDirectory(panels.right.path);
+        break;
+      case 'swap-panels':
+        panels.swapPanels();
+        break;
+      case 'equal-panels':
+        panels.inactive.loadDirectory(active.path);
+        break;
+      case 'compare':
+        if (comparisonState.active) {
+          comparisonState.stopComparison();
+        } else {
+          const left = panels.left;
+          const right = panels.right;
+          comparisonState.startComparison(
+            left.path, left.backend, left.s3Connection?.connectionId ?? '',
+            right.path, right.backend, right.s3Connection?.connectionId ?? '',
+          );
+        }
+        break;
+      case 'connect':
+        if (active.backend === 's3') active.disconnectS3();
+        else if (active.backend === 'sftp') active.disconnectSftp();
+        else appState.showConnectionManager();
+        break;
+      case 'go-home':
+        try {
+          const { homeDir } = await import('@tauri-apps/api/path');
+          const home = await homeDir();
+          active.loadDirectory(home);
+        } catch { /* ignore */ }
+        break;
+      case 'go-parent': {
+        const parentEntry = active.filteredSortedEntries.find((en) => en.name === '..');
+        if (parentEntry) {
+          const currentDirName = active.path.replace(/\/+$/, '').split('/').pop() ?? '';
+          active.loadDirectory(parentEntry.path, currentDirName);
+        }
+        break;
+      }
+      case 'history-back':
+        active.goBack();
+        break;
+      case 'history-forward':
+        active.goForward();
+        break;
+      case 'terminal-bottom':
+        terminalState.toggle('bottom');
+        break;
+      case 'terminal-inpane':
+        terminalState.inPaneSlot = panels.activePanel === 'left' ? 'right' : 'left';
+        terminalState.toggle('in-pane');
+        break;
+      case 'terminal-quake':
+        terminalState.toggle('quake');
+        break;
+      case 'new-tab': {
+        const side = panels.activePanel;
+        const path = active.path;
+        const tab = panels.addTab(side);
+        tab.loadDirectory(path);
+        break;
+      }
+      case 'close-tab': {
+        const side = panels.activePanel;
+        const tabs = side === 'left' ? panels.leftTabs : panels.rightTabs;
+        const activeIdx = side === 'left' ? panels.leftActiveTab : panels.rightActiveTab;
+        if (tabs.length > 1) panels.closeTab(side, activeIdx);
+        break;
+      }
+      case 'toggle-transfers':
+        transfersState.toggle();
+        break;
+      case 'sync': {
+        const src = panels.active;
+        const dst = panels.inactive;
+        if (src.backend !== 'archive' && dst.backend !== 'archive') {
+          appState.showSync(
+            { backend: src.backend, path: src.path, s3Id: src.s3Connection?.connectionId ?? '' },
+            { backend: dst.backend, path: dst.path, s3Id: dst.s3Connection?.connectionId ?? '' },
+          );
+        }
+        break;
+      }
+      case 'shortcuts':
+        appState.modal = 'shortcuts';
+        break;
+      case 'github':
+        invoke('open_url', { url: 'https://github.com/fenio/furman' });
+        break;
+      case 'command-palette':
+        appState.showCommandPalette();
+        break;
+    }
+  }
+
+  let menuUnlisten: (() => void) | null = null;
+  listen<string>('menu-action', (event) => {
+    handleMenuAction(event.payload);
+  }).then((fn) => { menuUnlisten = fn; });
+
   onDestroy(() => {
     dragDropUnlisten?.();
+    menuUnlisten?.();
     window.removeEventListener('undo-last-operation', handleUndoEvent);
     window.removeEventListener('sync-execute', handleSyncExecuteEvent);
     window.removeEventListener('transfer-done', handleTransferDone);
@@ -387,146 +613,11 @@
   function handleGlobalKeydown(e: KeyboardEvent) {
     const cmd = e.metaKey || e.ctrlKey;
 
-    // Theme toggle — always active regardless of focus
-    if (cmd && e.shiftKey && e.key === 'L') {
-      e.preventDefault();
-      appState.toggleTheme();
-      return;
-    }
-
-    // Tab shortcuts — Cmd+Alt+T / Cmd+Alt+W
-    // On macOS, Cmd+Alt produces special characters († for T, ∑ for W), so check e.code
-    if (cmd && e.altKey) {
-      if (e.code === 'KeyT') {
-        e.preventDefault();
-        const side = panels.activePanel;
-        const currentPath = panels.active.path;
-        const tab = panels.addTab(side);
-        tab.loadDirectory(currentPath);
-        return;
-      }
-      if (e.code === 'KeyW') {
-        e.preventDefault();
-        const side = panels.activePanel;
-        const tabs = side === 'left' ? panels.leftTabs : panels.rightTabs;
-        const activeIdx = side === 'left' ? panels.leftActiveTab : panels.rightActiveTab;
-        if (tabs.length > 1) {
-          panels.closeTab(side, activeIdx);
-        }
-        return;
-      }
-    }
-
-    // Directory history — Alt+Left / Alt+Right (before modal guard)
-    if (e.altKey && !cmd && e.key === 'ArrowLeft') {
-      e.preventDefault();
-      panels.active.goBack();
-      return;
-    }
-    if (e.altKey && !cmd && e.key === 'ArrowRight') {
-      e.preventDefault();
-      panels.active.goForward();
-      return;
-    }
-
-    // Preview pane toggle — Alt+P (before modal guard)
-    if (e.altKey && !cmd && e.code === 'KeyP') {
-      e.preventDefault();
-      previewState.toggle();
-      return;
-    }
-
-    // Clipboard — Cmd+Shift+C / Cmd+Shift+X / Cmd+Shift+V (before modal guard)
-    if (cmd && e.shiftKey && e.code === 'KeyC') {
-      e.preventDefault();
-      const paths = panels.active.getSelectedOrCurrent();
-      if (paths.length > 0) {
-        clipboardState.copy(paths, panels.active.backend, {
-          s3ConnectionId: panels.active.s3Connection?.connectionId,
-          sftpConnectionId: panels.active.sftpConnection?.connectionId,
-        });
-        statusState.setMessage(`Copied ${paths.length} item(s) to clipboard`);
-      }
-      return;
-    }
-    if (cmd && e.shiftKey && e.code === 'KeyX') {
-      e.preventDefault();
-      const paths = panels.active.getSelectedOrCurrent();
-      if (paths.length > 0) {
-        clipboardState.cut(paths, panels.active.backend, {
-          s3ConnectionId: panels.active.s3Connection?.connectionId,
-          sftpConnectionId: panels.active.sftpConnection?.connectionId,
-        });
-        statusState.setMessage(`Cut ${paths.length} item(s) to clipboard`);
-      }
-      return;
-    }
-    if (cmd && e.shiftKey && e.code === 'KeyV') {
-      e.preventDefault();
-      if (!clipboardState.isEmpty) {
-        handleClipboardPaste();
-      }
-      return;
-    }
-
-    // Terminal toggle shortcuts — always active regardless of focus
-    if (cmd) {
-      if (e.key === '`') {
-        e.preventDefault();
-        terminalState.toggle('quake');
-        return;
-      }
-      if (e.key === 't' && e.shiftKey) {
-        e.preventDefault();
-        // In-pane: replace the inactive panel
-        terminalState.inPaneSlot = panels.activePanel === 'left' ? 'right' : 'left';
-        terminalState.toggle('in-pane');
-        return;
-      }
-      if (e.key === 't' && !e.shiftKey) {
-        e.preventDefault();
-        terminalState.toggle('bottom');
-        return;
-      }
-    }
-
-    // Command Palette — Cmd+Shift+P (before modal guard)
-    if (cmd && e.shiftKey && e.code === 'KeyP') {
-      e.preventDefault();
-      appState.showCommandPalette();
-      return;
-    }
-
-    // Directory Comparison — Cmd+Shift+D (before modal guard)
-    if (cmd && e.shiftKey && e.code === 'KeyD') {
-      e.preventDefault();
-      if (comparisonState.active) {
-        comparisonState.stopComparison();
-      } else {
-        const left = panels.left;
-        const right = panels.right;
-        comparisonState.startComparison(
-          left.path, left.backend, left.s3Connection?.connectionId ?? '',
-          right.path, right.backend, right.s3Connection?.connectionId ?? '',
-        );
-      }
-      return;
-    }
-
     // ESC hides quake console
     if (e.key === 'Escape' && terminalState.displayMode === 'quake') {
       e.preventDefault();
       terminalState.displayMode = 'none';
       return;
-    }
-
-    // Undo — Cmd+Z (before modal guard, after xterm check)
-    if (cmd && e.key === 'z' && !e.shiftKey && !isXtermFocused()) {
-      if (appState.modal === 'none' || appState.modal === 'menu' || appState.modal === 'volume-selector') {
-        e.preventDefault();
-        executeUndo();
-        return;
-      }
     }
 
     // If xterm is focused, let all other keys pass through to the terminal
@@ -535,7 +626,7 @@
     }
 
     // If a modal is open, let the modal handle its own keys
-    if (appState.modal !== 'none' && appState.modal !== 'menu' && appState.modal !== 'volume-selector') {
+    if (appState.modal !== 'none' && appState.modal !== 'volume-selector') {
       return;
     }
 
@@ -582,61 +673,9 @@
 
     const active = panels.active;
 
-    // Cmd/Ctrl shortcuts (macOS F-key alternatives)
+    // Cmd/Ctrl shortcuts not in the native menu (S3-specific, context-dependent)
     if (cmd) {
       switch (e.key) {
-        case 'r':
-          e.preventDefault();
-          handleRename();                       // Cmd+R = Rename (F2)
-          return;
-        case '3':
-          e.preventDefault();
-          {
-            const entry = active.currentEntry;
-            if (entry && !entry.is_dir && entry.name !== '..') {
-              if (active.backend === 's3' && active.s3Connection) {
-                openS3Viewer(entry.path, entry.extension, active.s3Connection.connectionId);
-              } else if (active.backend === 'sftp' && active.sftpConnection) {
-                openSftpViewer(entry.path, entry.extension, active.sftpConnection.connectionId);
-              } else if (active.backend === 'archive' && active.archiveInfo) {
-                openArchiveViewer(entry.path, entry.extension, active.archiveInfo.archivePath);
-              } else {
-                openViewer(entry.path, entry.extension);  // Cmd+3 = View (F3)
-              }
-            }
-          }
-          return;
-        case 'e':
-          e.preventDefault();
-          {
-            const entry = active.currentEntry;
-            if (entry && !entry.is_dir && entry.name !== '..') {
-              if (active.backend === 's3' && active.s3Connection) {
-                openS3Editor(entry.path, active.s3Connection.connectionId);
-              } else if (active.backend === 'sftp' && active.sftpConnection) {
-                openSftpEditor(entry.path, active.sftpConnection.connectionId);
-              } else {
-                openEditor(entry.path);            // Cmd+E = Edit (F4)
-              }
-            }
-          }
-          return;
-        case 'c':
-          e.preventDefault();
-          handleCopy();                          // Cmd+C = Copy (F5)
-          return;
-        case 'm':
-          e.preventDefault();
-          handleMove();                          // Cmd+M = Move (F6)
-          return;
-        case 'n':
-          e.preventDefault();
-          handleMkDir();                         // Cmd+N = MkDir (F7)
-          return;
-        case 'Backspace':
-          e.preventDefault();
-          handleDelete();                        // Cmd+Delete = Delete (F8)
-          return;
         case 'd':
           e.preventDefault();
           if (active.backend === 's3') {
@@ -660,36 +699,6 @@
             });                                  // Cmd+D = Save workspace
           }
           return;
-        case 's':
-          e.preventDefault();
-          if (active.backend === 's3') {
-            active.disconnectS3();               // Cmd+S = Disconnect if S3
-          } else if (active.backend === 'sftp') {
-            active.disconnectSftp();             // Cmd+S = Disconnect if SFTP
-          } else {
-            appState.showConnectionManager();     // Cmd+S = Connection Manager if local
-          }
-          return;
-        case 'f':
-          e.preventDefault();
-          if (active.backend === 'local' || active.backend === 's3') {
-            appState.showSearch(
-              active.path,
-              active.backend,
-              active.s3Connection?.connectionId ?? '',
-            );
-          }
-          return;
-        case 'b':
-          e.preventDefault();
-          if (sidebarState.focused) {
-            sidebarState.toggle();               // Focused → close sidebar
-          } else if (sidebarState.visible) {
-            sidebarState.focus();                // Visible → focus it
-          } else {
-            sidebarState.toggle();               // Hidden → open sidebar
-          }
-          return;
         case 'u':
           e.preventDefault();
           handlePresignUrl();                    // Cmd+U = Presigned URL
@@ -702,42 +711,9 @@
           e.preventDefault();
           handleBulkStorageClassChange();         // Cmd+L = Bulk Storage Class
           return;
-        case 'p':
-          e.preventDefault();
-          appState.toggleLayout();               // Cmd+P = Toggle single/dual pane
-          return;
-        case '/':
-          e.preventDefault();
-          appState.modal = 'shortcuts';          // Cmd+/ = Shortcuts cheatsheet
-          return;
-        case 'j':
-          e.preventDefault();
-          transfersState.toggle();               // Cmd+J = Transfer panel
-          return;
         case 'I':
           e.preventDefault();
           handleBucketProperties();               // Cmd+Shift+I = Bucket Properties
-          return;
-        case 'i':
-          e.preventDefault();
-          handleProperties();                    // Cmd+I = Properties (F9)
-          return;
-        case 'q':
-          e.preventDefault();
-          handleQuit();                          // Cmd+Q = Quit (F10)
-          return;
-        case 'y':
-          e.preventDefault();
-          {
-            const src = panels.active;
-            const dst = panels.inactive;
-            if (src.backend !== 'archive' && dst.backend !== 'archive') {
-              appState.showSync(
-                { backend: src.backend, path: src.path, s3Id: src.s3Connection?.connectionId ?? '' },
-                { backend: dst.backend, path: dst.path, s3Id: dst.s3Connection?.connectionId ?? '' },
-              );
-            }
-          }
           return;
       }
     }
@@ -900,6 +876,20 @@
         }
         break;
       }
+      case '+':
+        e.preventDefault();
+        appState.showInput('Select by pattern:', '*', (pattern) => {
+          appState.closeModal();
+          if (pattern) active.selectByPattern(pattern);
+        });
+        break;
+      case '-':
+        e.preventDefault();
+        appState.showInput('Deselect by pattern:', '*', (pattern) => {
+          appState.closeModal();
+          if (pattern) active.deselectByPattern(pattern);
+        });
+        break;
       case 'F2':
         e.preventDefault();
         handleRename();

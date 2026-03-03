@@ -212,14 +212,15 @@
   .sftp-dialog {
     display: flex;
     flex-direction: column;
-    height: 100%;
+    flex: 1;
+    overflow: hidden;
   }
 
   .main-body {
     padding: 20px 24px;
     display: flex;
     flex-direction: column;
-    gap: 14px;
+    gap: 12px;
     flex: 1;
     overflow-y: auto;
   }
@@ -268,7 +269,6 @@
 
   .field label {
     font-size: 12px;
-    font-weight: 500;
     color: var(--text-secondary);
   }
 

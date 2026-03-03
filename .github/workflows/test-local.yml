@@ -1,0 +1,37 @@
+name: Local Filesystem Integration Tests
+
+on:
+  push:
+    branches: [main]
+    paths: ['src-tauri/**']
+  pull_request:
+    branches: [main]
+    paths: ['src-tauri/**']
+  workflow_dispatch:
+
+jobs:
+  local-tests:
+    strategy:
+      matrix:
+        os: [macos-latest, ubuntu-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Rust dependencies
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+
+      - name: Install system dependencies (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf libglib2.0-dev libgtk-3-dev libjavascriptcoregtk-4.1-dev libsoup-3.0-dev
+
+      - name: Run local filesystem integration tests
+        working-directory: src-tauri
+        run: cargo test --test local_integration -- --test-threads=4

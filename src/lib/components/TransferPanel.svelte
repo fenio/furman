@@ -68,6 +68,11 @@
     return Math.round((t.progress.bytes_done / t.progress.bytes_total) * 100);
   }
 
+  function filesPercentage(t: { progress: { files_done: number; files_total: number } | null }): number {
+    if (!t.progress || t.progress.files_total === 0) return 0;
+    return Math.round((t.progress.files_done / t.progress.files_total) * 100);
+  }
+
   function handleConcurrencyChange(e: Event) {
     const val = parseInt((e.target as HTMLSelectElement).value, 10);
     if (val > 0) {
@@ -134,10 +139,18 @@
           </div>
         {:else if t.status === 'running'}
           <div class="transfer-progress-row">
+            <span class="transfer-bar-label">Bytes</span>
             <div class="transfer-bar-container">
               <div class="transfer-bar-fill" style="width: {percentage(t)}%"></div>
             </div>
             <span class="transfer-pct">{percentage(t)}%</span>
+          </div>
+          <div class="transfer-progress-row">
+            <span class="transfer-bar-label">Files</span>
+            <div class="transfer-bar-container">
+              <div class="transfer-bar-fill files" style="width: {filesPercentage(t)}%"></div>
+            </div>
+            <span class="transfer-pct">{filesPercentage(t)}%</span>
           </div>
           {#if t.progress}
             <div class="transfer-stats">
@@ -147,10 +160,18 @@
           {/if}
         {:else if t.status === 'paused'}
           <div class="transfer-progress-row">
+            <span class="transfer-bar-label">Bytes</span>
             <div class="transfer-bar-container paused">
               <div class="transfer-bar-fill paused" style="width: {percentage(t)}%"></div>
             </div>
             <span class="transfer-pct">{percentage(t)}%</span>
+          </div>
+          <div class="transfer-progress-row">
+            <span class="transfer-bar-label">Files</span>
+            <div class="transfer-bar-container paused">
+              <div class="transfer-bar-fill files paused" style="width: {filesPercentage(t)}%"></div>
+            </div>
+            <span class="transfer-pct">{filesPercentage(t)}%</span>
           </div>
           {#if t.progress}
             <div class="transfer-stats">
@@ -327,11 +348,22 @@
     );
   }
 
+  .transfer-bar-label {
+    font-size: 10px;
+    color: var(--text-secondary);
+    min-width: 30px;
+    flex-shrink: 0;
+  }
+
   .transfer-bar-fill {
     height: 100%;
     background: var(--progress-bar-fill);
     border-radius: 2px;
     transition: width 0.15s linear;
+  }
+
+  .transfer-bar-fill.files {
+    background: var(--progress-bar-fill-alt, #61afef);
   }
 
   .transfer-bar-fill.paused {

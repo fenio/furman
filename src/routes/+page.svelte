@@ -8,7 +8,6 @@
   import { sidebarState } from '$lib/state/sidebar.svelte';
   import { workspacesState } from '$lib/state/workspaces.svelte';
   import { loadConfig } from '$lib/services/config';
-  import MenuBar from '$lib/components/MenuBar.svelte';
   import DualPanel from '$lib/components/DualPanel.svelte';
   import Sidebar from '$lib/components/Sidebar.svelte';
   import FunctionBar from '$lib/components/FunctionBar.svelte';
@@ -22,7 +21,6 @@
   import Editor from '$lib/components/Editor.svelte';
   import ConnectionManager from '$lib/components/ConnectionManager.svelte';
   import SearchDialog from '$lib/components/SearchDialog.svelte';
-  import MenuDropdown from '$lib/components/MenuDropdown.svelte';
   import PreferencesDialog from '$lib/components/PreferencesDialog.svelte';
   import OverwriteDialog from '$lib/components/OverwriteDialog.svelte';
   import PropertiesDialog from '$lib/components/PropertiesDialog.svelte';
@@ -230,12 +228,6 @@
 </script>
 
 <div class="app-container">
-  <MenuBar />
-
-  {#if appState.menuActive}
-    <MenuDropdown />
-  {/if}
-
   <!-- Quake console overlay -->
   {#if terminalState.displayMode === 'quake'}
     <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->

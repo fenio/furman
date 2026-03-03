@@ -1,8 +1,11 @@
+use app_lib::models::ProgressEvent;
 use app_lib::s3::client::build_s3_client;
 use app_lib::s3::service::{self, S3Service};
 use app_lib::sftp::client::build_sftp_client;
 use app_lib::sftp::service::SftpService;
 use aws_sdk_s3::Client as S3Client;
+use std::sync::{Arc, Mutex};
+use tempfile::TempDir;
 use tokio::io::AsyncWriteExt;
 use uuid::Uuid;
 
@@ -464,4 +467,124 @@ impl SftpTestContext {
     pub async fn cleanup(self) {
         let _ = self.service.delete(&[self.test_dir.clone()]).await;
     }
+}
+
+// ── Local Filesystem Test Context ────────────────────────────────────────────
+
+/// Test context for local filesystem integration tests.
+/// Each test gets a fresh temp directory that is auto-cleaned on drop.
+#[allow(dead_code)]
+pub struct LocalTestContext {
+    pub root: TempDir,
+}
+
+#[allow(dead_code)]
+impl LocalTestContext {
+    /// Create a new test context with a fresh temp directory.
+    pub fn new() -> Self {
+        Self {
+            root: TempDir::new().expect("Failed to create temp dir"),
+        }
+    }
+
+    /// Return the root path as a String.
+    pub fn path_str(&self) -> String {
+        self.root.path().to_string_lossy().into_owned()
+    }
+
+    /// Create a file at `rel` (relative to root) with the given data.
+    /// Auto-creates parent directories.
+    pub fn put_file(&self, rel: &str, data: &[u8]) {
+        let path = self.root.path().join(rel);
+        if let Some(parent) = path.parent() {
+            std::fs::create_dir_all(parent).expect("Failed to create parent dirs");
+        }
+        std::fs::write(&path, data).expect("Failed to write test file");
+    }
+
+    /// Create a directory at `rel` (relative to root), including parents.
+    pub fn mkdir(&self, rel: &str) {
+        let path = self.root.path().join(rel);
+        std::fs::create_dir_all(&path).expect("Failed to create directory");
+    }
+
+    /// Create a symlink at `link_rel` pointing to `target`.
+    #[cfg(unix)]
+    pub fn symlink(&self, target: &str, link_rel: &str) {
+        let link_path = self.root.path().join(link_rel);
+        if let Some(parent) = link_path.parent() {
+            std::fs::create_dir_all(parent).expect("Failed to create parent dirs");
+        }
+        std::os::unix::fs::symlink(target, &link_path).expect("Failed to create symlink");
+    }
+
+    /// Create a standard test tree:
+    /// ```text
+    /// file1.txt         (11 bytes: "hello world")
+    /// file2.txt         (7 bytes: "foo bar")
+    /// .hidden           (6 bytes: "secret")
+    /// empty.txt         (0 bytes)
+    /// subdir/
+    ///   nested.txt      (6 bytes: "nested")
+    ///   deep/
+    ///     deep.txt      (4 bytes: "deep")
+    /// ```
+    pub fn create_standard_tree(&self) {
+        self.put_file("file1.txt", b"hello world");
+        self.put_file("file2.txt", b"foo bar");
+        self.put_file(".hidden", b"secret");
+        self.put_file("empty.txt", b"");
+        self.put_file("subdir/nested.txt", b"nested");
+        self.put_file("subdir/deep/deep.txt", b"deep");
+    }
+
+    /// Create an empty `dst/` directory and return its path as a String.
+    pub fn create_dest(&self) -> String {
+        self.mkdir("dst");
+        self.root.path().join("dst").to_string_lossy().into_owned()
+    }
+
+    /// Assert that a file at `rel` exists and has the given content.
+    pub fn assert_file_content(&self, rel: &str, expected: &[u8]) {
+        let path = self.root.path().join(rel);
+        assert!(path.exists(), "Expected file to exist: {rel}");
+        let actual = std::fs::read(&path).expect("Failed to read file");
+        assert_eq!(actual, expected, "Content mismatch for {rel}");
+    }
+
+    /// Assert that a path at `rel` exists.
+    pub fn assert_exists(&self, rel: &str) {
+        let path = self.root.path().join(rel);
+        assert!(path.exists(), "Expected path to exist: {rel}");
+    }
+
+    /// Assert that a path at `rel` does NOT exist.
+    pub fn assert_not_exists(&self, rel: &str) {
+        let path = self.root.path().join(rel);
+        assert!(!path.exists(), "Expected path to NOT exist: {rel}");
+    }
+
+    /// Return absolute path for a relative path within the test root.
+    pub fn abs(&self, rel: &str) -> String {
+        self.root.path().join(rel).to_string_lossy().into_owned()
+    }
+}
+
+// ── Progress helpers ─────────────────────────────────────────────────────────
+
+/// Return a progress callback that discards all events.
+#[allow(dead_code)]
+pub fn noop_progress() -> impl Fn(ProgressEvent) {
+    |_| {}
+}
+
+/// Return a progress callback that captures events, plus a handle to read them.
+#[allow(dead_code)]
+pub fn collect_progress() -> (Arc<Mutex<Vec<ProgressEvent>>>, impl Fn(ProgressEvent)) {
+    let events: Arc<Mutex<Vec<ProgressEvent>>> = Arc::new(Mutex::new(Vec::new()));
+    let events_clone = events.clone();
+    let callback = move |event: ProgressEvent| {
+        events_clone.lock().unwrap().push(event);
+    };
+    (events, callback)
 }

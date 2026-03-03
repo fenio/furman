@@ -200,7 +200,7 @@
         if (secret) secretKey = secret;
       } catch (err: unknown) {
         error(String(err));
-        statusState.setMessage('Failed to retrieve credentials from keychain');
+        appState.showAlert('Failed to retrieve credentials from keychain');
         return;
       }
     }
@@ -231,7 +231,7 @@
       }
     } catch (err: unknown) {
       error(String(err));
-      statusState.setMessage('Failed to connect: ' + String(err));
+      appState.showAlert('Failed to connect: ' + String(err));
     }
   }
 
@@ -261,7 +261,7 @@
         if (secret) password = secret;
       } catch (err: unknown) {
         error(String(err));
-        statusState.setMessage('Failed to retrieve credentials from keychain');
+        appState.showAlert('Failed to retrieve credentials from keychain');
         return;
       }
     }
@@ -278,7 +278,7 @@
       }
     } catch (err: unknown) {
       error(String(err));
-      statusState.setMessage('Failed to connect: ' + String(err));
+      appState.showAlert('Failed to connect: ' + String(err));
     }
   }
 

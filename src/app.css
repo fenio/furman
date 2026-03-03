@@ -40,6 +40,7 @@
   --scrollbar-thumb-hover: rgba(255,255,255,0.18);
   --progress-bar-bg: #2a2a2e;
   --progress-bar-fill: #6ea8fe;
+  --progress-bar-fill-alt: #61afef;
   --row-alt-bg: transparent;
 
   --error-color: #f44747;
@@ -97,6 +98,7 @@
   --scrollbar-thumb-hover: rgba(0,0,0,0.25);
   --progress-bar-bg: #d5d5d9;
   --progress-bar-fill: #0066cc;
+  --progress-bar-fill-alt: #2196f3;
   --row-alt-bg: transparent;
 
   --error-color: #d32f2f;

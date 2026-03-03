@@ -274,6 +274,12 @@
     return p.type.toUpperCase();
   }
 
+  let overlayEl: HTMLDivElement | undefined = $state(undefined);
+
+  $effect(() => {
+    if (overlayEl) overlayEl.focus();
+  });
+
   function handleKeydown(e: KeyboardEvent) {
     if (e.key === 'Escape') {
       e.preventDefault();
@@ -292,6 +298,7 @@
   role="dialog"
   aria-modal="true"
   tabindex="-1"
+  bind:this={overlayEl}
   onkeydown={handleKeydown}
 >
   <div class="dialog-box">

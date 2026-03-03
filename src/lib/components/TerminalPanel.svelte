@@ -5,7 +5,8 @@
   import XTerm from './XTerm.svelte';
 
   function addTerminal() {
-    const cwd = panels.active.path || '/';
+    // Only use panel path for local backend; remote backends have no local cwd
+    const cwd = panels.active.backend === 'local' ? (panels.active.path || '/') : '/';
     terminalState.addInstance(cwd);
   }
 
@@ -36,6 +37,8 @@
     // Only sync from the currently visible/active terminal
     if (terminalState.activeInstance?.id !== termId) return;
     if (terminalState.displayMode === 'none') return;
+    // Don't sync terminal cwd to non-local panels (S3, SFTP, archive)
+    if (panels.active.backend !== 'local') return;
 
     if (cwdTimer) clearTimeout(cwdTimer);
     cwdTimer = setTimeout(() => {
@@ -69,7 +72,7 @@
       <div class="terminal-slot" class:hidden={i !== terminalState.activeIndex}>
         <XTerm
           terminalId={instance.id}
-          cwd={instance.cwd || panels.active.path || '/'}
+          cwd={instance.cwd || (panels.active.backend === 'local' ? panels.active.path : '') || '/'}
           onExit={handleExit}
           onCwdChange={(cwd) => handleCwdChange(instance.id, cwd)}
         />

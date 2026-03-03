@@ -15,6 +15,10 @@ use s3::S3State;
 use sftp::SftpState;
 use std::collections::HashMap;
 use std::sync::Mutex;
+use tauri::menu::{
+    AboutMetadataBuilder, MenuBuilder, MenuItemBuilder, PredefinedMenuItem, SubmenuBuilder,
+};
+use tauri::Emitter;
 
 /// Ensure common tool directories are on PATH.
 ///
@@ -97,6 +101,119 @@ pub fn run() {
                     }
                 }
             }
+
+            // ── Native menu bar ──────────────────────────────────────────
+            let handle = app.handle();
+
+            // Furman (app) menu
+            let about_meta = AboutMetadataBuilder::new()
+                .name(Some("Furman"))
+                .version(Some(env!("CARGO_PKG_VERSION")))
+                .comments(Some("Dual-pane file manager"))
+                .license(Some("GPL-3.0-only"))
+                .authors(Some(vec!["Bartosz Fenski".into()]))
+                .build();
+            let furman_menu = SubmenuBuilder::new(handle, "Furman")
+                .item(&PredefinedMenuItem::about(handle, Some("About Furman"), Some(about_meta))?)
+                .separator()
+                .item(&MenuItemBuilder::with_id("preferences", "Preferences…").accelerator("CmdOrCtrl+,").build(handle)?)
+                .separator()
+                .item(&MenuItemBuilder::with_id("quit", "Quit Furman").accelerator("CmdOrCtrl+Q").build(handle)?)
+                .build()?;
+
+            // File menu
+            let file_menu = SubmenuBuilder::new(handle, "File")
+                .item(&MenuItemBuilder::with_id("mkdir", "New Folder").accelerator("CmdOrCtrl+N").build(handle)?)
+                .item(&MenuItemBuilder::with_id("rename", "Rename").accelerator("CmdOrCtrl+R").build(handle)?)
+                .item(&MenuItemBuilder::with_id("delete", "Delete").accelerator("CmdOrCtrl+Backspace").build(handle)?)
+                .separator()
+                .item(&MenuItemBuilder::with_id("view", "View").accelerator("CmdOrCtrl+3").build(handle)?)
+                .item(&MenuItemBuilder::with_id("edit", "Edit").accelerator("CmdOrCtrl+E").build(handle)?)
+                .separator()
+                .item(&MenuItemBuilder::with_id("search", "Search…").accelerator("CmdOrCtrl+F").build(handle)?)
+                .separator()
+                .item(&MenuItemBuilder::with_id("properties", "Properties").accelerator("CmdOrCtrl+I").build(handle)?)
+                .build()?;
+
+            // Edit menu
+            let edit_menu = SubmenuBuilder::new(handle, "Edit")
+                .item(&MenuItemBuilder::with_id("copy", "Copy to Panel").accelerator("CmdOrCtrl+C").build(handle)?)
+                .item(&MenuItemBuilder::with_id("move", "Move to Panel").accelerator("CmdOrCtrl+M").build(handle)?)
+                .separator()
+                .item(&MenuItemBuilder::with_id("clipboard-copy", "Clipboard Copy").accelerator("CmdOrCtrl+Shift+C").build(handle)?)
+                .item(&MenuItemBuilder::with_id("clipboard-cut", "Clipboard Cut").accelerator("CmdOrCtrl+Shift+X").build(handle)?)
+                .item(&MenuItemBuilder::with_id("clipboard-paste", "Clipboard Paste").accelerator("CmdOrCtrl+Shift+V").build(handle)?)
+                .separator()
+                .item(&MenuItemBuilder::with_id("select-all", "Select All").build(handle)?)
+                .item(&MenuItemBuilder::with_id("undo", "Undo").accelerator("CmdOrCtrl+Z").build(handle)?)
+                .build()?;
+
+            // View menu
+            let view_menu = SubmenuBuilder::new(handle, "View")
+                .item(&MenuItemBuilder::with_id("toggle-sidebar", "Toggle Sidebar").accelerator("CmdOrCtrl+B").build(handle)?)
+                .item(&MenuItemBuilder::with_id("toggle-layout", "Toggle Single/Dual").accelerator("CmdOrCtrl+P").build(handle)?)
+                .item(&MenuItemBuilder::with_id("toggle-preview", "Toggle Preview").accelerator("Alt+P").build(handle)?)
+                .item(&MenuItemBuilder::with_id("toggle-theme", "Toggle Theme").accelerator("CmdOrCtrl+Shift+L").build(handle)?)
+                .separator()
+                .item(&MenuItemBuilder::with_id("refresh", "Refresh").accelerator("CmdOrCtrl+Shift+R").build(handle)?)
+                .item(&MenuItemBuilder::with_id("swap-panels", "Swap Panels").build(handle)?)
+                .item(&MenuItemBuilder::with_id("equal-panels", "Equal Panels").build(handle)?)
+                .item(&MenuItemBuilder::with_id("compare", "Compare Dirs").accelerator("CmdOrCtrl+Shift+D").build(handle)?)
+                .build()?;
+
+            // Go menu
+            let go_menu = SubmenuBuilder::new(handle, "Go")
+                .item(&MenuItemBuilder::with_id("connect", "Connect…").accelerator("CmdOrCtrl+S").build(handle)?)
+                .separator()
+                .item(&MenuItemBuilder::with_id("go-home", "Go Home").build(handle)?)
+                .item(&MenuItemBuilder::with_id("go-parent", "Go Parent").accelerator("CmdOrCtrl+Up").build(handle)?)
+                .separator()
+                .item(&MenuItemBuilder::with_id("history-back", "History Back").accelerator("Alt+Left").build(handle)?)
+                .item(&MenuItemBuilder::with_id("history-forward", "History Forward").accelerator("Alt+Right").build(handle)?)
+                .build()?;
+
+            // Terminal menu
+            let terminal_menu = SubmenuBuilder::new(handle, "Terminal")
+                .item(&MenuItemBuilder::with_id("terminal-bottom", "Bottom Terminal").accelerator("CmdOrCtrl+T").build(handle)?)
+                .item(&MenuItemBuilder::with_id("terminal-inpane", "In-Pane Terminal").accelerator("CmdOrCtrl+Shift+T").build(handle)?)
+                .item(&MenuItemBuilder::with_id("terminal-quake", "Quake Console").accelerator("CmdOrCtrl+`").build(handle)?)
+                .build()?;
+
+            // Window menu
+            let window_menu = SubmenuBuilder::new(handle, "Window")
+                .item(&PredefinedMenuItem::minimize(handle, Some("Minimize"))?)
+                .separator()
+                .item(&MenuItemBuilder::with_id("new-tab", "New Tab").accelerator("CmdOrCtrl+Alt+T").build(handle)?)
+                .item(&MenuItemBuilder::with_id("close-tab", "Close Tab").accelerator("CmdOrCtrl+Alt+W").build(handle)?)
+                .separator()
+                .item(&MenuItemBuilder::with_id("toggle-transfers", "Toggle Transfers").accelerator("CmdOrCtrl+J").build(handle)?)
+                .item(&MenuItemBuilder::with_id("sync", "Sync…").accelerator("CmdOrCtrl+Y").build(handle)?)
+                .build()?;
+
+            // Help menu
+            let help_menu = SubmenuBuilder::new(handle, "Help")
+                .item(&MenuItemBuilder::with_id("shortcuts", "Keyboard Shortcuts").accelerator("CmdOrCtrl+/").build(handle)?)
+                .item(&MenuItemBuilder::with_id("github", "GitHub").build(handle)?)
+                .separator()
+                .item(&MenuItemBuilder::with_id("command-palette", "Command Palette").accelerator("CmdOrCtrl+Shift+P").build(handle)?)
+                .build()?;
+
+            let menu = MenuBuilder::new(handle)
+                .item(&furman_menu)
+                .item(&file_menu)
+                .item(&edit_menu)
+                .item(&view_menu)
+                .item(&go_menu)
+                .item(&terminal_menu)
+                .item(&window_menu)
+                .item(&help_menu)
+                .build()?;
+
+            app.set_menu(menu)?;
+
+            app.on_menu_event(move |app_handle, event| {
+                let _ = app_handle.emit("menu-action", event.id().as_ref());
+            });
 
             Ok(())
         })

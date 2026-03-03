@@ -48,6 +48,8 @@
             { keys: 'Shift + Arrow', desc: 'Extend selection' },
             { keys: 'Shift + Home / End', desc: 'Select to start / end' },
             { keys: 'Insert', desc: 'Toggle select and move down' },
+            { keys: '+', desc: 'Select by pattern (e.g. *.jpg)' },
+            { keys: '\u2212', desc: 'Deselect by pattern' },
             { keys: 'Type any letter', desc: 'Quick filter' },
             { keys: 'Esc', desc: 'Clear filter' },
             { keys: `${platform.mod}/`, desc: 'This cheatsheet' },
@@ -76,6 +78,7 @@
             { keys: `${platform.mod}${platform.shift}C`, desc: 'Copy to clipboard' },
             { keys: `${platform.mod}${platform.shift}X`, desc: 'Cut to clipboard' },
             { keys: `${platform.mod}${platform.shift}V`, desc: 'Paste from clipboard' },
+            { keys: `${platform.mod}F`, desc: 'Search files' },
             { keys: `F10 / ${platform.mod}Q`, desc: 'Quit' },
           ],
         },
@@ -114,27 +117,32 @@
             { keys: 'Esc', desc: 'Hide quake console' },
           ],
         },
-        {
-          title: 'Search',
-          shortcuts: [
-            { keys: `${platform.mod}F`, desc: 'Search files' },
-          ],
-        },
       ],
     },
     {
-      id: 's3',
-      label: 'S3',
+      id: 'connections',
+      label: 'Connections',
       groups: [
         {
-          title: 'S3 Operations',
+          title: 'General',
           shortcuts: [
-            { keys: `${platform.mod}S`, desc: 'Connect / disconnect S3' },
+            { keys: `${platform.mod}S`, desc: 'Connect / disconnect' },
+            { keys: `${platform.mod}D`, desc: 'Bookmark path' },
+          ],
+        },
+        {
+          title: 'S3',
+          shortcuts: [
             { keys: `${platform.mod}${platform.shift}I`, desc: 'Bucket properties' },
-            { keys: `${platform.mod}D`, desc: 'Bookmark S3 path' },
             { keys: `${platform.mod}U`, desc: 'Presigned URL' },
             { keys: `${platform.mod}K`, desc: 'Copy S3 URI' },
             { keys: `${platform.mod}L`, desc: 'Bulk storage class change' },
+          ],
+        },
+        {
+          title: 'SFTP',
+          shortcuts: [
+            { keys: `${platform.mod}D`, desc: 'Bookmark SFTP path' },
           ],
         },
       ],

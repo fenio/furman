@@ -27,6 +27,7 @@ import { dockerFile } from '@codemirror/legacy-modes/mode/dockerfile';
 import { ruby } from '@codemirror/legacy-modes/mode/ruby';
 import { kotlin } from '@codemirror/legacy-modes/mode/clike';
 import { swift } from '@codemirror/legacy-modes/mode/swift';
+import { hcl } from 'codemirror-lang-hcl';
 
 // Extension → language factory
 const EXT_TO_LANG: Record<string, () => LanguageSupport | Extension> = {
@@ -62,6 +63,9 @@ const EXT_TO_LANG: Record<string, () => LanguageSupport | Extension> = {
 	rb: () => StreamLanguage.define(ruby),
 	kt: () => StreamLanguage.define(kotlin),
 	swift: () => StreamLanguage.define(swift),
+	tf: () => hcl(),
+	tfvars: () => hcl(),
+	hcl: () => hcl(),
 };
 
 export function getLanguageExtension(filename: string): LanguageSupport | Extension | null {

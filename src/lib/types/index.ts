@@ -61,7 +61,6 @@ export type ModalType =
   | 'input'
   | 'viewer'
   | 'editor'
-  | 'menu'
   | 'volume-selector'
   | 'connection-manager'
   | 'overwrite'

@@ -1,6 +1,7 @@
 import { syncDiff, cancelSync } from '$lib/services/tauri';
 import type { SyncEvent, SyncEntry, PanelBackend } from '$lib/types';
 import { statusState } from '$lib/state/status.svelte';
+import { appState } from '$lib/state/app.svelte';
 
 export type ComparisonStatus = 'new' | 'modified' | 'deleted' | 'same';
 export type ComparisonFilter = 'all' | 'new' | 'modified' | 'deleted';
@@ -88,7 +89,7 @@ class ComparisonState {
     } catch (err: unknown) {
       const msg = String(err);
       if (!msg.includes('cancelled')) {
-        statusState.setMessage('Comparison failed: ' + msg);
+        appState.showAlert('Comparison failed: ' + msg);
       }
       this.scanning = false;
     }

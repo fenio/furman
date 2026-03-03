@@ -26,6 +26,11 @@
     return Math.round((t.progress.bytes_done / t.progress.bytes_total) * 100);
   }
 
+  function filesPercentage(t: Transfer): number {
+    if (!t.progress || t.progress.files_total === 0) return 0;
+    return Math.round((t.progress.files_done / t.progress.files_total) * 100);
+  }
+
   function isScanning(t: Transfer): boolean {
     return t.status === 'running' && (!t.progress || t.progress.bytes_total === 0);
   }
@@ -110,12 +115,22 @@
             {/if}
           </div>
         {:else}
-          <!-- Download/transfer phase -->
+          <!-- Bytes progress bar -->
           <div class="progress-row">
+            <span class="bar-label">Bytes</span>
             <div class="bar-container">
               <div class="bar-fill" style="width: {percentage(foreground)}%"></div>
             </div>
             <span class="pct">{percentage(foreground)}%</span>
+          </div>
+
+          <!-- Files progress bar -->
+          <div class="progress-row">
+            <span class="bar-label">Files</span>
+            <div class="bar-container">
+              <div class="bar-fill files" style="width: {filesPercentage(foreground)}%"></div>
+            </div>
+            <span class="pct">{filesPercentage(foreground)}%</span>
           </div>
 
           {#if foreground.progress}
@@ -134,8 +149,6 @@
                   {/if}
                 {/if}
               </span>
-            </div>
-            <div class="stats-row">
               <span>File {foreground.progress.files_done} of {foreground.progress.files_total}</span>
             </div>
           {/if}
@@ -255,6 +268,17 @@
     }
   }
 
+  .bar-label {
+    font-size: 11px;
+    color: var(--text-secondary);
+    min-width: 34px;
+    flex-shrink: 0;
+  }
+
+  .bar-fill.files {
+    background: var(--progress-bar-fill-alt, #61afef);
+  }
+
   .pct {
     font-size: 13px;
     font-weight: 600;
@@ -279,6 +303,8 @@
   }
 
   .stats-row {
+    display: flex;
+    justify-content: space-between;
     font-size: 11px;
     color: var(--text-secondary);
     margin-bottom: 2px;

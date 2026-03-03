@@ -31,7 +31,6 @@ class AppState {
   inputValue = $state('');
   inputCallback = $state<((value: string) => void) | null>(null);
   inputType = $state<'text' | 'password'>('text');
-  menuActive = $state(false);
   iconSize = $state(48);
   startupSound = $state(true);
   showHidden = $state(false);
@@ -308,7 +307,6 @@ class AppState {
     this.inputValue = '';
     this.inputCallback = null;
     this.inputType = 'text';
-    this.menuActive = false;
     this.connectCallback = null;
     this.connectionManagerInitialData = undefined;
     this.searchRoot = '';

@@ -394,7 +394,7 @@ pub fn extract_archive(
 
     let files_total = internal_paths.len() as u32;
 
-    let flags = Arc::new(crate::commands::file::OpFlags {
+    let flags = Arc::new(crate::local::OpFlags {
         cancel: AtomicBool::new(false),
         pause: AtomicBool::new(false),
     });

@@ -1105,19 +1105,19 @@
 
   .dialog-input {
     width: 100%;
-    background: var(--bg-primary);
+    background: var(--bg-input);
     color: var(--text-primary);
     border: 1px solid var(--border-subtle);
     border-radius: var(--radius-sm);
-    padding: 10px 12px;
+    padding: 7px 10px;
     font-family: inherit;
-    font-size: 14px;
+    font-size: 13px;
     box-sizing: border-box;
   }
 
   .dialog-input:focus {
+    outline: none;
     border-color: var(--border-active);
-    box-shadow: 0 0 0 1px rgba(110,168,254,0.3);
   }
 
   .creds-toggle {

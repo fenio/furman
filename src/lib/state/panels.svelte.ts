@@ -394,6 +394,28 @@ export class PanelData {
     this.selectedPaths = next;
   }
 
+  selectByPattern(pattern: string) {
+    const re = globToRegex(pattern);
+    const next = new SvelteSet(this.selectedPaths);
+    for (const entry of this.entries) {
+      if (entry.name !== '..' && re.test(entry.name)) {
+        next.add(entry.path);
+      }
+    }
+    this.selectedPaths = next;
+  }
+
+  deselectByPattern(pattern: string) {
+    const re = globToRegex(pattern);
+    const next = new SvelteSet(this.selectedPaths);
+    for (const entry of this.entries) {
+      if (re.test(entry.name)) {
+        next.delete(entry.path);
+      }
+    }
+    this.selectedPaths = next;
+  }
+
   selectRange(from: number, to: number) {
     const next = new SvelteSet<string>();
     const start = Math.min(from, to);
