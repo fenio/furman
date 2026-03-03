@@ -38,10 +38,16 @@
 
 ## Installation
 
-### Homebrew
+### Homebrew (macOS)
 
 ```sh
 brew install fenio/tap/furman
+```
+
+### Homebrew (Linux)
+
+```sh
+brew install fenio/tap/furman-bin
 ```
 
 ### Download
