@@ -82,3 +82,14 @@ export async function sftpPutText(id: string, path: string, content: string): Pr
 export async function sftpHead(id: string, path: string): Promise<FileProperties> {
   return await invoke<FileProperties>('sftp_head', { id, path });
 }
+
+export async function sftpBatchChmod(
+  id: string,
+  paths: string[],
+  mode: number,
+  onProgress: (e: ProgressEvent) => void,
+): Promise<string[]> {
+  const channel = new Channel<ProgressEvent>();
+  channel.onmessage = onProgress;
+  return await invoke<string[]>('sftp_batch_chmod', { id, paths, mode, channel });
+}

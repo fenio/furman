@@ -1,10 +1,11 @@
-use crate::models::{FileProperties, FmError};
+use crate::models::{FileProperties, FmError, ProgressEvent};
 use nix::unistd::{Gid, Group, Uid, User};
 use std::fs;
 use std::io::{Read, Seek, SeekFrom};
 use std::os::unix::fs::{MetadataExt, PermissionsExt};
 use std::path::PathBuf;
-use std::time::UNIX_EPOCH;
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use tauri::ipc::Channel;
 
 /// Read an entire file as UTF-8 text.
 #[tauri::command]
@@ -353,4 +354,106 @@ pub fn get_file_properties(path: String) -> Result<FileProperties, FmError> {
         group,
         kind,
     })
+}
+
+/// Batch chmod — set Unix permissions on multiple files.
+///
+/// Returns a list of paths that failed.  Progress is reported per file via
+/// the Tauri channel.
+#[tauri::command]
+pub fn batch_chmod(
+    paths: Vec<String>,
+    mode: u32,
+    channel: Channel<ProgressEvent>,
+) -> Result<Vec<String>, FmError> {
+    let total = paths.len();
+    let mut failed: Vec<String> = Vec::new();
+
+    for (i, path) in paths.iter().enumerate() {
+        let p = PathBuf::from(path);
+        let perms = fs::Permissions::from_mode(mode);
+        if let Err(e) = fs::set_permissions(&p, perms) {
+            log::warn!("batch_chmod failed for {path}: {e}");
+            failed.push(path.clone());
+        }
+        let _ = channel.send(ProgressEvent {
+            id: String::new(),
+            bytes_done: 0,
+            bytes_total: 0,
+            current_file: path.clone(),
+            files_done: (i + 1) as u32,
+            files_total: total as u32,
+        });
+    }
+
+    Ok(failed)
+}
+
+/// Batch touch — set modified and/or accessed times on multiple files.
+///
+/// Times are provided as milliseconds since the Unix epoch.  If a time is
+/// `None` the corresponding timestamp is left unchanged.  Returns a list
+/// of paths that failed.
+#[tauri::command]
+pub fn batch_touch(
+    paths: Vec<String>,
+    modified: Option<i64>,
+    accessed: Option<i64>,
+    channel: Channel<ProgressEvent>,
+) -> Result<Vec<String>, FmError> {
+    let total = paths.len();
+    let mut failed: Vec<String> = Vec::new();
+
+    let mtime = modified.map(|ms| {
+        if ms >= 0 {
+            UNIX_EPOCH + Duration::from_millis(ms as u64)
+        } else {
+            UNIX_EPOCH - Duration::from_millis((-ms) as u64)
+        }
+    });
+    let atime = accessed.map(|ms| {
+        if ms >= 0 {
+            UNIX_EPOCH + Duration::from_millis(ms as u64)
+        } else {
+            UNIX_EPOCH - Duration::from_millis((-ms) as u64)
+        }
+    });
+
+    for (i, path) in paths.iter().enumerate() {
+        let p = PathBuf::from(path);
+        if let Err(e) = set_file_times(&p, mtime, atime) {
+            log::warn!("batch_touch failed for {path}: {e}");
+            failed.push(path.clone());
+        }
+        let _ = channel.send(ProgressEvent {
+            id: String::new(),
+            bytes_done: 0,
+            bytes_total: 0,
+            current_file: path.clone(),
+            files_done: (i + 1) as u32,
+            files_total: total as u32,
+        });
+    }
+
+    Ok(failed)
+}
+
+/// Helper: set file modified and/or accessed time using `File::set_times`
+/// (stable since Rust 1.75).
+fn set_file_times(
+    path: &PathBuf,
+    mtime: Option<SystemTime>,
+    atime: Option<SystemTime>,
+) -> std::io::Result<()> {
+    use std::fs::FileTimes;
+
+    let file = fs::File::options().write(true).open(path)?;
+    let mut times = FileTimes::new();
+    if let Some(m) = mtime {
+        times = times.set_modified(m);
+    }
+    if let Some(a) = atime {
+        times = times.set_accessed(a);
+    }
+    file.set_times(times)
 }

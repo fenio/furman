@@ -29,6 +29,7 @@
   import SyncDialog from '$lib/components/SyncDialog.svelte';
   import ShortcutsDialog from '$lib/components/ShortcutsDialog.svelte';
   import S3BatchEditDialog from '$lib/components/S3BatchEditDialog.svelte';
+  import LocalBatchEditDialog from '$lib/components/LocalBatchEditDialog.svelte';
   import MultiRenameDialog from '$lib/components/MultiRenameDialog.svelte';
   import TransferProgressDialog from '$lib/components/TransferProgressDialog.svelte';
   import CommandPalette from '$lib/components/CommandPalette.svelte';
@@ -373,6 +374,18 @@
       s3ConnectionId={appState.batchEditS3ConnectionId}
       capabilities={appState.batchEditCapabilities}
       onClose={() => appState.closeModal()}
+    />
+  {/if}
+
+  {#if appState.modal === 'local-batch-edit'}
+    <LocalBatchEditDialog
+      paths={appState.localBatchEditPaths}
+      backend={appState.localBatchEditBackend}
+      sftpConnectionId={appState.localBatchEditSftpConnectionId}
+      onClose={() => {
+        appState.closeModal();
+        panels.active.loadDirectory(panels.active.path);
+      }}
     />
   {/if}
 

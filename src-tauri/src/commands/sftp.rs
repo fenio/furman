@@ -1,7 +1,9 @@
-use crate::commands::file::{FileOpState, OpFlags};
+use crate::commands::file::FileOpState;
+use crate::local::OpFlags;
 use crate::models::{DirListing, FmError, ProgressEvent, TransferCheckpoint};
 use crate::sftp::helpers::strip_sftp_prefix;
 use crate::sftp::{self, sftperr, SftpService, SftpState};
+use russh_sftp::protocol::FileAttributes;
 use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 use tauri::ipc::Channel;
@@ -285,4 +287,43 @@ pub async fn sftp_head(
         }
         .to_string(),
     })
+}
+
+/// Batch chmod over SFTP — set permissions on multiple remote files.
+///
+/// Uses `SftpSession::set_metadata()` with `FileAttributes { permissions }`.
+/// Returns a list of paths that failed.
+#[tauri::command]
+pub async fn sftp_batch_chmod(
+    state: State<'_, SftpState>,
+    id: String,
+    paths: Vec<String>,
+    mode: u32,
+    channel: Channel<ProgressEvent>,
+) -> Result<Vec<String>, FmError> {
+    let svc = get_service(&state, &id)?;
+    let total = paths.len();
+    let mut failed: Vec<String> = Vec::new();
+
+    for (i, path) in paths.iter().enumerate() {
+        let remote_path = strip_sftp_prefix(path);
+        let attrs = FileAttributes {
+            permissions: Some(mode),
+            ..Default::default()
+        };
+        if let Err(e) = svc.session.set_metadata(remote_path, attrs).await {
+            log::warn!("sftp_batch_chmod failed for {path}: {e}");
+            failed.push(path.clone());
+        }
+        let _ = channel.send(ProgressEvent {
+            id: String::new(),
+            bytes_done: 0,
+            bytes_total: 0,
+            current_file: path.clone(),
+            files_done: (i + 1) as u32,
+            files_total: total as u32,
+        });
+    }
+
+    Ok(failed)
 }

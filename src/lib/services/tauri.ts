@@ -239,3 +239,24 @@ export async function gitCheckout(path: string, branch: string): Promise<string>
 export async function getLogPath(): Promise<string> {
   return await invoke<string>('get_log_path');
 }
+
+export async function batchChmod(
+  paths: string[],
+  mode: number,
+  onProgress: (e: ProgressEvent) => void,
+): Promise<string[]> {
+  const channel = new Channel<ProgressEvent>();
+  channel.onmessage = onProgress;
+  return await invoke<string[]>('batch_chmod', { paths, mode, channel });
+}
+
+export async function batchTouch(
+  paths: string[],
+  modified: number | null,
+  accessed: number | null,
+  onProgress: (e: ProgressEvent) => void,
+): Promise<string[]> {
+  const channel = new Channel<ProgressEvent>();
+  channel.onmessage = onProgress;
+  return await invoke<string[]>('batch_touch', { paths, modified, accessed, channel });
+}

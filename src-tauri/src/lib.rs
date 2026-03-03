@@ -1,5 +1,6 @@
 pub mod cloudfront;
 mod commands;
+pub mod local;
 pub mod models;
 pub mod oidc;
 pub mod s3;
@@ -124,6 +125,8 @@ pub fn run() {
             commands::metadata::open_in_editor,
             commands::metadata::get_file_properties,
             commands::metadata::get_log_path,
+            commands::metadata::batch_chmod,
+            commands::metadata::batch_touch,
             // volume commands
             commands::volumes::list_volumes,
             // watcher commands
@@ -234,6 +237,7 @@ pub fn run() {
             commands::sftp::sftp_download_temp,
             commands::sftp::sftp_put_text,
             commands::sftp::sftp_head,
+            commands::sftp::sftp_batch_chmod,
             // cloudfront commands
             commands::cloudfront::cf_list_distributions,
             commands::cloudfront::cf_get_distribution,

@@ -70,6 +70,9 @@ class AppState {
   multiRenameBackend = $state<PanelBackend>('local');
   multiRenameS3ConnectionId = $state('');
   multiRenameSftpConnectionId = $state('');
+  localBatchEditPaths = $state<string[]>([]);
+  localBatchEditBackend = $state<'local' | 'sftp'>('local');
+  localBatchEditSftpConnectionId = $state('');
   visibleColumns = $state<ColumnId[]>([...DEFAULT_VISIBLE_COLUMNS]);
 
   setVisibleColumns(cols: ColumnId[]) {
@@ -201,6 +204,13 @@ class AppState {
     this.modal = 'batch-edit';
   }
 
+  showLocalBatchEdit(paths: string[], backend: 'local' | 'sftp', sftpConnectionId?: string) {
+    this.localBatchEditPaths = paths;
+    this.localBatchEditBackend = backend;
+    this.localBatchEditSftpConnectionId = sftpConnectionId ?? '';
+    this.modal = 'local-batch-edit';
+  }
+
   showMultiRename(entries: FileEntry[], backend: PanelBackend, opts?: { s3ConnectionId?: string; sftpConnectionId?: string }) {
     this.multiRenameEntries = entries;
     this.multiRenameBackend = backend;
@@ -321,6 +331,9 @@ class AppState {
     this.multiRenameBackend = 'local';
     this.multiRenameS3ConnectionId = '';
     this.multiRenameSftpConnectionId = '';
+    this.localBatchEditPaths = [];
+    this.localBatchEditBackend = 'local';
+    this.localBatchEditSftpConnectionId = '';
     this.syncSourceBackend = 'local';
     this.syncSourcePath = '';
     this.syncSourceS3Id = '';
