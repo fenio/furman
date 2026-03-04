@@ -89,7 +89,7 @@ jobs:
       #   APPLE_TEAM_ID            - Your Apple Developer Team ID
 
       - name: Build MCP server binary
-        run: cargo build --release --bin furman-mcp --target ${{ matrix.target }}
+        run: cargo build --release --bin furman-mcp --features mcp --target ${{ matrix.target }}
         working-directory: src-tauri
 
       - name: Build Tauri app
