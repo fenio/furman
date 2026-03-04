@@ -387,11 +387,14 @@ impl SftpTestContext {
             Some(&config.pass),
             None,
             None,
+            None,
+            None,
+            None,
         )
         .await
         .expect("Failed to connect to SFTP test server");
 
-        let service = SftpService::new(conn.session.clone(), config.host.clone(), config.port);
+        let service = SftpService::new(conn.session.clone(), config.host.clone(), config.port, conn.operation_timeout_secs);
 
         // Use the resolved home dir (accounts for chroot jails like atmoz/sftp)
         let home = conn.home_dir.trim_end_matches('/');
