@@ -46,6 +46,16 @@ Press **Cmd+D** while browsing an SFTP connection to bookmark the current path. 
 
 Press **Cmd+I** on a remote file to view its properties (size, modified date, permissions, owner, group). Click the SFTP icon in the panel header to view connection info (host, port, username, protocol).
 
+## Connection Tuning
+
+SFTP connection timeouts are configurable in [Preferences](preferences.md) (Network tab, SFTP section):
+
+- **Inactivity Timeout** — disconnect after a period of no activity (default 5 min)
+- **Keepalive Interval** — send keepalive packets to prevent idle disconnects (default 30s)
+- **Operation Timeout** — max wait time for a single SFTP operation (default 60s)
+
+Changed settings apply to new connections only.
+
 ## Keyboard Shortcuts
 
 | Shortcut | Action |

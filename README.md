@@ -35,6 +35,7 @@
 - **View, edit, search** — built-in viewer, editor, and file/content search
 - **Drag & drop, quick filter, auto-refresh** — everything you'd expect from a modern file manager
 - **Dark & light themes** — follows your OS, or toggle with a shortcut
+- **[Preferences](docs/preferences.md)** — 20+ settings across General, Appearance, Network, and Terminal tabs
 
 ## Installation
 
@@ -122,6 +123,7 @@ A few highlights — see the [full reference](docs/keyboard-shortcuts.md) for ev
 | Cmd+Shift+P | Command palette |
 | Cmd+Shift+D | Compare directories |
 | Cmd+F | Search |
+| Cmd+, | Preferences |
 | Cmd+/ | Shortcut cheatsheet (in-app) |
 
 ## License

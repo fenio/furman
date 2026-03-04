@@ -98,6 +98,12 @@ Complete keyboard shortcut reference for Furman. On Linux, replace Cmd with Ctrl
 | Cmd+L | Bulk storage class change |
 | Cmd+Shift+I | Bucket properties |
 
+## Preferences
+
+| Shortcut | Action |
+|----------|--------|
+| Cmd+, | Open Preferences |
+
 ## Context Menu
 
 Right-click any file or folder to access common operations (Open, View, Edit, Copy, Move, Rename, Delete, New Folder, Properties) without memorizing shortcuts. Right-click empty space for a reduced menu (New Folder, Properties).
