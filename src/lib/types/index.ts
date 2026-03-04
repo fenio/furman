@@ -424,6 +424,46 @@ export interface CfInvalidation {
   paths: string[];
 }
 
+// ── Model Inspector Types ────────────────────────────────────────────────────
+
+export interface TensorInfo {
+  name: string;
+  dtype: string;
+  shape: number[];
+  size_bytes: number;
+  param_count: number;
+}
+
+export interface ModelMetadata {
+  format: string;
+  file_size: number;
+  model_name: string | null;
+  architecture: string | null;
+  description: string | null;
+  quantization: string | null;
+  tensor_count: number;
+  total_parameters: number;
+  total_tensor_bytes: number;
+  // GGUF-specific
+  context_length: number | null;
+  embedding_size: number | null;
+  block_count: number | null;
+  head_count: number | null;
+  head_count_kv: number | null;
+  vocab_size: number | null;
+  gguf_version: number | null;
+  byte_order: string | null;
+  // ONNX-specific
+  ir_version: number | null;
+  producer_name: string | null;
+  producer_version: string | null;
+  opset_versions: string[];
+  // Common
+  metadata: Record<string, string>;
+  tensors: TensorInfo[];
+  tensors_truncated: boolean;
+}
+
 export type PanelBackend = 'local' | 's3' | 'sftp' | 'archive';
 
 export interface ArchiveInfo {

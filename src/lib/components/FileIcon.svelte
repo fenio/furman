@@ -4,6 +4,7 @@
   const audioExtensions = new Set(['mp3', 'wav', 'flac', 'aac', 'ogg', 'm4a']);
   const videoExtensions = new Set(['mp4', 'mkv', 'avi', 'mov', 'webm', 'wmv']);
   const codeExtensions = new Set(['js', 'ts', 'py', 'rs', 'go', 'c', 'cpp', 'h', 'java', 'rb', 'swift', 'kt', 'svelte', 'vue', 'jsx', 'tsx']);
+  const modelExtensions = new Set(['safetensors', 'gguf', 'onnx']);
 </script>
 
 <script lang="ts">
@@ -39,6 +40,7 @@
     if (entry.is_dir) return '\uD83D\uDCC1';
     if (entry.is_symlink) return '\uD83D\uDD17';
     if (archiveExtensions.has(ext)) return '\uD83D\uDCE6';
+    if (modelExtensions.has(ext)) return '\uD83E\uDDE0';
     if (isImage) return '\uD83D\uDDBC';
     if (audioExtensions.has(ext)) return '\uD83C\uDFB5';
     if (videoExtensions.has(ext)) return '\uD83C\uDFAC';

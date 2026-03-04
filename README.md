@@ -31,6 +31,7 @@
 - **[Command palette](docs/command-palette.md)** — Cmd+Shift+P to find and run any command
 - **[Undo](docs/undo.md)** — Cmd+Z to undo delete and rename operations
 - **[Directory comparison](docs/directory-comparison.md)** — Cmd+Shift+D to diff left and right panels
+- **AI model inspector** — instant metadata for SafeTensors, GGUF, and ONNX files (architecture, parameters, quantization, tensors) — header-only, works on 70 GB+ models
 - **Archive browsing** — navigate inside zip, rar, and 7z as if they were directories
 - **View, edit, search** — built-in viewer, editor, and file/content search
 - **Drag & drop, quick filter, auto-refresh** — everything you'd expect from a modern file manager

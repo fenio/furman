@@ -1,5 +1,5 @@
 import { invoke, Channel } from '@tauri-apps/api/core';
-import type { DirListing, VolumeInfo, ProgressEvent, SearchEvent, SearchMode, SyncEvent, GitRepoInfo, FileProperties, TransferCheckpoint } from '$lib/types';
+import type { DirListing, VolumeInfo, ProgressEvent, SearchEvent, SearchMode, SyncEvent, GitRepoInfo, FileProperties, TransferCheckpoint, ModelMetadata } from '$lib/types';
 
 export async function listArchive(
   archivePath: string,
@@ -248,6 +248,10 @@ export async function batchChmod(
   const channel = new Channel<ProgressEvent>();
   channel.onmessage = onProgress;
   return await invoke<string[]>('batch_chmod', { paths, mode, channel });
+}
+
+export async function inspectModel(path: string): Promise<ModelMetadata> {
+  return await invoke<ModelMetadata>('inspect_model', { path });
 }
 
 export async function batchTouch(
