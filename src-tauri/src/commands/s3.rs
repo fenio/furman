@@ -953,6 +953,19 @@ pub async fn s3_set_bandwidth_limit(bytes_per_sec: u64) -> Result<(), FmError> {
 }
 
 #[tauri::command]
+pub async fn s3_set_multipart_config(
+    threshold: u64,
+    part_size: u64,
+    concurrent_parts: u64,
+) -> Result<(), FmError> {
+    use crate::s3::helpers::{MULTIPART_THRESHOLD_BYTES, PART_SIZE_BYTES, CONCURRENT_PARTS};
+    MULTIPART_THRESHOLD_BYTES.store(threshold, std::sync::atomic::Ordering::Relaxed);
+    PART_SIZE_BYTES.store(part_size, std::sync::atomic::Ordering::Relaxed);
+    CONCURRENT_PARTS.store(concurrent_parts, std::sync::atomic::Ordering::Relaxed);
+    Ok(())
+}
+
+#[tauri::command]
 pub async fn s3_list_kms_keys(
     state: State<'_, S3State>,
     id: String,

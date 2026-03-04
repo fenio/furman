@@ -18,7 +18,7 @@ use crate::models::{
     SearchEvent, SearchResult, TransferCheckpoint,
 };
 
-use super::helpers::{s3err, s3_path, strip_s3_prefix, list_all_objects, throttle, collect_local_files, MULTIPART_THRESHOLD, upload_file_multipart, copy_single_or_multipart, PREVIEW_MAX_SIZE, COPY_MULTIPART_THRESHOLD};
+use super::helpers::{s3err, s3_path, strip_s3_prefix, list_all_objects, throttle, collect_local_files, get_multipart_threshold, upload_file_multipart, copy_single_or_multipart, PREVIEW_MAX_SIZE, COPY_MULTIPART_THRESHOLD};
 
 use super::crypto::EncryptionConfig;
 
@@ -515,7 +515,7 @@ impl S3Service {
                 .map(|n| n.to_string_lossy().to_string())
                 .unwrap_or_default();
 
-            if file_size > MULTIPART_THRESHOLD {
+            if file_size > get_multipart_threshold() {
                 // Large file: multipart upload with concurrent parts
                 let atomic_bytes_done = Arc::new(AtomicU64::new(bytes_done));
                 let cancel_arc = Arc::new(AtomicBool::new(false));
@@ -672,7 +672,7 @@ impl S3Service {
 
             let enc_size = std::fs::metadata(&enc_path).map(|m| m.len()).unwrap_or(0);
 
-            let upload_result = if enc_size > MULTIPART_THRESHOLD {
+            let upload_result = if enc_size > get_multipart_threshold() {
                 let atomic_bytes_done = Arc::new(AtomicU64::new(bytes_done));
                 let cancel_arc = Arc::new(AtomicBool::new(false));
                 let op_id_c = op_id.to_string();
@@ -897,6 +897,7 @@ impl S3Service {
         let mut to_delete: Vec<String> = Vec::new();
         for raw_key in keys {
             let key = strip_s3_prefix(raw_key, &self.bucket);
+            log::info!("delete_objects: raw={raw_key} stripped={key}");
             if key.ends_with('/') {
                 let children = list_all_objects(&self.client, &self.bucket, &key).await?;
                 for (k, _, _) in children {
@@ -906,6 +907,10 @@ impl S3Service {
                 to_delete.push(key);
             }
         }
+        if to_delete.is_empty() {
+            return Err(s3err("No objects to delete"));
+        }
+        log::info!("delete_objects: batch={to_delete:?}");
 
         // Batch delete (max 1000 per request)
         for chunk in to_delete.chunks(1000) {
@@ -924,13 +929,35 @@ impl S3Service {
                 .build()
                 .map_err(|e| s3err(e.to_string()))?;
 
-            self.client
+            let resp = self
+                .client
                 .delete_objects()
                 .bucket(&self.bucket)
                 .delete(delete)
                 .send()
                 .await
                 .map_err(|e| s3err(e.to_string()))?;
+
+            let deleted = resp.deleted();
+            let errors = resp.errors();
+            log::info!(
+                "delete_objects response: deleted={} errors={}",
+                deleted.len(),
+                errors.len()
+            );
+            if !errors.is_empty() {
+                let msgs: Vec<String> = errors
+                    .iter()
+                    .map(|e| {
+                        format!(
+                            "{}: {}",
+                            e.key().unwrap_or("?"),
+                            e.message().unwrap_or("unknown error")
+                        )
+                    })
+                    .collect();
+                return Err(s3err(format!("Failed to delete: {}", msgs.join("; "))));
+            }
         }
 
         Ok(())
@@ -1109,13 +1136,32 @@ impl S3Service {
                 .build()
                 .map_err(|e| s3err(e.to_string()))?;
 
-            self.client
+            let resp = self
+                .client
                 .delete_objects()
                 .bucket(&self.bucket)
                 .delete(delete)
                 .send()
                 .await
                 .map_err(|e| s3err(e.to_string()))?;
+
+            let errors = resp.errors();
+            if !errors.is_empty() {
+                let msgs: Vec<String> = errors
+                    .iter()
+                    .map(|e| {
+                        format!(
+                            "{}: {}",
+                            e.key().unwrap_or("?"),
+                            e.message().unwrap_or("unknown error")
+                        )
+                    })
+                    .collect();
+                return Err(s3err(format!(
+                    "Failed to delete originals: {}",
+                    msgs.join("; ")
+                )));
+            }
         }
 
         Ok(())

@@ -87,6 +87,20 @@ export function withConflictCheck(
       execute(sources);
       return;
     }
+    if (appState.confirmOverwrite === 'always') {
+      execute(sources);
+      return;
+    }
+    if (appState.confirmOverwrite === 'never') {
+      const finalSources = sources.filter((s) => !conflicts.includes(s));
+      if (finalSources.length === 0) {
+        statusState.setMessage('All files skipped');
+        return;
+      }
+      execute(finalSources);
+      return;
+    }
+    // 'ask' — show dialog (current behavior)
     const conflictNames = conflicts.map((s) => s.split('/').pop() ?? s);
     appState.showOverwrite(conflictNames, (action) => {
       const finalSources = action === 'skip'

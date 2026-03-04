@@ -10,7 +10,7 @@
 
   let { onClose }: Props = $props();
 
-  let activeTab = $state<'general' | 's3'>('general');
+  let activeTab = $state<'general' | 'appearance' | 'network' | 'terminal'>('general');
 
   const sizes = [
     { label: 'Small', value: 32 },
@@ -50,41 +50,13 @@
     <div class="dialog-title">Preferences</div>
     <div class="tab-bar">
       <button class="tab-btn" class:active={activeTab === 'general'} onclick={() => { activeTab = 'general'; }}>General</button>
-      <button class="tab-btn" class:active={activeTab === 's3'} onclick={() => { activeTab = 's3'; }}>S3</button>
+      <button class="tab-btn" class:active={activeTab === 'appearance'} onclick={() => { activeTab = 'appearance'; }}>Appearance</button>
+      <button class="tab-btn" class:active={activeTab === 'network'} onclick={() => { activeTab = 'network'; }}>Network</button>
+      <button class="tab-btn" class:active={activeTab === 'terminal'} onclick={() => { activeTab = 'terminal'; }}>Terminal</button>
     </div>
     <div class="dialog-body">
 
       {#if activeTab === 'general'}
-        <div class="section-title">Appearance</div>
-
-        <div class="pref-row">
-          <span class="pref-label">Theme</span>
-          <button class="toggle-btn" onclick={() => appState.toggleTheme()}>
-            {appState.theme === 'dark' ? 'Dark' : 'Light'}
-          </button>
-        </div>
-
-        <div class="pref-row column">
-          <span class="pref-label">Icon Size</span>
-          <div class="radio-group">
-            {#each sizes as s (s.value)}
-              <label class="radio-label" class:active={appState.iconSize === s.value}>
-                <input
-                  type="radio"
-                  name="iconSize"
-                  value={s.value}
-                  checked={appState.iconSize === s.value}
-                  onchange={() => appState.setIconSize(s.value)}
-                />
-                {s.label}
-                <span class="size-hint">{s.value}px</span>
-              </label>
-            {/each}
-          </div>
-        </div>
-
-        <div class="section-title">Behavior</div>
-
         <label class="pref-row checkbox">
           <input
             type="checkbox"
@@ -112,12 +84,38 @@
           Startup Sound
         </label>
 
+        <label class="pref-row checkbox">
+          <input
+            type="checkbox"
+            checked={appState.quickFilterEnabled}
+            onchange={() => appState.setQuickFilterEnabled(!appState.quickFilterEnabled)}
+          />
+          Quick Filter on Keystroke
+        </label>
+
+        <label class="pref-row checkbox">
+          <input
+            type="checkbox"
+            checked={appState.imageTooltips}
+            onchange={() => appState.setImageTooltips(!appState.imageTooltips)}
+          />
+          Image Tooltips on Hover
+        </label>
+
+        <div class="pref-row">
+          <span class="pref-label">Confirm Before Overwrite</span>
+          <select class="pref-select" value={appState.confirmOverwrite} onchange={(e) => appState.setConfirmOverwrite((e.target as HTMLSelectElement).value as any)}>
+            <option value="ask">Ask</option>
+            <option value="always">Always Overwrite</option>
+            <option value="never">Never Overwrite</option>
+          </select>
+        </div>
+
         <div class="pref-row column">
           <span class="pref-label">External Editor</span>
           <input
             class="pref-input"
             type="text"
-           
             placeholder="e.g. code, vim, subl"
             value={appState.externalEditor}
             oninput={(e) => appState.setExternalEditor((e.target as HTMLInputElement).value)}
@@ -134,8 +132,64 @@
         <span class="pref-hint">Share log files when reporting issues</span>
       {/if}
 
-      {#if activeTab === 's3'}
-        <div class="section-title">Transfers</div>
+      {#if activeTab === 'appearance'}
+        <div class="pref-row">
+          <span class="pref-label">Theme</span>
+          <button class="toggle-btn" onclick={() => appState.toggleTheme()}>
+            {appState.theme === 'dark' ? 'Dark' : 'Light'}
+          </button>
+        </div>
+
+        <div class="pref-row">
+          <span class="pref-label">Default View Mode</span>
+          <select class="pref-select" value={appState.defaultViewMode} onchange={(e) => appState.setDefaultViewMode((e.target as HTMLSelectElement).value as any)}>
+            <option value="list">List</option>
+            <option value="icon">Icon</option>
+            <option value="column">Column</option>
+          </select>
+        </div>
+
+        <div class="pref-row">
+          <span class="pref-label">Date Format</span>
+          <select class="pref-select" value={appState.dateFormat} onchange={(e) => appState.setDateFormat((e.target as HTMLSelectElement).value as any)}>
+            <option value="iso">ISO (2024-01-15 14:30)</option>
+            <option value="eu">EU (15/01/2024 14:30)</option>
+            <option value="us">US (01/15/2024 2:30 PM)</option>
+            <option value="relative">Relative (2 hours ago)</option>
+          </select>
+        </div>
+
+        <div class="pref-row">
+          <span class="pref-label">Row Height</span>
+          <select class="pref-select" value={appState.rowHeight} onchange={(e) => appState.setRowHeight((e.target as HTMLSelectElement).value as any)}>
+            <option value="compact">Compact</option>
+            <option value="normal">Normal</option>
+            <option value="comfortable">Comfortable</option>
+          </select>
+        </div>
+
+        <div class="pref-row column">
+          <span class="pref-label">Icon Size</span>
+          <div class="radio-group">
+            {#each sizes as s (s.value)}
+              <label class="radio-label" class:active={appState.iconSize === s.value}>
+                <input
+                  type="radio"
+                  name="iconSize"
+                  value={s.value}
+                  checked={appState.iconSize === s.value}
+                  onchange={() => appState.setIconSize(s.value)}
+                />
+                {s.label}
+                <span class="size-hint">{s.value}px</span>
+              </label>
+            {/each}
+          </div>
+        </div>
+      {/if}
+
+      {#if activeTab === 'network'}
+        <div class="section-title">S3</div>
 
         <div class="pref-row">
           <span class="pref-label">Concurrent Transfers</span>
@@ -148,9 +202,9 @@
           </select>
         </div>
 
-        <div class="pref-row column">
+        <div class="pref-row">
           <span class="pref-label">Bandwidth Limit</span>
-          <select class="pref-select full-width" value={transfersState.bandwidthLimit} onchange={(e) => appState.setBandwidthLimit(Number((e.target as HTMLSelectElement).value))}>
+          <select class="pref-select" value={transfersState.bandwidthLimit} onchange={(e) => appState.setBandwidthLimit(Number((e.target as HTMLSelectElement).value))}>
             <option value={0}>Unlimited</option>
             <option value={131072}>128 KB/s</option>
             <option value={524288}>512 KB/s</option>
@@ -162,7 +216,35 @@
           </select>
         </div>
 
-        <div class="section-title">Security</div>
+        <div class="pref-row">
+          <span class="pref-label">Multipart Threshold</span>
+          <select class="pref-select" value={appState.multipartThreshold} onchange={(e) => appState.setMultipartThreshold(Number((e.target as HTMLSelectElement).value))}>
+            <option value={8388608}>8 MB</option>
+            <option value={16777216}>16 MB</option>
+            <option value={33554432}>32 MB</option>
+            <option value={67108864}>64 MB</option>
+          </select>
+        </div>
+
+        <div class="pref-row">
+          <span class="pref-label">Multipart Part Size</span>
+          <select class="pref-select" value={appState.multipartPartSize} onchange={(e) => appState.setMultipartPartSize(Number((e.target as HTMLSelectElement).value))}>
+            <option value={8388608}>8 MB</option>
+            <option value={16777216}>16 MB</option>
+            <option value={33554432}>32 MB</option>
+            <option value={67108864}>64 MB</option>
+          </select>
+        </div>
+
+        <div class="pref-row">
+          <span class="pref-label">Concurrent Parts</span>
+          <select class="pref-select" value={appState.concurrentParts} onchange={(e) => appState.setConcurrentParts(Number((e.target as HTMLSelectElement).value))}>
+            <option value={2}>2</option>
+            <option value={4}>4</option>
+            <option value={8}>8</option>
+            <option value={12}>12</option>
+          </select>
+        </div>
 
         <label class="pref-row checkbox">
           <input
@@ -173,6 +255,73 @@
           Secure Temp Cleanup
         </label>
         <span class="pref-hint">Overwrite encrypted temp files with zeros before deleting</span>
+
+        <div class="section-title">SFTP</div>
+
+        <div class="pref-row">
+          <span class="pref-label">Inactivity Timeout</span>
+          <select class="pref-select" value={appState.sftpInactivityTimeout} onchange={(e) => appState.setSftpInactivityTimeout(Number((e.target as HTMLSelectElement).value))}>
+            <option value={300}>5 minutes</option>
+            <option value={600}>10 minutes</option>
+            <option value={1800}>30 minutes</option>
+            <option value={3600}>60 minutes</option>
+          </select>
+        </div>
+
+        <div class="pref-row">
+          <span class="pref-label">Keepalive Interval</span>
+          <select class="pref-select" value={appState.sftpKeepaliveInterval} onchange={(e) => appState.setSftpKeepaliveInterval(Number((e.target as HTMLSelectElement).value))}>
+            <option value={15}>15 seconds</option>
+            <option value={30}>30 seconds</option>
+            <option value={60}>60 seconds</option>
+            <option value={120}>120 seconds</option>
+          </select>
+        </div>
+
+        <div class="pref-row">
+          <span class="pref-label">Operation Timeout</span>
+          <select class="pref-select" value={appState.sftpOperationTimeout} onchange={(e) => appState.setSftpOperationTimeout(Number((e.target as HTMLSelectElement).value))}>
+            <option value={30}>30 seconds</option>
+            <option value={60}>60 seconds</option>
+            <option value={120}>120 seconds</option>
+            <option value={300}>300 seconds</option>
+          </select>
+        </div>
+        <span class="pref-hint">Applied to new connections</span>
+      {/if}
+
+      {#if activeTab === 'terminal'}
+        <div class="pref-row">
+          <span class="pref-label">Font Size</span>
+          <select class="pref-select" value={appState.terminalFontSize} onchange={(e) => appState.setTerminalFontSize(Number((e.target as HTMLSelectElement).value))}>
+            {#each [10, 11, 12, 13, 14, 15, 16, 17, 18] as size (size)}
+              <option value={size}>{size}px</option>
+            {/each}
+          </select>
+        </div>
+
+        <div class="pref-row">
+          <span class="pref-label">Scrollback Lines</span>
+          <select class="pref-select" value={appState.terminalScrollback} onchange={(e) => appState.setTerminalScrollback(Number((e.target as HTMLSelectElement).value))}>
+            <option value={1000}>1,000</option>
+            <option value={5000}>5,000</option>
+            <option value={10000}>10,000</option>
+            <option value={50000}>50,000</option>
+          </select>
+        </div>
+        <span class="pref-hint">Requires new terminal tab</span>
+
+        <div class="pref-row column">
+          <span class="pref-label">Custom Shell Path</span>
+          <input
+            class="pref-input"
+            type="text"
+            placeholder="/bin/zsh"
+            value={appState.terminalShellPath}
+            oninput={(e) => appState.setTerminalShellPath((e.target as HTMLInputElement).value)}
+          />
+          <span class="pref-hint">Leave empty to auto-detect</span>
+        </div>
       {/if}
 
     </div>
@@ -390,10 +539,6 @@
   .pref-select:focus {
     outline: none;
     border-color: var(--border-active);
-  }
-
-  .pref-select.full-width {
-    width: 100%;
   }
 
   .dialog-footer {

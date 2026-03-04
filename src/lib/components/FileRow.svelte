@@ -1,3 +1,11 @@
+<script lang="ts" module>
+  const archiveExtensions = new Set(['zip', 'rar', '7z', 'tar', 'gz', 'tgz', 'bz2', 'xz']);
+  const imageExtensions = new Set(['png', 'jpg', 'jpeg', 'gif', 'bmp', 'svg', 'webp', 'ico']);
+  const audioExtensions = new Set(['mp3', 'wav', 'flac', 'aac', 'ogg', 'm4a']);
+  const videoExtensions = new Set(['mp4', 'mkv', 'avi', 'mov', 'webm', 'wmv']);
+  const codeExtensions = new Set(['js', 'ts', 'py', 'rs', 'go', 'c', 'cpp', 'h', 'java', 'rb', 'swift', 'kt', 'svelte', 'vue', 'jsx', 'tsx']);
+</script>
+
 <script lang="ts">
   import type { FileEntry, PanelBackend, ColumnId } from '$lib/types';
   import { formatSize, formatDate, formatPermissions } from '$lib/utils/format';
@@ -5,6 +13,7 @@
   import ImageTooltip from './ImageTooltip.svelte';
   import { startLocalFileDrag, startS3FileDrag, dragState } from '$lib/services/drag';
   import { statusState } from '$lib/state/status.svelte';
+  import { appState } from '$lib/state/app.svelte';
   import { error as logError } from '$lib/services/log';
 
   import type { ComparisonStatus } from '$lib/state/comparison.svelte';
@@ -33,12 +42,6 @@
 
   const defaultCols: ColumnId[] = ['name', 'size', 'modified', 'extension'];
   const cols = $derived(visibleColumns ?? defaultCols);
-
-  const archiveExtensions = new Set(['zip', 'rar', '7z', 'tar', 'gz', 'tgz', 'bz2', 'xz']);
-  const imageExtensions = new Set(['png', 'jpg', 'jpeg', 'gif', 'bmp', 'svg', 'webp', 'ico']);
-  const audioExtensions = new Set(['mp3', 'wav', 'flac', 'aac', 'ogg', 'm4a']);
-  const videoExtensions = new Set(['mp4', 'mkv', 'avi', 'mov', 'webm', 'wmv']);
-  const codeExtensions = new Set(['js', 'ts', 'py', 'rs', 'go', 'c', 'cpp', 'h', 'java', 'rb', 'swift', 'kt', 'svelte', 'vue', 'jsx', 'tsx']);
 
   const icon = $derived.by(() => {
     if (entry.name === '..') return '⬆';
@@ -70,7 +73,7 @@
     return formatSize(entry.size).padStart(8);
   });
 
-  const dateDisplay = $derived(formatDate(entry.modified));
+  const dateDisplay = $derived(formatDate(entry.modified, appState.dateFormat));
   const permDisplay = $derived(formatPermissions(entry.permissions));
 
   const storageClassAbbrev: Record<string, string> = {
@@ -130,6 +133,7 @@
   let rowEl: HTMLDivElement | undefined = $state(undefined);
 
   function onMouseEnter() {
+    if (!appState.imageTooltips) return;
     if (!isImage || entry.name === '..' || backend !== 'local') return;
     hoverTimer = setTimeout(() => { showTooltip = true; }, 300);
   }
@@ -238,8 +242,8 @@
     display: flex;
     flex-direction: row;
     white-space: nowrap;
-    height: 28px;
-    line-height: 28px;
+    height: var(--row-height, 28px);
+    line-height: var(--row-height, 28px);
     padding: 2px 8px;
     margin: 0 4px;
     color: var(--text-primary);
@@ -291,7 +295,7 @@
     flex: 0 0 2.5ch;
     text-align: center;
     font-size: 12px;
-    line-height: 28px;
+    line-height: var(--row-height, 28px);
     opacity: 0.7;
   }
 
@@ -307,7 +311,7 @@
     font-size: 11px;
     font-weight: bold;
     font-family: monospace;
-    line-height: 28px;
+    line-height: var(--row-height, 28px);
   }
 
   .col-git.git-M { color: var(--git-modified); }
@@ -322,7 +326,7 @@
     flex: 0 0 1.8ch;
     text-align: center;
     font-size: 10px;
-    line-height: 28px;
+    line-height: var(--row-height, 28px);
     opacity: 0.7;
   }
 

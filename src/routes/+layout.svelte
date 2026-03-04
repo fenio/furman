@@ -65,12 +65,13 @@
   }
 
   let dragDropUnlisten: (() => void) | null = null;
+  const onFocusIn = (e: FocusEvent) => {
+    if (e.target instanceof HTMLInputElement) e.target.autocomplete = 'off';
+  };
 
   onMount(async () => {
     // Disable autocomplete on all inputs globally
-    document.addEventListener('focusin', (e) => {
-      if (e.target instanceof HTMLInputElement) e.target.autocomplete = 'off';
-    });
+    document.addEventListener('focusin', onFocusIn);
 
     try {
       const { getCurrentWindow } = await import('@tauri-apps/api/window');
@@ -597,6 +598,7 @@
   onDestroy(() => {
     dragDropUnlisten?.();
     menuUnlisten?.();
+    document.removeEventListener('focusin', onFocusIn);
     window.removeEventListener('undo-last-operation', handleUndoEvent);
     window.removeEventListener('sync-execute', handleSyncExecuteEvent);
     window.removeEventListener('transfer-done', handleTransferDone);
@@ -620,8 +622,24 @@
       return;
     }
 
-    // If xterm is focused, let all other keys pass through to the terminal
+    // Terminal toggle shortcuts must work even when xterm is focused
     if (isXtermFocused()) {
+      if (cmd && !e.shiftKey && (e.key === 't' || e.key === 'T')) {
+        e.preventDefault();
+        terminalState.toggle('bottom');
+        return;
+      }
+      if (cmd && e.shiftKey && (e.key === 't' || e.key === 'T')) {
+        e.preventDefault();
+        terminalState.inPaneSlot = panels.activePanel === 'left' ? 'right' : 'left';
+        terminalState.toggle('in-pane');
+        return;
+      }
+      if (cmd && e.key === '`') {
+        e.preventDefault();
+        terminalState.toggle('quake');
+        return;
+      }
       return;
     }
 
@@ -827,7 +845,9 @@
         break;
       case 'Backspace':
         e.preventDefault();
-        if (active.filterText) {
+        if (cmd) {
+          handleDelete();
+        } else if (active.filterText) {
           // Delete last character from filter
           active.filterText = active.filterText.slice(0, -1);
           if (active.filterText) {
@@ -944,7 +964,7 @@
         break;
       default:
         // Quick filter: typing a character appends to active panel filter
-        if (e.key.length === 1 && !e.metaKey && !e.altKey && !e.ctrlKey && e.key !== ' ') {
+        if (appState.quickFilterEnabled && e.key.length === 1 && !e.metaKey && !e.altKey && !e.ctrlKey && e.key !== ' ') {
           e.preventDefault();
           active.filterText += e.key;
           active.cursorIndex = Math.min(1, active.filteredSortedEntries.length - 1);

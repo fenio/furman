@@ -1,8 +1,9 @@
 use std::collections::HashMap;
+use std::future::Future;
 use std::sync::{Arc, Mutex};
 
 use russh::client;
-use russh_keys::ssh_key;
+use russh::keys::ssh_key;
 use russh_sftp::client::SftpSession;
 
 use super::helpers::sftperr;
@@ -25,6 +26,7 @@ pub struct SftpConnection {
     pub port: u16,
     pub username: String,
     pub home_dir: String,
+    pub operation_timeout_secs: u64,
 }
 
 // ── SSH Handler ──────────────────────────────────────────────────────────────
@@ -32,17 +34,16 @@ pub struct SftpConnection {
 /// Minimal SSH client handler — accepts all host keys (TODO: known_hosts).
 pub struct SshHandler;
 
-#[async_trait::async_trait]
 impl client::Handler for SshHandler {
     type Error = russh::Error;
 
-    async fn check_server_key(
+    fn check_server_key(
         &mut self,
         _server_public_key: &ssh_key::PublicKey,
-    ) -> Result<bool, Self::Error> {
+    ) -> impl Future<Output = Result<bool, Self::Error>> + Send {
         // Accept all host keys for now
         // TODO: implement known_hosts verification
-        Ok(true)
+        std::future::ready(Ok(true))
     }
 }
 
@@ -57,10 +58,13 @@ pub async fn build_sftp_client(
     password: Option<&str>,
     key_path: Option<&str>,
     key_passphrase: Option<&str>,
+    inactivity_timeout: Option<u64>,
+    keepalive_interval: Option<u64>,
+    operation_timeout: Option<u64>,
 ) -> Result<SftpConnection, FmError> {
     let config = client::Config {
-        inactivity_timeout: Some(std::time::Duration::from_secs(300)),
-        keepalive_interval: Some(std::time::Duration::from_secs(30)),
+        inactivity_timeout: Some(std::time::Duration::from_secs(inactivity_timeout.unwrap_or(300))),
+        keepalive_interval: Some(std::time::Duration::from_secs(keepalive_interval.unwrap_or(30))),
         keepalive_max: 3,
         ..Default::default()
     };
@@ -71,7 +75,8 @@ pub async fn build_sftp_client(
         .map_err(|e| sftperr(format!("SSH connect failed: {e}")))?;
 
     // Authenticate
-    let authenticated = match auth_method {
+    use russh::client::AuthResult;
+    let auth_result = match auth_method {
         "password" => {
             let pw = password.ok_or_else(|| sftperr("Password required"))?;
             handle
@@ -82,18 +87,17 @@ pub async fn build_sftp_client(
         "key" => {
             let path = key_path.ok_or_else(|| sftperr("Key path required"))?;
             let key = if let Some(pp) = key_passphrase {
-                russh_keys::load_secret_key(path, Some(pp))
+                russh::keys::load_secret_key(path, Some(pp))
                     .map_err(|e| sftperr(format!("Failed to load key: {e}")))?
             } else {
-                russh_keys::load_secret_key(path, None)
+                russh::keys::load_secret_key(path, None)
                     .map_err(|e| sftperr(format!("Failed to load key: {e}")))?
             };
 
-            let key_with_alg = russh_keys::key::PrivateKeyWithHashAlg::new(
+            let key_with_alg = russh::keys::key::PrivateKeyWithHashAlg::new(
                 Arc::new(key),
-                Some(russh_keys::HashAlg::Sha256),
-            )
-            .map_err(|e| sftperr(format!("Key hash alg failed: {e}")))?;
+                Some(russh::keys::HashAlg::Sha256),
+            );
 
             handle
                 .authenticate_publickey(username, key_with_alg)
@@ -101,7 +105,7 @@ pub async fn build_sftp_client(
                 .map_err(|e| sftperr(format!("Key auth failed: {e}")))?
         }
         "agent" => {
-            let mut agent = russh_keys::agent::client::AgentClient::connect_env()
+            let mut agent = russh::keys::agent::client::AgentClient::connect_env()
                 .await
                 .map_err(|e| sftperr(format!("SSH agent connect failed: {e}")))?;
             let identities = agent
@@ -111,25 +115,28 @@ pub async fn build_sftp_client(
             if identities.is_empty() {
                 return Err(sftperr("No keys found in SSH agent"));
             }
-            let mut authed = false;
+            let mut result = AuthResult::Failure {
+                remaining_methods: russh::MethodSet::empty(),
+                partial_success: false,
+            };
             for identity in identities {
                 match handle
-                    .authenticate_publickey_with(username, identity.clone(), &mut agent)
+                    .authenticate_publickey_with(username, identity.clone(), None, &mut agent)
                     .await
                 {
-                    Ok(true) => {
-                        authed = true;
+                    Ok(r @ AuthResult::Success) => {
+                        result = r;
                         break;
                     }
                     _ => continue,
                 }
             }
-            authed
+            result
         }
         _ => return Err(sftperr(format!("Unknown auth method: {auth_method}"))),
     };
 
-    if !authenticated {
+    if !matches!(auth_result, AuthResult::Success) {
         return Err(sftperr("Authentication failed"));
     }
 
@@ -161,5 +168,6 @@ pub async fn build_sftp_client(
         port,
         username: username.to_string(),
         home_dir,
+        operation_timeout_secs: operation_timeout.unwrap_or(60),
     })
 }

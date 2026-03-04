@@ -19,7 +19,7 @@ export class PanelData {
   selectedPaths = $state<Set<string>>(new SvelteSet());
   sortField = $state<SortField>(appState.sortField);
   sortDirection = $state<SortDirection>(appState.sortDirection);
-  viewMode = $state<ViewMode>('list');
+  viewMode = $state<ViewMode>(appState.defaultViewMode);
   gridColumns = $state(1);
   filterText = $state('');
   loading = $state(false);
@@ -41,12 +41,19 @@ export class PanelData {
 
   sortedEntries = $derived(sortEntries(this.entries, this.sortField, this.sortDirection));
 
+  private cachedGlobPattern = '';
+  private cachedGlobRegex: RegExp | null = null;
+
   filteredSortedEntries = $derived.by(() => {
     if (!this.filterText) return this.sortedEntries;
     const pattern = this.filterText;
     const hasGlob = pattern.includes('*') || pattern.includes('?');
     if (hasGlob) {
-      const re = globToRegex(pattern);
+      if (pattern !== this.cachedGlobPattern) {
+        this.cachedGlobPattern = pattern;
+        this.cachedGlobRegex = globToRegex(pattern);
+      }
+      const re = this.cachedGlobRegex!;
       return this.sortedEntries.filter(
         (e) => e.name === '..' || re.test(e.name)
       );
@@ -61,15 +68,22 @@ export class PanelData {
 
   selectedCount = $derived(this.selectedPaths.size);
 
+  // Path→entry index for O(1) lookups (rebuilt when entries change)
+  private entryByPath = $derived.by(() => {
+    const map = new Map<string, FileEntry>();
+    for (const e of this.entries) map.set(e.path, e);
+    return map;
+  });
+
   selectedSize = $derived.by(() => {
     let total = 0;
-    for (const entry of this.entries) {
-      if (this.selectedPaths.has(entry.path)) {
-        if (entry.is_dir) {
-          total += this.dirSizeCache[entry.path] ?? 0;
-        } else {
-          total += entry.size;
-        }
+    for (const path of this.selectedPaths) {
+      const entry = this.entryByPath.get(path);
+      if (!entry) continue;
+      if (entry.is_dir) {
+        total += this.dirSizeCache[entry.path] ?? 0;
+      } else {
+        total += entry.size;
       }
     }
     return total;
@@ -106,7 +120,7 @@ export class PanelData {
       ) {
         this.dirSizePending.add(entry.path);
         getDirectorySize(entry.path).then((size) => {
-          this.dirSizeCache = { ...this.dirSizeCache, [entry.path]: size };
+          this.dirSizeCache[entry.path] = size;
           this.dirSizePending.delete(entry.path);
         }).catch(() => {
           this.dirSizePending.delete(entry.path);
@@ -115,18 +129,22 @@ export class PanelData {
     }
   }
 
-  /** Check encryption status for an S3 object (debounced). */
+  private static readonly MAX_ENCRYPTION_CONCURRENT = 5;
+
+  /** Check encryption status for an S3 object (debounced, concurrency-limited). */
   checkEncryption(key: string) {
     if (this.backend !== 's3' || !this.s3Connection) return;
     if (key in this.encryptionCache || this.encryptionPending.has(key)) return;
     if (key.endsWith('/')) return; // directories can't be encrypted
+    if (this.encryptionPending.size >= PanelData.MAX_ENCRYPTION_CONCURRENT) return;
 
     if (this.encryptionDebounceTimer) clearTimeout(this.encryptionDebounceTimer);
     const connectionId = this.s3Connection.connectionId;
     this.encryptionDebounceTimer = setTimeout(() => {
+      if (this.encryptionPending.size >= PanelData.MAX_ENCRYPTION_CONCURRENT) return;
       this.encryptionPending.add(key);
       s3IsObjectEncrypted(connectionId, key).then((encrypted) => {
-        this.encryptionCache = { ...this.encryptionCache, [key]: encrypted };
+        this.encryptionCache[key] = encrypted;
         this.encryptionPending.delete(key);
       }).catch(() => {
         this.encryptionPending.delete(key);
@@ -318,7 +336,7 @@ export class PanelData {
     this.loading = true;
     this.error = null;
     try {
-      const homeDir = await sftpConnect(info.connectionId, info.host, info.port, info.username, password ? 'password' : keyPath ? 'key' : 'agent', password, keyPath, keyPassphrase);
+      const homeDir = await sftpConnect(info.connectionId, info.host, info.port, info.username, password ? 'password' : keyPath ? 'key' : 'agent', password, keyPath, keyPassphrase, appState.sftpInactivityTimeout, appState.sftpKeepaliveInterval, appState.sftpOperationTimeout);
       this.backend = 'sftp';
       this.sftpConnection = info;
       await this.loadDirectory(`sftp://${info.host}:${info.port}${homeDir.startsWith('/') ? '' : '/'}${homeDir}/`);

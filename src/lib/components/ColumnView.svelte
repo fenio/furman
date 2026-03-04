@@ -13,12 +13,15 @@
     onEntryContextMenu?: (index: number, e: MouseEvent) => void;
   }
 
+  import { appState } from '$lib/state/app.svelte';
+
   let { panel, isActive, side: _side, comparisonStatusMap, onEntryClick, onEntryDblClick, onEntryContextMenu }: Props = $props();
 
   let gridContainer: HTMLDivElement | undefined = $state(undefined);
   let visibleRows = $state(20);
 
-  const ROW_HEIGHT = 24;
+  const CV_ROW_HEIGHT_MAP = { compact: 18, normal: 24, comfortable: 30 } as const;
+  const ROW_HEIGHT = $derived(CV_ROW_HEIGHT_MAP[appState.rowHeight]);
   const entries = $derived(panel.filteredSortedEntries);
 
   // Rows per column: fill visible height first, expand if entries exceed 3 columns

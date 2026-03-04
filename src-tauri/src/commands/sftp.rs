@@ -22,6 +22,7 @@ fn get_service(state: &State<'_, SftpState>, id: &str) -> Result<SftpService, Fm
         conn.session.clone(),
         conn.host.clone(),
         conn.port,
+        conn.operation_timeout_secs,
     ))
 }
 
@@ -49,6 +50,9 @@ pub async fn sftp_connect(
     password: Option<String>,
     key_path: Option<String>,
     key_passphrase: Option<String>,
+    inactivity_timeout: Option<u64>,
+    keepalive_interval: Option<u64>,
+    operation_timeout: Option<u64>,
 ) -> Result<String, FmError> {
     let conn = match sftp::client::build_sftp_client(
         &host,
@@ -58,6 +62,9 @@ pub async fn sftp_connect(
         password.as_deref(),
         key_path.as_deref(),
         key_passphrase.as_deref(),
+        inactivity_timeout,
+        keepalive_interval,
+        operation_timeout,
     )
     .await
     {
@@ -79,6 +86,9 @@ pub async fn sftp_connect(
                 password.as_deref(),
                 key_path.as_deref(),
                 key_passphrase.as_deref(),
+                inactivity_timeout,
+                keepalive_interval,
+                operation_timeout,
             )
             .await?
         }

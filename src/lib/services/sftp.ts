@@ -10,6 +10,9 @@ export async function sftpConnect(
   password?: string,
   keyPath?: string,
   keyPassphrase?: string,
+  inactivityTimeout?: number,
+  keepaliveInterval?: number,
+  operationTimeout?: number,
 ): Promise<string> {
   return await invoke<string>('sftp_connect', {
     id,
@@ -20,6 +23,9 @@ export async function sftpConnect(
     password: password ?? null,
     keyPath: keyPath ?? null,
     keyPassphrase: keyPassphrase ?? null,
+    inactivityTimeout: inactivityTimeout ?? null,
+    keepaliveInterval: keepaliveInterval ?? null,
+    operationTimeout: operationTimeout ?? null,
   });
 }
 

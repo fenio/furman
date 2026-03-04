@@ -11,6 +11,30 @@ use crate::models::FmError;
 /// Global bandwidth limit in bytes per second. 0 = unlimited.
 pub static BANDWIDTH_LIMIT: AtomicU64 = AtomicU64::new(0);
 
+/// Global multipart upload threshold in bytes (default: 8 MiB).
+pub static MULTIPART_THRESHOLD_BYTES: AtomicU64 = AtomicU64::new(8 * 1024 * 1024);
+
+/// Global multipart part size in bytes (default: 8 MiB).
+pub static PART_SIZE_BYTES: AtomicU64 = AtomicU64::new(8 * 1024 * 1024);
+
+/// Global concurrent parts limit (default: 4).
+pub static CONCURRENT_PARTS: AtomicU64 = AtomicU64::new(4);
+
+/// Get the current multipart threshold from the global atomic.
+pub fn get_multipart_threshold() -> u64 {
+    MULTIPART_THRESHOLD_BYTES.load(Ordering::Relaxed)
+}
+
+/// Get the current part size from the global atomic.
+pub fn get_part_size() -> u64 {
+    PART_SIZE_BYTES.load(Ordering::Relaxed)
+}
+
+/// Get the current concurrent parts limit from the global atomic.
+pub fn get_concurrent_parts() -> usize {
+    CONCURRENT_PARTS.load(Ordering::Relaxed) as usize
+}
+
 /// Sleep to enforce the global bandwidth limit after transferring `bytes`.
 pub async fn throttle(bytes: u64) {
     let limit = BANDWIDTH_LIMIT.load(Ordering::Relaxed);
@@ -200,10 +224,10 @@ pub async fn upload_file_multipart(
         .to_string();
 
     // 2. Calculate parts with dynamic part size (handle files > 80 GiB within 10k part limit)
-    let part_size = std::cmp::max(PART_SIZE, file_size / 10_000 + 1);
+    let part_size = std::cmp::max(get_part_size(), file_size / 10_000 + 1);
     let num_parts = file_size.div_ceil(part_size) as i32;
 
-    let semaphore = Arc::new(Semaphore::new(MAX_CONCURRENT_PARTS));
+    let semaphore = Arc::new(Semaphore::new(get_concurrent_parts()));
     let mut handles = Vec::with_capacity(num_parts as usize);
 
     // 3. Spawn tasks for each part
@@ -344,7 +368,7 @@ pub async fn copy_object_multipart(
         .to_string();
 
     // 2. Calculate part size (dynamic sizing to stay within 10k part limit)
-    let part_size = std::cmp::max(PART_SIZE, object_size / 10_000 + 1);
+    let part_size = std::cmp::max(get_part_size(), object_size / 10_000 + 1);
     let num_parts = object_size.div_ceil(part_size) as i32;
     let copy_source = format!("{src_bucket}/{src_key}");
 
@@ -498,7 +522,7 @@ async fn copy_via_download(
     dest_key: &str,
     object_size: u64,
 ) -> Result<(), FmError> {
-    if object_size < MULTIPART_THRESHOLD {
+    if object_size < get_multipart_threshold() {
         // Small file: single GET + PUT
         let resp = src_client
             .get_object()
@@ -535,7 +559,7 @@ async fn copy_via_download(
             .ok_or_else(|| s3err("Missing upload_id from create_multipart_upload"))?
             .to_string();
 
-        let part_size = std::cmp::max(PART_SIZE, object_size / 10_000 + 1);
+        let part_size = std::cmp::max(get_part_size(), object_size / 10_000 + 1);
         let num_parts = object_size.div_ceil(part_size) as i32;
         let mut completed_parts: Vec<(i32, String)> = Vec::with_capacity(num_parts as usize);
 

@@ -625,6 +625,10 @@ export async function s3SetBandwidthLimit(bytesPerSec: number): Promise<void> {
   await invoke('s3_set_bandwidth_limit', { bytesPerSec });
 }
 
+export async function s3SetMultipartConfig(threshold: number, partSize: number, concurrentParts: number): Promise<void> {
+  await invoke('s3_set_multipart_config', { threshold, partSize, concurrentParts });
+}
+
 // ── Inventory Configuration ──────────────────────────────────────────────────
 
 export async function s3ListInventoryConfigurations(id: string): Promise<S3InventoryConfiguration[]> {

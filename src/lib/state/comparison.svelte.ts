@@ -14,6 +14,19 @@ class ComparisonState {
   rightStatuses: Map<string, ComparisonStatus> = $state(new Map());
   counts = $state({ new: 0, modified: 0, deleted: 0 });
   private syncId = '';
+  private flushTimer: ReturnType<typeof setTimeout> | null = null;
+
+  /** Debounce map reassignment to batch multiple entries into one reactive update. */
+  private scheduleFlush() {
+    if (this.flushTimer) return;
+    this.flushTimer = setTimeout(() => this.flushNow(), 50);
+  }
+
+  private flushNow() {
+    if (this.flushTimer) { clearTimeout(this.flushTimer); this.flushTimer = null; }
+    this.leftStatuses = new Map(this.leftStatuses);
+    this.rightStatuses = new Map(this.rightStatuses);
+  }
 
   async startComparison(
     leftPath: string,
@@ -72,10 +85,10 @@ class ComparisonState {
               this.leftStatuses.set(relPath, 'modified');
               this.rightStatuses.set(relPath, 'modified');
             }
-            // Trigger reactivity by reassigning
-            this.leftStatuses = new Map(this.leftStatuses);
-            this.rightStatuses = new Map(this.rightStatuses);
+            // Batch reactivity: debounce map reassignment instead of per-entry
+            this.scheduleFlush();
           } else if (event.type === 'Done') {
+            this.flushNow();
             const done = event as SyncEvent & { type: 'Done' };
             this.counts = {
               new: (done as any).new_count ?? 0,

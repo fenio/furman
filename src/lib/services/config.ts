@@ -1,7 +1,7 @@
 import { readFileText, writeFileText } from '$lib/services/tauri';
 import type { FavoriteItem } from '$lib/state/sidebar.svelte';
 import type { Workspace } from '$lib/state/workspaces.svelte';
-import type { S3Bookmark, SftpBookmark, ConnectionProfile, SortField, SortDirection, ColumnId } from '$lib/types';
+import type { S3Bookmark, SftpBookmark, ConnectionProfile, SortField, SortDirection, ColumnId, ViewMode } from '$lib/types';
 import { inferProviderFromEndpoint } from '$lib/data/s3-providers';
 
 export interface Config {
@@ -24,6 +24,21 @@ export interface Config {
   sortDirection: SortDirection;
   syncExcludePatterns: string;
   visibleColumns?: ColumnId[];
+  defaultViewMode: 'list' | 'icon' | 'column';
+  dateFormat: 'iso' | 'eu' | 'us' | 'relative';
+  confirmOverwrite: 'always' | 'never' | 'ask';
+  quickFilterEnabled: boolean;
+  imageTooltips: boolean;
+  rowHeight: 'compact' | 'normal' | 'comfortable';
+  multipartThreshold: number;
+  multipartPartSize: number;
+  concurrentParts: number;
+  sftpInactivityTimeout: number;
+  sftpKeepaliveInterval: number;
+  sftpOperationTimeout: number;
+  terminalFontSize: number;
+  terminalShellPath: string;
+  terminalScrollback: number;
 }
 
 export const DEFAULT_CONFIG: Config = {
@@ -45,6 +60,21 @@ export const DEFAULT_CONFIG: Config = {
   sortField: 'name',
   sortDirection: 'asc',
   syncExcludePatterns: '.DS_Store, Thumbs.db, .git/**',
+  defaultViewMode: 'list',
+  dateFormat: 'iso',
+  confirmOverwrite: 'ask',
+  quickFilterEnabled: true,
+  imageTooltips: true,
+  rowHeight: 'normal',
+  multipartThreshold: 8388608,    // 8 MB
+  multipartPartSize: 8388608,     // 8 MB
+  concurrentParts: 4,
+  sftpInactivityTimeout: 300,     // 5 min in seconds
+  sftpKeepaliveInterval: 30,      // seconds
+  sftpOperationTimeout: 60,       // seconds
+  terminalFontSize: 13,
+  terminalShellPath: '',
+  terminalScrollback: 5000,
 };
 
 let configPath = '';

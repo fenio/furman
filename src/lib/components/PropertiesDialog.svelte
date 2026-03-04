@@ -1521,7 +1521,7 @@
             {#if archiveFileProps}
               <tr><td class="prop-label">Archive Size</td><td class="prop-value">{formatSize(archiveFileProps.size)} ({archiveFileProps.size.toLocaleString()} bytes)</td></tr>
               <tr><td class="prop-label">Format</td><td class="prop-value">{archiveFileProps.name.split('.').pop()?.toUpperCase() ?? 'Unknown'}</td></tr>
-              <tr><td class="prop-label">Modified</td><td class="prop-value">{formatDate(archiveFileProps.modified)}</td></tr>
+              <tr><td class="prop-label">Modified</td><td class="prop-value">{formatDate(archiveFileProps.modified, appState.dateFormat)}</td></tr>
               <tr><td class="prop-label">Permissions</td><td class="prop-value">{formatPermissions(archiveFileProps.permissions & 0o777)}</td></tr>
               <tr><td class="prop-label">Owner</td><td class="prop-value">{archiveFileProps.owner}</td></tr>
             {/if}
@@ -1550,9 +1550,9 @@
                 {/if}
               </td>
             </tr>
-            <tr><td class="prop-label">Created</td><td class="prop-value">{formatDate(fileProps.created)}</td></tr>
-            <tr><td class="prop-label">Modified</td><td class="prop-value">{formatDate(fileProps.modified)}</td></tr>
-            <tr><td class="prop-label">Accessed</td><td class="prop-value">{formatDate(fileProps.accessed)}</td></tr>
+            <tr><td class="prop-label">Created</td><td class="prop-value">{formatDate(fileProps.created, appState.dateFormat)}</td></tr>
+            <tr><td class="prop-label">Modified</td><td class="prop-value">{formatDate(fileProps.modified, appState.dateFormat)}</td></tr>
+            <tr><td class="prop-label">Accessed</td><td class="prop-value">{formatDate(fileProps.accessed, appState.dateFormat)}</td></tr>
             <tr><td class="prop-label">Owner</td><td class="prop-value">{fileProps.owner}</td></tr>
             <tr><td class="prop-label">Group</td><td class="prop-value">{fileProps.group}</td></tr>
             {#if fileProps.is_symlink && fileProps.symlink_target}
@@ -1604,7 +1604,7 @@
           <tbody>
             <tr><td class="prop-label">Key</td><td class="prop-value path">{s3Props.key}</td></tr>
             <tr><td class="prop-label">Size</td><td class="prop-value">{formatSize(s3Props.size)} ({s3Props.size.toLocaleString()} bytes)</td></tr>
-            <tr><td class="prop-label">Last Modified</td><td class="prop-value">{formatDate(s3Props.modified)}</td></tr>
+            <tr><td class="prop-label">Last Modified</td><td class="prop-value">{formatDate(s3Props.modified, appState.dateFormat)}</td></tr>
             <tr><td class="prop-label">Content Type</td><td class="prop-value">{s3Props.content_type ?? '--'}</td></tr>
             <tr><td class="prop-label">ETag</td><td class="prop-value mono">{s3Props.etag ?? '--'}</td></tr>
             {#if s3Props.version_id}
@@ -1894,7 +1894,7 @@
                     <div class="version-row" class:version-latest={ver.is_latest} class:version-delete-marker={ver.is_delete_marker}>
                       <div class="version-info">
                         <span class="version-id mono" title={ver.version_id}>{truncateVid(ver.version_id)}</span>
-                        <span class="version-date">{formatDate(ver.modified)}</span>
+                        <span class="version-date">{formatDate(ver.modified, appState.dateFormat)}</span>
                         {#if !ver.is_delete_marker}
                           <span class="version-size">{formatSize(ver.size)}</span>
                         {/if}
@@ -2527,7 +2527,7 @@
                     <div class="version-row">
                       <div class="version-info">
                         <span class="version-id mono" title={upload.key}>{upload.key.length > 40 ? upload.key.slice(0, 40) + '\u2026' : upload.key}</span>
-                        <span class="version-date">{formatDate(upload.initiated)}</span>
+                        <span class="version-date">{formatDate(upload.initiated, appState.dateFormat)}</span>
                       </div>
                       <div class="version-actions">
                         <button

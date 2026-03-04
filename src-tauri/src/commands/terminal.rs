@@ -66,6 +66,7 @@ precmd_functions+=(__furman_report_cwd)
 pub fn terminal_spawn(
     id: String,
     cwd: String,
+    shell: Option<String>,
     app_handle: AppHandle,
     state: State<'_, TerminalState>,
 ) -> Result<(), FmError> {
@@ -80,16 +81,18 @@ pub fn terminal_spawn(
         })
         .map_err(|e| FmError::Other(format!("openpty: {e}")))?;
 
-    // Detect shell from $SHELL, fallback to platform default
-    let shell = std::env::var("SHELL").unwrap_or_else(|_| {
-        #[cfg(target_os = "macos")]
-        {
-            "/bin/zsh".to_string()
-        }
-        #[cfg(target_os = "linux")]
-        {
-            "/bin/bash".to_string()
-        }
+    // Use custom shell if provided, else $SHELL, else platform default
+    let shell = shell.filter(|s| !s.is_empty()).unwrap_or_else(|| {
+        std::env::var("SHELL").unwrap_or_else(|_| {
+            #[cfg(target_os = "macos")]
+            {
+                "/bin/zsh".to_string()
+            }
+            #[cfg(target_os = "linux")]
+            {
+                "/bin/bash".to_string()
+            }
+        })
     });
 
     let mut cmd = CommandBuilder::new(&shell);

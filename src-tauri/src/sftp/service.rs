@@ -16,14 +16,16 @@ pub struct SftpService {
     pub session: Arc<SftpSession>,
     pub host: String,
     pub port: u16,
+    pub operation_timeout_secs: u64,
 }
 
 impl SftpService {
-    pub fn new(session: Arc<SftpSession>, host: String, port: u16) -> Self {
+    pub fn new(session: Arc<SftpSession>, host: String, port: u16, operation_timeout_secs: u64) -> Self {
         Self {
             session,
             host,
             port,
+            operation_timeout_secs,
         }
     }
 
@@ -145,6 +147,9 @@ impl SftpService {
 
         for entry in entries {
             let name = entry.file_name();
+            if name == "." || name == ".." {
+                continue;
+            }
             let child = if path.ends_with('/') {
                 format!("{path}{name}")
             } else {
@@ -300,7 +305,7 @@ impl SftpService {
                 remote
             );
             let data = match tokio::time::timeout(
-                std::time::Duration::from_secs(60),
+                std::time::Duration::from_secs(self.operation_timeout_secs),
                 self.session.read(remote),
             )
             .await
@@ -324,7 +329,8 @@ impl SftpService {
                 }
                 Err(_) => {
                     log::error!(
-                        "SFTP download: read '{remote}' timed out after 60s — connection likely dead"
+                        "SFTP download: read '{remote}' timed out after {}s — connection likely dead",
+                        self.operation_timeout_secs
                     );
                     return Err(FmError::Other(format!(
                         "SFTP read timed out on '{}' — connection lost",

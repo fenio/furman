@@ -8,7 +8,8 @@ import { connectionsState } from '$lib/state/connections.svelte';
 import { s3BookmarksState } from '$lib/state/s3bookmarks.svelte';
 import { sftpBookmarksState } from '$lib/state/sftpbookmarks.svelte';
 import { transfersState } from '$lib/state/transfers.svelte';
-import { s3SetBandwidthLimit } from '$lib/services/s3';
+import { s3SetBandwidthLimit, s3SetMultipartConfig } from '$lib/services/s3';
+import type { ViewMode } from '$lib/types';
 
 class AppState {
   theme = $state<'dark' | 'light'>('dark');
@@ -73,11 +74,104 @@ class AppState {
   localBatchEditBackend = $state<'local' | 'sftp'>('local');
   localBatchEditSftpConnectionId = $state('');
   visibleColumns = $state<ColumnId[]>([...DEFAULT_VISIBLE_COLUMNS]);
+  defaultViewMode = $state<ViewMode>('list');
+  dateFormat = $state<'iso' | 'eu' | 'us' | 'relative'>('iso');
+  confirmOverwrite = $state<'always' | 'never' | 'ask'>('ask');
+  quickFilterEnabled = $state(true);
+  imageTooltips = $state(true);
+  rowHeight = $state<'compact' | 'normal' | 'comfortable'>('normal');
+  multipartThreshold = $state(8388608);
+  multipartPartSize = $state(8388608);
+  concurrentParts = $state(4);
+  sftpInactivityTimeout = $state(300);
+  sftpKeepaliveInterval = $state(30);
+  sftpOperationTimeout = $state(60);
+  terminalFontSize = $state(13);
+  terminalShellPath = $state('');
+  terminalScrollback = $state(5000);
 
   setVisibleColumns(cols: ColumnId[]) {
     // Name is always required
     if (!cols.includes('name')) cols = ['name', ...cols];
     this.visibleColumns = cols;
+    this.persistConfig();
+  }
+
+  setDefaultViewMode(val: ViewMode) {
+    this.defaultViewMode = val;
+    this.persistConfig();
+  }
+
+  setDateFormat(val: 'iso' | 'eu' | 'us' | 'relative') {
+    this.dateFormat = val;
+    this.persistConfig();
+  }
+
+  setConfirmOverwrite(val: 'always' | 'never' | 'ask') {
+    this.confirmOverwrite = val;
+    this.persistConfig();
+  }
+
+  setQuickFilterEnabled(val: boolean) {
+    this.quickFilterEnabled = val;
+    this.persistConfig();
+  }
+
+  setImageTooltips(val: boolean) {
+    this.imageTooltips = val;
+    this.persistConfig();
+  }
+
+  setRowHeight(val: 'compact' | 'normal' | 'comfortable') {
+    this.rowHeight = val;
+    this.persistConfig();
+  }
+
+  setMultipartThreshold(val: number) {
+    this.multipartThreshold = val;
+    s3SetMultipartConfig(val, this.multipartPartSize, this.concurrentParts).catch(() => {});
+    this.persistConfig();
+  }
+
+  setMultipartPartSize(val: number) {
+    this.multipartPartSize = val;
+    s3SetMultipartConfig(this.multipartThreshold, val, this.concurrentParts).catch(() => {});
+    this.persistConfig();
+  }
+
+  setConcurrentParts(val: number) {
+    this.concurrentParts = val;
+    s3SetMultipartConfig(this.multipartThreshold, this.multipartPartSize, val).catch(() => {});
+    this.persistConfig();
+  }
+
+  setSftpInactivityTimeout(val: number) {
+    this.sftpInactivityTimeout = val;
+    this.persistConfig();
+  }
+
+  setSftpKeepaliveInterval(val: number) {
+    this.sftpKeepaliveInterval = val;
+    this.persistConfig();
+  }
+
+  setSftpOperationTimeout(val: number) {
+    this.sftpOperationTimeout = val;
+    this.persistConfig();
+  }
+
+  setTerminalFontSize(val: number) {
+    this.terminalFontSize = val;
+    this.persistConfig();
+  }
+
+  setTerminalShellPath(val: string) {
+    this.terminalShellPath = val;
+    this.persistConfig();
+  }
+
+  setTerminalScrollback(val: number) {
+    this.terminalScrollback = val;
     this.persistConfig();
   }
 
@@ -265,7 +359,23 @@ class AppState {
     this.secureTempCleanup = config.secureTempCleanup ?? false;
     this.syncExcludePatterns = config.syncExcludePatterns ?? '.DS_Store, Thumbs.db, .git/**';
     this.visibleColumns = config.visibleColumns ?? [...DEFAULT_VISIBLE_COLUMNS];
+    this.defaultViewMode = config.defaultViewMode ?? 'list';
+    this.dateFormat = config.dateFormat ?? 'iso';
+    this.confirmOverwrite = config.confirmOverwrite ?? 'ask';
+    this.quickFilterEnabled = config.quickFilterEnabled ?? true;
+    this.imageTooltips = config.imageTooltips ?? true;
+    this.rowHeight = config.rowHeight ?? 'normal';
+    this.multipartThreshold = config.multipartThreshold ?? 8388608;
+    this.multipartPartSize = config.multipartPartSize ?? 8388608;
+    this.concurrentParts = config.concurrentParts ?? 4;
+    this.sftpInactivityTimeout = config.sftpInactivityTimeout ?? 300;
+    this.sftpKeepaliveInterval = config.sftpKeepaliveInterval ?? 30;
+    this.sftpOperationTimeout = config.sftpOperationTimeout ?? 60;
+    this.terminalFontSize = config.terminalFontSize ?? 13;
+    this.terminalShellPath = config.terminalShellPath ?? '';
+    this.terminalScrollback = config.terminalScrollback ?? 5000;
     s3SetBandwidthLimit(transfersState.bandwidthLimit).catch(() => {});
+    s3SetMultipartConfig(this.multipartThreshold, this.multipartPartSize, this.concurrentParts).catch(() => {});
   }
 
   toggleTheme() {
@@ -295,6 +405,21 @@ class AppState {
       sortDirection: this.sortDirection,
       syncExcludePatterns: this.syncExcludePatterns,
       visibleColumns: this.visibleColumns,
+      defaultViewMode: this.defaultViewMode,
+      dateFormat: this.dateFormat,
+      confirmOverwrite: this.confirmOverwrite,
+      quickFilterEnabled: this.quickFilterEnabled,
+      imageTooltips: this.imageTooltips,
+      rowHeight: this.rowHeight,
+      multipartThreshold: this.multipartThreshold,
+      multipartPartSize: this.multipartPartSize,
+      concurrentParts: this.concurrentParts,
+      sftpInactivityTimeout: this.sftpInactivityTimeout,
+      sftpKeepaliveInterval: this.sftpKeepaliveInterval,
+      sftpOperationTimeout: this.sftpOperationTimeout,
+      terminalFontSize: this.terminalFontSize,
+      terminalShellPath: this.terminalShellPath,
+      terminalScrollback: this.terminalScrollback,
     });
   }
 

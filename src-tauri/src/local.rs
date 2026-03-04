@@ -8,6 +8,7 @@ use crate::models::{FmError, ProgressEvent, TransferCheckpoint};
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::time::Instant;
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -63,7 +64,11 @@ pub fn total_bytes(path: &Path) -> u64 {
     total
 }
 
+/// Minimum interval between progress events (50ms = ~20 updates/sec).
+const PROGRESS_INTERVAL_MS: u128 = 50;
+
 /// Recursively copy a file or directory, reporting progress via a closure.
+/// Progress events are throttled to avoid IPC overhead for many small files.
 pub fn copy_recursive(
     src: &Path,
     dst: &Path,
@@ -75,6 +80,7 @@ pub fn copy_recursive(
     on_progress: &dyn Fn(ProgressEvent),
     flags: &OpFlags,
     completed_files: &mut Vec<String>,
+    last_progress: &mut Instant,
 ) -> Result<CopyResult, FmError> {
     if flags.cancel.load(Ordering::Relaxed) {
         return Err(FmError::Other("Operation cancelled".into()));
@@ -99,6 +105,7 @@ pub fn copy_recursive(
                 on_progress,
                 flags,
                 completed_files,
+                last_progress,
             )? {
                 CopyResult::Done => {}
                 CopyResult::Paused => return Ok(CopyResult::Paused),
@@ -116,14 +123,21 @@ pub fn copy_recursive(
         *files_done += 1;
         completed_files.push(src.to_string_lossy().into_owned());
 
-        on_progress(ProgressEvent {
-            id: id.to_string(),
-            bytes_done: *bytes_done,
-            bytes_total,
-            current_file: src.to_string_lossy().into_owned(),
-            files_done: *files_done,
-            files_total,
-        });
+        // Throttle progress events; always emit the final one
+        let now = Instant::now();
+        if now.duration_since(*last_progress).as_millis() >= PROGRESS_INTERVAL_MS
+            || *files_done == files_total
+        {
+            *last_progress = now;
+            on_progress(ProgressEvent {
+                id: id.to_string(),
+                bytes_done: *bytes_done,
+                bytes_total,
+                current_file: src.to_string_lossy().into_owned(),
+                files_done: *files_done,
+                files_total,
+            });
+        }
     }
     Ok(CopyResult::Done)
 }
@@ -153,6 +167,7 @@ pub fn copy_files_core(
     let mut bytes_done: u64 = 0;
     let mut files_done: u32 = 0;
     let mut completed_files: Vec<String> = Vec::new();
+    let mut last_progress = Instant::now();
 
     for src in sources {
         let src_path = PathBuf::from(src);
@@ -172,6 +187,7 @@ pub fn copy_files_core(
             on_progress,
             flags,
             &mut completed_files,
+            &mut last_progress,
         )? {
             CopyResult::Done => {}
             CopyResult::Paused => {
@@ -214,6 +230,7 @@ pub fn move_files_core(
     let mut bytes_done: u64 = 0;
     let mut files_done: u32 = 0;
     let mut completed_files: Vec<String> = Vec::new();
+    let mut last_progress = Instant::now();
 
     for src in sources {
         if flags.cancel.load(Ordering::Relaxed) {
@@ -264,6 +281,7 @@ pub fn move_files_core(
                 on_progress,
                 flags,
                 &mut completed_files,
+                &mut last_progress,
             )? {
                 CopyResult::Done => {
                     if src_path.is_dir() {

@@ -156,8 +156,8 @@ export async function unwatchDirectory(id: string): Promise<void> {
   await invoke('unwatch_directory', { id });
 }
 
-export async function terminalSpawn(id: string, cwd: string): Promise<void> {
-  await invoke('terminal_spawn', { id, cwd });
+export async function terminalSpawn(id: string, cwd: string, shell?: string): Promise<void> {
+  await invoke('terminal_spawn', { id, cwd, shell: shell ?? null });
 }
 
 export async function terminalWrite(id: string, data: string): Promise<void> {

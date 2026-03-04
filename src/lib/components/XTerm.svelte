@@ -75,11 +75,12 @@
 
   onMount(() => {
     // Explicitly load the Nerd Font first
-    document.fonts.load("13px 'Symbols Nerd Font Mono'").catch(() => {});
+    document.fonts.load(`${appState.terminalFontSize}px 'Symbols Nerd Font Mono'`).catch(() => {});
 
     terminal = new Terminal({
       cursorBlink: true,
-      fontSize: 13,
+      fontSize: appState.terminalFontSize,
+      scrollback: appState.terminalScrollback,
       fontFamily: "'SF Mono', 'Menlo', 'Monaco', 'Courier New', 'Symbols Nerd Font Mono', monospace",
       theme: appState.theme === 'light' ? lightTheme : darkTheme,
     });
@@ -138,6 +139,13 @@
     }
   });
 
+  $effect(() => {
+    if (terminal) {
+      terminal.options.fontSize = appState.terminalFontSize;
+      fitAddon?.fit();
+    }
+  });
+
   async function init() {
     // Listen for PTY output — reveal terminal on first output
     unlistenOutput = await listen<TerminalOutput>('terminal-output', (event) => {
@@ -167,7 +175,7 @@
 
     // Spawn the PTY
     try {
-      await terminalSpawn(terminalId, cwd);
+      await terminalSpawn(terminalId, cwd, appState.terminalShellPath || undefined);
       // Send initial resize
       if (terminal.cols && terminal.rows) {
         await terminalResize(terminalId, terminal.cols, terminal.rows);

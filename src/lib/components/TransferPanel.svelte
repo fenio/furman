@@ -102,7 +102,7 @@
         <option value={3}>3</option>
         <option value={5}>5</option>
       </select>
-      <select class="tp-concurrency" value={transfersState.bandwidthLimit} onchange={handleBandwidthChange} title="Bandwidth limit">
+      <select class="tp-bandwidth" value={transfersState.bandwidthLimit} onchange={handleBandwidthChange} title="Bandwidth limit">
         <option value={0}>Unlimited</option>
         <option value={1048576}>1 MB/s</option>
         <option value={5242880}>5 MB/s</option>
@@ -239,7 +239,8 @@
     align-items: center;
   }
 
-  .tp-concurrency {
+  .tp-concurrency,
+  .tp-bandwidth {
     padding: 1px 4px;
     font-size: 11px;
     border: 1px solid var(--border-subtle);
@@ -247,6 +248,14 @@
     background: var(--bg-surface);
     color: var(--text-secondary);
     cursor: pointer;
+  }
+
+  .tp-concurrency {
+    width: 3.5em;
+  }
+
+  .tp-bandwidth {
+    width: 7.5em;
   }
 
   .tp-btn {

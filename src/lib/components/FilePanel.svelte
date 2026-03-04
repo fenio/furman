@@ -33,7 +33,8 @@
   let isDragOver = $state(false);
 
   // Virtualized scrolling for list mode
-  const ROW_HEIGHT = 28;  // matches FileRow.svelte .file-row height
+  const ROW_HEIGHT_MAP = { compact: 22, normal: 28, comfortable: 34 } as const;
+  const ROW_HEIGHT = $derived(ROW_HEIGHT_MAP[appState.rowHeight]);
   const BUFFER_ROWS = 10; // extra rows above/below viewport
   let viewportHeight = $state(0);
   let scrollTop = $state(0);
@@ -135,12 +136,14 @@
     }
   });
 
-  // Compute directory sizes when selection changes
+  // Compute directory sizes when selection changes (debounced)
+  let dirSizeTimer: ReturnType<typeof setTimeout> | null = null;
   $effect(() => {
     // Access selectedPaths to create a reactive dependency
     // eslint-disable-next-line @typescript-eslint/no-unused-expressions
     panel.selectedPaths;
-    panel.computeSelectedDirSizes();
+    if (dirSizeTimer) clearTimeout(dirSizeTimer);
+    dirSizeTimer = setTimeout(() => panel.computeSelectedDirSizes(), 500);
   });
 
   // Auto-focus filter input when it appears
@@ -151,29 +154,34 @@
   });
 
   // Comparison: derive a map from entry name → ComparisonStatus for this panel
+  // Pre-builds dirty-directory sets from statusMap (O(M)), then each entry lookup is O(1).
   const comparisonStatusMap = $derived.by((): Map<string, ComparisonStatus> => {
     if (!comparisonState.active) return new SvelteMap();
     const statusMap = side === 'right' ? comparisonState.rightStatuses : comparisonState.leftStatuses;
+
+    // Pre-build sets of top-level directories that have modified/changed children
+    const dirModified = new Set<string>();
+    const dirChanged = new Set<string>();
+    for (const [key, val] of statusMap) {
+      if (val === 'same') continue;
+      const slashIdx = key.indexOf('/');
+      if (slashIdx > 0) {
+        const topDir = key.substring(0, slashIdx);
+        if (val === 'modified') dirModified.add(topDir);
+        else dirChanged.add(topDir);
+      }
+    }
+
     const result = new SvelteMap<string, ComparisonStatus>();
     for (const entry of panel.filteredSortedEntries) {
       if (entry.name === '..') continue;
-      // Try exact name match first
       const status = statusMap.get(entry.name);
       if (status) {
         result.set(entry.name, status);
       } else if (entry.is_dir) {
-        // For directories, aggregate child statuses
-        const prefix = entry.name + '/';
-        let hasModified = false;
-        let hasAny = false;
-        for (const [key, val] of statusMap) {
-          if (key.startsWith(prefix) && val !== 'same') {
-            hasAny = true;
-            if (val === 'modified') { hasModified = true; break; }
-          }
+        if (dirModified.has(entry.name) || dirChanged.has(entry.name)) {
+          result.set(entry.name, 'modified');
         }
-        if (hasModified) result.set(entry.name, 'modified');
-        else if (hasAny) result.set(entry.name, 'modified');
       }
     }
     return result;
@@ -718,7 +726,7 @@
     class:icon-grid={panel.viewMode === 'icon'}
     bind:this={listContainer}
     role="list"
-    style={panel.viewMode === 'icon' ? `--icon-size: ${appState.iconSize}px; --grid-min: ${appState.iconSize + 32}px` : ''}
+    style={panel.viewMode === 'icon' ? `--row-height: ${ROW_HEIGHT}px; --icon-size: ${appState.iconSize}px; --grid-min: ${appState.iconSize + 32}px` : `--row-height: ${ROW_HEIGHT}px`}
     onmousedown={handleListMouseDown}
     oncontextmenu={handleEmptyContextMenu}
     onscroll={panel.viewMode === 'list' ? handleListScroll : undefined}

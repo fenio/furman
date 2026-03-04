@@ -3,6 +3,7 @@
   import { convertFileSrc } from '@tauri-apps/api/core';
   import { readFileText } from '$lib/services/tauri';
   import { formatSize, formatDate } from '$lib/utils/format';
+  import { appState } from '$lib/state/app.svelte';
   import { highlightCode, detectLanguage } from '$lib/utils/highlight';
 
   interface Props {
@@ -105,7 +106,7 @@
     <div class="preview-dir">
       <div class="preview-dir-icon">📁</div>
       <div class="preview-dir-name">{entry.name}</div>
-      <div class="preview-dir-meta">{formatDate(entry.modified)}</div>
+      <div class="preview-dir-meta">{formatDate(entry.modified, appState.dateFormat)}</div>
     </div>
   {:else if entry}
     <div class="preview-file-info">
@@ -113,7 +114,7 @@
       <div class="preview-file-name">{entry.name}</div>
       <div class="preview-file-meta">
         <div>Size: {formatSize(entry.size)}</div>
-        <div>Modified: {formatDate(entry.modified)}</div>
+        <div>Modified: {formatDate(entry.modified, appState.dateFormat)}</div>
         {#if entry.extension}
           <div>Type: .{entry.extension}</div>
         {/if}

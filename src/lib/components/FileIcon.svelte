@@ -1,3 +1,11 @@
+<script lang="ts" module>
+  const archiveExtensions = new Set(['zip', 'rar', '7z', 'tar', 'gz', 'tgz', 'bz2', 'xz']);
+  const imageExtensions = new Set(['png', 'jpg', 'jpeg', 'gif', 'bmp', 'svg', 'webp', 'ico']);
+  const audioExtensions = new Set(['mp3', 'wav', 'flac', 'aac', 'ogg', 'm4a']);
+  const videoExtensions = new Set(['mp4', 'mkv', 'avi', 'mov', 'webm', 'wmv']);
+  const codeExtensions = new Set(['js', 'ts', 'py', 'rs', 'go', 'c', 'cpp', 'h', 'java', 'rb', 'swift', 'kt', 'svelte', 'vue', 'jsx', 'tsx']);
+</script>
+
 <script lang="ts">
   import type { FileEntry, PanelBackend } from '$lib/types';
   import type { ComparisonStatus } from '$lib/state/comparison.svelte';
@@ -22,12 +30,6 @@
   }
 
   let { entry, isSelected, isCursor, isActive, panelSide, backend, s3ConnectionId, comparisonStatus, getSelectedPaths, onclick, ondblclick, oncontextmenu }: Props = $props();
-
-  const archiveExtensions = new Set(['zip', 'rar', '7z', 'tar', 'gz', 'tgz', 'bz2', 'xz']);
-  const imageExtensions = new Set(['png', 'jpg', 'jpeg', 'gif', 'bmp', 'svg', 'webp', 'ico']);
-  const audioExtensions = new Set(['mp3', 'wav', 'flac', 'aac', 'ogg', 'm4a']);
-  const videoExtensions = new Set(['mp4', 'mkv', 'avi', 'mov', 'webm', 'wmv']);
-  const codeExtensions = new Set(['js', 'ts', 'py', 'rs', 'go', 'c', 'cpp', 'h', 'java', 'rb', 'swift', 'kt', 'svelte', 'vue', 'jsx', 'tsx']);
 
   const ext = $derived((entry.extension ?? '').toLowerCase());
   const isImage = $derived(imageExtensions.has(ext));

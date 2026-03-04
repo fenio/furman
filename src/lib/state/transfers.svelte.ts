@@ -206,6 +206,7 @@ class TransfersState {
     if (!this.hasActive && this.queued.length === 0) {
       this.dialogVisible = false;
     }
+    window.dispatchEvent(new CustomEvent('transfer-done'));
   }
 
   markPaused(id: string, checkpoint?: TransferCheckpoint | null) {

@@ -9,15 +9,47 @@ export function formatSize(bytes: number): string {
   return `${(bytes / (1024 * 1024 * 1024)).toFixed(1)}G`;
 }
 
-export function formatDate(epochMs: number): string {
+export type DateFormatType = 'iso' | 'eu' | 'us' | 'relative';
+
+export function formatDate(epochMs: number, format: DateFormatType = 'iso'): string {
   if (!epochMs) return '';
+  if (format === 'relative') return formatRelativeDate(epochMs);
   const d = new Date(epochMs);
   const year = d.getFullYear();
   const month = String(d.getMonth() + 1).padStart(2, '0');
   const day = String(d.getDate()).padStart(2, '0');
   const hours = String(d.getHours()).padStart(2, '0');
   const minutes = String(d.getMinutes()).padStart(2, '0');
-  return `${year}-${month}-${day} ${hours}:${minutes}`;
+  switch (format) {
+    case 'eu':
+      return `${day}/${month}/${year} ${hours}:${minutes}`;
+    case 'us': {
+      const h = d.getHours();
+      const ampm = h >= 12 ? 'PM' : 'AM';
+      const h12 = h % 12 || 12;
+      return `${month}/${day}/${year} ${h12}:${minutes} ${ampm}`;
+    }
+    default: // iso
+      return `${year}-${month}-${day} ${hours}:${minutes}`;
+  }
+}
+
+function formatRelativeDate(epochMs: number): string {
+  const now = Date.now();
+  const diff = now - epochMs;
+  if (diff < 0) return 'just now';
+  const seconds = Math.floor(diff / 1000);
+  if (seconds < 60) return 'just now';
+  const minutes = Math.floor(seconds / 60);
+  if (minutes < 60) return `${minutes}m ago`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `${hours}h ago`;
+  const days = Math.floor(hours / 24);
+  if (days < 30) return `${days}d ago`;
+  const months = Math.floor(days / 30);
+  if (months < 12) return `${months}mo ago`;
+  const years = Math.floor(months / 12);
+  return `${years}y ago`;
 }
 
 export function formatPermissions(mode: number): string {
