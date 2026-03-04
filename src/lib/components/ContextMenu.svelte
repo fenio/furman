@@ -11,10 +11,11 @@
     isS3?: boolean;
     isFile?: boolean;
     isArchive?: boolean;
+    isLocalDir?: boolean;
     onEmpty?: boolean;
   }
 
-  let { x, y, onClose, onAction, isS3 = false, isFile = false, isArchive: _isArchive = false, onEmpty = false }: Props = $props();
+  let { x, y, onClose, onAction, isS3 = false, isFile = false, isArchive: _isArchive = false, isLocalDir = false, onEmpty = false }: Props = $props();
 
   let menuEl: HTMLDivElement | undefined = $state(undefined);
   let adjustX = $state(0);
@@ -132,6 +133,13 @@
         Properties
         <span class="menu-shortcut">F9</span>
       </button>
+
+      {#if isLocalDir}
+        <button class="menu-row" role="menuitem" onclick={() => act('disk-usage')}>
+          Disk Usage
+          <span class="menu-shortcut">{platform.mod}{platform.shift}U</span>
+        </button>
+      {/if}
 
       {#if isS3}
         <div class="menu-divider"></div>

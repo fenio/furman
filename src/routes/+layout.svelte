@@ -268,6 +268,15 @@
       { id: 'preferences', label: 'Preferences', category: 'Display', execute: () => appState.showPreferences() },
       { id: 'shortcuts', label: 'Keyboard shortcuts', shortcut: `${mod}/`, category: 'Display', execute: () => { appState.modal = 'shortcuts'; } },
 
+      // Disk Usage
+      { id: 'disk-usage', label: 'Disk usage analyzer', shortcut: `${mod}${shift}U`, category: 'File', execute: () => {
+        const active = panels.active;
+        if (active.backend === 'local') {
+          const inactivePanel = panels.activePanel === 'left' ? 'right' : 'left';
+          appState.showDiskUsage(active.path, inactivePanel);
+        }
+      }, enabled: isLocal },
+
       // Search
       { id: 'search', label: 'Search files', shortcut: `${mod}F`, category: 'Search', execute: () => {
         const active = panels.active;
@@ -340,6 +349,12 @@
     if (key === 'presign') handlePresignUrl();
     else if (key === 'copy-uri') handleCopyS3Uri();
     else if (key === 'bulk-storage') handleBulkStorageClassChange();
+    else if (key === 'disk-usage') {
+      if (panels.active.backend === 'local') {
+        const inact = panels.activePanel === 'left' ? 'right' as const : 'left' as const;
+        appState.showDiskUsage(panels.active.path, inact);
+      }
+    }
   }
 
   async function executeUndo() {
@@ -371,9 +386,16 @@
     executeUndo();
   }
 
+  function handleDiskUsageRequest(e: Event) {
+    const targetPath = (e as CustomEvent).detail as string;
+    const inact = panels.activePanel === 'left' ? 'right' as const : 'left' as const;
+    appState.showDiskUsage(targetPath, inact);
+  }
+
   window.addEventListener('undo-last-operation', handleUndoEvent);
   window.addEventListener('sync-execute', handleSyncExecuteEvent);
   window.addEventListener('context-action', handleContextAction);
+  window.addEventListener('disk-usage-request', handleDiskUsageRequest);
 
   function handleTransferDone() {
     const reloads: Promise<void>[] = [];
@@ -433,6 +455,12 @@
       case 'search':
         if (active.backend === 'local' || active.backend === 's3') {
           appState.showSearch(active.path, active.backend, active.s3Connection?.connectionId ?? '');
+        }
+        break;
+      case 'disk-usage':
+        if (active.backend === 'local') {
+          const duPanel = panels.activePanel === 'left' ? 'right' as const : 'left' as const;
+          appState.showDiskUsage(active.path, duPanel);
         }
         break;
       case 'properties':
@@ -603,6 +631,7 @@
     window.removeEventListener('sync-execute', handleSyncExecuteEvent);
     window.removeEventListener('transfer-done', handleTransferDone);
     window.removeEventListener('context-action', handleContextAction);
+    window.removeEventListener('disk-usage-request', handleDiskUsageRequest);
   });
 
   // ── Keyboard helpers ──────────────────────────────────────────────────────
@@ -718,6 +747,15 @@
           }
           return;
         case 'u':
+        case 'U':
+          if (e.shiftKey) {
+            e.preventDefault();
+            if (panels.active.backend === 'local') {
+              const inact = panels.activePanel === 'left' ? 'right' as const : 'left' as const;
+              appState.showDiskUsage(panels.active.path, inact);
+            }
+            return;
+          }
           e.preventDefault();
           handlePresignUrl();                    // Cmd+U = Presigned URL
           return;

@@ -567,6 +567,33 @@ pub struct CfInvalidation {
     pub paths: Vec<String>,
 }
 
+// ── DiskUsageEvent ──────────────────────────────────────────────────────────
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DiskUsageEntry {
+    pub name: String,
+    pub path: String,
+    pub size: u64,
+    pub is_dir: bool,
+    pub item_count: u64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DiskUsageDone {
+    pub total_size: u64,
+    pub total_files: u64,
+    pub total_dirs: u64,
+    pub cancelled: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(tag = "type")]
+pub enum DiskUsageEvent {
+    Progress { files_scanned: u64 },
+    Entry(DiskUsageEntry),
+    Done(DiskUsageDone),
+}
+
 // ── Display impls ───────────────────────────────────────────────────────────
 
 impl fmt::Display for ProgressEvent {

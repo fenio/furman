@@ -39,6 +39,9 @@ class AppState {
   connectCallback = $state<((bucket: string, region: string, endpoint?: string, profile?: string, accessKey?: string, secretKey?: string, provider?: string, customCapabilities?: S3ProviderCapabilities) => void) | null>(null);
   connectionManagerTab = $state<'saved' | 'connect'>('saved');
   connectionManagerInitialData = $state<Partial<S3Profile> | undefined>(undefined);
+  diskUsagePath = $state('');
+  diskUsageTitle = $state('');
+  diskUsagePanel = $state<'left' | 'right' | 'none'>('none');
   searchRoot = $state('');
   searchBackend = $state<PanelBackend>('local');
   searchS3ConnectionId = $state('');
@@ -184,6 +187,18 @@ class AppState {
     this.searchBackend = backend;
     this.searchS3ConnectionId = s3ConnectionId;
     this.modal = 'search';
+  }
+
+  showDiskUsage(path: string, inactivePanel: 'left' | 'right') {
+    this.diskUsagePath = path;
+    this.diskUsageTitle = path.replace(/\/+$/, '').split('/').pop() || path;
+    this.diskUsagePanel = inactivePanel;
+  }
+
+  closeDiskUsage() {
+    this.diskUsagePath = '';
+    this.diskUsageTitle = '';
+    this.diskUsagePanel = 'none';
   }
 
   showPreferences() {
@@ -434,6 +449,9 @@ class AppState {
     this.inputType = 'text';
     this.connectCallback = null;
     this.connectionManagerInitialData = undefined;
+    this.diskUsagePath = '';
+    this.diskUsageTitle = '';
+    this.diskUsagePanel = 'none';
     this.searchRoot = '';
     this.searchBackend = 'local';
     this.searchS3ConnectionId = '';

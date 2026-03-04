@@ -1,5 +1,5 @@
 import { invoke, Channel } from '@tauri-apps/api/core';
-import type { DirListing, VolumeInfo, ProgressEvent, SearchEvent, SearchMode, SyncEvent, GitRepoInfo, FileProperties, TransferCheckpoint, ModelMetadata } from '$lib/types';
+import type { DirListing, VolumeInfo, ProgressEvent, SearchEvent, SearchMode, SyncEvent, GitRepoInfo, FileProperties, TransferCheckpoint, ModelMetadata, DiskUsageEvent } from '$lib/types';
 
 export async function listArchive(
   archivePath: string,
@@ -252,6 +252,20 @@ export async function batchChmod(
 
 export async function inspectModel(path: string): Promise<ModelMetadata> {
   return await invoke<ModelMetadata>('inspect_model', { path });
+}
+
+export async function analyzeDiskUsage(
+  id: string,
+  path: string,
+  onEvent: (e: DiskUsageEvent) => void
+): Promise<void> {
+  const channel = new Channel<DiskUsageEvent>();
+  channel.onmessage = onEvent;
+  await invoke('analyze_disk_usage', { id, path, channel });
+}
+
+export async function cancelDiskUsage(id: string): Promise<void> {
+  await invoke('cancel_disk_usage', { id });
 }
 
 export async function batchTouch(

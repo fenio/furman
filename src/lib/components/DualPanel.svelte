@@ -9,6 +9,7 @@
   import PreviewPane from './PreviewPane.svelte';
   import { comparisonState } from '$lib/state/comparison.svelte';
   import { previewState } from '$lib/state/preview.svelte';
+  import DiskUsagePane from './DiskUsagePane.svelte';
 
   interface Props {
     onEntryActivate?: (index: number) => void;
@@ -25,6 +26,10 @@
   // Preview replaces the inactive panel
   const previewReplacesLeft = $derived(previewState.visible && panels.activePanel === 'right');
   const previewReplacesRight = $derived(previewState.visible && panels.activePanel === 'left');
+
+  // Disk usage replaces the inactive panel
+  const duReplacesLeft = $derived(appState.diskUsagePanel === 'left');
+  const duReplacesRight = $derived(appState.diskUsagePanel === 'right');
 </script>
 
 <div class="dual-panel no-select">
@@ -96,10 +101,18 @@
       </div>
     {/if}
   {:else}
-    <!-- Left slot: terminal > preview > file panel -->
+    <!-- Left slot: terminal > disk-usage > preview > file panel -->
     {#if replaceLeft}
       <div class="in-pane-terminal">
         <TerminalPanel />
+      </div>
+    {:else if duReplacesLeft}
+      <div class="panel-column">
+        <DiskUsagePane
+          path={appState.diskUsagePath}
+          title={appState.diskUsageTitle}
+          onClose={() => appState.closeDiskUsage()}
+        />
       </div>
     {:else if previewReplacesLeft}
       <div class="panel-column">
@@ -136,10 +149,18 @@
         />
       </div>
     {/if}
-    <!-- Right slot: terminal > preview > file panel -->
+    <!-- Right slot: terminal > disk-usage > preview > file panel -->
     {#if replaceRight}
       <div class="in-pane-terminal">
         <TerminalPanel />
+      </div>
+    {:else if duReplacesRight}
+      <div class="panel-column">
+        <DiskUsagePane
+          path={appState.diskUsagePath}
+          title={appState.diskUsageTitle}
+          onClose={() => appState.closeDiskUsage()}
+        />
       </div>
     {:else if previewReplacesRight}
       <div class="panel-column">

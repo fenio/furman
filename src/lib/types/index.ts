@@ -464,6 +464,28 @@ export interface ModelMetadata {
   tensors_truncated: boolean;
 }
 
+// ── Disk Usage Types ─────────────────────────────────────────────────────────
+
+export interface DiskUsageEntry {
+  name: string;
+  path: string;
+  size: number;
+  is_dir: boolean;
+  item_count: number;
+}
+
+export interface DiskUsageDone {
+  total_size: number;
+  total_files: number;
+  total_dirs: number;
+  cancelled: boolean;
+}
+
+export type DiskUsageEvent =
+  | { type: 'Progress'; files_scanned: number }
+  | ({ type: 'Entry' } & DiskUsageEntry)
+  | ({ type: 'Done' } & DiskUsageDone);
+
 export type PanelBackend = 'local' | 's3' | 'sftp' | 'archive';
 
 export interface ArchiveInfo {

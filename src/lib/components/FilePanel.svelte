@@ -279,6 +279,15 @@
       window.dispatchEvent(new KeyboardEvent('keydown', { key: 'V', code: 'KeyV', metaKey: true, shiftKey: true }));
       return;
     }
+    // Disk usage: for ".." analyze the current directory, for other dirs analyze that dir
+    if (key === 'disk-usage') {
+      const entry = panel.currentEntry;
+      if (entry && entry.is_dir && panel.backend === 'local') {
+        const targetPath = entry.name === '..' ? panel.path : entry.path;
+        window.dispatchEvent(new CustomEvent('disk-usage-request', { detail: targetPath }));
+      }
+      return;
+    }
     // S3-specific actions via custom event
     if (key === 'presign' || key === 'copy-uri' || key === 'bulk-storage') {
       window.dispatchEvent(new CustomEvent('context-action', { detail: key }));
@@ -821,6 +830,7 @@
       isS3={isS3}
       isFile={!!(panel.currentEntry && !panel.currentEntry.is_dir && panel.currentEntry.name !== '..')}
       isArchive={panel.backend === 'archive'}
+      isLocalDir={panel.backend === 'local' && !!(panel.currentEntry && panel.currentEntry.is_dir)}
       onEmpty={contextMenuOnEmpty}
     />
   {/if}

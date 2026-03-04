@@ -9,6 +9,7 @@ pub mod oidc;
 pub mod s3;
 pub mod sftp;
 
+use commands::disk_usage::DiskUsageState;
 use commands::file::FileOpState;
 use commands::search::SearchState;
 use commands::sync::SyncState;
@@ -64,6 +65,7 @@ pub fn run() {
         .manage(SearchState(Mutex::new(HashMap::new())))
         .manage(FileOpState(Mutex::new(HashMap::new())))
         .manage(SyncState(Mutex::new(HashMap::new())))
+        .manage(DiskUsageState(Mutex::new(HashMap::new())))
         .plugin(tauri_plugin_drag::init())
         .setup(|app| {
             let mut targets = vec![tauri_plugin_log::Target::new(
@@ -134,6 +136,7 @@ pub fn run() {
                 .item(&MenuItemBuilder::with_id("edit", "Edit").accelerator("CmdOrCtrl+E").build(handle)?)
                 .separator()
                 .item(&MenuItemBuilder::with_id("search", "Search…").accelerator("CmdOrCtrl+F").build(handle)?)
+                .item(&MenuItemBuilder::with_id("disk-usage", "Disk Usage…").build(handle)?)
                 .separator()
                 .item(&MenuItemBuilder::with_id("properties", "Properties").accelerator("CmdOrCtrl+I").build(handle)?)
                 .build()?;
@@ -377,6 +380,9 @@ pub fn run() {
             // search commands
             commands::search::search_files,
             commands::search::cancel_search,
+            // disk usage commands
+            commands::disk_usage::analyze_disk_usage,
+            commands::disk_usage::cancel_disk_usage,
             // sync commands
             commands::sync::sync_diff,
             commands::sync::cancel_sync,
