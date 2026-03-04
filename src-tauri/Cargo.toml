@@ -56,6 +56,21 @@ russh-sftp = "2.1"
 glob-match = "0.2"
 aws-smithy-http-client = { version = "1", features = ["rustls-aws-lc", "default-client"] }
 
+# MCP server (optional)
+rmcp = { version = "1.1", features = ["server", "transport-io", "macros"], optional = true }
+schemars = { version = "1", optional = true }
+tracing-subscriber = { version = "0.3", features = ["env-filter"], optional = true }
+anyhow = { version = "1", optional = true }
+
+[features]
+default = []
+mcp = ["rmcp", "schemars", "tracing-subscriber", "anyhow"]
+
+[[bin]]
+name = "furman-mcp"
+path = "src/bin/furman-mcp.rs"
+required-features = ["mcp"]
+
 [lints.clippy]
 needless_pass_by_value = "allow"  # Most are Tauri commands requiring owned types
 redundant_closure_for_method_calls = "warn"

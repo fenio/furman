@@ -1,6 +1,9 @@
 pub mod cloudfront;
 mod commands;
+#[cfg(feature = "mcp")]
+pub mod mcp;
 pub mod local;
+pub mod model_inspector;
 pub mod models;
 pub mod oidc;
 pub mod s3;
@@ -386,6 +389,8 @@ pub fn run() {
             commands::git::git_pull,
             commands::git::git_list_branches,
             commands::git::git_checkout,
+            // model inspector
+            commands::model::inspect_model,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

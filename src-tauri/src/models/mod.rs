@@ -1,3 +1,5 @@
+pub mod model_metadata;
+
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::fmt;
@@ -271,6 +273,7 @@ pub struct S3ObjectMetadata {
 // ── S3Tag ──────────────────────────────────────────────────────────────────
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "mcp", derive(schemars::JsonSchema))]
 pub struct S3Tag {
     pub key: String,
     pub value: String,
