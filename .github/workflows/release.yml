@@ -32,11 +32,14 @@ jobs:
         include:
           - target: aarch64-apple-darwin
             runner: macos-latest
+            mcp_asset: furman-mcp-aarch64-apple-darwin
           - target: x86_64-apple-darwin
             runner: macos-latest
+            mcp_asset: furman-mcp-x86_64-apple-darwin
           - target: x86_64-unknown-linux-gnu
             runner: ubuntu-24.04
             container: ghcr.io/pkgforge-dev/archlinux:latest
+            mcp_asset: furman-mcp-x86_64-unknown-linux-gnu
 
     runs-on: ${{ matrix.runner }}
     container: ${{ matrix.container || '' }}
@@ -92,6 +95,14 @@ jobs:
         run: cargo build --release --bin furman-mcp --features mcp --target ${{ matrix.target }}
         working-directory: src-tauri
 
+      - name: Upload furman-mcp release asset
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          cp src-tauri/target/${{ matrix.target }}/release/furman-mcp ${{ matrix.mcp_asset }}
+          gh release upload "${{ github.ref_name }}" "${{ matrix.mcp_asset }}" \
+            --repo "${{ github.repository }}" --clobber
+
       - name: Build Tauri app
         uses: tauri-apps/tauri-action@v0
         env:
@@ -127,7 +138,7 @@ jobs:
         run: |
           gh release download "$GITHUB_REF_NAME" \
             --repo fenio/furman \
-            --pattern "*.dmg" --pattern "*.AppImage"
+            --pattern "*.dmg" --pattern "*.AppImage" --pattern "furman-mcp-*"
 
       - name: Compute SHA256 checksums
         id: sha
@@ -136,6 +147,9 @@ jobs:
           echo "arm=$(sha256sum Furman_${VERSION}_aarch64.dmg | cut -d ' ' -f 1)" >> "$GITHUB_OUTPUT"
           echo "intel=$(sha256sum Furman_${VERSION}_x64.dmg | cut -d ' ' -f 1)" >> "$GITHUB_OUTPUT"
           echo "linux=$(sha256sum Furman_${VERSION}_amd64.AppImage | cut -d ' ' -f 1)" >> "$GITHUB_OUTPUT"
+          echo "mcp_arm=$(sha256sum furman-mcp-aarch64-apple-darwin | cut -d ' ' -f 1)" >> "$GITHUB_OUTPUT"
+          echo "mcp_intel=$(sha256sum furman-mcp-x86_64-apple-darwin | cut -d ' ' -f 1)" >> "$GITHUB_OUTPUT"
+          echo "mcp_linux=$(sha256sum furman-mcp-x86_64-unknown-linux-gnu | cut -d ' ' -f 1)" >> "$GITHUB_OUTPUT"
 
       - name: Checkout homebrew-tap
         uses: actions/checkout@v6
@@ -207,6 +221,42 @@ jobs:
           end
           FORMULA
 
+      - name: Update furman-mcp formula
+        run: |
+          VERSION=${{ steps.version.outputs.version }}
+          MCP_ARM_SHA=${{ steps.sha.outputs.mcp_arm }}
+          MCP_INTEL_SHA=${{ steps.sha.outputs.mcp_intel }}
+          MCP_LINUX_SHA=${{ steps.sha.outputs.mcp_linux }}
+          mkdir -p Formula
+          cat > Formula/furman-mcp.rb << FORMULA
+          class FurmanMcp < Formula
+            desc "MCP server for S3 and SFTP operations (Furman)"
+            homepage "https://github.com/fenio/furman"
+            version "${VERSION}"
+            license "GPL-3.0-only"
+
+            on_macos do
+              on_arm do
+                url "https://github.com/fenio/furman/releases/download/v#{version}/furman-mcp-aarch64-apple-darwin"
+                sha256 "${MCP_ARM_SHA}"
+              end
+              on_intel do
+                url "https://github.com/fenio/furman/releases/download/v#{version}/furman-mcp-x86_64-apple-darwin"
+                sha256 "${MCP_INTEL_SHA}"
+              end
+            end
+
+            on_linux do
+              url "https://github.com/fenio/furman/releases/download/v#{version}/furman-mcp-x86_64-unknown-linux-gnu"
+              sha256 "${MCP_LINUX_SHA}"
+            end
+
+            def install
+              bin.install Dir["furman-mcp-*"].first => "furman-mcp"
+            end
+          end
+          FORMULA
+
       - name: Remove old Formula/furman.rb if it exists
         run: git rm -f Formula/furman.rb 2>/dev/null || true
 
@@ -214,6 +264,6 @@ jobs:
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add Casks/furman.rb Formula/furman-bin.rb
+          git add Casks/furman.rb Formula/furman-bin.rb Formula/furman-mcp.rb
           git commit -m "Update furman to ${{ steps.version.outputs.version }}"
           git push
