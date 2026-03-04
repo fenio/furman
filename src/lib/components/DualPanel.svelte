@@ -90,6 +90,8 @@
           entry={panels.active.currentEntry}
           backend={panels.active.backend}
           panelPath={panels.active.path}
+          otherEntry={panels.inactive.currentEntry}
+          otherBackend={panels.inactive.backend}
         />
       </div>
     {/if}
@@ -105,6 +107,8 @@
           entry={panels.active.currentEntry}
           backend={panels.active.backend}
           panelPath={panels.active.path}
+          otherEntry={panels.inactive.currentEntry}
+          otherBackend={panels.inactive.backend}
         />
       </div>
     {:else}
@@ -143,6 +147,8 @@
           entry={panels.active.currentEntry}
           backend={panels.active.backend}
           panelPath={panels.active.path}
+          otherEntry={panels.inactive.currentEntry}
+          otherBackend={panels.inactive.backend}
         />
       </div>
     {:else}
@@ -186,7 +192,8 @@
   .panel-column {
     display: flex;
     flex-direction: column;
-    flex: 1 1 50%;
+    flex: 1 1 0;
+    width: 0;
     min-width: 0;
     min-height: 0;
   }

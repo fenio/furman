@@ -1,7 +1,8 @@
 <script lang="ts">
   import { onMount, untrack } from 'svelte';
   import { appState } from '$lib/state/app.svelte';
-  import { getFileProperties, getDirectorySize } from '$lib/services/tauri';
+  import { getFileProperties, getDirectorySize, inspectModel } from '$lib/services/tauri';
+  import { formatParams, formatVram, estimateVram, groupTensorsByCategory, groupTensorsByLayer, getCategoryColor, type VramEstimate } from '$lib/utils/model';
   import MfaDialog from './MfaDialog.svelte';
   import CloudFrontTab from './CloudFrontTab.svelte';
   import S3InventoryTab from './S3InventoryTab.svelte';
@@ -39,6 +40,7 @@
     S3ProviderCapabilities, S3BucketWebsite, S3BucketLogging, S3BucketOwnership,
     S3ObjectLockConfig, S3ObjectRetention, S3ObjectLegalHold,
     KmsKeyInfo, S3ConnectionInfo, SftpConnectionInfo, ArchiveInfo,
+    ModelMetadata,
   } from '$lib/types';
 
   interface Props {
@@ -97,6 +99,29 @@
   }
   let dirSize = $state<number | null>(null);
   let dirSizeLoading = $state(false);
+
+  // Model inspector state
+  const modelExtensions = new Set(['safetensors', 'gguf', 'onnx']);
+  let localTab = $state<'general' | 'model'>('general');
+  let modelMetadata = $state<ModelMetadata | null>(null);
+  let modelLoading = $state(false);
+  let modelError = $state('');
+  let tensorViewMode = $state<'type' | 'layer' | 'list'>('type');
+
+  const vramEstimate = $derived.by((): VramEstimate | null => {
+    if (!modelMetadata) return null;
+    return estimateVram(modelMetadata);
+  });
+
+  const tensorsByCategory = $derived.by(() => {
+    if (!modelMetadata) return [];
+    return groupTensorsByCategory(modelMetadata.tensors);
+  });
+
+  const tensorsByLayer = $derived.by(() => {
+    if (!modelMetadata) return [];
+    return groupTensorsByLayer(modelMetadata.tensors);
+  });
 
   // Editable permissions state
   let editMode = $state(0);
@@ -1466,6 +1491,15 @@
               dirSizeLoading = false;
             });
         }
+        // Load model metadata for supported extensions
+        const ext = (fileProps.name.split('.').pop() ?? '').toLowerCase();
+        if (modelExtensions.has(ext)) {
+          modelLoading = true;
+          inspectModel(fileProps.path)
+            .then((meta) => { modelMetadata = meta; })
+            .catch((err) => { modelError = String(err); })
+            .finally(() => { modelLoading = false; });
+        }
       }
     } catch (err: unknown) {
       error = String(err);
@@ -1528,76 +1562,252 @@
           </tbody>
         </table>
       {:else if fileProps}
-        <!-- Local file/directory properties -->
-        <table class="props-table">
-          <tbody>
-            <tr><td class="prop-label">Name</td><td class="prop-value">{fileProps.name}</td></tr>
-            <tr><td class="prop-label">Path</td><td class="prop-value path">{fileProps.path}</td></tr>
-            <tr><td class="prop-label">Kind</td><td class="prop-value">{fileProps.kind}</td></tr>
-            <tr>
-              <td class="prop-label">Size</td>
-              <td class="prop-value">
-                {#if fileProps.is_dir}
-                  {#if dirSizeLoading}
-                    Calculating...
-                  {:else if dirSize !== null}
-                    {formatSize(dirSize)} ({dirSize.toLocaleString()} bytes)
-                  {:else}
-                    --
-                  {/if}
-                {:else}
-                  {formatSize(fileProps.size)} ({fileProps.size.toLocaleString()} bytes)
-                {/if}
-              </td>
-            </tr>
-            <tr><td class="prop-label">Created</td><td class="prop-value">{formatDate(fileProps.created, appState.dateFormat)}</td></tr>
-            <tr><td class="prop-label">Modified</td><td class="prop-value">{formatDate(fileProps.modified, appState.dateFormat)}</td></tr>
-            <tr><td class="prop-label">Accessed</td><td class="prop-value">{formatDate(fileProps.accessed, appState.dateFormat)}</td></tr>
-            <tr><td class="prop-label">Owner</td><td class="prop-value">{fileProps.owner}</td></tr>
-            <tr><td class="prop-label">Group</td><td class="prop-value">{fileProps.group}</td></tr>
-            {#if fileProps.is_symlink && fileProps.symlink_target}
-              <tr><td class="prop-label">Target</td><td class="prop-value path">{fileProps.symlink_target}</td></tr>
-            {/if}
-          </tbody>
-        </table>
-
-        <!-- Permissions editor -->
-        <div class="section-title">Permissions</div>
-        <div class="perms-section">
-          <div class="octal-row">
-            <span class="perm-display">{formatPermissions(editMode)}</span>
-            <input
-              class="octal-input"
-              type="text"
-             
-              value={octalString()}
-              maxlength="4"
-              oninput={handleOctalInput}
-            />
+        <!-- Tab bar for local files (only when model metadata is available) -->
+        {#if modelMetadata || modelLoading}
+          <div class="tab-bar">
+            <button class="tab-btn" class:active={localTab === 'general'} onclick={() => { localTab = 'general'; }}>General</button>
+            <button class="tab-btn" class:active={localTab === 'model'} onclick={() => { localTab = 'model'; }}>Model</button>
           </div>
-          <div class="rwx-grid">
-            {#each ['Owner', 'Group', 'Other'] as rowLabel (rowLabel)}
-              <div class="rwx-row">
-                <span class="rwx-label">{rowLabel}</span>
-                {#each permBits.filter((b) => b.row === rowLabel) as pb (pb.bit)}
-                  <label class="rwx-checkbox" class:checked={hasBit(pb.bit)}>
-                    <input
-                      type="checkbox"
-                      checked={hasBit(pb.bit)}
-                      onchange={() => toggleBit(pb.bit)}
-                    />
-                    {pb.label}
-                  </label>
+        {/if}
+
+        {#if localTab === 'general'}
+          <!-- Local file/directory properties -->
+          <table class="props-table">
+            <tbody>
+              <tr><td class="prop-label">Name</td><td class="prop-value">{fileProps.name}</td></tr>
+              <tr><td class="prop-label">Path</td><td class="prop-value path">{fileProps.path}</td></tr>
+              <tr><td class="prop-label">Kind</td><td class="prop-value">{fileProps.kind}</td></tr>
+              <tr>
+                <td class="prop-label">Size</td>
+                <td class="prop-value">
+                  {#if fileProps.is_dir}
+                    {#if dirSizeLoading}
+                      Calculating...
+                    {:else if dirSize !== null}
+                      {formatSize(dirSize)} ({dirSize.toLocaleString()} bytes)
+                    {:else}
+                      --
+                    {/if}
+                  {:else}
+                    {formatSize(fileProps.size)} ({fileProps.size.toLocaleString()} bytes)
+                  {/if}
+                </td>
+              </tr>
+              <tr><td class="prop-label">Created</td><td class="prop-value">{formatDate(fileProps.created, appState.dateFormat)}</td></tr>
+              <tr><td class="prop-label">Modified</td><td class="prop-value">{formatDate(fileProps.modified, appState.dateFormat)}</td></tr>
+              <tr><td class="prop-label">Accessed</td><td class="prop-value">{formatDate(fileProps.accessed, appState.dateFormat)}</td></tr>
+              <tr><td class="prop-label">Owner</td><td class="prop-value">{fileProps.owner}</td></tr>
+              <tr><td class="prop-label">Group</td><td class="prop-value">{fileProps.group}</td></tr>
+              {#if fileProps.is_symlink && fileProps.symlink_target}
+                <tr><td class="prop-label">Target</td><td class="prop-value path">{fileProps.symlink_target}</td></tr>
+              {/if}
+            </tbody>
+          </table>
+
+          <!-- Permissions editor -->
+          <div class="section-title">Permissions</div>
+          <div class="perms-section">
+            <div class="octal-row">
+              <span class="perm-display">{formatPermissions(editMode)}</span>
+              <input
+                class="octal-input"
+                type="text"
+
+                value={octalString()}
+                maxlength="4"
+                oninput={handleOctalInput}
+              />
+            </div>
+            <div class="rwx-grid">
+              {#each ['Owner', 'Group', 'Other'] as rowLabel (rowLabel)}
+                <div class="rwx-row">
+                  <span class="rwx-label">{rowLabel}</span>
+                  {#each permBits.filter((b) => b.row === rowLabel) as pb (pb.bit)}
+                    <label class="rwx-checkbox" class:checked={hasBit(pb.bit)}>
+                      <input
+                        type="checkbox"
+                        checked={hasBit(pb.bit)}
+                        onchange={() => toggleBit(pb.bit)}
+                      />
+                      {pb.label}
+                    </label>
+                  {/each}
+                </div>
+              {/each}
+            </div>
+            {#if permsDirty}
+              <button class="dialog-btn apply-btn" onclick={applyPermissions} disabled={applyingPerms}>
+                {applyingPerms ? 'Applying...' : 'Apply'}
+              </button>
+            {/if}
+          </div>
+        {:else if localTab === 'model'}
+          <!-- Model tab -->
+          {#if modelLoading}
+            <div class="loading">Loading model metadata...</div>
+          {:else if modelError}
+            <div class="error">{modelError}</div>
+          {:else if modelMetadata}
+            <table class="props-table">
+              <tbody>
+                <tr><td class="prop-label">Format</td><td class="prop-value">{modelMetadata.format}{#if modelMetadata.gguf_version} v{modelMetadata.gguf_version}{/if}</td></tr>
+                {#if modelMetadata.model_name}
+                  <tr><td class="prop-label">Model Name</td><td class="prop-value">{modelMetadata.model_name}</td></tr>
+                {/if}
+                {#if modelMetadata.architecture}
+                  <tr><td class="prop-label">Architecture</td><td class="prop-value">{modelMetadata.architecture}</td></tr>
+                {/if}
+                {#if modelMetadata.quantization}
+                  <tr><td class="prop-label">Quantization</td><td class="prop-value">{modelMetadata.quantization}</td></tr>
+                {/if}
+                <tr><td class="prop-label">Parameters</td><td class="prop-value">{formatParams(modelMetadata.total_parameters)} ({modelMetadata.total_parameters.toLocaleString()})</td></tr>
+                <tr><td class="prop-label">Tensors</td><td class="prop-value">{modelMetadata.tensor_count.toLocaleString()}{#if modelMetadata.tensors_truncated} (showing first 500){/if}</td></tr>
+                <tr><td class="prop-label">Tensor Data</td><td class="prop-value">{formatSize(modelMetadata.total_tensor_bytes)}</td></tr>
+                {#if modelMetadata.context_length}
+                  <tr><td class="prop-label">Context Length</td><td class="prop-value">{modelMetadata.context_length.toLocaleString()}</td></tr>
+                {/if}
+                {#if modelMetadata.block_count}
+                  <tr><td class="prop-label">Layers</td><td class="prop-value">{modelMetadata.block_count}</td></tr>
+                {/if}
+                {#if modelMetadata.head_count}
+                  <tr><td class="prop-label">Attention Heads</td><td class="prop-value">{modelMetadata.head_count}{#if modelMetadata.head_count_kv} (KV: {modelMetadata.head_count_kv}){/if}</td></tr>
+                {/if}
+                {#if modelMetadata.embedding_size}
+                  <tr><td class="prop-label">Embedding Size</td><td class="prop-value">{modelMetadata.embedding_size}</td></tr>
+                {/if}
+                {#if modelMetadata.vocab_size}
+                  <tr><td class="prop-label">Vocab Size</td><td class="prop-value">{modelMetadata.vocab_size.toLocaleString()}</td></tr>
+                {/if}
+                {#if modelMetadata.ir_version}
+                  <tr><td class="prop-label">IR Version</td><td class="prop-value">{modelMetadata.ir_version}</td></tr>
+                {/if}
+                {#if modelMetadata.producer_name}
+                  <tr><td class="prop-label">Producer</td><td class="prop-value">{modelMetadata.producer_name}{#if modelMetadata.producer_version} v{modelMetadata.producer_version}{/if}</td></tr>
+                {/if}
+                {#if modelMetadata.opset_versions.length > 0}
+                  <tr><td class="prop-label">Opset</td><td class="prop-value">{modelMetadata.opset_versions.join(', ')}</td></tr>
+                {/if}
+              </tbody>
+            </table>
+
+            <!-- VRAM Estimation -->
+            {#if vramEstimate}
+              <div class="section-title">VRAM Estimation</div>
+              <table class="props-table vram-table">
+                <tbody>
+                  <tr><td class="prop-label">Model Weights</td><td class="prop-value">{formatVram(vramEstimate.modelWeights)}</td></tr>
+                  <tr>
+                    <td class="prop-label">KV Cache</td>
+                    <td class="prop-value">{#if vramEstimate.kvCache > 0}{formatVram(vramEstimate.kvCache)}{:else}<em class="vram-unknown">Unknown</em>{/if}</td>
+                  </tr>
+                  <tr><td class="prop-label">Overhead (~5%)</td><td class="prop-value">{formatVram(vramEstimate.overhead)}</td></tr>
+                  <tr class="vram-total-row"><td class="prop-label"><strong>Total</strong></td><td class="prop-value"><strong>{formatVram(vramEstimate.total)}</strong></td></tr>
+                </tbody>
+              </table>
+              <div class="gpu-tier-grid">
+                {#each vramEstimate.gpuFit as gpu (gpu.tier)}
+                  <div class="gpu-tier" class:gpu-tier-fits={gpu.fits} class:gpu-tier-no={!gpu.fits}>
+                    <span class="gpu-tier-icon">{gpu.fits ? '\u2713' : '\u2717'}</span>
+                    <span class="gpu-tier-label">{gpu.tier} GB</span>
+                  </div>
                 {/each}
               </div>
-            {/each}
-          </div>
-          {#if permsDirty}
-            <button class="dialog-btn apply-btn" onclick={applyPermissions} disabled={applyingPerms}>
-              {applyingPerms ? 'Applying...' : 'Apply'}
-            </button>
+            {/if}
+
+            <!-- Metadata KV (filtered: hide keys already shown above) -->
+            {@const metaFilteredKeys = new Set([
+              'general.architecture', 'general.name', 'general.description', 'general.file_type',
+            ])}
+            {@const metaArchPrefix = modelMetadata.architecture ? modelMetadata.architecture + '.' : ''}
+            {@const filteredMeta = Object.entries(modelMetadata.metadata)
+              .filter(([k]) => !metaFilteredKeys.has(k)
+                && !(metaArchPrefix && (k === metaArchPrefix + 'context_length'
+                  || k === metaArchPrefix + 'embedding_length'
+                  || k === metaArchPrefix + 'block_count'
+                  || k === metaArchPrefix + 'attention.head_count'
+                  || k === metaArchPrefix + 'attention.head_count_kv'))
+                && k !== 'tokenizer.ggml.tokens')
+              .sort((a, b) => a[0].localeCompare(b[0]))}
+            {#if filteredMeta.length > 0}
+              <div class="section-title">Metadata ({filteredMeta.length})</div>
+              <div class="model-kv-section">
+                {#each filteredMeta as [key, value] (key)}
+                  <div class="model-kv-row">
+                    <span class="model-kv-key" title={key}>{key}</span>
+                    <span class="model-kv-value" title={value}>{value}</span>
+                  </div>
+                {/each}
+              </div>
+            {/if}
+
+            <!-- Tensor visualization -->
+            {#if modelMetadata.tensors.length > 0}
+              <div class="section-title tensor-section-header">
+                <span>Tensors ({modelMetadata.tensor_count.toLocaleString()})</span>
+                <div class="tensor-view-toggle">
+                  <button class="tensor-toggle-btn" class:active={tensorViewMode === 'type'} onclick={() => { tensorViewMode = 'type'; }}>By Type</button>
+                  <button class="tensor-toggle-btn" class:active={tensorViewMode === 'layer'} onclick={() => { tensorViewMode = 'layer'; }}>By Layer</button>
+                  <button class="tensor-toggle-btn" class:active={tensorViewMode === 'list'} onclick={() => { tensorViewMode = 'list'; }}>List</button>
+                </div>
+              </div>
+
+              {#if tensorViewMode === 'type'}
+                <!-- Stacked horizontal bar by category -->
+                <div class="tensor-bar-container">
+                  <div class="tensor-stacked-bar">
+                    {#each tensorsByCategory as group (group.key)}
+                      <div
+                        class="tensor-bar-segment"
+                        style="width: {group.percentage}%; background: {getCategoryColor(group.key)};"
+                        title="{group.label}: {formatSize(group.totalBytes)} ({group.percentage.toFixed(1)}%)"
+                      ></div>
+                    {/each}
+                  </div>
+                  <div class="tensor-legend">
+                    {#each tensorsByCategory as group (group.key)}
+                      <div class="tensor-legend-item">
+                        <span class="tensor-legend-swatch" style="background: {getCategoryColor(group.key)};"></span>
+                        <span class="tensor-legend-label">{group.label}</span>
+                        <span class="tensor-legend-value">{formatSize(group.totalBytes)} ({group.percentage.toFixed(1)}%)</span>
+                      </div>
+                    {/each}
+                  </div>
+                </div>
+              {:else if tensorViewMode === 'layer'}
+                <!-- Horizontal bar chart per layer -->
+                <div class="tensor-layer-chart">
+                  {#each tensorsByLayer as group (group.key)}
+                    <div class="tensor-layer-row">
+                      <span class="tensor-layer-label">{group.label}</span>
+                      <div class="tensor-layer-bar-bg">
+                        <div class="tensor-layer-bar-fill" style="width: {group.percentage}%;"></div>
+                      </div>
+                      <span class="tensor-layer-size">{formatSize(group.totalBytes)}</span>
+                    </div>
+                  {/each}
+                </div>
+              {:else}
+                <!-- Original tensor list -->
+                <div class="model-tensor-list">
+                  <div class="model-tensor-header">
+                    <span class="tensor-name">Name</span>
+                    <span class="tensor-dtype">Type</span>
+                    <span class="tensor-shape">Shape</span>
+                    <span class="tensor-size">Size</span>
+                  </div>
+                  {#each modelMetadata.tensors as tensor (tensor.name)}
+                    <div class="model-tensor-row">
+                      <span class="tensor-name" title={tensor.name}>{tensor.name}</span>
+                      <span class="tensor-dtype">{tensor.dtype}</span>
+                      <span class="tensor-shape">[{tensor.shape.join(', ')}]</span>
+                      <span class="tensor-size">{formatSize(tensor.size_bytes)}</span>
+                    </div>
+                  {/each}
+                </div>
+              {/if}
+            {/if}
           {/if}
-        </div>
+        {/if}
       {:else if s3Props}
         <!-- S3 object properties -->
         <table class="props-table">
@@ -3579,5 +3789,301 @@
   .tab-btn.active {
     border-bottom: 2px solid var(--text-accent);
     color: var(--text-accent);
+  }
+
+  /* Model inspector styles */
+  .model-kv-section {
+    max-height: 180px;
+    overflow-y: auto;
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--radius-sm);
+    font-size: 11px;
+  }
+
+  .model-kv-row {
+    display: flex;
+    gap: 8px;
+    padding: 3px 8px;
+    border-bottom: 1px solid var(--border-subtle);
+  }
+
+  .model-kv-row:last-child {
+    border-bottom: none;
+  }
+
+  .model-kv-key {
+    color: var(--text-secondary);
+    flex-shrink: 0;
+    max-width: 220px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .model-kv-value {
+    color: var(--text-primary);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .model-tensor-list {
+    flex: 1;
+    min-height: 120px;
+    max-height: 400px;
+    overflow-y: auto;
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--radius-sm);
+    font-size: 11px;
+    font-family: var(--font-mono);
+  }
+
+  .model-tensor-header {
+    display: flex;
+    gap: 8px;
+    padding: 4px 8px;
+    border-bottom: 1px solid var(--border-subtle);
+    background: var(--bg-surface);
+    font-weight: 600;
+    color: var(--text-secondary);
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 0.3px;
+    position: sticky;
+    top: 0;
+  }
+
+  .model-tensor-row {
+    display: flex;
+    gap: 8px;
+    padding: 2px 8px;
+    border-bottom: 1px solid var(--border-subtle);
+    align-items: baseline;
+  }
+
+  .model-tensor-row:last-child {
+    border-bottom: none;
+  }
+
+  .tensor-name {
+    flex: 1;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    color: var(--text-primary);
+  }
+
+  .tensor-dtype {
+    flex-shrink: 0;
+    color: var(--text-accent);
+    min-width: 50px;
+  }
+
+  .tensor-shape {
+    flex-shrink: 0;
+    color: var(--text-secondary);
+    min-width: 100px;
+  }
+
+  .tensor-size {
+    flex-shrink: 0;
+    color: var(--text-secondary);
+    min-width: 60px;
+    text-align: right;
+  }
+
+  /* VRAM estimation styles */
+  .vram-table {
+    margin-bottom: 6px;
+  }
+
+  .vram-unknown {
+    color: var(--text-secondary);
+    font-style: italic;
+  }
+
+  .vram-total-row td {
+    border-top: 1px solid var(--border-subtle);
+    padding-top: 4px;
+  }
+
+  .gpu-tier-grid {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 4px;
+    margin-bottom: 8px;
+  }
+
+  .gpu-tier {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 4px;
+    padding: 4px 6px;
+    border-radius: var(--radius-sm);
+    font-size: 11px;
+    font-weight: 500;
+  }
+
+  .gpu-tier-fits {
+    background: color-mix(in srgb, #10b981 15%, transparent);
+    color: #10b981;
+  }
+
+  .gpu-tier-no {
+    background: color-mix(in srgb, #ef4444 10%, transparent);
+    color: #ef4444;
+    opacity: 0.7;
+  }
+
+  .gpu-tier-icon {
+    font-size: 10px;
+  }
+
+  .gpu-tier-label {
+    font-size: 11px;
+  }
+
+  /* Tensor visualization styles */
+  .tensor-section-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+  }
+
+  .tensor-view-toggle {
+    display: flex;
+    gap: 0;
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--radius-sm);
+    overflow: hidden;
+  }
+
+  .tensor-toggle-btn {
+    padding: 2px 8px;
+    font-size: 10px;
+    font-family: inherit;
+    background: none;
+    border: none;
+    border-right: 1px solid var(--border-subtle);
+    color: var(--text-secondary);
+    cursor: pointer;
+    transition: background var(--transition-fast), color var(--transition-fast);
+  }
+
+  .tensor-toggle-btn:last-child {
+    border-right: none;
+  }
+
+  .tensor-toggle-btn:hover {
+    background: var(--bg-hover);
+  }
+
+  .tensor-toggle-btn.active {
+    background: var(--accent);
+    color: var(--accent-text, #fff);
+  }
+
+  /* Stacked bar (By Type) */
+  .tensor-bar-container {
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--radius-sm);
+    padding: 8px;
+  }
+
+  .tensor-stacked-bar {
+    display: flex;
+    height: 20px;
+    border-radius: 3px;
+    overflow: hidden;
+    margin-bottom: 8px;
+  }
+
+  .tensor-bar-segment {
+    min-width: 2px;
+    transition: opacity 0.15s;
+  }
+
+  .tensor-bar-segment:hover {
+    opacity: 0.8;
+  }
+
+  .tensor-legend {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px 12px;
+  }
+
+  .tensor-legend-item {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    font-size: 10px;
+  }
+
+  .tensor-legend-swatch {
+    width: 8px;
+    height: 8px;
+    border-radius: 2px;
+    flex-shrink: 0;
+  }
+
+  .tensor-legend-label {
+    color: var(--text-primary);
+    font-weight: 500;
+  }
+
+  .tensor-legend-value {
+    color: var(--text-secondary);
+  }
+
+  /* Layer bar chart (By Layer) */
+  .tensor-layer-chart {
+    max-height: 400px;
+    overflow-y: auto;
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--radius-sm);
+    padding: 4px 0;
+  }
+
+  .tensor-layer-row {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 1px 8px;
+    font-size: 10px;
+  }
+
+  .tensor-layer-label {
+    width: 56px;
+    flex-shrink: 0;
+    color: var(--text-secondary);
+    text-align: right;
+    white-space: nowrap;
+  }
+
+  .tensor-layer-bar-bg {
+    flex: 1;
+    height: 10px;
+    background: var(--bg-surface);
+    border-radius: 2px;
+    overflow: hidden;
+  }
+
+  .tensor-layer-bar-fill {
+    height: 100%;
+    background: #3b82f6;
+    border-radius: 2px;
+    min-width: 2px;
+    transition: width 0.2s ease;
+  }
+
+  .tensor-layer-size {
+    width: 52px;
+    flex-shrink: 0;
+    color: var(--text-secondary);
+    text-align: right;
+    white-space: nowrap;
   }
 </style>
