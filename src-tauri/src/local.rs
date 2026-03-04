@@ -123,10 +123,11 @@ pub fn copy_recursive(
         *files_done += 1;
         completed_files.push(src.to_string_lossy().into_owned());
 
-        // Throttle progress events; always emit the final one
+        // Throttle progress events; always emit first and final
         let now = Instant::now();
-        if now.duration_since(*last_progress).as_millis() >= PROGRESS_INTERVAL_MS
+        if *files_done == 1
             || *files_done == files_total
+            || now.duration_since(*last_progress).as_millis() >= PROGRESS_INTERVAL_MS
         {
             *last_progress = now;
             on_progress(ProgressEvent {
