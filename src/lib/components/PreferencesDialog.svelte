@@ -111,6 +111,20 @@
           </select>
         </div>
 
+        <div class="pref-row">
+          <span class="pref-label">Remote Download Limit</span>
+          <select class="pref-select" value={appState.remoteDownloadLimit} onchange={(e) => appState.setRemoteDownloadLimit(Number((e.target as HTMLSelectElement).value))}>
+            <option value="0">Always Ask</option>
+            <option value="10485760">10 MB</option>
+            <option value="52428800">50 MB</option>
+            <option value="104857600">100 MB</option>
+            <option value="262144000">250 MB</option>
+            <option value="524288000">500 MB</option>
+            <option value="1073741824">1 GB</option>
+            <option value="-1">Never Ask</option>
+          </select>
+        </div>
+
         <div class="pref-row column">
           <span class="pref-label">External Editor</span>
           <input

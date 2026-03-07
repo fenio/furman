@@ -491,6 +491,14 @@ export type PanelBackend = 'local' | 's3' | 'sftp' | 'archive';
 export interface ArchiveInfo {
   archivePath: string;
   internalPath: string;
+  /** When opened from a remote backend, stores info to restore on exit. */
+  remoteOrigin?: {
+    backend: PanelBackend;
+    path: string;
+    remoteName: string;
+    s3Connection?: S3ConnectionInfo;
+    sftpConnection?: SftpConnectionInfo;
+  };
 }
 
 export interface S3ProviderCapabilities {

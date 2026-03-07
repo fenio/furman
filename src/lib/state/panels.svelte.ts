@@ -292,21 +292,31 @@ export class PanelData {
     this.navigatingHistory = false;
   }
 
-  async enterArchive(archivePath: string) {
+  async enterArchive(archivePath: string, remoteOrigin?: ArchiveInfo['remoteOrigin']) {
     this.clearHistory();
     this.backend = 'archive';
-    this.archiveInfo = { archivePath, internalPath: '' };
+    this.archiveInfo = { archivePath, internalPath: '', remoteOrigin };
     await this.loadDirectory(`archive://${archivePath}#`);
   }
 
   private async exitArchive(realPath: string, focusName?: string) {
     this.clearHistory();
+    const origin = this.archiveInfo?.remoteOrigin;
     const archiveName = this.archiveInfo
       ? this.archiveInfo.archivePath.replace(/\/+$/, '').split('/').pop() ?? ''
       : '';
-    this.backend = 'local';
     this.archiveInfo = null;
-    await this.loadDirectory(realPath, focusName ?? archiveName);
+
+    if (origin) {
+      // Restore remote backend connection
+      this.backend = origin.backend;
+      this.s3Connection = origin.s3Connection ?? null;
+      this.sftpConnection = origin.sftpConnection ?? null;
+      await this.loadDirectory(origin.path, origin.remoteName);
+    } else {
+      this.backend = 'local';
+      await this.loadDirectory(realPath, focusName ?? archiveName);
+    }
   }
 
   async connectS3(info: S3ConnectionInfo, endpoint?: string, profile?: string, accessKey?: string, secretKey?: string, roleArn?: string, externalId?: string, sessionName?: string, sessionDurationSecs?: number, useTransferAcceleration?: boolean, anonymous?: boolean, webIdentityToken?: string, proxyUrl?: string, proxyUsername?: string, proxyPassword?: string) {

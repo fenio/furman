@@ -20,6 +20,29 @@ export const systemOpenExtensions = new Set([
   'pages', 'numbers', 'keynote',
 ]);
 
+import { formatSize } from '$lib/utils/format';
+
+/** Returns true if the user approves downloading a remote file (or if no prompt needed). */
+function confirmRemoteDownload(size: number, name: string): Promise<boolean> {
+  const limit = appState.remoteDownloadLimit;
+  if (limit === -1) return Promise.resolve(true);   // never ask
+  if (limit > 0 && size <= limit) return Promise.resolve(true);  // under limit
+  return new Promise((resolve) => {
+    let resolved = false;
+    appState.showConfirm(
+      `"${name}" is ${formatSize(size).trim()}. Download it to open?`,
+      () => { resolved = true; resolve(true); },
+    );
+    // Detect cancellation: modal closes without calling the callback
+    const check = setInterval(() => {
+      if (appState.modal !== 'confirm') {
+        clearInterval(check);
+        if (!resolved) resolve(false);
+      }
+    }, 100);
+  });
+}
+
 // ── Viewer / Editor helpers ─────────────────────────────────────────────────
 
 export async function activateEntry() {
@@ -38,6 +61,44 @@ export async function activateEntry() {
     const lower = (entry.extension ?? '').toLowerCase();
     if (archiveExtensions.has(lower) && panel.backend === 'local') {
       await panel.enterArchive(entry.path);
+    } else if (archiveExtensions.has(lower) && panel.backend === 'sftp' && panel.sftpConnection) {
+      if (!await confirmRemoteDownload(entry.size, entry.name)) return;
+      const conn = panel.sftpConnection;
+      const parentPath = entry.path.replace(/\/[^/]+$/, '') || '/';
+      statusState.setMessage('Downloading archive...');
+      try {
+        const localPath = await sftpDownloadTemp(conn.connectionId, entry.path);
+        await panel.enterArchive(localPath, {
+          backend: 'sftp',
+          path: parentPath,
+          remoteName: entry.name,
+          sftpConnection: conn,
+        });
+      } catch (err: unknown) {
+        error(String(err));
+        statusState.setMessage(`Error: ${err}`);
+        return;
+      }
+      statusState.setMessage('');
+    } else if (archiveExtensions.has(lower) && panel.backend === 's3' && panel.s3Connection) {
+      if (!await confirmRemoteDownload(entry.size, entry.name)) return;
+      const conn = panel.s3Connection;
+      const parentPath = entry.path.replace(/\/[^/]+$/, '') || `s3://${conn.bucket}/`;
+      statusState.setMessage('Downloading archive...');
+      try {
+        const localPath = await s3DownloadToTemp(conn.connectionId, entry.path);
+        await panel.enterArchive(localPath, {
+          backend: 's3',
+          path: parentPath,
+          remoteName: entry.name,
+          s3Connection: conn,
+        });
+      } catch (err: unknown) {
+        error(String(err));
+        statusState.setMessage(`Error: ${err}`);
+        return;
+      }
+      statusState.setMessage('');
     } else if (systemOpenExtensions.has(lower) && panel.backend === 'local') {
       try {
         await openFileDefault(entry.path);
@@ -45,8 +106,10 @@ export async function activateEntry() {
         error(String(err));
       }
     } else if (panel.backend === 's3' && panel.s3Connection) {
+      if (!await confirmRemoteDownload(entry.size, entry.name)) return;
       await openS3Viewer(entry.path, entry.extension, panel.s3Connection.connectionId);
     } else if (panel.backend === 'sftp' && panel.sftpConnection) {
+      if (!await confirmRemoteDownload(entry.size, entry.name)) return;
       await openSftpViewer(entry.path, entry.extension, panel.sftpConnection.connectionId);
     } else if (panel.backend === 'archive' && panel.archiveInfo) {
       await openArchiveViewer(entry.path, entry.extension, panel.archiveInfo.archivePath);

@@ -86,6 +86,8 @@ class AppState {
   multipartThreshold = $state(8388608);
   multipartPartSize = $state(8388608);
   concurrentParts = $state(4);
+  /** Max remote file size (bytes) to download without confirmation. 0 = always ask, -1 = never ask. */
+  remoteDownloadLimit = $state(104857600);
   sftpInactivityTimeout = $state(300);
   sftpKeepaliveInterval = $state(30);
   sftpOperationTimeout = $state(60);
@@ -127,6 +129,11 @@ class AppState {
 
   setRowHeight(val: 'compact' | 'normal' | 'comfortable') {
     this.rowHeight = val;
+    this.persistConfig();
+  }
+
+  setRemoteDownloadLimit(val: number) {
+    this.remoteDownloadLimit = val;
     this.persistConfig();
   }
 
@@ -383,6 +390,7 @@ class AppState {
     this.multipartThreshold = config.multipartThreshold ?? 8388608;
     this.multipartPartSize = config.multipartPartSize ?? 8388608;
     this.concurrentParts = config.concurrentParts ?? 4;
+    this.remoteDownloadLimit = config.remoteDownloadLimit ?? 104857600;
     this.sftpInactivityTimeout = config.sftpInactivityTimeout ?? 300;
     this.sftpKeepaliveInterval = config.sftpKeepaliveInterval ?? 30;
     this.sftpOperationTimeout = config.sftpOperationTimeout ?? 60;
@@ -429,6 +437,7 @@ class AppState {
       multipartThreshold: this.multipartThreshold,
       multipartPartSize: this.multipartPartSize,
       concurrentParts: this.concurrentParts,
+      remoteDownloadLimit: this.remoteDownloadLimit,
       sftpInactivityTimeout: this.sftpInactivityTimeout,
       sftpKeepaliveInterval: this.sftpKeepaliveInterval,
       sftpOperationTimeout: this.sftpOperationTimeout,

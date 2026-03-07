@@ -42,6 +42,10 @@
         e.preventDefault();
         e.stopImmediatePropagation();
         btns[focusIdx]?.click();
+      } else if (e.key === 'o' || e.key === 'O') {
+        e.preventDefault();
+        e.stopImmediatePropagation();
+        onOverwrite();
       } else if (e.key === 's' || e.key === 'S') {
         e.preventDefault();
         e.stopImmediatePropagation();
@@ -75,7 +79,7 @@
         {/each}
       </div>
       <div class="dialog-buttons">
-        <button class="dialog-btn danger" bind:this={btnOverwrite} onclick={onOverwrite}>Overwrite</button>
+        <button class="dialog-btn danger" bind:this={btnOverwrite} onclick={onOverwrite}>Overwrite <span class="key-hint">O</span></button>
         <button class="dialog-btn primary" bind:this={btnSkip} onclick={onSkip}>Skip <span class="key-hint">S</span></button>
         <button class="dialog-btn" bind:this={btnCancel} onclick={onCancel}>Cancel <span class="key-hint">Esc</span></button>
       </div>
