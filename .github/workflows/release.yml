@@ -36,37 +36,16 @@ jobs:
           - target: x86_64-apple-darwin
             runner: macos-latest
             mcp_asset: furman-mcp-x86_64-apple-darwin
-          - target: x86_64-unknown-linux-gnu
-            runner: ubuntu-24.04
-            container: ghcr.io/pkgforge-dev/archlinux:latest
-            mcp_asset: furman-mcp-x86_64-unknown-linux-gnu
 
     runs-on: ${{ matrix.runner }}
-    container: ${{ matrix.container || '' }}
 
     steps:
       - uses: actions/checkout@v6
-
-      - name: Prepare Arch container for AppImage bundler
-        if: runner.os == 'Linux'
-        uses: pkgforge-dev/anylinux-setup-action@8872fabe63f9a00b35e25b2f46da62a05afc9a7d # v1
-
-      - name: Install Linux dependencies
-        if: runner.os == 'Linux'
-        run: |
-          pacman -Syu --noconfirm base-devel nss webkit2gtk-4.1 libappindicator-gtk3 librsvg patchelf libsecret openssl
-          get-debloated-pkgs --add-common --prefer-nano
 
       - name: Install Rust stable
         uses: dtolnay/rust-toolchain@stable
         with:
           targets: ${{ matrix.target }}
-
-      # Experimental truly-portable AppImage bundler
-      # https://github.com/tauri-apps/tauri/pull/12491
-      - name: Install experimental tauri-cli (portable AppImage)
-        if: runner.os == 'Linux'
-        run: cargo install tauri-cli --git https://github.com/tauri-apps/tauri --branch feat/truly-portable-appimage
 
       - name: Cache Rust dependencies
         uses: swatinem/rust-cache@v2
@@ -111,7 +90,6 @@ jobs:
         uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          TAURI_BUNDLER_NEW_APPIMAGE_FORMAT: ${{ runner.os == 'Linux' && 'true' || '' }}
           # APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
           # APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
           # APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
@@ -119,7 +97,6 @@ jobs:
           # APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
           # APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
         with:
-          tauriScript: ${{ runner.os == 'Linux' && 'cargo tauri' || 'npm run tauri' }}
           tagName: ${{ github.ref_name }}
           releaseName: "Furman ${{ github.ref_name }}"
           releaseBody: ${{ needs.changelog.outputs.body }}
@@ -142,7 +119,7 @@ jobs:
         run: |
           gh release download "$GITHUB_REF_NAME" \
             --repo fenio/furman \
-            --pattern "*.dmg" --pattern "*.AppImage" --pattern "furman-mcp-*"
+            --pattern "*.dmg" --pattern "furman-mcp-*"
 
       - name: Compute SHA256 checksums
         id: sha
@@ -150,10 +127,8 @@ jobs:
           VERSION=${{ steps.version.outputs.version }}
           echo "arm=$(sha256sum Furman_${VERSION}_aarch64.dmg | cut -d ' ' -f 1)" >> "$GITHUB_OUTPUT"
           echo "intel=$(sha256sum Furman_${VERSION}_x64.dmg | cut -d ' ' -f 1)" >> "$GITHUB_OUTPUT"
-          echo "linux=$(sha256sum Furman_${VERSION}_amd64.AppImage | cut -d ' ' -f 1)" >> "$GITHUB_OUTPUT"
           echo "mcp_arm=$(sha256sum furman-mcp-aarch64-apple-darwin | cut -d ' ' -f 1)" >> "$GITHUB_OUTPUT"
           echo "mcp_intel=$(sha256sum furman-mcp-x86_64-apple-darwin | cut -d ' ' -f 1)" >> "$GITHUB_OUTPUT"
-          echo "mcp_linux=$(sha256sum furman-mcp-x86_64-unknown-linux-gnu | cut -d ' ' -f 1)" >> "$GITHUB_OUTPUT"
 
       - name: Checkout homebrew-tap
         uses: actions/checkout@v6
@@ -182,7 +157,7 @@ jobs:
             end
 
             name "Furman"
-            desc "Dual-pane file manager for macOS and Linux"
+            desc "Dual-pane file manager for macOS"
             homepage "https://github.com/fenio/furman"
 
             app "Furman.app"
@@ -199,38 +174,11 @@ jobs:
           end
           CASK
 
-      - name: Update Furman formula (Linux)
-        run: |
-          VERSION=${{ steps.version.outputs.version }}
-          LINUX_SHA=${{ steps.sha.outputs.linux }}
-          mkdir -p Formula
-          # Use furman-bin to avoid shadowing the macOS cask named "furman".
-          # macOS users run: brew install fenio/tap/furman  (resolves to Cask)
-          # Linux users run: brew install fenio/tap/furman-bin
-          cat > Formula/furman-bin.rb << FORMULA
-          class FurmanBin < Formula
-            desc "Dual-pane file manager for macOS and Linux"
-            homepage "https://github.com/fenio/furman"
-            version "${VERSION}"
-            license "GPL-3.0-only"
-
-            depends_on :linux
-
-            url "https://github.com/fenio/furman/releases/download/v#{version}/Furman_#{version}_amd64.AppImage"
-            sha256 "${LINUX_SHA}"
-
-            def install
-              bin.install "Furman_#{version}_amd64.AppImage" => "furman"
-            end
-          end
-          FORMULA
-
       - name: Update furman-mcp formula
         run: |
           VERSION=${{ steps.version.outputs.version }}
           MCP_ARM_SHA=${{ steps.sha.outputs.mcp_arm }}
           MCP_INTEL_SHA=${{ steps.sha.outputs.mcp_intel }}
-          MCP_LINUX_SHA=${{ steps.sha.outputs.mcp_linux }}
           mkdir -p Formula
           cat > Formula/furman-mcp.rb << FORMULA
           class FurmanMcp < Formula
@@ -239,20 +187,13 @@ jobs:
             version "${VERSION}"
             license "GPL-3.0-only"
 
-            on_macos do
-              on_arm do
-                url "https://github.com/fenio/furman/releases/download/v#{version}/furman-mcp-aarch64-apple-darwin"
-                sha256 "${MCP_ARM_SHA}"
-              end
-              on_intel do
-                url "https://github.com/fenio/furman/releases/download/v#{version}/furman-mcp-x86_64-apple-darwin"
-                sha256 "${MCP_INTEL_SHA}"
-              end
+            on_arm do
+              url "https://github.com/fenio/furman/releases/download/v#{version}/furman-mcp-aarch64-apple-darwin"
+              sha256 "${MCP_ARM_SHA}"
             end
-
-            on_linux do
-              url "https://github.com/fenio/furman/releases/download/v#{version}/furman-mcp-x86_64-unknown-linux-gnu"
-              sha256 "${MCP_LINUX_SHA}"
+            on_intel do
+              url "https://github.com/fenio/furman/releases/download/v#{version}/furman-mcp-x86_64-apple-darwin"
+              sha256 "${MCP_INTEL_SHA}"
             end
 
             def install
@@ -261,13 +202,15 @@ jobs:
           end
           FORMULA
 
-      - name: Remove old Formula/furman.rb if it exists
-        run: git rm -f Formula/furman.rb 2>/dev/null || true
+      - name: Remove old formulae if they exist
+        run: |
+          git rm -f Formula/furman.rb 2>/dev/null || true
+          git rm -f Formula/furman-bin.rb 2>/dev/null || true
 
       - name: Commit and push
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add Casks/furman.rb Formula/furman-bin.rb Formula/furman-mcp.rb
+          git add Casks/furman.rb Formula/furman-mcp.rb
           git commit -m "Update furman to ${{ steps.version.outputs.version }}"
           git push
