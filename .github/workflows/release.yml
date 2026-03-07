@@ -100,6 +100,10 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           cp src-tauri/target/${{ matrix.target }}/release/furman-mcp ${{ matrix.mcp_asset }}
+          # Ensure release exists (tauri-action creates it later, but we need it now)
+          gh release view "${{ github.ref_name }}" --repo "${{ github.repository }}" >/dev/null 2>&1 || \
+            gh release create "${{ github.ref_name }}" --repo "${{ github.repository }}" \
+              --title "Furman ${{ github.ref_name }}" --draft=false --prerelease=false
           gh release upload "${{ github.ref_name }}" "${{ matrix.mcp_asset }}" \
             --repo "${{ github.repository }}" --clobber
 
