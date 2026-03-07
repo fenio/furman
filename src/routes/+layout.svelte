@@ -17,7 +17,7 @@
   import { statusState } from '$lib/state/status.svelte';
   import { transfersState } from '$lib/state/transfers.svelte';
   import { error } from '$lib/services/log';
-  import { dragState } from '$lib/services/drag';
+  import { dragState, type DragSource } from '$lib/services/drag';
   import type { PanelData } from '$lib/state/panels.svelte';
   import type { S3ConnectionInfo, SyncEntry } from '$lib/types';
   import { commandRegistry, type Command } from '$lib/state/commands.svelte';
@@ -34,7 +34,7 @@
   } from '$lib/actions/viewers';
   import {
     handleCopy, handleMove, handleDelete, handleRename, handleMkDir,
-    handleClipboardPaste,
+    handleClipboardPaste, withConflictCheck,
   } from '$lib/actions/fileops';
   import { executeSyncTransfer } from '$lib/actions/sync';
   import {
@@ -65,6 +65,10 @@
   }
 
   let dragDropUnlisten: (() => void) | null = null;
+  /** Y-offset from Tauri window coords to viewport coords (title bar height). */
+  let dragYOffset = 0;
+  /** Flag to prevent double-processing when both native callback and Tauri event fire. */
+  let _dropProcessed = false;
   const onFocusIn = (e: FocusEvent) => {
     if (e.target instanceof HTMLInputElement) e.target.autocomplete = 'off';
   };
@@ -73,72 +77,90 @@
     // Disable autocomplete on all inputs globally
     document.addEventListener('focusin', onFocusIn);
 
+    // Drag-over tracking for directory row highlighting (HTML5 events for external drags)
+    window.addEventListener('dragover', handleWindowDragOver);
+    window.addEventListener('drop', handleWindowDrop);
+    window.addEventListener('dragleave', handleWindowDragLeave);
+
+    // macOS title bar offset: Tauri drag positions are relative to the window
+    // top (including title bar), but viewport coordinates start below it.
+    dragYOffset = 40;
+
     try {
       const { getCurrentWindow } = await import('@tauri-apps/api/window');
-      dragDropUnlisten = await getCurrentWindow().onDragDropEvent((event) => {
+      const win = getCurrentWindow();
+
+      dragDropUnlisten = await win.onDragDropEvent((event) => {
+        if (event.payload.type === 'over') {
+          // Tauri positions appear to be logical pixels in the webview
+          updateDragOver(event.payload.position.x, event.payload.position.y);
+          return;
+        }
+        if (event.payload.type === 'leave') {
+          clearDragOverHighlight();
+          return;
+        }
         if (event.payload.type === 'drop') {
+          error(`[drag] onDragDropEvent drop: _dropProcessed=${_dropProcessed} src=${JSON.stringify(dragState.source)}`);
+          // Skip if this is an internal drag (handled by handleNativeDragDrop)
+          if (_dropProcessed || dragState.source) {
+            _dropProcessed = false;
+            dragState.source = null;
+            clearDragOverHighlight();
+            return;
+          }
+
           const paths = event.payload.paths;
           const position = event.payload.position;
-          if (!paths || paths.length === 0) return;
+          if (!paths || paths.length === 0) { clearDragOverHighlight(); return; }
 
-          const result = getTargetPanel(position);
-          if (!result) return;
-          const { panel: target, side: targetSide } = result;
-
-          // Internal drag from within the app (panel-to-panel via native drag)
-          if (dragState.source && dragState.source.side !== targetSide) {
-            const sourceSide = dragState.source.side;
-            panels.activePanel = sourceSide;
-            // Dispatch F5 (copy) or F6 (move if Shift held) — same as HTML5 panel-to-panel drop
-            const key = dragState.shiftHeld ? 'F6' : 'F5';
-            window.dispatchEvent(new KeyboardEvent('keydown', { key }));
-            dragState.source = null;
-            return;
-          }
-          // Internal drag dropped on the same panel — ignore
-          if (dragState.source) {
-            dragState.source = null;
-            return;
-          }
+          const adjustedPos = { x: position.x, y: position.y - dragYOffset };
+          const result = getTargetPanel(adjustedPos);
+          if (!result) { clearDragOverHighlight(); return; }
+          const { panel: target } = result;
 
           // External drag from OS (Finder → app)
-          const opId = 'drop-' + Date.now() + '-' + Math.random().toString(36).slice(2, 6);
+          const dest = consumeDropDest(target.path);
 
-          if (target.backend === 's3' && target.s3Connection) {
-            const conn = target.s3Connection;
-            const prefix = s3PathToPrefix(target.path, conn.bucket);
-            transfersState.enqueue({
-              id: opId,
-              type: 'copy',
-              sources: paths,
-              destination: target.path,
-              srcBackend: 'local',
-              destBackend: 's3',
-              s3DestConnectionId: conn.connectionId,
-              s3DestPrefix: prefix,
-            });
-          } else if (target.backend === 'sftp' && target.sftpConnection) {
-            const conn = target.sftpConnection;
-            transfersState.enqueue({
-              id: opId,
-              type: 'copy',
-              sources: paths,
-              destination: target.path,
-              srcBackend: 'local',
-              destBackend: 'sftp',
-              sftpDestConnectionId: conn.connectionId,
-              sftpDestPath: target.path,
-            });
-          } else if (target.backend === 'local') {
-            transfersState.enqueue({
-              id: opId,
-              type: 'copy',
-              sources: paths,
-              destination: target.path,
-              srcBackend: 'local',
-              destBackend: 'local',
-            });
-          }
+          const enqueueExternalDrop = (finalSources: string[]) => {
+            const id = 'drop-' + Date.now() + '-' + Math.random().toString(36).slice(2, 6);
+            if (target.backend === 's3' && target.s3Connection) {
+              const conn = target.s3Connection;
+              const prefix = s3PathToPrefix(dest, conn.bucket);
+              transfersState.enqueue({
+                id,
+                type: 'copy',
+                sources: finalSources,
+                destination: dest,
+                srcBackend: 'local',
+                destBackend: 's3',
+                s3DestConnectionId: conn.connectionId,
+                s3DestPrefix: prefix,
+              });
+            } else if (target.backend === 'sftp' && target.sftpConnection) {
+              const conn = target.sftpConnection;
+              transfersState.enqueue({
+                id,
+                type: 'copy',
+                sources: finalSources,
+                destination: dest,
+                srcBackend: 'local',
+                destBackend: 'sftp',
+                sftpDestConnectionId: conn.connectionId,
+                sftpDestPath: dest,
+              });
+            } else if (target.backend === 'local') {
+              transfersState.enqueue({
+                id,
+                type: 'copy',
+                sources: finalSources,
+                destination: dest,
+                srcBackend: 'local',
+                destBackend: 'local',
+              });
+            }
+          };
+          withConflictCheck(paths, dest, target.backend, enqueueExternalDrop);
         }
       });
     } catch {
@@ -392,15 +414,161 @@
     appState.showDiskUsage(targetPath, inact);
   }
 
+  // ── Drag-over tracking (highlight directory rows during drag) ────────────
+
+  function updateDragOver(x: number, y: number) {
+    const adjustedY = y - dragYOffset;
+    const el = document.elementFromPoint(x, adjustedY);
+    const row = el?.closest('[data-is-dir]') as Element | null;
+
+    if (row !== dragState._dragOverEl) {
+      dragState._dragOverEl?.classList.remove('drag-over');
+      dragState._dragOverEl = row;
+      if (row) {
+        row.classList.add('drag-over');
+        dragState.dragOverDir = row.getAttribute('data-entry-path');
+      } else {
+        dragState.dragOverDir = null;
+      }
+    }
+  }
+
+  function clearDragOverHighlight() {
+    dragState._dragOverEl?.classList.remove('drag-over');
+    dragState._dragOverEl = null;
+    dragState.dragOverDir = null;
+  }
+
+  function handleWindowDragOver(e: DragEvent) {
+    e.preventDefault(); // Prevent browser auto-scrolling during drag
+    const el = document.elementFromPoint(e.clientX, e.clientY);
+    const row = el?.closest('[data-is-dir]') as Element | null;
+
+    if (row !== dragState._dragOverEl) {
+      dragState._dragOverEl?.classList.remove('drag-over');
+      dragState._dragOverEl = row;
+      if (row) {
+        row.classList.add('drag-over');
+        dragState.dragOverDir = row.getAttribute('data-entry-path');
+      } else {
+        dragState.dragOverDir = null;
+      }
+    }
+  }
+
+  function handleWindowDrop(e: DragEvent) {
+    e.preventDefault();
+    clearDragOverHighlight();
+  }
+
+  function handleWindowDragLeave(e: DragEvent) {
+    if (!e.relatedTarget) clearDragOverHighlight();
+  }
+
+  /** Consume the tracked dragOverDir, clear highlight, and return the drop destination. */
+  function consumeDropDest(panelPath: string): string {
+    const dest = dragState.dragOverDir || panelPath;
+    clearDragOverHighlight();
+    return dest;
+  }
+
+  /** Build S3/SFTP connection params for a drag-and-drop transfer. */
+  function getDragConnectionParams(source: DragSource, targetPanel: PanelData, dest: string) {
+    return {
+      s3SrcConnectionId: source.backend === 's3' ? source.s3ConnectionId : undefined,
+      s3DestConnectionId: targetPanel.backend === 's3' ? targetPanel.s3Connection?.connectionId : undefined,
+      s3DestPrefix: targetPanel.backend === 's3' && targetPanel.s3Connection
+        ? s3PathToPrefix(dest, targetPanel.s3Connection.bucket) : undefined,
+      sftpSrcConnectionId: source.backend === 'sftp' ? source.sftpConnectionId : undefined,
+      sftpDestConnectionId: targetPanel.backend === 'sftp' ? targetPanel.sftpConnection?.connectionId : undefined,
+      sftpDestPath: targetPanel.backend === 'sftp' ? dest : undefined,
+    };
+  }
+
+  function handleNativeDragDrop(e: Event) {
+    const { x, y } = (e as CustomEvent).detail;
+    const result = getTargetPanel({ x, y });
+    const src = dragState.source;
+    error(`[drag] handleNativeDragDrop: src=${JSON.stringify(src)} tgt=${result?.side}`);
+    if (!result || !src || src.side === result.side) {
+      dragState.source = null;
+      clearDragOverHighlight();
+      return;
+    }
+
+    const dest = consumeDropDest(result.panel.path);
+    const transferType = src.isMove ? 'move' : 'copy';
+    const sourcePaths = src.paths;
+    const srcBackend = src.backend;
+    const destBackend = result.panel.backend;
+    const connParams = getDragConnectionParams(src, result.panel, dest);
+
+    // Find the dragged file in sorted entries and pick its neighbor for cursor preservation.
+    // Can't use cursorIndex — cursor doesn't follow mousedown (drag uses mousedown, click updates cursor).
+    const srcPanelData = src.side === 'left' ? panels.left : panels.right;
+    const entries = srcPanelData.filteredSortedEntries;
+    const draggedName = sourcePaths[0]?.split('/').pop();
+    const dragIdx = entries.findIndex((e) => e.name === draggedName);
+    const neighbor = dragIdx >= 0 ? (entries[dragIdx + 1] ?? entries[dragIdx - 1]) : null;
+    const srcFocusName = neighbor?.name;
+    error(`[drag] enqueue: type=${transferType} dest=${dest} srcFocusName=${srcFocusName}`);
+
+    dragState.source = null;
+
+    withConflictCheck(sourcePaths, dest, destBackend, (finalSources) => {
+      const opId = 'drag-' + Date.now() + '-' + Math.random().toString(36).slice(2, 6);
+      transfersState.enqueue({
+        id: opId,
+        type: transferType,
+        sources: finalSources,
+        destination: dest,
+        srcBackend,
+        destBackend,
+        srcFocusName,
+        ...connParams,
+      });
+    });
+    _dropProcessed = true;
+    // Clear flag after a short delay in case onDragDropEvent fires later
+    setTimeout(() => { _dropProcessed = false; }, 500);
+  }
+
   window.addEventListener('undo-last-operation', handleUndoEvent);
   window.addEventListener('sync-execute', handleSyncExecuteEvent);
   window.addEventListener('context-action', handleContextAction);
   window.addEventListener('disk-usage-request', handleDiskUsageRequest);
+  window.addEventListener('native-drag-drop', handleNativeDragDrop);
 
-  function handleTransferDone() {
+  function handleTransferDone(e: Event) {
+    const { type, destination, srcFocusName } = (e as CustomEvent).detail ?? {};
     const reloads: Promise<void>[] = [];
-    if (panels.active.backend !== 'archive') reloads.push(panels.active.loadDirectory(panels.active.path));
-    if (panels.inactive.backend !== 'archive') reloads.push(panels.inactive.loadDirectory(panels.inactive.path));
+
+    // Figure out which panel is the destination based on its current path
+    const destIsLeft = destination && panels.left.path === destination;
+    const destIsRight = destination && panels.right.path === destination;
+    const destPanel = destIsLeft ? panels.left : destIsRight ? panels.right : null;
+    const srcPanel = destIsLeft ? panels.right : destIsRight ? panels.left : null;
+    error(`[drag] transferDone: type=${type} dest=${destination} srcFocusName=${srcFocusName} destPanel=${destPanel ? (destIsLeft ? 'left' : 'right') : 'null'}`);
+
+    if (type === 'copy') {
+      // Only reload destination panel
+      const p = destPanel ?? panels.inactive;
+      if (p.backend !== 'archive') {
+        const focusName = p.currentEntry?.name;
+        reloads.push(p.loadDirectory(p.path, focusName));
+      }
+    } else {
+      // Move/extract: reload both, preserving cursor in each
+      if (destPanel && destPanel.backend !== 'archive') {
+        const focusName = destPanel.currentEntry?.name;
+        reloads.push(destPanel.loadDirectory(destPanel.path, focusName));
+      }
+      if (srcPanel && srcPanel.backend !== 'archive') {
+        // Use srcFocusName captured at drop time (before overwrite dialog)
+        const focusName = srcFocusName ?? srcPanel.currentEntry?.name;
+        reloads.push(srcPanel.loadDirectory(srcPanel.path, focusName));
+      }
+    }
     Promise.all(reloads);
   }
 
@@ -627,11 +795,15 @@
     dragDropUnlisten?.();
     menuUnlisten?.();
     document.removeEventListener('focusin', onFocusIn);
+    window.removeEventListener('dragover', handleWindowDragOver);
+    window.removeEventListener('drop', handleWindowDrop);
+    window.removeEventListener('dragleave', handleWindowDragLeave);
     window.removeEventListener('undo-last-operation', handleUndoEvent);
     window.removeEventListener('sync-execute', handleSyncExecuteEvent);
     window.removeEventListener('transfer-done', handleTransferDone);
     window.removeEventListener('context-action', handleContextAction);
     window.removeEventListener('disk-usage-request', handleDiskUsageRequest);
+    window.removeEventListener('native-drag-drop', handleNativeDragDrop);
   });
 
   // ── Keyboard helpers ──────────────────────────────────────────────────────

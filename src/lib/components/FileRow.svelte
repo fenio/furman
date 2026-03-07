@@ -11,7 +11,7 @@
   import { formatSize, formatDate, formatPermissions } from '$lib/utils/format';
   import { convertFileSrc } from '@tauri-apps/api/core';
   import ImageTooltip from './ImageTooltip.svelte';
-  import { startLocalFileDrag, startS3FileDrag, dragState } from '$lib/services/drag';
+  import { startLocalFileDrag, startS3FileDrag, startSftpFileDrag, dragState } from '$lib/services/drag';
   import { statusState } from '$lib/state/status.svelte';
   import { appState } from '$lib/state/app.svelte';
   import { error as logError } from '$lib/services/log';
@@ -30,6 +30,7 @@
     encrypted?: boolean;
     backend?: PanelBackend;
     s3ConnectionId?: string;
+    sftpConnectionId?: string;
     comparisonStatus?: ComparisonStatus;
     visibleColumns?: ColumnId[];
     getSelectedPaths?: () => string[];
@@ -38,7 +39,7 @@
     oncontextmenu?: (e: MouseEvent) => void;
   }
 
-  let { entry, isSelected, isCursor, isActive, rowIndex, panelSide, isS3, dirSize, encrypted, backend, s3ConnectionId, comparisonStatus, visibleColumns, getSelectedPaths, onclick, ondblclick, oncontextmenu }: Props = $props();
+  let { entry, isSelected, isCursor, isActive, rowIndex, panelSide, isS3, dirSize, encrypted, backend, s3ConnectionId, sftpConnectionId, comparisonStatus, visibleColumns, getSelectedPaths, onclick, ondblclick, oncontextmenu }: Props = $props();
 
   const defaultCols: ColumnId[] = ['name', 'size', 'modified', 'extension'];
   const cols = $derived(visibleColumns ?? defaultCols);
@@ -152,6 +153,7 @@
     const dragSide = panelSide;
     const dragBackend = backend;
     const dragS3Id = s3ConnectionId;
+    const dragSftpId = sftpConnectionId;
     let started = false;
 
     function onMove(ev: MouseEvent) {
@@ -163,20 +165,36 @@
       started = true;
       cleanup();
 
-      const paths = getSelectedPaths ? getSelectedPaths() : [entry.path];
-      if (paths.length === 0) return;
+      let paths = getSelectedPaths ? getSelectedPaths() : [];
+      // If dragged entry isn't in the selection, drag just this entry
+      if (paths.length === 0 || !paths.includes(entry.path)) {
+        paths = [entry.path];
+      }
 
-      dragState.source = { side: dragSide, backend: dragBackend, paths, s3ConnectionId: dragS3Id };
+      const isMove = ev.shiftKey;
+      const mode = isMove ? 'move' : 'copy';
+      dragState.source = { side: dragSide, backend: dragBackend, paths, s3ConnectionId: dragS3Id, sftpConnectionId: dragSftpId, isMove };
+      logError(`[drag] FileRow SET dragState.source side=${dragSide} isMove=${isMove} paths=${paths.length}`);
+
+      // Lock scrolling on the source panel to prevent macOS auto-scroll during drag
+      const srcList = (ev.target as Element)?.closest('.file-list') as HTMLElement | null;
+      if (srcList) srcList.style.overflowY = 'hidden';
+      const unlockScroll = () => { if (srcList) srcList.style.overflowY = ''; };
 
       if (dragBackend === 'local') {
-        startLocalFileDrag(paths)
+        startLocalFileDrag(paths, mode)
           .catch((err) => logError(String(err)))
-          .finally(() => { dragState.source = null; });
+          .finally(() => { unlockScroll(); });
       } else if (dragBackend === 's3' && dragS3Id) {
         statusState.setMessage('Preparing drag...');
-        startS3FileDrag(dragS3Id, paths)
+        startS3FileDrag(dragS3Id, paths, mode)
           .catch((err) => logError(String(err)))
-          .finally(() => { dragState.source = null; statusState.setMessage(''); });
+          .finally(() => { statusState.setMessage(''); unlockScroll(); });
+      } else if (dragBackend === 'sftp' && dragSftpId) {
+        statusState.setMessage('Preparing drag...');
+        startSftpFileDrag(dragSftpId, paths, mode)
+          .catch((err) => logError(String(err)))
+          .finally(() => { statusState.setMessage(''); unlockScroll(); });
       }
     }
 
@@ -200,6 +218,8 @@
   class={rowClass}
   role="row"
   tabindex="-1"
+  data-entry-path={entry.path}
+  data-is-dir={entry.is_dir && entry.name !== '..' || undefined}
   style={comparisonBorderColor ? `border-left: 3px solid ${comparisonBorderColor}` : ''}
   onmousedown={handleDragGesture}
   onmouseenter={onMouseEnter}
@@ -358,5 +378,12 @@
   .col-extra {
     flex: 0 0 9ch;
     text-align: left;
+  }
+
+  /* Last so it overrides .alt, .cursor-active, etc. by source order */
+  .file-row:global(.drag-over) {
+    background: var(--cursor-bg);
+    outline: 2px solid var(--accent);
+    outline-offset: -2px;
   }
 </style>

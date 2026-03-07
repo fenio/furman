@@ -11,7 +11,7 @@
   import type { FileEntry, PanelBackend } from '$lib/types';
   import type { ComparisonStatus } from '$lib/state/comparison.svelte';
   import { convertFileSrc } from '@tauri-apps/api/core';
-  import { startLocalFileDrag, startS3FileDrag, dragState } from '$lib/services/drag';
+  import { startLocalFileDrag, startS3FileDrag, startSftpFileDrag, dragState } from '$lib/services/drag';
   import { statusState } from '$lib/state/status.svelte';
   import { error as logError } from '$lib/services/log';
 
@@ -23,6 +23,7 @@
     panelSide?: 'left' | 'right';
     backend?: PanelBackend;
     s3ConnectionId?: string;
+    sftpConnectionId?: string;
     comparisonStatus?: ComparisonStatus;
     getSelectedPaths?: () => string[];
     onclick?: (e: MouseEvent) => void;
@@ -30,7 +31,7 @@
     oncontextmenu?: (e: MouseEvent) => void;
   }
 
-  let { entry, isSelected, isCursor, isActive, panelSide, backend, s3ConnectionId, comparisonStatus, getSelectedPaths, onclick, ondblclick, oncontextmenu }: Props = $props();
+  let { entry, isSelected, isCursor, isActive, panelSide, backend, s3ConnectionId, sftpConnectionId, comparisonStatus, getSelectedPaths, onclick, ondblclick, oncontextmenu }: Props = $props();
 
   const ext = $derived((entry.extension ?? '').toLowerCase());
   const isImage = $derived(imageExtensions.has(ext));
@@ -61,6 +62,7 @@
     const dragSide = panelSide;
     const dragBackend = backend;
     const dragS3Id = s3ConnectionId;
+    const dragSftpId = sftpConnectionId;
     let started = false;
 
     function onMove(ev: MouseEvent) {
@@ -72,20 +74,36 @@
       started = true;
       cleanup();
 
-      const paths = getSelectedPaths ? getSelectedPaths() : [entry.path];
-      if (paths.length === 0) return;
+      let paths = getSelectedPaths ? getSelectedPaths() : [];
+      // If dragged entry isn't in the selection, drag just this entry
+      if (paths.length === 0 || !paths.includes(entry.path)) {
+        paths = [entry.path];
+      }
 
-      dragState.source = { side: dragSide, backend: dragBackend, paths, s3ConnectionId: dragS3Id };
+      const isMove = ev.shiftKey;
+      const mode = isMove ? 'move' : 'copy';
+      dragState.source = { side: dragSide, backend: dragBackend, paths, s3ConnectionId: dragS3Id, sftpConnectionId: dragSftpId, isMove };
+      logError(`[drag] FileIcon SET dragState.source side=${dragSide} isMove=${isMove} paths=${paths.length}`);
+
+      // Lock scrolling on the source panel to prevent macOS auto-scroll during drag
+      const srcList = (ev.target as Element)?.closest('.file-list') as HTMLElement | null;
+      if (srcList) srcList.style.overflowY = 'hidden';
+      const unlockScroll = () => { if (srcList) srcList.style.overflowY = ''; };
 
       if (dragBackend === 'local') {
-        startLocalFileDrag(paths)
+        startLocalFileDrag(paths, mode)
           .catch((err) => logError(String(err)))
-          .finally(() => { dragState.source = null; });
+          .finally(() => { unlockScroll(); });
       } else if (dragBackend === 's3' && dragS3Id) {
         statusState.setMessage('Preparing drag...');
-        startS3FileDrag(dragS3Id, paths)
+        startS3FileDrag(dragS3Id, paths, mode)
           .catch((err) => logError(String(err)))
-          .finally(() => { dragState.source = null; statusState.setMessage(''); });
+          .finally(() => { statusState.setMessage(''); unlockScroll(); });
+      } else if (dragBackend === 'sftp' && dragSftpId) {
+        statusState.setMessage('Preparing drag...');
+        startSftpFileDrag(dragSftpId, paths, mode)
+          .catch((err) => logError(String(err)))
+          .finally(() => { statusState.setMessage(''); unlockScroll(); });
       }
     }
 
@@ -125,6 +143,8 @@
   class={tileClass}
   role="gridcell"
   tabindex="-1"
+  data-entry-path={entry.path}
+  data-is-dir={entry.is_dir && entry.name !== '..' || undefined}
   style={comparisonBorderColor ? `border-left: 3px solid ${comparisonBorderColor}` : ''}
   onmousedown={handleDragGesture}
   {onclick}
@@ -227,5 +247,12 @@
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
+  }
+
+  /* Last so it overrides .cursor-active, etc. by source order */
+  .file-tile:global(.drag-over) {
+    background: var(--cursor-bg);
+    outline: 2px solid var(--accent);
+    outline-offset: -2px;
   }
 </style>

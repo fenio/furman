@@ -5,6 +5,7 @@ import { listDirectory, listArchive, watchDirectory, unwatchDirectory, getGitRep
 import { s3Connect, s3Disconnect, s3ListObjects, s3IsObjectEncrypted } from '$lib/services/s3';
 import { sftpConnect, sftpDisconnect, sftpListObjects } from '$lib/services/sftp';
 import { appState } from '$lib/state/app.svelte';
+import { error as logError } from '$lib/services/log';
 
 
 let nextTabId = 0;
@@ -163,9 +164,15 @@ export class PanelData {
       const listing = await listDirectory(this.path, appState.showHidden);
       if (entriesEqual(this.entries, listing.entries)) return;
       this.freeSpace = listing.free_space;
+      // Preserve cursor by name across entry changes
+      const cursorName = this.filteredSortedEntries[this.cursorIndex]?.name;
       this.entries = listing.entries;
-      // Preserve cursor position — clamp if entries shrank
-      if (this.cursorIndex >= this.filteredSortedEntries.length) {
+      if (cursorName) {
+        const idx = this.filteredSortedEntries.findIndex((e) => e.name === cursorName);
+        const newIdx = idx >= 0 ? idx : Math.max(0, this.filteredSortedEntries.length - 1);
+        logError(`[refresh] cursorName=${cursorName} idx=${idx} newIdx=${newIdx} total=${this.filteredSortedEntries.length}`);
+        this.cursorIndex = newIdx;
+      } else if (this.cursorIndex >= this.filteredSortedEntries.length) {
         this.cursorIndex = Math.max(0, this.filteredSortedEntries.length - 1);
       }
       // Prune selections that no longer exist
@@ -243,8 +250,10 @@ export class PanelData {
       if (focusName) {
         const sorted = sortEntries(this.entries, this.sortField, this.sortDirection);
         const idx = sorted.findIndex((e) => e.name === focusName);
+        logError(`[loadDirectory] focusName=${focusName} idx=${idx} total=${sorted.length}`);
         this.cursorIndex = idx >= 0 ? idx : 0;
       } else {
+        logError(`[loadDirectory] no focusName, cursor=0`);
         this.cursorIndex = 0;
       }
     } catch (err: unknown) {

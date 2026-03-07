@@ -88,6 +88,12 @@ pub fn copy_recursive(
     if flags.pause.load(Ordering::Relaxed) {
         return Ok(CopyResult::Paused);
     }
+    // Guard against self-copy: on macOS, fs::copy(src, dst) where src == dst
+    // silently truncates the file to zero bytes, causing data loss.
+    if src == dst {
+        return Ok(CopyResult::Done);
+    }
+
     if src.is_dir() {
         fs::create_dir_all(dst)?;
         for entry in fs::read_dir(src)? {

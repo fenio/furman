@@ -754,6 +754,7 @@
           panelSide={side}
           backend={panel.backend}
           s3ConnectionId={panel.s3Connection?.connectionId}
+          sftpConnectionId={panel.sftpConnection?.connectionId}
           comparisonStatus={comparisonStatusMap.get(entry.name)}
           getSelectedPaths={() => panel.getSelectedOrCurrent()}
           onclick={(e) => handleRowClick(i, e)}
@@ -779,6 +780,7 @@
               encrypted={panel.encryptionCache[entry.path] === true}
               backend={panel.backend}
               s3ConnectionId={panel.s3Connection?.connectionId}
+              sftpConnectionId={panel.sftpConnection?.connectionId}
               comparisonStatus={comparisonStatusMap.get(entry.name)}
               getSelectedPaths={() => panel.getSelectedOrCurrent()}
               visibleColumns={appState.visibleColumns}

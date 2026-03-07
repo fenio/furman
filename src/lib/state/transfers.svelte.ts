@@ -31,6 +31,8 @@ export interface Transfer {
   encryptionPassword?: string;
   encryptionConfig?: EncryptionConfig;
   checkpoint?: TransferCheckpoint | null;
+  /** Name to focus in the source panel after a move completes. */
+  srcFocusName?: string;
   speedBytesPerSec: number;
   /** @internal */ _lastProgressAt: number;
   /** @internal */ _lastBytesDone: number;
@@ -180,7 +182,7 @@ class TransfersState {
     if (!this.hasActive && this.queued.length === 0) {
       this.dialogVisible = false;
     }
-    window.dispatchEvent(new CustomEvent('transfer-done'));
+    window.dispatchEvent(new CustomEvent('transfer-done', { detail: { type: t?.type, destination: t?.destination, srcFocusName: t?.srcFocusName } }));
   }
 
   fail(id: string, error: string) {
