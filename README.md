@@ -8,7 +8,7 @@
 
 <p align="center">
   <b>F</b>ile & <b>U</b>RL <b>R</b>epository <b>MAN</b>ager<br>
-  a dual-pane file manager for macOS and Linux inspired by times when Dos Navigator was the king.<br>
+  a dual-pane file manager for macOS inspired by times when Dos Navigator was the king.<br>
   <sub><i>furman</i> is also Polish for "carter" — one who hauls goods by horse-drawn cart, and in our case, hauls files.</sub>
 </p>
 
@@ -41,30 +41,20 @@
 
 ## Installation
 
-### Homebrew (macOS)
+### Homebrew
 
 ```sh
 brew install fenio/tap/furman
 ```
 
-### Homebrew (Linux)
-
-```sh
-brew install fenio/tap/furman-bin
-```
-
 ### Download
 
-Grab the latest `.dmg` (macOS) or `.AppImage` / `.deb` (Linux) from the [Releases](https://github.com/fenio/furman/releases/latest) page.
-
-**macOS:** Both Apple Silicon (ARM) and Intel builds are available.
+Grab the latest `.dmg` from the [Releases](https://github.com/fenio/furman/releases/latest) page. Both Apple Silicon (ARM) and Intel builds are available.
 
 > **Note:** Furman is not signed with an Apple Developer certificate. On first launch macOS Gatekeeper will block it. To allow it, go to **System Settings > Privacy & Security** and click **Open Anyway**, or run:
 > ```sh
 > xattr -cr /Applications/Furman.app
 > ```
-
-**Linux:** Download the `.AppImage` and make it executable (`chmod +x Furman_*.AppImage`), or install the `.deb` package with `sudo dpkg -i Furman_*.deb`.
 
 ### Build from source
 
@@ -75,7 +65,7 @@ npm install
 npm run tauri build
 ```
 
-The built package will be in `src-tauri/target/release/bundle/` (`.dmg` on macOS, `.AppImage`/`.deb` on Linux).
+The built `.dmg` will be in `src-tauri/target/release/bundle/dmg/`.
 
 ## Screenshots
 
@@ -108,7 +98,7 @@ The built package will be in `src-tauri/target/release/bundle/` (`.dmg` on macOS
 | Terminal | xterm.js |
 | S3       | aws-sdk-s3 (Rust) |
 | SFTP     | russh, russh-sftp (Rust) |
-| Platform | macOS (Apple Silicon + Intel), Linux (x86_64) |
+| Platform | macOS (Apple Silicon + Intel) |
 
 ## Keyboard Shortcuts
 
