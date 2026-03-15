@@ -1,7 +1,7 @@
 {
 	"name": "furman-filemanager",
 	"private": true,
-	"version": "0.3.4",
+	"version": "0.3.5",
 	"type": "module",
 	"scripts": {
 		"dev": "vite dev",
@@ -17,7 +17,7 @@
 		"@eslint/js": "^10.0.1",
 		"@sveltejs/adapter-static": "^3.0.10",
 		"@sveltejs/kit": "^2.53.4",
-		"@sveltejs/vite-plugin-svelte": "^6.2.4",
+		"@sveltejs/vite-plugin-svelte": "^7.0.0",
 		"@tauri-apps/cli": "^2.10.0",
 		"@types/node": "^25.3.3",
 		"eslint": "^10.0.2",
@@ -27,7 +27,7 @@
 		"svelte-check": "^4.4.4",
 		"typescript": "^5.9.3",
 		"typescript-eslint": "^8.56.1",
-		"vite": "^7.3.1"
+		"vite": "^8.0.0"
 	},
 	"dependencies": {
 		"@codemirror/lang-cpp": "^6.0.3",

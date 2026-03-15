@@ -481,9 +481,18 @@ export interface DiskUsageDone {
   cancelled: boolean;
 }
 
+export interface DiskUsageLevelData {
+  parent_path: string;
+  entries: DiskUsageEntry[];
+  total_size: number;
+  total_files: number;
+  total_dirs: number;
+}
+
 export type DiskUsageEvent =
   | { type: 'Progress'; files_scanned: number }
   | ({ type: 'Entry' } & DiskUsageEntry)
+  | ({ type: 'Level' } & DiskUsageLevelData)
   | ({ type: 'Done' } & DiskUsageDone);
 
 export type PanelBackend = 'local' | 's3' | 'sftp' | 'archive';

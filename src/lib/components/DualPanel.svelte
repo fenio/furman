@@ -111,6 +111,8 @@
         <DiskUsagePane
           path={appState.diskUsagePath}
           title={appState.diskUsageTitle}
+          syncPath={panels.right.path}
+          onDrillDown={(p) => panels.right.loadDirectory(p)}
           onClose={() => appState.closeDiskUsage()}
         />
       </div>
@@ -159,6 +161,8 @@
         <DiskUsagePane
           path={appState.diskUsagePath}
           title={appState.diskUsageTitle}
+          syncPath={panels.left.path}
+          onDrillDown={(p) => panels.left.loadDirectory(p)}
           onClose={() => appState.closeDiskUsage()}
         />
       </div>

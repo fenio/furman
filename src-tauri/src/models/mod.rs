@@ -586,11 +586,24 @@ pub struct DiskUsageDone {
     pub cancelled: bool,
 }
 
+/// Emitted for each top-level directory child: contains that directory's own
+/// direct children with accurate sizes, so the frontend can cache them
+/// immediately without an extra scan.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DiskUsageLevelData {
+    pub parent_path: String,
+    pub entries: Vec<DiskUsageEntry>,
+    pub total_size: u64,
+    pub total_files: u64,
+    pub total_dirs: u64,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "type")]
 pub enum DiskUsageEvent {
     Progress { files_scanned: u64 },
     Entry(DiskUsageEntry),
+    Level(DiskUsageLevelData),
     Done(DiskUsageDone),
 }
 

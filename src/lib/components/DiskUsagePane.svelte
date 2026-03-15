@@ -2,7 +2,7 @@
   import { onMount, onDestroy, tick } from 'svelte';
   import { analyzeDiskUsage, cancelDiskUsage } from '$lib/services/tauri';
   import { formatSize } from '$lib/utils/format';
-  import type { DiskUsageEntry, DiskUsageEvent } from '$lib/types';
+  import type { DiskUsageEntry, DiskUsageEvent, DiskUsageLevelData } from '$lib/types';
   import {
     Chart, ArcElement, BarElement, CategoryScale, LinearScale,
     DoughnutController, BarController, Tooltip, Legend,
@@ -16,10 +16,12 @@
   interface Props {
     path: string;
     title: string;
+    syncPath?: string;
+    onDrillDown?: (path: string) => void;
     onClose: () => void;
   }
 
-  let { path, title, onClose }: Props = $props();
+  let { path, title, syncPath, onDrillDown, onClose }: Props = $props();
 
   interface CachedScan {
     entries: DiskUsageEntry[];
@@ -52,18 +54,38 @@
   let doughnutChart: Chart | null = null;
   let barChart: Chart | null = null;
 
+  let mounted = false;
+
+  // Background cache prewarming
+  let prewarmScanIds: string[] = [];
+  let prewarmQueue: DiskUsageEntry[] = [];
+  let activePrewarms = 0;
+  const MAX_PREWARMING = 3;
+
   const sortedEntries = $derived(
     [...entries].sort((a, b) => b.size - a.size)
   );
 
+  // Sync from sibling FilePanel: when it navigates, rescan here
+  $effect(() => {
+    const sp = syncPath;
+    if (!mounted || !sp || sp === currentPath) return;
+    currentPath = sp;
+    currentTitle = sp.replace(/\/+$/, '').split('/').pop() || sp;
+    pathHistory = [];
+    startScan(sp);
+  });
+
   onMount(() => {
     currentPath = path;
     currentTitle = title;
+    mounted = true;
     startScan(path);
   });
 
   onDestroy(() => {
     if (scanId) cancelDiskUsage(scanId).catch(() => {});
+    for (const id of prewarmScanIds) cancelDiskUsage(id).catch(() => {});
     destroyCharts();
   });
 
@@ -87,6 +109,7 @@
     if (activeTab === 'overview') {
       tick().then(() => buildCharts());
     }
+    schedulePrewarm(cached.entries);
   }
 
   function startScan(scanPath: string) {
@@ -104,6 +127,7 @@
     totalFiles = 0;
     totalDirs = 0;
     cancelled = false;
+    prewarmQueue = [];
     destroyCharts();
 
     const id = 'du-' + Date.now() + '-' + Math.random().toString(36).slice(2, 6);
@@ -123,6 +147,17 @@
             item_count: event.item_count,
           }];
           break;
+        case 'Level':
+          // Cache subdirectory contents emitted during the main scan — free, no extra I/O
+          if (!cache.has(event.parent_path)) {
+            cache.set(event.parent_path, {
+              entries: event.entries,
+              totalSize: event.total_size,
+              totalFiles: event.total_files,
+              totalDirs: event.total_dirs,
+            });
+          }
+          break;
         case 'Done':
           totalSize = event.total_size;
           totalFiles = event.total_files;
@@ -132,12 +167,14 @@
           scanId = '';
           // Cache completed (non-cancelled) scans
           if (!event.cancelled) {
+            const snapshot = [...entries];
             cache.set(scanPath, {
-              entries: [...entries],
+              entries: snapshot,
               totalSize: event.total_size,
               totalFiles: event.total_files,
               totalDirs: event.total_dirs,
             });
+            schedulePrewarm(snapshot);
           }
           if (activeTab === 'overview') {
             tick().then(() => buildCharts());
@@ -154,11 +191,51 @@
     if (scanId) cancelDiskUsage(scanId).catch(() => {});
   }
 
+  function prewarmNext() {
+    while (activePrewarms < MAX_PREWARMING && prewarmQueue.length > 0) {
+      const entry = prewarmQueue.shift()!;
+      if (cache.has(entry.path)) continue;
+
+      activePrewarms++;
+      const id = 'du-pw-' + Date.now() + '-' + Math.random().toString(36).slice(2, 6);
+      prewarmScanIds.push(id);
+      let pwEntries: DiskUsageEntry[] = [];
+
+      analyzeDiskUsage(id, entry.path, (event: DiskUsageEvent) => {
+        if (event.type === 'Entry') {
+          pwEntries.push({ name: event.name, path: event.path, size: event.size, is_dir: event.is_dir, item_count: event.item_count });
+        } else if (event.type === 'Done') {
+          activePrewarms--;
+          prewarmScanIds = prewarmScanIds.filter(i => i !== id);
+          if (!event.cancelled) {
+            cache.set(entry.path, { entries: pwEntries, totalSize: event.total_size, totalFiles: event.total_files, totalDirs: event.total_dirs });
+          }
+          prewarmNext();
+        }
+      }).catch(() => {
+        activePrewarms--;
+        prewarmScanIds = prewarmScanIds.filter(i => i !== id);
+        prewarmNext();
+      });
+    }
+  }
+
+  function schedulePrewarm(completedEntries: DiskUsageEntry[]) {
+    // Queue top 10 uncached directory children by size
+    const dirs = completedEntries
+      .filter(e => e.is_dir && !cache.has(e.path))
+      .sort((a, b) => b.size - a.size)
+      .slice(0, 10);
+    prewarmQueue.push(...dirs);
+    prewarmNext();
+  }
+
   function drillDown(entry: DiskUsageEntry) {
     if (!entry.is_dir) return;
     pathHistory = [...pathHistory, { path: currentPath, title: currentTitle }];
     currentPath = entry.path;
     currentTitle = entry.name;
+    onDrillDown?.(entry.path);
     startScan(entry.path);
   }
 
@@ -168,6 +245,7 @@
     currentPath = target.path;
     currentTitle = target.title;
     pathHistory = pathHistory.slice(0, index);
+    onDrillDown?.(target.path);
     startScan(target.path);
   }
 
