@@ -28,6 +28,7 @@ import { ruby } from '@codemirror/legacy-modes/mode/ruby';
 import { kotlin } from '@codemirror/legacy-modes/mode/clike';
 import { swift } from '@codemirror/legacy-modes/mode/swift';
 import { hcl } from 'codemirror-lang-hcl';
+import { nix } from '@replit/codemirror-lang-nix';
 
 // Extension → language factory
 const EXT_TO_LANG: Record<string, () => LanguageSupport | Extension> = {
@@ -66,6 +67,7 @@ const EXT_TO_LANG: Record<string, () => LanguageSupport | Extension> = {
 	tf: () => hcl(),
 	tfvars: () => hcl(),
 	hcl: () => hcl(),
+	nix: () => nix(),
 };
 
 export function getLanguageExtension(filename: string): LanguageSupport | Extension | null {

@@ -13,6 +13,7 @@ const EXT_TO_LANG: Record<string, string> = {
 	makefile: 'makefile', dockerfile: 'dockerfile',
 	ini: 'ini', cfg: 'ini', conf: 'ini',
 	tf: 'terraform', tfvars: 'terraform', hcl: 'terraform',
+	nix: 'nix',
 };
 
 export function detectLanguage(filename: string): string | undefined {

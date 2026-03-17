@@ -175,7 +175,7 @@
 		{#if saving}
 			<span class="editor-saving">[Saving...]</span>
 		{/if}
-		<span class="editor-help">Ctrl+S/F2=Save  Ctrl+F=Search  ESC=Close</span>
+		<span class="editor-help">⌘S/F2=Save  ⌘F=Search  ESC=Close</span>
 	</div>
 
 	<!-- Content -->
