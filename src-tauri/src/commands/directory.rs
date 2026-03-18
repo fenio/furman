@@ -1,4 +1,4 @@
-use crate::models::{DirListing, FileEntry, FmError};
+use crate::models::{DirListEvent, DirListing, FileEntry, FmError};
 use nix::sys::statvfs::statvfs;
 use nix::unistd::{Gid, Group, Uid, User};
 use std::collections::HashMap;
@@ -7,6 +7,7 @@ use std::os::unix::fs::{MetadataExt, PermissionsExt};
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::time::UNIX_EPOCH;
+use tauri::ipc::Channel;
 
 // ── Git status helpers ──────────────────────────────────────────────────────
 
@@ -151,8 +152,12 @@ fn get_git_statuses(dir_path: &Path) -> HashMap<String, char> {
     map
 }
 
-/// Build a `FileEntry` from a directory entry.
-fn entry_from_path(path: &Path) -> Result<FileEntry, FmError> {
+/// Build a `FileEntry` from a directory entry, with uid/gid caching.
+fn entry_from_path(
+    path: &Path,
+    uid_cache: &mut HashMap<u32, String>,
+    gid_cache: &mut HashMap<u32, String>,
+) -> Result<FileEntry, FmError> {
     // Use symlink_metadata so we can detect symlinks.
     let sym_meta = fs::symlink_metadata(path)?;
     let is_symlink = sym_meta.file_type().is_symlink();
@@ -181,21 +186,31 @@ fn entry_from_path(path: &Path) -> Result<FileEntry, FmError> {
 
     let permissions = sym_meta.permissions().mode();
 
-    // Owner / group names via nix (safe on Apple Silicon, unlike `users` crate).
+    // Owner / group names via nix with caching (most files share the same uid/gid).
     let uid = sym_meta.uid();
     let gid = sym_meta.gid();
 
-    let owner = User::from_uid(Uid::from_raw(uid))
-        .ok()
-        .flatten()
-        .map(|u| u.name)
-        .unwrap_or_else(|| uid.to_string());
+    let owner = uid_cache
+        .entry(uid)
+        .or_insert_with(|| {
+            User::from_uid(Uid::from_raw(uid))
+                .ok()
+                .flatten()
+                .map(|u| u.name)
+                .unwrap_or_else(|| uid.to_string())
+        })
+        .clone();
 
-    let group = Group::from_gid(Gid::from_raw(gid))
-        .ok()
-        .flatten()
-        .map(|g| g.name)
-        .unwrap_or_else(|| gid.to_string());
+    let group = gid_cache
+        .entry(gid)
+        .or_insert_with(|| {
+            Group::from_gid(Gid::from_raw(gid))
+                .ok()
+                .flatten()
+                .map(|g| g.name)
+                .unwrap_or_else(|| gid.to_string())
+        })
+        .clone();
 
     let name = path
         .file_name()
@@ -221,6 +236,9 @@ fn entry_from_path(path: &Path) -> Result<FileEntry, FmError> {
     })
 }
 
+/// Git status threshold: skip git status for directories with more than this many entries.
+const GIT_STATUS_THRESHOLD: usize = 10_000;
+
 /// List the contents of a directory.
 ///
 /// If `path` is empty the user's home directory is used.
@@ -245,8 +263,8 @@ pub fn list_directory(path: String, show_hidden: bool) -> Result<DirListing, FmE
 
     let mut entries: Vec<FileEntry> = Vec::new();
     let mut total_size: u64 = 0;
-
-    let git_statuses = get_git_statuses(&dir);
+    let mut uid_cache: HashMap<u32, String> = HashMap::new();
+    let mut gid_cache: HashMap<u32, String> = HashMap::new();
 
     // Prepend a ".." entry for parent navigation (unless we are at the root).
     let canonical = dir.canonicalize().unwrap_or_else(|_| dir.clone());
@@ -279,17 +297,24 @@ pub fn list_directory(path: String, show_hidden: bool) -> Result<DirListing, FmE
             continue;
         }
 
-        match entry_from_path(&item.path()) {
-            Ok(mut entry) => {
-                entry.git_status = git_statuses.get(&entry.name).map(std::string::ToString::to_string);
+        match entry_from_path(&item.path(), &mut uid_cache, &mut gid_cache) {
+            Ok(entry) => {
                 total_size += entry.size;
                 entries.push(entry);
             }
             Err(_) => {
-                // Skip entries we cannot stat (e.g. broken symlinks we already
-                // handle above, but there may be other exotic failures).
                 continue;
             }
+        }
+    }
+
+    // Only run git status for reasonably-sized directories.
+    if entries.len() <= GIT_STATUS_THRESHOLD {
+        let git_statuses = get_git_statuses(&dir);
+        for entry in &mut entries {
+            entry.git_status = git_statuses
+                .get(&entry.name)
+                .map(std::string::ToString::to_string);
         }
     }
 
@@ -311,6 +336,122 @@ pub fn list_directory(path: String, show_hidden: bool) -> Result<DirListing, FmE
         total_size,
         free_space,
     })
+}
+
+/// Streamed directory listing — sends batches of entries via Channel for
+/// progressive rendering. Used for large directories where waiting for the
+/// full sorted listing would freeze the UI.
+#[tauri::command]
+pub fn list_directory_streamed(
+    path: String,
+    show_hidden: bool,
+    channel: Channel<DirListEvent>,
+) -> Result<(), FmError> {
+    let dir: PathBuf = if path.is_empty() {
+        dirs::home_dir().unwrap_or_else(|| PathBuf::from("/"))
+    } else {
+        PathBuf::from(&path)
+    };
+
+    if !dir.exists() {
+        return Err(FmError::NotFound(dir.to_string_lossy().into_owned()));
+    }
+    if !dir.is_dir() {
+        return Err(FmError::Other(format!(
+            "{} is not a directory",
+            dir.display()
+        )));
+    }
+
+    std::thread::spawn(move || {
+        let mut uid_cache: HashMap<u32, String> = HashMap::new();
+        let mut gid_cache: HashMap<u32, String> = HashMap::new();
+        let mut batch: Vec<FileEntry> = Vec::with_capacity(5000);
+        let mut total_size: u64 = 0;
+        let mut entry_count: u64 = 0;
+
+        // Send ".." entry first
+        let canonical = dir.canonicalize().unwrap_or_else(|_| dir.clone());
+        if *canonical != *"/" {
+            if let Some(parent) = canonical.parent() {
+                batch.push(FileEntry {
+                    name: "..".to_string(),
+                    path: parent.to_string_lossy().into_owned(),
+                    size: 0,
+                    is_dir: true,
+                    is_symlink: false,
+                    symlink_target: None,
+                    modified: 0,
+                    permissions: 0,
+                    owner: String::new(),
+                    group: String::new(),
+                    extension: None,
+                    git_status: None,
+                    storage_class: None,
+                });
+            }
+        }
+
+        if let Ok(read_dir) = fs::read_dir(&dir) {
+            for item in read_dir {
+                let item = match item {
+                    Ok(i) => i,
+                    Err(_) => continue,
+                };
+                let file_name = item.file_name().to_string_lossy().into_owned();
+                if !show_hidden && file_name.starts_with('.') {
+                    continue;
+                }
+
+                match entry_from_path(&item.path(), &mut uid_cache, &mut gid_cache) {
+                    Ok(entry) => {
+                        total_size += entry.size;
+                        entry_count += 1;
+                        batch.push(entry);
+                    }
+                    Err(_) => continue,
+                }
+
+                if batch.len() >= 5000 {
+                    let _ = channel.send(DirListEvent::Batch {
+                        entries: std::mem::replace(&mut batch, Vec::with_capacity(5000)),
+                    });
+                }
+            }
+        }
+
+        // Send remaining entries
+        if !batch.is_empty() {
+            let _ = channel.send(DirListEvent::Batch { entries: batch });
+        }
+
+        // Free space via statvfs.
+        let free_space = statvfs(&dir)
+            .map(|s| s.fragment_size() * s.blocks_available() as u64)
+            .unwrap_or(0);
+
+        // Git status only for small directories
+        let git_statuses = if (entry_count as usize) <= GIT_STATUS_THRESHOLD {
+            let statuses = get_git_statuses(&dir);
+            if statuses.is_empty() {
+                None
+            } else {
+                Some(statuses)
+            }
+        } else {
+            None
+        };
+
+        let _ = channel.send(DirListEvent::Done {
+            path: dir.to_string_lossy().into_owned(),
+            total_size,
+            free_space,
+            entry_count,
+            git_statuses,
+        });
+    });
+
+    Ok(())
 }
 
 /// Create a new directory (including intermediate parents).

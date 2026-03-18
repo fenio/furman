@@ -229,6 +229,7 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             // directory commands
             commands::directory::list_directory,
+            commands::directory::list_directory_streamed,
             commands::directory::create_directory,
             commands::directory::get_directory_size,
             // file commands

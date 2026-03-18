@@ -1,11 +1,16 @@
-import type { FileEntry, SortField, SortDirection, ViewMode, PanelBackend, S3ConnectionInfo, SftpConnectionInfo, ArchiveInfo, GitRepoInfo } from '$lib/types';
+import type { FileEntry, SortField, SortDirection, ViewMode, PanelBackend, S3ConnectionInfo, SftpConnectionInfo, ArchiveInfo, GitRepoInfo, DirListEvent } from '$lib/types';
 import { SvelteSet } from 'svelte/reactivity';
 import { sortEntries } from '$lib/utils/sort';
-import { listDirectory, listArchive, watchDirectory, unwatchDirectory, getGitRepoInfo, getDirectorySize } from '$lib/services/tauri';
+import { listDirectory, listDirectoryStreamed, listArchive, watchDirectory, unwatchDirectory, getGitRepoInfo, getDirectorySize } from '$lib/services/tauri';
 import { s3Connect, s3Disconnect, s3ListObjects, s3IsObjectEncrypted } from '$lib/services/s3';
 import { sftpConnect, sftpDisconnect, sftpListObjects } from '$lib/services/sftp';
 import { appState } from '$lib/state/app.svelte';
 import { error as logError } from '$lib/services/log';
+
+/// Threshold above which we use streamed directory listing.
+const STREAM_THRESHOLD = 50_000;
+/// Debounce delay (ms) for filter text in large directories.
+const FILTER_DEBOUNCE_MS = 150;
 
 
 let nextTabId = 0;
@@ -23,6 +28,11 @@ export class PanelData {
   viewMode = $state<ViewMode>(appState.defaultViewMode);
   gridColumns = $state(1);
   filterText = $state('');
+  /** Raw filter input — immediately updated by the UI input binding. */
+  filterInput = $state('');
+  /** True once a streamed listing has finished (entries are sorted). */
+  streamComplete = $state(true);
+  private filterDebounceTimer: ReturnType<typeof setTimeout> | null = null;
   loading = $state(false);
   error = $state<string | null>(null);
   freeSpace = $state(0);
@@ -40,7 +50,11 @@ export class PanelData {
   canGoBack = $derived(this.historyIndex > 0);
   canGoForward = $derived(this.historyIndex < this.history.length - 1);
 
-  sortedEntries = $derived(sortEntries(this.entries, this.sortField, this.sortDirection));
+  sortedEntries = $derived(
+    this.streamComplete
+      ? sortEntries(this.entries, this.sortField, this.sortDirection)
+      : this.entries
+  );
 
   private cachedGlobPattern = '';
   private cachedGlobRegex: RegExp | null = null;
@@ -155,6 +169,25 @@ export class PanelData {
 
   clearFilter() {
     this.filterText = '';
+    this.filterInput = '';
+    if (this.filterDebounceTimer) {
+      clearTimeout(this.filterDebounceTimer);
+      this.filterDebounceTimer = null;
+    }
+  }
+
+  /** Update filter text from raw input, with debouncing for large directories. */
+  setFilterInput(value: string) {
+    this.filterInput = value;
+    if (this.entries.length > STREAM_THRESHOLD) {
+      if (this.filterDebounceTimer) clearTimeout(this.filterDebounceTimer);
+      this.filterDebounceTimer = setTimeout(() => {
+        this.filterText = this.filterInput;
+        this.filterDebounceTimer = null;
+      }, FILTER_DEBOUNCE_MS);
+    } else {
+      this.filterText = value;
+    }
   }
 
   /** Lightweight refresh for file-watcher events: only updates entries if they actually changed. */
@@ -205,6 +238,7 @@ export class PanelData {
     this.dirSizePending.clear();
     this.encryptionCache = {};
     this.encryptionPending.clear();
+    this.streamComplete = true;
 
     // If we're in archive mode and the ".." path is a real filesystem path (not archive://),
     // that means we're exiting the archive
@@ -229,23 +263,16 @@ export class PanelData {
       } else if (this.backend === 'sftp' && this.sftpConnection) {
         listing = await sftpListObjects(this.sftpConnection.connectionId, path);
       } else {
-        listing = await listDirectory(path, appState.showHidden);
+        // Use streamed listing for local directories
+        await this.loadDirectoryStreamed(path, focusName);
+        return;
       }
       this.path = listing.path;
       this.freeSpace = listing.free_space;
       // Rust backend already provides ".." entry — use entries as-is
       this.entries = listing.entries;
       this.selectedPaths = new SvelteSet();
-      // Fetch git info non-blocking for local backends
-      if (this.backend === 'local') {
-        getGitRepoInfo(listing.path).then((info) => {
-          this.gitInfo = info;
-        }).catch(() => {
-          this.gitInfo = null;
-        });
-      } else {
-        this.gitInfo = null;
-      }
+      this.gitInfo = null;
       // Position cursor on focusName if provided (e.g. directory we just left)
       if (focusName) {
         const sorted = sortEntries(this.entries, this.sortField, this.sortDirection);
@@ -261,6 +288,76 @@ export class PanelData {
     } finally {
       this.loading = false;
     }
+    // Track history
+    if (!this.navigatingHistory && !this.error) {
+      this.history = [...this.history.slice(0, this.historyIndex + 1), this.path];
+      this.historyIndex = this.history.length - 1;
+    }
+    this.navigatingHistory = false;
+    this.startWatching();
+  }
+
+  /** Load a local directory using streamed listing for progressive rendering. */
+  private async loadDirectoryStreamed(path: string, focusName?: string) {
+    this.streamComplete = false;
+    this.entries = [];
+    this.selectedPaths = new SvelteSet();
+    this.cursorIndex = 0;
+
+    try {
+      await listDirectoryStreamed(path, appState.showHidden, (event: DirListEvent) => {
+        if (event.type === 'Batch') {
+          // Append entries progressively
+          this.entries = [...this.entries, ...event.entries];
+          // Clear loading after first batch arrives
+          if (this.loading) {
+            this.loading = false;
+          }
+        } else if (event.type === 'Done') {
+          this.path = event.path;
+          this.freeSpace = event.free_space;
+
+          // Apply git statuses if available
+          if (event.git_statuses) {
+            const statuses = event.git_statuses;
+            this.entries = this.entries.map(e => {
+              const status = statuses[e.name];
+              if (status) {
+                return { ...e, git_status: status };
+              }
+              return e;
+            });
+          }
+
+          // Mark stream as complete — triggers sorting in $derived
+          this.streamComplete = true;
+
+          // Position cursor on focusName if provided
+          if (focusName) {
+            const sorted = sortEntries(this.entries, this.sortField, this.sortDirection);
+            const idx = sorted.findIndex((e) => e.name === focusName);
+            logError(`[loadDirectoryStreamed] focusName=${focusName} idx=${idx} total=${sorted.length}`);
+            this.cursorIndex = idx >= 0 ? idx : 0;
+          } else {
+            logError(`[loadDirectoryStreamed] no focusName, cursor=0`);
+            this.cursorIndex = 0;
+          }
+
+          // Fetch git info non-blocking
+          getGitRepoInfo(event.path).then((info) => {
+            this.gitInfo = info;
+          }).catch(() => {
+            this.gitInfo = null;
+          });
+        }
+      });
+    } catch (err: unknown) {
+      this.error = err instanceof Error ? err.message : String(err);
+      this.loading = false;
+      this.streamComplete = true;
+      return;
+    }
+
     // Track history
     if (!this.navigatingHistory && !this.error) {
       this.history = [...this.history.slice(0, this.historyIndex + 1), this.path];

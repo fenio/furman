@@ -107,7 +107,7 @@
     };
   });
 
-  const archiveExtensions = new Set(['zip', 'rar', '7z', 'tar', 'gz', 'tgz', 'bz2', 'xz']);
+  const archiveExtensions = new Set(['zip', 'rar', '7z', 'tar', 'gz', 'tgz', 'bz2', 'xz', 'zst']);
 
   // Handle entry activation (Enter / double-click) from DualPanel
   async function handleEntryActivate(index: number) {

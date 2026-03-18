@@ -38,6 +38,7 @@
   const BUFFER_ROWS = 10; // extra rows above/below viewport
   let viewportHeight = $state(0);
   let scrollTop = $state(0);
+  let containerWidth = $state(0);
 
   const totalHeight = $derived(panel.filteredSortedEntries.length * ROW_HEIGHT);
   const startIndex = $derived(
@@ -54,9 +55,30 @@
   );
   const offsetY = $derived(startIndex * ROW_HEIGHT);
 
+  // Virtualized icon grid
+  const ICON_TILE_HEIGHT = $derived(appState.iconSize + 40); // icon + label + padding
+  const ICON_TILE_WIDTH = $derived(appState.iconSize + 32);
+  const iconCols = $derived(Math.max(1, Math.floor(containerWidth / ICON_TILE_WIDTH)));
+  const iconTotalRows = $derived(Math.ceil(panel.filteredSortedEntries.length / iconCols));
+  const iconTotalHeight = $derived(iconTotalRows * ICON_TILE_HEIGHT);
+  const ICON_BUFFER_ROWS = 2;
+  const iconStartRow = $derived(
+    Math.max(0, Math.floor(scrollTop / ICON_TILE_HEIGHT) - ICON_BUFFER_ROWS)
+  );
+  const iconEndRow = $derived(
+    Math.min(iconTotalRows, Math.ceil((scrollTop + viewportHeight) / ICON_TILE_HEIGHT) + ICON_BUFFER_ROWS)
+  );
+  const iconStartIndex = $derived(iconStartRow * iconCols);
+  const iconEndIndex = $derived(Math.min(panel.filteredSortedEntries.length, iconEndRow * iconCols));
+  const iconVisibleEntries = $derived(
+    panel.filteredSortedEntries.slice(iconStartIndex, iconEndIndex)
+  );
+  const iconOffsetY = $derived(iconStartRow * ICON_TILE_HEIGHT);
+
   function handleListScroll(e: Event) {
     const el = e.target as HTMLElement;
     scrollTop = el.scrollTop;
+    containerWidth = el.clientWidth;
   }
 
   // Context menu state
@@ -76,8 +98,18 @@
     if (!listContainer || panel.viewMode === 'column') return;
 
     if (panel.viewMode === 'icon') {
-      const tile = listContainer.querySelectorAll('.file-tile')[idx] as HTMLElement | undefined;
-      tile?.scrollIntoView({ block: 'nearest' });
+      // Virtualized icon mode: compute cursor position mathematically
+      const row = Math.floor(idx / iconCols);
+      const rowTop = row * ICON_TILE_HEIGHT;
+      const rowBottom = rowTop + ICON_TILE_HEIGHT;
+      const scrollTop_ = listContainer.scrollTop;
+      const viewHeight = listContainer.clientHeight;
+
+      if (rowTop < scrollTop_) {
+        listContainer.scrollTop = rowTop;
+      } else if (rowBottom > scrollTop_ + viewHeight) {
+        listContainer.scrollTop = rowBottom - viewHeight;
+      }
     } else {
       const rowHeight = ROW_HEIGHT;
       const scrollTop_ = listContainer.scrollTop;
@@ -110,11 +142,12 @@
     return () => observer.disconnect();
   });
 
-  // Track viewport height for list-mode virtualization
+  // Track viewport height and width for virtualization (list + icon modes)
   $effect(() => {
-    if (panel.viewMode !== 'list' || !listContainer) return;
+    if ((panel.viewMode !== 'list' && panel.viewMode !== 'icon') || !listContainer) return;
     const observer = new ResizeObserver((entries) => {
       viewportHeight = entries[0].contentRect.height;
+      containerWidth = entries[0].contentRect.width;
     });
     observer.observe(listContainer);
     return () => observer.disconnect();
@@ -314,20 +347,25 @@
     const next = new SvelteSet(prevSelected);
 
     if (panel.viewMode === 'icon') {
-      // Icon mode: still query DOM (not virtualized)
-      const elements = listContainer.querySelectorAll('.file-tile');
-      elements.forEach((el, i) => {
-        const htmlEl = el as HTMLElement;
-        const top = htmlEl.offsetTop;
-        const left = htmlEl.offsetLeft;
-        const bottom = top + htmlEl.offsetHeight;
-        const right = left + htmlEl.offsetWidth;
-        const intersects = !(right < minX || left > maxX || bottom < minY || top > maxY);
+      // Icon mode: pure math using grid geometry (virtualized)
+      const tileW = ICON_TILE_WIDTH;
+      const tileH = ICON_TILE_HEIGHT;
+      const cols = iconCols;
+      const totalEntries = panel.filteredSortedEntries.length;
+
+      for (let i = 0; i < totalEntries; i++) {
+        const row = Math.floor(i / cols);
+        const col = i % cols;
+        const tileTop = row * tileH;
+        const tileLeft = col * tileW;
+        const tileBottom = tileTop + tileH;
+        const tileRight = tileLeft + tileW;
+        const intersects = !(tileRight < minX || tileLeft > maxX || tileBottom < minY || tileTop > maxY);
         const entry = panel.filteredSortedEntries[i];
-        if (!entry || entry.name === '..') return;
+        if (!entry || entry.name === '..') continue;
         if (intersects) next.add(entry.path);
         else if (!prevSelected.has(entry.path)) next.delete(entry.path);
-      });
+      }
     } else {
       // List mode: pure math, no DOM queries (works with virtualization)
       const containerWidth = listContainer.clientWidth;
@@ -692,14 +730,15 @@
   {/if}
 
   <!-- Filter bar -->
-  {#if panel.filterText}
+  {#if panel.filterText || panel.filterInput}
   <div class="filter-bar">
     <span class="filter-icon">🔍</span>
     <input
       bind:this={filterInput}
-      bind:value={panel.filterText}
+      value={panel.filterInput}
+      oninput={(e) => panel.setFilterInput((e.target as HTMLInputElement).value)}
       class="filter-input"
-     
+
       placeholder="Filter..."
       onkeydown={(e) => {
         if (e.key === 'Escape') {
@@ -738,30 +777,36 @@
     style={panel.viewMode === 'icon' ? `--row-height: ${ROW_HEIGHT}px; --icon-size: ${appState.iconSize}px; --grid-min: ${appState.iconSize + 32}px` : `--row-height: ${ROW_HEIGHT}px`}
     onmousedown={handleListMouseDown}
     oncontextmenu={handleEmptyContextMenu}
-    onscroll={panel.viewMode === 'list' ? handleListScroll : undefined}
+    onscroll={handleListScroll}
   >
     {#if panel.loading}
       <div class="loading-msg">Loading...</div>
     {:else if panel.error}
       <div class="error-msg">{panel.error}</div>
     {:else if panel.viewMode === 'icon'}
-      {#each panel.filteredSortedEntries as entry, i (entry.path + entry.name)}
-        <FileIcon
-          {entry}
-          isSelected={panel.selectedPaths.has(entry.path)}
-          isCursor={i === panel.cursorIndex}
-          {isActive}
-          panelSide={side}
-          backend={panel.backend}
-          s3ConnectionId={panel.s3Connection?.connectionId}
-          sftpConnectionId={panel.sftpConnection?.connectionId}
-          comparisonStatus={comparisonStatusMap.get(entry.name)}
-          getSelectedPaths={() => panel.getSelectedOrCurrent()}
-          onclick={(e) => handleRowClick(i, e)}
-          ondblclick={() => handleRowDblClick(i)}
-          oncontextmenu={(e) => handleContextMenu(i, e)}
-        />
-      {/each}
+      <!-- Virtualized icon grid -->
+      <div style="height: {iconTotalHeight}px; position: relative;">
+        <div style="position: absolute; top: {iconOffsetY}px; left: 0; right: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(var(--grid-min, 80px), 1fr)); gap: 4px; padding: 0 8px;">
+          {#each iconVisibleEntries as entry, vi (entry.path + entry.name)}
+            {@const i = iconStartIndex + vi}
+            <FileIcon
+              {entry}
+              isSelected={panel.selectedPaths.has(entry.path)}
+              isCursor={i === panel.cursorIndex}
+              {isActive}
+              panelSide={side}
+              backend={panel.backend}
+              s3ConnectionId={panel.s3Connection?.connectionId}
+              sftpConnectionId={panel.sftpConnection?.connectionId}
+              comparisonStatus={comparisonStatusMap.get(entry.name)}
+              getSelectedPaths={() => panel.getSelectedOrCurrent()}
+              onclick={(e) => handleRowClick(i, e)}
+              ondblclick={() => handleRowDblClick(i)}
+              oncontextmenu={(e) => handleContextMenu(i, e)}
+            />
+          {/each}
+        </div>
+      </div>
     {:else}
       <!-- Virtualized list mode: sentinel div creates full scroll height -->
       <div style="height: {totalHeight}px; position: relative;">
@@ -1194,11 +1239,7 @@
   }
 
   .file-list.icon-grid {
-    display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(var(--grid-min, 80px), 1fr));
-    gap: 4px;
-    padding: 8px;
-    align-content: start;
+    padding: 8px 0;
   }
 
   .loading-msg,

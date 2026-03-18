@@ -946,8 +946,10 @@
           handleBulkStorageClassChange();         // Cmd+L = Bulk Storage Class
           return;
         case 'I':
-          e.preventDefault();
-          handleBucketProperties();               // Cmd+Shift+I = Bucket Properties
+          if (active.backend === 's3') {
+            e.preventDefault();
+            handleBucketProperties();             // Cmd+Shift+I = Bucket Properties
+          }
           return;
       }
     }

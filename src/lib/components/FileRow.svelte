@@ -1,5 +1,5 @@
 <script lang="ts" module>
-  const archiveExtensions = new Set(['zip', 'rar', '7z', 'tar', 'gz', 'tgz', 'bz2', 'xz']);
+  const archiveExtensions = new Set(['zip', 'rar', '7z', 'tar', 'gz', 'tgz', 'bz2', 'xz', 'zst']);
   const imageExtensions = new Set(['png', 'jpg', 'jpeg', 'gif', 'bmp', 'svg', 'webp', 'ico']);
   const audioExtensions = new Set(['mp3', 'wav', 'flac', 'aac', 'ogg', 'm4a']);
   const videoExtensions = new Set(['mp4', 'mkv', 'avi', 'mov', 'webm', 'wmv']);

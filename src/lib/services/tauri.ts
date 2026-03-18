@@ -1,5 +1,5 @@
 import { invoke, Channel } from '@tauri-apps/api/core';
-import type { DirListing, VolumeInfo, ProgressEvent, SearchEvent, SearchMode, SyncEvent, GitRepoInfo, FileProperties, TransferCheckpoint, ModelMetadata, DiskUsageEvent } from '$lib/types';
+import type { DirListing, DirListEvent, VolumeInfo, ProgressEvent, SearchEvent, SearchMode, SyncEvent, GitRepoInfo, FileProperties, TransferCheckpoint, ModelMetadata, DiskUsageEvent } from '$lib/types';
 
 export async function listArchive(
   archivePath: string,
@@ -32,6 +32,16 @@ export async function listDirectory(
   showHidden: boolean
 ): Promise<DirListing> {
   return await invoke<DirListing>('list_directory', { path, showHidden });
+}
+
+export async function listDirectoryStreamed(
+  path: string,
+  showHidden: boolean,
+  onEvent: (e: DirListEvent) => void
+): Promise<void> {
+  const channel = new Channel<DirListEvent>();
+  channel.onmessage = onEvent;
+  await invoke('list_directory_streamed', { path, showHidden, channel });
 }
 
 export async function createDirectory(path: string): Promise<void> {

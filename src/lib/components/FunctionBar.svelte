@@ -17,7 +17,7 @@
     { key: '5', label: 'Copy', shortcut: `${platform.mod}C` },
     { key: '6', label: 'Move', shortcut: `${platform.mod}M` },
     { key: '7', label: 'MkDir', shortcut: `${platform.mod}N` },
-    { key: '8', label: 'Delete', shortcut: `${platform.mod}D` },
+    { key: '8', label: 'Delete', shortcut: `${platform.mod}⌫` },
     { key: '9', label: 'Props', shortcut: `${platform.mod}I` },
     { key: '10', label: 'Quit', shortcut: `${platform.mod}Q` }
   ];

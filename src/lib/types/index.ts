@@ -495,6 +495,12 @@ export type DiskUsageEvent =
   | ({ type: 'Level' } & DiskUsageLevelData)
   | ({ type: 'Done' } & DiskUsageDone);
 
+// ── DirListEvent (streamed directory listing) ────────────────────────────────
+
+export type DirListEvent =
+  | { type: 'Batch'; entries: FileEntry[] }
+  | { type: 'Done'; path: string; total_size: number; free_space: number; entry_count: number; git_statuses: Record<string, string> | null };
+
 export type PanelBackend = 'local' | 's3' | 'sftp' | 'archive';
 
 export interface ArchiveInfo {

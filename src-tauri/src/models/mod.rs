@@ -181,6 +181,23 @@ pub struct S3ObjectVersion {
     pub storage_class: Option<String>,
 }
 
+// ── DirListEvent ────────────────────────────────────────────────────────────
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(tag = "type")]
+pub enum DirListEvent {
+    Batch {
+        entries: Vec<FileEntry>,
+    },
+    Done {
+        path: String,
+        total_size: u64,
+        free_space: u64,
+        entry_count: u64,
+        git_statuses: Option<std::collections::HashMap<String, char>>,
+    },
+}
+
 // ── SearchEvent ─────────────────────────────────────────────────────────────
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

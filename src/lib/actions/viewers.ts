@@ -10,7 +10,7 @@ import { promptEncryptionPassword } from './fileops';
 // ── Extension constants ─────────────────────────────────────────────────────
 
 export const imageExtensions = new Set(['png', 'jpg', 'jpeg', 'gif', 'bmp', 'svg', 'webp', 'ico']);
-export const archiveExtensions = new Set(['zip', 'rar', '7z', 'tar', 'gz', 'tgz', 'bz2', 'xz']);
+export const archiveExtensions = new Set(['zip', 'rar', '7z', 'tar', 'gz', 'tgz', 'bz2', 'xz', 'zst']);
 export const systemOpenExtensions = new Set([
   'pdf', 'doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx',
   'odt', 'ods', 'odp', 'rtf',
