@@ -70,7 +70,13 @@
   /** Flag to prevent double-processing when both native callback and Tauri event fire. */
   let _dropProcessed = false;
   const onFocusIn = (e: FocusEvent) => {
-    if (e.target instanceof HTMLInputElement) e.target.autocomplete = 'off';
+    const el = e.target;
+    if (el instanceof HTMLInputElement || el instanceof HTMLTextAreaElement) {
+      el.autocomplete = el instanceof HTMLInputElement && el.type === 'password' ? 'new-password' : 'off';
+      el.setAttribute('autocorrect', 'off');
+      el.setAttribute('autocapitalize', 'off');
+      el.spellcheck = false;
+    }
   };
 
   onMount(async () => {

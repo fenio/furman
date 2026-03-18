@@ -152,6 +152,9 @@ pub fn run() {
                 .separator()
                 .item(&MenuItemBuilder::with_id("select-all", "Select All").build(handle)?)
                 .item(&MenuItemBuilder::with_id("undo", "Undo").accelerator("CmdOrCtrl+Z").build(handle)?)
+                .separator()
+                .item(&PredefinedMenuItem::cut(handle, Some("Cut"))?)
+                .item(&PredefinedMenuItem::paste(handle, Some("Paste"))?)
                 .build()?;
 
             // View menu

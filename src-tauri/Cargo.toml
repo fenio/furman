@@ -1,6 +1,6 @@
 [package]
 name = "furman"
-version = "0.3.6"
+version = "0.3.7"
 description = "Furman File Manager"
 authors = ["Bartosz Fenski"]
 license = "GPL-3.0-only"
