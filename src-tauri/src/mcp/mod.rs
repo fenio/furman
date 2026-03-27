@@ -293,7 +293,7 @@ impl FurmanMcp {
             &params.auth_method,
             params.password.as_deref(),
             params.key_path.as_deref(),
-            None, None, None, None,
+            None, None, None, None, None,
         )
         .await
         .map_err(err)?;
