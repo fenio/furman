@@ -447,12 +447,12 @@ export class PanelData {
     await this.loadDirectory(homePath || '/');
   }
 
-  async connectSftp(info: SftpConnectionInfo, password?: string, keyPath?: string, keyPassphrase?: string) {
+  async connectSftp(info: SftpConnectionInfo, password?: string, keyPath?: string, keyPassphrase?: string, agentSocket?: string) {
     this.clearHistory();
     this.loading = true;
     this.error = null;
     try {
-      const homeDir = await sftpConnect(info.connectionId, info.host, info.port, info.username, password ? 'password' : keyPath ? 'key' : 'agent', password, keyPath, keyPassphrase, appState.sftpInactivityTimeout, appState.sftpKeepaliveInterval, appState.sftpOperationTimeout);
+      const homeDir = await sftpConnect(info.connectionId, info.host, info.port, info.username, password ? 'password' : keyPath ? 'key' : 'agent', password, keyPath, keyPassphrase, agentSocket, appState.sftpInactivityTimeout, appState.sftpKeepaliveInterval, appState.sftpOperationTimeout);
       this.backend = 'sftp';
       this.sftpConnection = info;
       await this.loadDirectory(`sftp://${info.host}:${info.port}${homeDir.startsWith('/') ? '' : '/'}${homeDir}/`);

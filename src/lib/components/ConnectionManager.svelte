@@ -96,13 +96,14 @@
     password?: string,
     keyPath?: string,
     keyPassphrase?: string,
+    agentSocket?: string,
   ) {
     connectError = '';
     const panel = panels.active;
     const connectionId = `sftp-${Date.now()}`;
-    const info: SftpConnectionInfo = { connectionId, host, port, username };
+    const info: SftpConnectionInfo = { connectionId, host, port, username, agentSocket };
     try {
-      await panel.connectSftp(info, password, keyPath, keyPassphrase);
+      await panel.connectSftp(info, password, keyPath, keyPassphrase, agentSocket);
       onClose();
     } catch (err: unknown) {
       connectError = err instanceof Error ? err.message : String(err);
@@ -149,6 +150,8 @@
         p.authMethod,
         password,
         p.keyPath,
+        undefined,
+        p.agentSocket,
       );
       return;
     }

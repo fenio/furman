@@ -58,6 +58,7 @@ pub async fn build_sftp_client(
     password: Option<&str>,
     key_path: Option<&str>,
     key_passphrase: Option<&str>,
+    agent_socket: Option<&str>,
     inactivity_timeout: Option<u64>,
     keepalive_interval: Option<u64>,
     operation_timeout: Option<u64>,
@@ -105,9 +106,15 @@ pub async fn build_sftp_client(
                 .map_err(|e| sftperr(format!("Key auth failed: {e}")))?
         }
         "agent" => {
-            let mut agent = russh::keys::agent::client::AgentClient::connect_env()
-                .await
-                .map_err(|e| sftperr(format!("SSH agent connect failed: {e}")))?;
+            let mut agent = if let Some(sock) = agent_socket {
+                russh::keys::agent::client::AgentClient::connect_uds(sock)
+                    .await
+                    .map_err(|e| sftperr(format!("SSH agent connect failed: {e}")))?
+            } else {
+                russh::keys::agent::client::AgentClient::connect_env()
+                    .await
+                    .map_err(|e| sftperr(format!("SSH agent connect failed: {e}")))?
+            };
             let identities = agent
                 .request_identities()
                 .await

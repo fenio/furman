@@ -3,7 +3,7 @@
   import type { SftpProfile } from '$lib/types';
 
   interface Props {
-    onConnect: (host: string, port: number, username: string, authMethod: string, password?: string, keyPath?: string, keyPassphrase?: string) => void;
+    onConnect: (host: string, port: number, username: string, authMethod: string, password?: string, keyPath?: string, keyPassphrase?: string, agentSocket?: string) => void;
     onCancel: () => void;
     saveMode?: boolean;
     initialData?: SftpProfile;
@@ -23,6 +23,7 @@
   let password = $state('');
   let keyPath = $state(init?.keyPath ?? '');
   let keyPassphrase = $state('');
+  let agentSocket = $state(init?.agentSocket ?? '');
   let connecting = $state(false);
   let connectError = $state('');
 
@@ -46,6 +47,7 @@
         authMethod === 'password' ? password : undefined,
         authMethod === 'key' ? keyPath : undefined,
         authMethod === 'key' ? keyPassphrase || undefined : undefined,
+        authMethod === 'agent' && agentSocket ? agentSocket : undefined,
       );
     } catch (err: unknown) {
       connectError = err instanceof Error ? err.message : String(err);
@@ -68,6 +70,7 @@
           username,
           authMethod,
           keyPath: authMethod === 'key' ? keyPath : undefined,
+          agentSocket: authMethod === 'agent' && agentSocket ? agentSocket : undefined,
         };
         if (init?.id) profile.id = init.id;
         onSave(profile, authMethod === 'password' ? password : undefined);
@@ -80,6 +83,7 @@
         authMethod === 'password' ? password : undefined,
         authMethod === 'key' ? keyPath : undefined,
         authMethod === 'key' ? keyPassphrase || undefined : undefined,
+        authMethod === 'agent' && agentSocket ? agentSocket : undefined,
       );
     } catch (err: unknown) {
       connectError = err instanceof Error ? err.message : String(err);
@@ -99,6 +103,7 @@
         username,
         authMethod,
         keyPath: authMethod === 'key' ? keyPath : undefined,
+        agentSocket: authMethod === 'agent' && agentSocket ? agentSocket : undefined,
       };
       if (init?.id) profile.id = init.id;
       onSave(profile, authMethod === 'password' ? password : undefined);
@@ -169,6 +174,13 @@
         </label>
       </div>
     </div>
+
+    {#if authMethod === 'agent'}
+      <div class="field">
+        <label for="sftp-agent-socket">Agent Socket <span class="optional">(optional)</span></label>
+        <input id="sftp-agent-socket" type="text" bind:value={agentSocket} placeholder="Default: $SSH_AUTH_SOCK" />
+      </div>
+    {/if}
 
     {#if authMethod === 'password'}
       <div class="field">

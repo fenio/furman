@@ -611,6 +611,7 @@ export interface SftpConnectionInfo {
   host: string;
   port: number;
   username: string;
+  agentSocket?: string;
 }
 
 export interface SftpProfile extends ConnectionProfileBase {
@@ -620,6 +621,7 @@ export interface SftpProfile extends ConnectionProfileBase {
   username: string;
   authMethod: 'password' | 'key' | 'agent';
   keyPath?: string;
+  agentSocket?: string;
 }
 
 export type ConnectionProfile = S3Profile | SftpProfile;
