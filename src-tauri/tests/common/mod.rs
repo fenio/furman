@@ -390,6 +390,7 @@ impl SftpTestContext {
             None,
             None,
             None,
+            None,
         )
         .await
         .expect("Failed to connect to SFTP test server");
