@@ -31,7 +31,7 @@
   let scanning = $state(false);
   let scanComplete = $state(false);
   let filter = $state<'all' | 'new' | 'modified' | 'deleted'>('all');
-  let selectedPaths = $state(new SvelteSet<string>());
+  let selectedPaths = new SvelteSet<string>();
   let cursorIndex = $state(0);
   let currentSyncId = $state('');
   let listEl: HTMLDivElement | undefined = $state(undefined);
@@ -78,7 +78,7 @@
 
     currentSyncId = id;
     allEntries = [];
-    selectedPaths = new SvelteSet<string>();
+    selectedPaths.clear();
     cursorIndex = 0;
     scanning = true;
     scanComplete = false;
@@ -99,7 +99,7 @@
         allEntries = [...allEntries, event as SyncEntry];
         // Auto-select new and modified entries
         if (event.status === 'new' || event.status === 'modified') {
-          selectedPaths = new SvelteSet([...selectedPaths, event.relative_path]);
+          selectedPaths.add(event.relative_path);
         }
       } else if (event.type === 'Done') {
         newCount = event.new_count;
@@ -130,23 +130,21 @@
   }
 
   function toggleSelection(path: string) {
-    const next = new SvelteSet(selectedPaths);
-    if (next.has(path)) {
-      next.delete(path);
+    if (selectedPaths.has(path)) {
+      selectedPaths.delete(path);
     } else {
-      next.add(path);
+      selectedPaths.add(path);
     }
-    selectedPaths = next;
   }
 
   function selectAll() {
-    selectedPaths = new SvelteSet(filtered.map((e) => e.relative_path));
+    selectedPaths.clear();
+    for (const e of filtered) selectedPaths.add(e.relative_path);
   }
 
   function selectNone() {
     // Only deselect entries visible in the current filter
-    const visiblePaths = new SvelteSet(filtered.map((e) => e.relative_path));
-    selectedPaths = new SvelteSet([...selectedPaths].filter((p) => !visiblePaths.has(p)));
+    for (const e of filtered) selectedPaths.delete(e.relative_path);
   }
 
   function handleSync() {
