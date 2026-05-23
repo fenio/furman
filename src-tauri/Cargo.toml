@@ -46,7 +46,7 @@ chacha20poly1305 = "0.10"
 argon2 = "0.5"
 rand = "0.8"
 base64 = "0.22"
-keyring = "3"
+keyring-core = "1"
 tokio = { version = "1", features = ["sync", "fs", "io-util", "time", "net"] }
 sha2 = "0.11"
 reqwest = { version = "0.13", features = ["json", "form", "rustls"], default-features = false }
@@ -89,10 +89,10 @@ tempfile = "3"
 
 
 [target.'cfg(target_os = "macos")'.dependencies]
-keyring = { version = "3", features = ["apple-native"] }
+apple-native-keyring-store = { version = "1", features = ["keychain"] }
 objc2 = "0.6"
 objc2-app-kit = { version = "0.3", features = ["NSApplication", "NSImage"] }
 objc2-foundation = { version = "0.3", features = ["NSData", "NSFileManager", "NSURL", "NSString", "NSError"] }
 
 [target.'cfg(target_os = "linux")'.dependencies]
-keyring = { version = "3", features = ["sync-secret-service"] }
+dbus-secret-service-keyring-store = "1"
