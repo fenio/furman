@@ -48,7 +48,7 @@ rand = "0.8"
 base64 = "0.22"
 keyring = "3"
 tokio = { version = "1", features = ["sync", "fs", "io-util", "time", "net"] }
-sha2 = "0.10"
+sha2 = "0.11"
 reqwest = { version = "0.13", features = ["json", "form", "rustls"], default-features = false }
 urlencoding = "2"
 uuid = { version = "1", features = ["v4"] }
