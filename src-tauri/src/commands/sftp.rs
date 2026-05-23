@@ -76,11 +76,11 @@ pub async fn sftp_connect(
             // trigger a system permission dialog.  The original TCP attempt
             // often fails before the user can approve it, so retry once
             // after a short pause.
-            log::info!(
-                "SFTP connect to {host}:{port} failed ({first_err}), retrying once…"
+            log::warn!(
+                "SFTP connect to {host}:{port} failed ({first_err}), retrying once after 3s…"
             );
             tokio::time::sleep(std::time::Duration::from_secs(3)).await;
-            sftp::client::build_sftp_client(
+            match sftp::client::build_sftp_client(
                 &host,
                 port,
                 &username,
@@ -93,9 +93,25 @@ pub async fn sftp_connect(
                 keepalive_interval,
                 operation_timeout,
             )
-            .await?
+            .await
+            {
+                Ok(c) => c,
+                Err(retry_err) => {
+                    log::error!(
+                        "SFTP connect to {host}:{port} failed after retry: {retry_err}"
+                    );
+                    return Err(sftperr(format!(
+                        "SFTP connect to {host}:{port} failed after 2 attempts: {retry_err}"
+                    )));
+                }
+            }
         }
-        Err(e) => return Err(e),
+        Err(e) => {
+            log::error!("SFTP connect to {host}:{port} failed: {e}");
+            return Err(sftperr(format!(
+                "SFTP connect to {host}:{port} failed: {e}"
+            )));
+        }
     };
 
     let home_dir = conn.home_dir.clone();

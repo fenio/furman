@@ -105,7 +105,13 @@ impl SftpService {
         // Try to get filesystem info for free_space
         let free_space = match self.session.fs_info(path).await {
             Ok(Some(info)) => info.blocks_avail * info.fragment_size,
-            _ => 0,
+            Ok(None) => 0,
+            Err(e) => {
+                log::warn!(
+                    "SFTP fs_info on '{path}' failed ({e}); reporting free_space as 0"
+                );
+                0
+            }
         };
 
         Ok(DirListing {
@@ -507,8 +513,14 @@ impl SftpService {
 
     /// Ensure a remote directory and all parents exist.
     async fn ensure_remote_dir(&self, path: &str) -> Result<(), FmError> {
-        if self.session.try_exists(path).await.unwrap_or(false) {
-            return Ok(());
+        match self.session.try_exists(path).await {
+            Ok(true) => return Ok(()),
+            Ok(false) => {}
+            Err(e) => {
+                log::warn!(
+                    "SFTP try_exists on '{path}' failed ({e}); attempting create anyway"
+                );
+            }
         }
         // Recurse to parent
         if let Some((parent, _)) = path.rsplit_once('/') {
@@ -516,8 +528,14 @@ impl SftpService {
                 Box::pin(self.ensure_remote_dir(parent)).await?;
             }
         }
-        // Create this level (ignore error if it already exists)
-        let _ = self.session.create_dir(path).await;
+        // Create this level. If it already exists (race / try_exists failed
+        // but the dir does exist), the server returns an error we can ignore;
+        // a real failure (permission denied, quota, etc.) will surface when
+        // the subsequent file write fails on this path, but log it here for
+        // diagnosis.
+        if let Err(e) = self.session.create_dir(path).await {
+            log::warn!("SFTP create_dir '{path}' failed: {e}");
+        }
         Ok(())
     }
 
