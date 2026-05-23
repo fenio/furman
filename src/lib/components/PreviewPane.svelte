@@ -204,7 +204,7 @@
       <div class="preview-loading">Loading model info...</div>
     {:else if modelError}
       <div class="preview-file-info">
-        <div class="preview-file-icon">{'\uD83E\uDDE0'}</div>
+        <div class="preview-file-icon">\uD83E\uDDE0</div>
         <div class="preview-file-name">{entry.name}</div>
         <div class="preview-file-meta"><div>{modelError}</div></div>
       </div>
@@ -290,7 +290,7 @@
       <!-- Single model view -->
       <div class="preview-file-info">
         <div class="preview-model-header">
-          <span class="preview-model-icon">{'\uD83E\uDDE0'}</span>
+          <span class="preview-model-icon">\uD83E\uDDE0</span>
           <div class="preview-model-title">
             <div class="preview-model-name">{modelMetadata.model_name ?? entry.name}</div>
             <span class="preview-model-badge">{modelMetadata.format}</span>

@@ -1,5 +1,6 @@
 <script lang="ts">
   import { onMount, onDestroy, tick } from 'svelte';
+  import { SvelteMap } from 'svelte/reactivity';
   import { analyzeDiskUsage, cancelDiskUsage } from '$lib/services/tauri';
   import { formatSize } from '$lib/utils/format';
   import type { DiskUsageEntry, DiskUsageEvent, DiskUsageLevelData } from '$lib/types';
@@ -41,7 +42,7 @@
   let activeTab = $state<'overview' | 'details'>('overview');
 
   // Cache of completed scans keyed by path
-  const cache = new Map<string, CachedScan>();
+  const cache = new SvelteMap<string, CachedScan>();
 
   // Drill-down navigation
   let currentPath = $state('');
@@ -385,7 +386,7 @@
   <!-- Breadcrumb trail -->
   {#if pathHistory.length > 0}
     <div class="breadcrumb-trail">
-      {#each pathHistory as crumb, i}
+      {#each pathHistory as crumb, i (crumb.path)}
         <button class="breadcrumb-item" onclick={() => navigateTo(i)}>
           {crumb.title}
         </button>
@@ -439,7 +440,7 @@
 
         <!-- Legend -->
         <div class="du-legend">
-          {#each sortedEntries.slice(0, 10) as entry, i}
+          {#each sortedEntries.slice(0, 10) as entry, i (entry.path)}
             <button
               class="legend-item"
               class:clickable={entry.is_dir}
@@ -482,7 +483,7 @@
             </tr>
           </thead>
           <tbody>
-            {#each sortedEntries as entry}
+            {#each sortedEntries as entry (entry.path)}
               {@const pct = totalSize > 0 ? (entry.size / totalSize) * 100 : 0}
               <tr
                 class:is-dir={entry.is_dir}

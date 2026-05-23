@@ -1,5 +1,5 @@
 import type { FileEntry, SortField, SortDirection, ViewMode, PanelBackend, S3ConnectionInfo, SftpConnectionInfo, ArchiveInfo, GitRepoInfo, DirListEvent } from '$lib/types';
-import { SvelteSet } from 'svelte/reactivity';
+import { SvelteMap, SvelteSet } from 'svelte/reactivity';
 import { sortEntries } from '$lib/utils/sort';
 import { listDirectory, listDirectoryStreamed, listArchive, watchDirectory, unwatchDirectory, getGitRepoInfo, getDirectorySize } from '$lib/services/tauri';
 import { s3Connect, s3Disconnect, s3ListObjects, s3IsObjectEncrypted } from '$lib/services/s3';
@@ -85,7 +85,7 @@ export class PanelData {
 
   // Path→entry index for O(1) lookups (rebuilt when entries change)
   private entryByPath = $derived.by(() => {
-    const map = new Map<string, FileEntry>();
+    const map = new SvelteMap<string, FileEntry>();
     for (const e of this.entries) map.set(e.path, e);
     return map;
   });

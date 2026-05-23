@@ -139,7 +139,7 @@
   onscroll={handleScroll}
 >
   <div class="column-scroll-area" style="width: {totalWidth}px; height: {rowsPerCol * ROW_HEIGHT}px; position: relative;">
-    {#each { length: visibleEndCol - visibleStartCol } as _, ci}
+    {#each { length: visibleEndCol - visibleStartCol } as _, ci (visibleStartCol + ci)}
       {@const colIdx = visibleStartCol + ci}
       {@const colEntries = getColumnEntries(colIdx)}
       <div

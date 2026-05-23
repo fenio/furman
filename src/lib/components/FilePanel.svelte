@@ -193,8 +193,8 @@
     const statusMap = side === 'right' ? comparisonState.rightStatuses : comparisonState.leftStatuses;
 
     // Pre-build sets of top-level directories that have modified/changed children
-    const dirModified = new Set<string>();
-    const dirChanged = new Set<string>();
+    const dirModified = new SvelteSet<string>();
+    const dirChanged = new SvelteSet<string>();
     for (const [key, val] of statusMap) {
       if (val === 'same') continue;
       const slashIdx = key.indexOf('/');
