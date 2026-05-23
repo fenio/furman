@@ -363,7 +363,7 @@ fn compute_file_md5(path: &Path) -> Result<String, FmError> {
         context.consume(&buffer[..bytes_read]);
     }
 
-    let digest = context.compute();
+    let digest = context.finalize();
     Ok(format!("{digest:x}"))
 }
 

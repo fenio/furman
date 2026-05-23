@@ -57,6 +57,10 @@ pub fn run() {
         std::env::set_var("WEBKIT_DISABLE_COMPOSITING_MODE", "1");
     }
 
+    if let Err(e) = commands::keychain::init() {
+        eprintln!("Failed to initialize keychain store: {e}");
+    }
+
     tauri::Builder::default()
         .manage(WatcherState(Mutex::new(HashMap::new())))
         .manage(TerminalState(Mutex::new(HashMap::new())))
