@@ -95,4 +95,4 @@ objc2-app-kit = { version = "0.3", features = ["NSApplication", "NSImage"] }
 objc2-foundation = { version = "0.3", features = ["NSData", "NSFileManager", "NSURL", "NSString", "NSError"] }
 
 [target.'cfg(target_os = "linux")'.dependencies]
-dbus-secret-service-keyring-store = "1"
+dbus-secret-service-keyring-store = { version = "1", features = ["crypto-rust", "vendored"] }
