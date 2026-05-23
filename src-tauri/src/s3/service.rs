@@ -405,7 +405,7 @@ impl S3Service {
             } else if let Some(ref etag_val) = etag {
                 if !etag_val.contains('-') {
                     // No CRC32C available: fall back to MD5/ETag
-                    let computed = format!("{:x}", hasher.compute());
+                    let computed = format!("{:x}", hasher.finalize());
                     if computed != *etag_val {
                         let _ = tokio::fs::remove_file(&local_path).await;
                         return Err(s3err(format!(
