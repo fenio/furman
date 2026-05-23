@@ -299,13 +299,19 @@ pub async fn upload_file_multipart(
 
     // 5. On any failure → abort multipart upload (best-effort) → return error
     if let Some(err) = first_error {
-        let _ = client
+        if let Err(abort_err) = client
             .abort_multipart_upload()
             .bucket(bucket)
             .key(key)
             .upload_id(&upload_id)
             .send()
-            .await;
+            .await
+        {
+            log::warn!(
+                "Failed to abort multipart upload for {bucket}/{key} (upload_id={upload_id}); \
+                 part may be orphaned and continue to incur storage cost: {abort_err}"
+            );
+        }
         return Err(err);
     }
 
@@ -402,13 +408,19 @@ pub async fn copy_object_multipart(
             }
             Err(e) => {
                 // Abort on failure (best-effort)
-                let _ = dest_client
+                if let Err(abort_err) = dest_client
                     .abort_multipart_upload()
                     .bucket(dest_bucket)
                     .key(dest_key)
                     .upload_id(&upload_id)
                     .send()
-                    .await;
+                    .await
+                {
+                    log::warn!(
+                        "Failed to abort multipart copy to {dest_bucket}/{dest_key} \
+                         (upload_id={upload_id}); part may be orphaned: {abort_err}"
+                    );
+                }
                 return Err(s3err(e.to_string()));
             }
         }
