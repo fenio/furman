@@ -127,8 +127,12 @@ pub async fn build_sftp_client(
                 partial_success: false,
             };
             for identity in identities {
+                let public_key = match identity {
+                    russh::keys::agent::AgentIdentity::PublicKey { key, .. } => key,
+                    russh::keys::agent::AgentIdentity::Certificate { .. } => continue,
+                };
                 match handle
-                    .authenticate_publickey_with(username, identity.clone(), None, &mut agent)
+                    .authenticate_publickey_with(username, public_key, None, &mut agent)
                     .await
                 {
                     Ok(r @ AuthResult::Success) => {
