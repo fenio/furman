@@ -7,7 +7,6 @@ use argon2::Argon2;
 use base64::engine::general_purpose::STANDARD as BASE64;
 use base64::Engine;
 use chacha20poly1305::{ChaCha20Poly1305, Nonce as ChaChaNonce};
-use rand::RngCore;
 
 use crate::models::FmError;
 
@@ -157,8 +156,8 @@ pub fn encrypt_file(
 
     let mut salt = [0u8; 16];
     let mut nonce_bytes = [0u8; 12];
-    rand::thread_rng().fill_bytes(&mut salt);
-    rand::thread_rng().fill_bytes(&mut nonce_bytes);
+    rand::fill(&mut salt[..]);
+    rand::fill(&mut nonce_bytes[..]);
 
     let key = derive_key(
         password,

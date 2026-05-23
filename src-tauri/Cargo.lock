@@ -2374,7 +2374,7 @@ dependencies = [
  "objc2-app-kit",
  "objc2-foundation",
  "portable-pty",
- "rand 0.8.5",
+ "rand 0.10.1",
  "reqwest",
  "rmcp",
  "russh",
