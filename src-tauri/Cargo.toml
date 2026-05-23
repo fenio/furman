@@ -52,7 +52,7 @@ sha2 = "0.11"
 reqwest = { version = "0.13", features = ["json", "form", "rustls"], default-features = false }
 urlencoding = "2"
 uuid = { version = "1", features = ["v4"] }
-russh = "0.57.1"
+russh = "0.61.0"
 russh-sftp = "2.1"
 glob-match = "0.2"
 aws-smithy-http-client = { version = "1", features = ["rustls-aws-lc", "default-client"] }
