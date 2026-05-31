@@ -3,7 +3,7 @@
   import { SvelteMap } from 'svelte/reactivity';
   import { analyzeDiskUsage, cancelDiskUsage } from '$lib/services/tauri';
   import { formatSize } from '$lib/utils/format';
-  import type { DiskUsageEntry, DiskUsageEvent, DiskUsageLevelData } from '$lib/types';
+  import type { DiskUsageEntry, DiskUsageEvent } from '$lib/types';
   import {
     Chart, ArcElement, BarElement, CategoryScale, LinearScale,
     DoughnutController, BarController, Tooltip, Legend,

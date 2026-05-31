@@ -51,8 +51,8 @@
     error = '';
     try {
       configs = await s3ListInventoryConfigurations(s3ConnectionId);
-    } catch (e: any) {
-      error = e?.toString() ?? 'Failed to load inventory configurations';
+    } catch (e: unknown) {
+      error = String(e) || 'Failed to load inventory configurations';
     } finally {
       loading = false;
     }
@@ -136,7 +136,7 @@
       message = editingExisting ? 'Configuration updated' : 'Configuration created';
       mode = 'list';
       await loadConfigs();
-    } catch (e: any) {
+    } catch (e: unknown) {
       message = `Error: ${e}`;
     } finally {
       saving = false;
@@ -151,7 +151,7 @@
       await s3DeleteInventoryConfiguration(s3ConnectionId, configId);
       message = 'Configuration deleted';
       await loadConfigs();
-    } catch (e: any) {
+    } catch (e: unknown) {
       message = `Error: ${e}`;
     }
   }

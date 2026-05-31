@@ -104,7 +104,7 @@
 
         <div class="pref-row">
           <span class="pref-label">Confirm Before Overwrite</span>
-          <select class="pref-select" value={appState.confirmOverwrite} onchange={(e) => appState.setConfirmOverwrite((e.target as HTMLSelectElement).value as any)}>
+          <select class="pref-select" value={appState.confirmOverwrite} onchange={(e) => appState.setConfirmOverwrite((e.target as HTMLSelectElement).value as 'always' | 'never' | 'ask')}>
             <option value="ask">Ask</option>
             <option value="always">Always Overwrite</option>
             <option value="never">Never Overwrite</option>
@@ -156,7 +156,7 @@
 
         <div class="pref-row">
           <span class="pref-label">Default View Mode</span>
-          <select class="pref-select" value={appState.defaultViewMode} onchange={(e) => appState.setDefaultViewMode((e.target as HTMLSelectElement).value as any)}>
+          <select class="pref-select" value={appState.defaultViewMode} onchange={(e) => appState.setDefaultViewMode((e.target as HTMLSelectElement).value as 'list' | 'icon' | 'column')}>
             <option value="list">List</option>
             <option value="icon">Icon</option>
             <option value="column">Column</option>
@@ -165,7 +165,7 @@
 
         <div class="pref-row">
           <span class="pref-label">Date Format</span>
-          <select class="pref-select" value={appState.dateFormat} onchange={(e) => appState.setDateFormat((e.target as HTMLSelectElement).value as any)}>
+          <select class="pref-select" value={appState.dateFormat} onchange={(e) => appState.setDateFormat((e.target as HTMLSelectElement).value as 'iso' | 'eu' | 'us' | 'relative')}>
             <option value="iso">ISO (2024-01-15 14:30)</option>
             <option value="eu">EU (15/01/2024 14:30)</option>
             <option value="us">US (01/15/2024 2:30 PM)</option>
@@ -175,7 +175,7 @@
 
         <div class="pref-row">
           <span class="pref-label">Row Height</span>
-          <select class="pref-select" value={appState.rowHeight} onchange={(e) => appState.setRowHeight((e.target as HTMLSelectElement).value as any)}>
+          <select class="pref-select" value={appState.rowHeight} onchange={(e) => appState.setRowHeight((e.target as HTMLSelectElement).value as 'compact' | 'normal' | 'comfortable')}>
             <option value="compact">Compact</option>
             <option value="normal">Normal</option>
             <option value="comfortable">Comfortable</option>

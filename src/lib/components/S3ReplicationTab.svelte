@@ -61,8 +61,8 @@
         localRules = [];
       }
       dirty = false;
-    } catch (e: any) {
-      error = e?.toString() ?? 'Failed to load replication configuration';
+    } catch (e: unknown) {
+      error = String(e) || 'Failed to load replication configuration';
     } finally {
       loading = false;
     }
@@ -175,7 +175,7 @@
       await s3PutReplicationConfiguration(s3ConnectionId, newConfig);
       message = 'Replication configuration saved';
       await loadConfig();
-    } catch (e: any) {
+    } catch (e: unknown) {
       message = `Error: ${e}`;
     } finally {
       saving = false;
@@ -189,7 +189,7 @@
       await s3DeleteReplicationConfiguration(s3ConnectionId);
       message = 'Replication configuration deleted';
       await loadConfig();
-    } catch (e: any) {
+    } catch (e: unknown) {
       message = `Error: ${e}`;
     } finally {
       saving = false;

@@ -52,6 +52,9 @@ pub struct VolumeInfo {
     pub total_space: u64,
     pub free_space: u64,
     pub fs_type: String,
+    /// True if this volume can be ejected/unmounted from the UI
+    /// (external drives, removable media, network mounts).
+    pub ejectable: bool,
 }
 
 // ── ProgressEvent ────────────────────────────────────────────────────────────

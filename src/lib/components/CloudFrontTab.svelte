@@ -57,8 +57,8 @@
     error = '';
     try {
       distributions = await cfListDistributions(s3ConnectionId);
-    } catch (e: any) {
-      error = e?.toString() ?? 'Failed to load distributions';
+    } catch (e: unknown) {
+      error = String(e) || 'Failed to load distributions';
     } finally {
       loading = false;
     }
@@ -69,7 +69,7 @@
     message = '';
     try {
       selectedDist = await cfGetDistribution(s3ConnectionId, id);
-    } catch (e: any) {
+    } catch (e: unknown) {
       message = `Error: ${e}`;
     } finally {
       selectedLoading = false;
@@ -143,7 +143,7 @@
       }
       mode = 'list';
       await loadDistributions();
-    } catch (e: any) {
+    } catch (e: unknown) {
       message = `Error: ${e}`;
     } finally {
       saving = false;
@@ -165,7 +165,7 @@
       selectedDist = updated;
       message = newEnabled ? 'Distribution enabled' : 'Distribution disabled';
       await loadDistributions();
-    } catch (e: any) {
+    } catch (e: unknown) {
       message = `Error: ${e}`;
     } finally {
       disabling = false;
@@ -191,7 +191,7 @@
       selectedDist = null;
       message = 'Distribution deleted';
       await loadDistributions();
-    } catch (e: any) {
+    } catch (e: unknown) {
       message = `Error: ${e}`;
     } finally {
       deleting = false;
@@ -209,7 +209,7 @@
       await cfCreateInvalidation(s3ConnectionId, selectedDist.id, paths);
       message = 'Invalidation created';
       await loadInvalidations();
-    } catch (e: any) {
+    } catch (e: unknown) {
       message = `Error: ${e}`;
     } finally {
       invalidating = false;
@@ -221,7 +221,7 @@
     invalidationsLoading = true;
     try {
       invalidations = await cfListInvalidations(s3ConnectionId, selectedDist.id);
-    } catch (e: any) {
+    } catch (e: unknown) {
       message = `Error loading invalidations: ${e}`;
     } finally {
       invalidationsLoading = false;

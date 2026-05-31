@@ -90,8 +90,8 @@
       localRules = config.rules.map(r => ({ ...r, events: [...r.events] }));
       eventBridgeEnabled = config.event_bridge_enabled;
       dirty = false;
-    } catch (e: any) {
-      error = e?.toString() ?? 'Failed to load notification configuration';
+    } catch (e: unknown) {
+      error = String(e) || 'Failed to load notification configuration';
     } finally {
       loading = false;
     }
@@ -197,7 +197,7 @@
       await s3PutNotificationConfiguration(s3ConnectionId, newConfig);
       message = 'Notification configuration saved';
       await loadConfig();
-    } catch (e: any) {
+    } catch (e: unknown) {
       message = `Error: ${e}`;
     } finally {
       saving = false;

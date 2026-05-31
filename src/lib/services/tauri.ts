@@ -155,6 +155,10 @@ export async function listVolumes(): Promise<VolumeInfo[]> {
   return await invoke<VolumeInfo[]>('list_volumes');
 }
 
+export async function ejectVolume(mountPoint: string): Promise<void> {
+  await invoke('eject_volume', { mountPoint });
+}
+
 export async function watchDirectory(
   path: string,
   id: string

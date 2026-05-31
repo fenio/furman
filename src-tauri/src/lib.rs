@@ -260,6 +260,7 @@ pub fn run() {
             commands::metadata::batch_touch,
             // volume commands
             commands::volumes::list_volumes,
+            commands::volumes::eject_volume,
             // watcher commands
             commands::watcher::watch_directory,
             commands::watcher::unwatch_directory,

@@ -55,8 +55,8 @@
     message = '';
     try {
       accessPoints = await s3ListAccessPoints(s3ConnectionId);
-    } catch (e: any) {
-      error = e?.toString() ?? 'Failed to load access points';
+    } catch (e: unknown) {
+      error = String(e) || 'Failed to load access points';
     } finally {
       loading = false;
     }
@@ -80,8 +80,8 @@
       detail = ap;
       policy = pol;
       savedPolicy = pol;
-    } catch (e: any) {
-      error = e?.toString() ?? 'Failed to load access point detail';
+    } catch (e: unknown) {
+      error = String(e) || 'Failed to load access point detail';
       mode = 'list';
     } finally {
       detailLoading = false;
@@ -112,7 +112,7 @@
       await s3PutAccessPointPolicy(s3ConnectionId, detail.name, policy);
       savedPolicy = policy;
       message = 'Policy saved';
-    } catch (e: any) {
+    } catch (e: unknown) {
       policyError = `Error: ${e}`;
     } finally {
       policySaving = false;
@@ -128,7 +128,7 @@
       policy = '';
       savedPolicy = '';
       message = 'Policy deleted';
-    } catch (e: any) {
+    } catch (e: unknown) {
       policyError = `Error: ${e}`;
     } finally {
       policySaving = false;
@@ -174,7 +174,7 @@
       message = `Access point "${name}" created`;
       mode = 'list';
       await loadList();
-    } catch (e: any) {
+    } catch (e: unknown) {
       message = `Error: ${e}`;
     } finally {
       creating = false;
@@ -192,7 +192,7 @@
       message = `Access point "${name}" deleted`;
       mode = 'list';
       await loadList();
-    } catch (e: any) {
+    } catch (e: unknown) {
       message = `Error: ${e}`;
     } finally {
       deleting = false;

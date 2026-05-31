@@ -10,8 +10,6 @@
   import { sidebarState } from '$lib/state/sidebar.svelte';
   import { workspacesState } from '$lib/state/workspaces.svelte';
   import { s3BookmarksState } from '$lib/state/s3bookmarks.svelte';
-  import { sftpBookmarksState } from '$lib/state/sftpbookmarks.svelte';
-  import { connectionsState } from '$lib/state/connections.svelte';
   import { renameFile, restoreFromTrash } from '$lib/services/tauri';
   import { operationsState } from '$lib/state/operations.svelte';
   import { statusState } from '$lib/state/status.svelte';
@@ -19,7 +17,7 @@
   import { error } from '$lib/services/log';
   import { dragState, type DragSource } from '$lib/services/drag';
   import type { PanelData } from '$lib/state/panels.svelte';
-  import type { S3ConnectionInfo, SyncEntry } from '$lib/types';
+  import type { SyncEntry } from '$lib/types';
   import { commandRegistry, type Command } from '$lib/state/commands.svelte';
   import { platform } from '$lib/state/platform.svelte';
   import { comparisonState } from '$lib/state/comparison.svelte';
@@ -28,9 +26,7 @@
 
   // ── Extracted action modules ──────────────────────────────────────────────
   import {
-    activateEntry, openViewer, openEditor, openS3Viewer, openArchiveViewer,
-    openSftpViewer, openS3Editor, openSftpEditor, quickLook,
-    systemOpenExtensions,
+    activateEntry, openEditor, openS3Editor, openSftpEditor, quickLook,
   } from '$lib/actions/viewers';
   import {
     handleCopy, handleMove, handleDelete, handleRename, handleMkDir,
@@ -44,7 +40,6 @@
   } from '$lib/actions/s3sftp';
   import {
     buildSidebarItems, activateSidebarItem,
-    restoreTabsForSide,
   } from '$lib/actions/navigation';
 
   let { children } = $props();

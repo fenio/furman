@@ -5,7 +5,7 @@ import { operationsState } from '$lib/state/operations.svelte';
 import { transfersState } from '$lib/state/transfers.svelte';
 import { connectionsState } from '$lib/state/connections.svelte';
 import { clipboardState } from '$lib/state/clipboard.svelte';
-import { checkConflicts, deleteFiles, deleteFilesUndoable, renameFile, createDirectory } from '$lib/services/tauri';
+import { checkConflicts, deleteFilesUndoable, renameFile, createDirectory } from '$lib/services/tauri';
 import { s3DeleteObjects, s3RenameObject, s3CreateFolder, s3IsObjectEncrypted, type EncryptionConfig } from '$lib/services/s3';
 import { sftpDelete, sftpRename, sftpCreateFolder } from '$lib/services/sftp';
 import { error } from '$lib/services/log';

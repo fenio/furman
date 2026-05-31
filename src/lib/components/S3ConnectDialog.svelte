@@ -289,8 +289,8 @@
           result.id_token,
           pUrl, pUser, pPass,
         );
-      } catch (e: any) {
-        oidcError = e?.message ?? String(e);
+      } catch (e: unknown) {
+        oidcError = e instanceof Error ? e.message : String(e);
       } finally {
         oidcAuthenticating = false;
       }
@@ -350,8 +350,8 @@
           result.id_token,
           pUrl, pUser, pPass,
         );
-      } catch (e: any) {
-        oidcError = e?.message ?? String(e);
+      } catch (e: unknown) {
+        oidcError = e instanceof Error ? e.message : String(e);
       } finally {
         oidcAuthenticating = false;
       }
@@ -402,8 +402,8 @@
         ep, prof, ak, sk, rArn, extId, sName, sDur, wit, pUrl, pUser, pPass,
       );
       showBucketList = true;
-    } catch (e: any) {
-      browseError = e?.message ?? String(e);
+    } catch (e: unknown) {
+      browseError = e instanceof Error ? e.message : String(e);
       showBucketList = false;
     } finally {
       browsing = false;
@@ -462,8 +462,8 @@
       showBucketList = true;
       newBucketName = '';
       showCreateForm = false;
-    } catch (e: any) {
-      createError = e?.message ?? String(e);
+    } catch (e: unknown) {
+      createError = e instanceof Error ? e.message : String(e);
     } finally {
       creatingBucket = false;
     }
@@ -479,8 +479,8 @@
       await s3DeleteBucket(r, bucketName, ep, prof, ak, sk, rArn, extId, sName, sDur, wit, pUrl, pUser, pPass);
       buckets = buckets.filter(b => b.name !== bucketName);
       if (bucket === bucketName) bucket = '';
-    } catch (e: any) {
-      browseError = e?.message ?? String(e);
+    } catch (e: unknown) {
+      browseError = e instanceof Error ? e.message : String(e);
     } finally {
       deletingBucket = null;
     }

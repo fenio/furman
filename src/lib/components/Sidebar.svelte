@@ -10,6 +10,7 @@
   import { resolveCapabilities } from '$lib/data/s3-providers';
   import { statusState } from '$lib/state/status.svelte';
   import { error } from '$lib/services/log';
+  import { ejectVolume } from '$lib/services/tauri';
   import type { S3ConnectionInfo } from '$lib/types';
 
   // Compute base offsets for each section so we can derive flat indices in the template
@@ -90,6 +91,25 @@
   function navigateVolume(mountPoint: string) {
     sidebarState.blur();
     panels.active.loadDirectory(mountPoint);
+  }
+
+  async function ejectVolumeAction(mountPoint: string) {
+    try {
+      // If either panel is currently inside the volume, step out to '/' so the
+      // unmount isn't blocked by busy CWD on Linux.
+      for (const side of ['left', 'right'] as const) {
+        const p = panels[side].path;
+        if (p === mountPoint || p.startsWith(mountPoint + '/')) {
+          await panels[side].loadDirectory('/');
+        }
+      }
+      await ejectVolume(mountPoint);
+      await sidebarState.loadVolumes();
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      error(`Eject failed: ${msg}`);
+      appState.showAlert(`Eject failed: ${msg}`);
+    }
   }
 
   function navigateS3(panelSide: 'left' | 'right', bucket: string) {
@@ -370,10 +390,19 @@
         <div class="sidebar-item loading">Loading...</div>
       {:else}
         {#each sidebarState.volumes as vol, i (vol.mount_point)}
-          <button class="sidebar-item" class:focused={isFocused(volBase + i)} onclick={() => navigateVolume(vol.mount_point)}>
+          <!-- svelte-ignore a11y_click_events_have_key_events -->
+          <div class="sidebar-item" class:focused={isFocused(volBase + i)} onclick={() => navigateVolume(vol.mount_point)} role="button" tabindex="-1">
             <span class="item-name">{vol.name || vol.mount_point}</span>
             <span class="item-detail">{formatSize(vol.free_space)} free</span>
-          </button>
+            {#if vol.ejectable}
+              <button
+                class="eject-btn"
+                onclick={(e) => { e.stopPropagation(); ejectVolumeAction(vol.mount_point); }}
+                title="Eject {vol.name || vol.mount_point}"
+                aria-label="Eject {vol.name || vol.mount_point}"
+              >⏏</button>
+            {/if}
+          </div>
         {/each}
       {/if}
     </div>
@@ -508,6 +537,27 @@
 
   .sidebar-item:hover .remove-btn,
   .sidebar-item.focused .remove-btn {
+    display: block;
+  }
+
+  .eject-btn {
+    display: none;
+    font-size: 13px;
+    line-height: 1;
+    color: var(--text-secondary);
+    padding: 0 4px;
+    margin-left: 2px;
+    background: transparent;
+    border: none;
+    cursor: pointer;
+  }
+
+  .eject-btn:hover {
+    color: var(--text-primary);
+  }
+
+  .sidebar-item:hover .eject-btn,
+  .sidebar-item.focused .eject-btn {
     display: block;
   }
 

@@ -89,11 +89,10 @@ class ComparisonState {
             this.scheduleFlush();
           } else if (event.type === 'Done') {
             this.flushNow();
-            const done = event as SyncEvent & { type: 'Done' };
             this.counts = {
-              new: (done as any).new_count ?? 0,
-              modified: (done as any).modified ?? 0,
-              deleted: (done as any).deleted ?? 0,
+              new: event.new_count ?? 0,
+              modified: event.modified ?? 0,
+              deleted: event.deleted ?? 0,
             };
             this.scanning = false;
           }

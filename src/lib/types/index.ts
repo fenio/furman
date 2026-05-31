@@ -27,6 +27,7 @@ export interface VolumeInfo {
   total_space: number;
   free_space: number;
   fs_type: string;
+  ejectable: boolean;
 }
 
 export interface ProgressEvent {
