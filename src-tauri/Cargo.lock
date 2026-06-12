@@ -444,9 +444,9 @@ dependencies = [
 
 [[package]]
 name = "aws-sdk-s3control"
-version = "1.119.0"
+version = "1.120.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b3b12a86ec8d5fbd775c0b3dee40bdd2a1e7574a4fe2573d1993e571024420a6"
+checksum = "b6d1da09b5512a9af8f262c03276386a90671cd067a86a55482055f04e9ea5c0"
 dependencies = [
  "arc-swap",
  "aws-credential-types",
@@ -4002,7 +4002,7 @@ dependencies = [
  "png 0.18.1",
  "serde",
  "thiserror 2.0.18",
- "windows-sys 0.61.2",
+ "windows-sys 0.60.2",
 ]
 
 [[package]]
@@ -6543,7 +6543,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "3a766e1110788c36f4fa1c2b71b387a7815aa65f88ce0229841826633d93723e"
 dependencies = [
  "libc",
- "windows-sys 0.61.2",
+ "windows-sys 0.60.2",
 ]
 
 [[package]]
@@ -7606,7 +7606,7 @@ dependencies = [
  "png 0.18.1",
  "serde",
  "thiserror 2.0.18",
- "windows-sys 0.61.2",
+ "windows-sys 0.60.2",
 ]
 
 [[package]]
