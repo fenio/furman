@@ -5,6 +5,7 @@
   import { connectionsState } from '$lib/state/connections.svelte';
   import S3ConnectDialog from '$lib/components/S3ConnectDialog.svelte';
   import SftpConnectDialog from '$lib/components/SftpConnectDialog.svelte';
+  import NetworkShareDialog from '$lib/components/NetworkShareDialog.svelte';
   import { resolveCapabilities, getProviderIcon } from '$lib/data/s3-providers';
   import { error } from '$lib/services/log';
   import { oidcRefresh } from '$lib/services/s3';
@@ -21,7 +22,7 @@
 
   type Selection =
     | { mode: 'saved' }
-    | { mode: 'new'; protocol: 's3' | 'sftp' }
+    | { mode: 'new'; protocol: 's3' | 'sftp' | 'network' }
     | { mode: 'edit'; profile: S3Profile }
     | { mode: 'edit-sftp'; profile: SftpProfile };
 
@@ -104,6 +105,25 @@
     const info: SftpConnectionInfo = { connectionId, host, port, username, agentSocket };
     try {
       await panel.connectSftp(info, password, keyPath, keyPassphrase, agentSocket);
+      onClose();
+    } catch (err: unknown) {
+      connectError = err instanceof Error ? err.message : String(err);
+      error(String(err));
+    }
+  }
+
+  async function handleMountShare(
+    protocol: 'smb' | 'nfs',
+    host: string,
+    share: string,
+    username?: string,
+    password?: string,
+    domain?: string,
+  ) {
+    connectError = '';
+    const panel = panels.active;
+    try {
+      await panel.mountShare(protocol, host, share, username, password, domain);
       onClose();
     } catch (err: unknown) {
       connectError = err instanceof Error ? err.message : String(err);
@@ -338,6 +358,14 @@
           SFTP
           <span class="sidebar-hint">SSH File Transfer</span>
         </button>
+        <button
+          class="sidebar-item"
+          class:active={selected.mode === 'new' && selected.protocol === 'network'}
+          onclick={() => { selected = { mode: 'new', protocol: 'network' }; dialogKey++; }}
+        >
+          Network Share
+          <span class="sidebar-hint">SMB & NFS (mount)</span>
+        </button>
       </div>
 
       <div class="manager-main">
@@ -421,6 +449,14 @@
               onConnect={handleConnectSftp}
               onCancel={onClose}
               onSave={handleSaveSftp}
+            />
+          {/key}
+        {:else if selected.mode === 'new' && selected.protocol === 'network'}
+          {#key dialogKey}
+            <NetworkShareDialog
+              embedded={true}
+              onConnect={handleMountShare}
+              onCancel={onClose}
             />
           {/key}
         {:else}
