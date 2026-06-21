@@ -261,6 +261,7 @@ pub fn run() {
             // volume commands
             commands::volumes::list_volumes,
             commands::volumes::eject_volume,
+            commands::volumes::mount_network_share,
             // watcher commands
             commands::watcher::watch_directory,
             commands::watcher::unwatch_directory,

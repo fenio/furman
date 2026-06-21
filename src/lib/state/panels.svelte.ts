@@ -4,6 +4,7 @@ import { sortEntries } from '$lib/utils/sort';
 import { listDirectory, listDirectoryStreamed, listArchive, watchDirectory, unwatchDirectory, getGitRepoInfo, getDirectorySize } from '$lib/services/tauri';
 import { s3Connect, s3Disconnect, s3ListObjects, s3IsObjectEncrypted } from '$lib/services/s3';
 import { sftpConnect, sftpDisconnect, sftpListObjects } from '$lib/services/sftp';
+import { mountNetworkShare } from '$lib/services/mount';
 import { appState } from '$lib/state/app.svelte';
 import { error as logError } from '$lib/services/log';
 
@@ -459,6 +460,22 @@ export class PanelData {
     } catch (err: unknown) {
       this.error = err instanceof Error ? err.message : String(err);
       this.loading = false;
+    }
+  }
+
+  /// Mount an SMB/NFS share through the OS and navigate this panel to it as a
+  /// local folder. Throws on failure so the caller can surface the error.
+  async mountShare(protocol: 'smb' | 'nfs', host: string, share: string, username?: string, password?: string, domain?: string) {
+    this.loading = true;
+    this.error = null;
+    try {
+      const mountPoint = await mountNetworkShare(protocol, host, share, username, password, domain);
+      this.clearHistory();
+      this.backend = 'local';
+      await this.loadDirectory(mountPoint);
+    } catch (err: unknown) {
+      this.loading = false;
+      throw err;
     }
   }
 
