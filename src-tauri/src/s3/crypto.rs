@@ -171,18 +171,18 @@ pub fn encrypt_file(
         "chacha20-poly1305" => {
             let cipher = ChaCha20Poly1305::new_from_slice(&key)
                 .map_err(|e| FmError::Other(format!("Cipher init failed: {e}")))?;
-            let nonce = ChaChaNonce::from_slice(&nonce_bytes);
+            let nonce = ChaChaNonce::from(nonce_bytes);
             cipher
-                .encrypt(nonce, plaintext.as_ref())
+                .encrypt(&nonce, plaintext.as_ref())
                 .map_err(|e| FmError::Other(format!("Encryption failed: {e}")))?
         }
         _ => {
             // Default: AES-256-GCM
             let cipher = Aes256Gcm::new_from_slice(&key)
                 .map_err(|e| FmError::Other(format!("Cipher init failed: {e}")))?;
-            let nonce = AesNonce::from_slice(&nonce_bytes);
+            let nonce = AesNonce::from(nonce_bytes);
             cipher
-                .encrypt(nonce, plaintext.as_ref())
+                .encrypt(&nonce, plaintext.as_ref())
                 .map_err(|e| FmError::Other(format!("Encryption failed: {e}")))?
         }
     };
@@ -239,16 +239,18 @@ pub fn decrypt_file(path: &Path, password: &str, params: &EncryptionParams) -> R
         "chacha20-poly1305" => {
             let cipher = ChaCha20Poly1305::new_from_slice(&key)
                 .map_err(|e| FmError::Other(format!("Cipher init failed: {e}")))?;
-            let nonce = ChaChaNonce::from_slice(&params.nonce);
-            cipher.decrypt(nonce, ciphertext.as_ref()).map_err(|_| {
+            let nonce = ChaChaNonce::try_from(params.nonce.as_slice())
+                .map_err(|_| FmError::Other("Invalid nonce length".to_string()))?;
+            cipher.decrypt(&nonce, ciphertext.as_ref()).map_err(|_| {
                 FmError::Other("Decryption failed — wrong password or corrupted data".to_string())
             })?
         }
         _ => {
             let cipher = Aes256Gcm::new_from_slice(&key)
                 .map_err(|e| FmError::Other(format!("Cipher init failed: {e}")))?;
-            let nonce = AesNonce::from_slice(&params.nonce);
-            cipher.decrypt(nonce, ciphertext.as_ref()).map_err(|_| {
+            let nonce = AesNonce::try_from(params.nonce.as_slice())
+                .map_err(|_| FmError::Other("Invalid nonce length".to_string()))?;
+            cipher.decrypt(&nonce, ciphertext.as_ref()).map_err(|_| {
                 FmError::Other("Decryption failed — wrong password or corrupted data".to_string())
             })?
         }
