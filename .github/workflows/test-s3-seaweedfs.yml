@@ -44,7 +44,7 @@ jobs:
           docker run -d --name seaweedfs \
             -p 8333:8333 -p 9333:9333 \
             -v /tmp/seaweedfs/s3.json:/etc/seaweedfs/s3.json \
-            chrislusf/seaweedfs:latest \
+            chrislusf/seaweedfs:4.37 \
             server -s3 -s3.config=/etc/seaweedfs/s3.json -dir=/data
 
           # Wait for SeaweedFS S3 endpoint to be ready
@@ -77,6 +77,14 @@ jobs:
           S3_TEST_ACCESS_KEY: testkey
           S3_TEST_SECRET_KEY: testsecretkey0123456789
           S3_TEST_REGION: us-east-1
+          # SeaweedFS returns transient 500 InternalError on PutObject during its
+          # warmup window (the S3 gateway accepts connections before the volume
+          # server is ready to serve writes). The SDK marks these retryable; the
+          # default of 3 attempts isn't enough to ride out warmup under -test-threads
+          # concurrency, so crank up retries with adaptive backoff. Read by the AWS
+          # SDK automatically via aws_config::defaults().load().
+          AWS_MAX_ATTEMPTS: "10"
+          AWS_RETRY_MODE: adaptive
         run: |
           cargo test --test s3_integration -- --test-threads=4 \
             --exact \
