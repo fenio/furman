@@ -893,18 +893,35 @@ impl S3Service {
     }
 
     /// Delete S3 objects. For prefix keys, lists and deletes all children.
-    pub async fn delete_objects(&self, keys: &[String]) -> Result<(), FmError> {
-        let mut to_delete: Vec<String> = Vec::new();
+    pub async fn delete_objects(
+        &self,
+        keys: &[String],
+        op_id: &str,
+        cancel: &AtomicBool,
+        on_progress: &(dyn Fn(ProgressEvent) + Send + Sync),
+    ) -> Result<(), FmError> {
+        let mut to_delete: Vec<(String, u64)> = Vec::new();
         for raw_key in keys {
             let key = strip_s3_prefix(raw_key, &self.bucket);
             log::info!("delete_objects: raw={raw_key} stripped={key}");
             if key.ends_with('/') {
+                on_progress(ProgressEvent {
+                    id: op_id.to_string(),
+                    bytes_done: 0,
+                    bytes_total: 0,
+                    current_file: format!("Listing {key}"),
+                    files_done: 0,
+                    files_total: 0,
+                });
                 let children = list_all_objects(&self.client, &self.bucket, &key).await?;
-                for (k, _, _) in children {
-                    to_delete.push(k);
+                for (k, size, _) in children {
+                    to_delete.push((k, size));
                 }
             } else {
-                to_delete.push(key);
+                to_delete.push((key, 0));
+            }
+            if cancel.load(Ordering::Relaxed) {
+                return Err(FmError::Other("Operation cancelled".into()));
             }
         }
         if to_delete.is_empty() {
@@ -912,11 +929,19 @@ impl S3Service {
         }
         log::info!("delete_objects: batch={to_delete:?}");
 
+        let files_total = u32::try_from(to_delete.len()).unwrap_or(u32::MAX);
+        let bytes_total: u64 = to_delete.iter().map(|(_, size)| size).sum();
+        let mut files_done: u32 = 0;
+        let mut bytes_done: u64 = 0;
+
         // Batch delete (max 1000 per request)
         for chunk in to_delete.chunks(1000) {
+            if cancel.load(Ordering::Relaxed) {
+                return Err(FmError::Other("Operation cancelled".into()));
+            }
             let objects: Vec<_> = chunk
                 .iter()
-                .map(|k| {
+                .map(|(k, _)| {
                     aws_sdk_s3::types::ObjectIdentifier::builder()
                         .key(k)
                         .build()
@@ -958,6 +983,17 @@ impl S3Service {
                     .collect();
                 return Err(s3err(format!("Failed to delete: {}", msgs.join("; "))));
             }
+
+            files_done += u32::try_from(chunk.len()).unwrap_or(u32::MAX);
+            bytes_done += chunk.iter().map(|(_, size)| size).sum::<u64>();
+            on_progress(ProgressEvent {
+                id: op_id.to_string(),
+                bytes_done,
+                bytes_total,
+                current_file: format!("Deleted {files_done} of {files_total} objects"),
+                files_done,
+                files_total,
+            });
         }
 
         Ok(())

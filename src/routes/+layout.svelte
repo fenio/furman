@@ -541,8 +541,22 @@
   window.addEventListener('native-drag-drop', handleNativeDragDrop);
 
   function handleTransferDone(e: Event) {
-    const { type, destination, srcFocusName } = (e as CustomEvent).detail ?? {};
+    const { type, destination, srcFocusName, count } = (e as CustomEvent).detail ?? {};
     const reloads: Promise<void>[] = [];
+
+    if (type === 'delete') {
+      // For deletes, destination is the directory the entries were deleted from
+      if (typeof count === 'number' && count > 0) {
+        statusState.setMessage(`Deleted ${count} file(s)`);
+      }
+      for (const p of [panels.left, panels.right]) {
+        if (p.path === destination && p.backend !== 'archive') {
+          reloads.push(p.loadDirectory(p.path));
+        }
+      }
+      Promise.all(reloads);
+      return;
+    }
 
     // Figure out which panel is the destination based on its current path
     const destIsLeft = destination && panels.left.path === destination;

@@ -377,11 +377,37 @@ pub async fn s3_head_object(
 #[tauri::command]
 pub async fn s3_delete_objects(
     state: State<'_, S3State>,
+    file_op_state: State<'_, FileOpState>,
     id: String,
+    op_id: String,
     keys: Vec<String>,
+    channel: Channel<ProgressEvent>,
 ) -> Result<(), FmError> {
     let service = get_service(&state, &id)?;
-    service.delete_objects(&keys).await
+
+    let flags = Arc::new(crate::commands::file::OpFlags {
+        cancel: AtomicBool::new(false),
+        pause: AtomicBool::new(false),
+    });
+    {
+        let mut map = file_op_state
+            .0
+            .lock()
+            .map_err(|e| FmError::Other(e.to_string()))?;
+        map.insert(op_id.clone(), flags.clone());
+    }
+
+    let result = service
+        .delete_objects(&keys, &op_id, &flags.cancel, &|evt| {
+            let _ = channel.send(evt);
+        })
+        .await;
+
+    if let Ok(mut map) = file_op_state.0.lock() {
+        map.remove(&op_id);
+    }
+
+    result
 }
 
 #[tauri::command]
