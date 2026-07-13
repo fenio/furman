@@ -172,7 +172,7 @@ async fn test_delete_objects() {
 
     // Delete single file
     ctx.service
-        .delete_objects(&["del1.txt".to_string()])
+        .delete_objects(&["del1.txt".to_string()], "test", &AtomicBool::new(false), &|_| {})
         .await
         .expect("delete single failed");
 
@@ -188,7 +188,7 @@ async fn test_delete_objects() {
 
     // Delete prefix (folder)
     ctx.service
-        .delete_objects(&["delfolder/".to_string()])
+        .delete_objects(&["delfolder/".to_string()], "test", &AtomicBool::new(false), &|_| {})
         .await
         .expect("delete prefix failed");
 
