@@ -113,7 +113,7 @@ export async function executeSyncDeletes(
 
   try {
     if (destBackend === 's3') {
-      await s3DeleteObjects(destS3Id, deletePaths);
+      await s3DeleteObjects(destS3Id, 'sync-del-' + Date.now(), deletePaths);
     } else if (destBackend === 'sftp') {
       const sftpId = panels.active.backend === 'sftp' ? panels.active.sftpConnection?.connectionId : panels.inactive.sftpConnection?.connectionId;
       if (sftpId) await sftpDelete(sftpId, deletePaths);

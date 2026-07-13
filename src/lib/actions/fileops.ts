@@ -6,8 +6,8 @@ import { transfersState } from '$lib/state/transfers.svelte';
 import { connectionsState } from '$lib/state/connections.svelte';
 import { clipboardState } from '$lib/state/clipboard.svelte';
 import { checkConflicts, deleteFilesUndoable, renameFile, createDirectory } from '$lib/services/tauri';
-import { s3DeleteObjects, s3RenameObject, s3CreateFolder, s3IsObjectEncrypted, type EncryptionConfig } from '$lib/services/s3';
-import { sftpDelete, sftpRename, sftpCreateFolder } from '$lib/services/sftp';
+import { s3RenameObject, s3CreateFolder, s3IsObjectEncrypted, type EncryptionConfig } from '$lib/services/s3';
+import { sftpRename, sftpCreateFolder } from '$lib/services/sftp';
 import { error } from '$lib/services/log';
 
 // ── Encryption helpers ──────────────────────────────────────────────────────
@@ -394,42 +394,37 @@ export async function handleDelete() {
     appState.closeModal();
     const fileCount = sources.length;
     const backend = active.backend;
+    if ((backend === 's3' && active.s3Connection) || (backend === 'sftp' && active.sftpConnection)) {
+      transfersState.enqueue({
+        id: 'delete-' + Date.now() + '-' + Math.random().toString(36).slice(2, 6),
+        type: 'delete',
+        sources,
+        destination: active.path,
+        srcBackend: backend,
+        destBackend: backend,
+        s3SrcConnectionId: active.s3Connection?.connectionId,
+        sftpSrcConnectionId: active.sftpConnection?.connectionId,
+      });
+      return;
+    }
     try {
-      if (backend === 's3' && active.s3Connection) {
-        await s3DeleteObjects(active.s3Connection.connectionId, sources);
-      } else if (backend === 'sftp' && active.sftpConnection) {
-        await sftpDelete(active.sftpConnection.connectionId, sources);
-      } else {
-        const trashItems = await deleteFilesUndoable(sources);
-        operationsState.push({
-          id: Date.now().toString(36),
-          type: 'delete',
-          timestamp: Date.now(),
-          backend: 'local',
-          trashItems,
-          sourcePaths: sources,
-          undone: false,
-        });
-        statusState.setMessage(`Deleted ${fileCount} file(s)`);
-        await active.loadDirectory(active.path);
-        return;
-      }
+      const trashItems = await deleteFilesUndoable(sources);
+      operationsState.push({
+        id: Date.now().toString(36),
+        type: 'delete',
+        timestamp: Date.now(),
+        backend: 'local',
+        trashItems,
+        sourcePaths: sources,
+        undone: false,
+      });
+      statusState.setMessage(`Deleted ${fileCount} file(s)`);
+      await active.loadDirectory(active.path);
     } catch (err: unknown) {
       error(String(err));
       appState.showAlert('Delete failed: ' + String(err));
       await active.loadDirectory(active.path);
-      return;
     }
-    operationsState.push({
-      id: Date.now().toString(36),
-      type: 'delete',
-      timestamp: Date.now(),
-      backend,
-      sourcePaths: sources,
-      undone: false,
-    });
-    statusState.setMessage(`Deleted ${fileCount} file(s)`);
-    await active.loadDirectory(active.path);
   });
 }
 

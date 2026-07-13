@@ -181,7 +181,10 @@ impl FurmanMcp {
         Parameters(params): Parameters<S3DeleteObjectsParams>,
     ) -> Result<String, String> {
         let svc = self.state.get_s3_service(&params.connection_id).map_err(err)?;
-        svc.delete_objects(&params.keys).await.map_err(err)?;
+        let cancel = AtomicBool::new(false);
+        svc.delete_objects(&params.keys, "mcp", &cancel, &|_| {})
+            .await
+            .map_err(err)?;
         Ok(format!("Deleted {} object(s)", params.keys.len()))
     }
 

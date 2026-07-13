@@ -135,9 +135,13 @@ export async function s3HeadObject(
 
 export async function s3DeleteObjects(
   id: string,
-  keys: string[]
+  opId: string,
+  keys: string[],
+  onProgress?: (e: ProgressEvent) => void
 ): Promise<void> {
-  await invoke('s3_delete_objects', { id, keys });
+  const channel = new Channel<ProgressEvent>();
+  if (onProgress) channel.onmessage = onProgress;
+  await invoke('s3_delete_objects', { id, opId, keys, channel });
 }
 
 export async function s3CreateFolder(id: string, key: string): Promise<void> {

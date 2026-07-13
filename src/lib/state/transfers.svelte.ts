@@ -5,7 +5,7 @@ import { sftpDownload, sftpUpload, sftpDelete } from '$lib/services/sftp';
 import { formatSize } from '$lib/utils/format';
 
 export type TransferStatus = 'queued' | 'running' | 'paused' | 'completed' | 'failed' | 'cancelled';
-type TransferType = 'copy' | 'move' | 'extract';
+type TransferType = 'copy' | 'move' | 'extract' | 'delete';
 
 export interface Transfer {
   id: string;
@@ -182,7 +182,7 @@ class TransfersState {
     if (!this.hasActive && this.queued.length === 0) {
       this.dialogVisible = false;
     }
-    window.dispatchEvent(new CustomEvent('transfer-done', { detail: { type: t?.type, destination: t?.destination, srcFocusName: t?.srcFocusName } }));
+    window.dispatchEvent(new CustomEvent('transfer-done', { detail: { type: t?.type, destination: t?.destination, srcFocusName: t?.srcFocusName, count: t?.sources.length } }));
   }
 
   fail(id: string, error: string) {
@@ -304,6 +304,12 @@ class TransfersState {
         await extractArchive(t.id, t.archivePath, t.archiveInternalPaths, t.destination, onProgress);
       } else if (t.type === 'copy' || t.type === 'move') {
         result = await this.dispatchCopyMove(t, onProgress);
+      } else if (t.type === 'delete') {
+        if (t.srcBackend === 's3') {
+          await s3DeleteObjects(t.s3SrcConnectionId!, t.id, t.sources, onProgress);
+        } else if (t.srcBackend === 'sftp') {
+          await sftpDelete(t.sftpSrcConnectionId!, t.sources);
+        }
       }
 
       // Check if paused (backend returned checkpoint)
@@ -394,7 +400,7 @@ class TransfersState {
       // S3 move = copy/download + delete source
       if (srcBackend === 's3' && destBackend === 'local') {
         const result = await s3Download(t.s3SrcConnectionId!, t.id, t.sources, t.destination, onProgress, t.encryptionPassword);
-        await s3DeleteObjects(t.s3SrcConnectionId!, t.sources);
+        await s3DeleteObjects(t.s3SrcConnectionId!, t.id + '-del', t.sources);
         return result;
       }
       if (srcBackend === 'local' && destBackend === 's3') {
@@ -412,7 +418,7 @@ class TransfersState {
           t.s3SrcConnectionId!, t.id, t.sources,
           t.s3DestConnectionId!, t.s3DestPrefix!, onProgress,
         );
-        await s3DeleteObjects(t.s3SrcConnectionId!, t.sources);
+        await s3DeleteObjects(t.s3SrcConnectionId!, t.id + '-del', t.sources);
         return result;
       }
       // SFTP move = download/upload + delete source
@@ -446,7 +452,7 @@ class TransfersState {
           return `${tempDir}/${name}`;
         });
         const result = await sftpUpload(t.sftpDestConnectionId!, t.id + '-up', downloaded, t.sftpDestPath!, onProgress);
-        await s3DeleteObjects(t.s3SrcConnectionId!, t.sources);
+        await s3DeleteObjects(t.s3SrcConnectionId!, t.id + '-del', t.sources);
         return result;
       }
       if (srcBackend === 'sftp' && destBackend === 's3') {

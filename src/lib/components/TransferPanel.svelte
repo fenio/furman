@@ -17,6 +17,7 @@
       case 'copy': return 'Copy';
       case 'move': return 'Move';
       case 'extract': return 'Extract';
+      case 'delete': return 'Delete';
       default: return type;
     }
   }
@@ -26,6 +27,7 @@
       case 'copy': return 'Copied';
       case 'move': return 'Moved';
       case 'extract': return 'Extracted';
+      case 'delete': return 'Deleted';
       default: return type;
     }
   }
@@ -35,6 +37,7 @@
       case 'copy': return 'Copying';
       case 'move': return 'Moving';
       case 'extract': return 'Extracting';
+      case 'delete': return 'Deleting';
       default: return type;
     }
   }
@@ -42,11 +45,13 @@
   function transferLabel(t: { type: string; status: TransferStatus; sources: string[]; destination: string; error?: string }): string {
     const count = t.sources.length;
     const dest = t.destination.split('/').filter(Boolean).pop() ?? t.destination;
+    // Deletes have no destination — omit the "to <dest>" suffix
+    const toDest = t.type === 'delete' ? '' : ` to ${dest}`;
     if (t.status === 'running') {
-      return `${typeLabelActive(t.type)} ${count} item(s) to ${dest}`;
+      return `${typeLabelActive(t.type)} ${count} item(s)${toDest}`;
     }
     if (t.status === 'completed') {
-      return `${typeLabelPast(t.type)} ${count} item(s) to ${dest}`;
+      return `${typeLabelPast(t.type)} ${count} item(s)${toDest}`;
     }
     if (t.status === 'cancelled') {
       return `${typeLabel(t.type)} cancelled`;
@@ -55,10 +60,10 @@
       return `${typeLabel(t.type)} failed: ${t.error ?? 'unknown error'}`;
     }
     if (t.status === 'paused') {
-      return `${typeLabel(t.type)} paused — ${count} item(s) to ${dest}`;
+      return `${typeLabel(t.type)} paused — ${count} item(s)${toDest}`;
     }
     if (t.status === 'queued') {
-      return `${typeLabel(t.type)} queued — ${count} item(s) to ${dest}`;
+      return `${typeLabel(t.type)} queued — ${count} item(s)${toDest}`;
     }
     return typeLabel(t.type);
   }
@@ -186,7 +191,9 @@
         {/if}
         <div class="transfer-actions">
           {#if t.status === 'running'}
-            <button class="tp-btn" onclick={() => transfersState.pause(t.id)}>Pause</button>
+            {#if t.type !== 'delete'}
+              <button class="tp-btn" onclick={() => transfersState.pause(t.id)}>Pause</button>
+            {/if}
             <button class="tp-btn tp-btn-cancel" onclick={() => transfersState.cancel(t.id)}>Cancel</button>
           {:else if t.status === 'paused'}
             <button class="tp-btn" onclick={() => transfersState.resume(t.id)}>Resume</button>
