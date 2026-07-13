@@ -6,7 +6,6 @@ import { s3Connect, s3Disconnect, s3ListObjects, s3IsObjectEncrypted } from '$li
 import { sftpConnect, sftpDisconnect, sftpListObjects } from '$lib/services/sftp';
 import { mountNetworkShare } from '$lib/services/mount';
 import { appState } from '$lib/state/app.svelte';
-import { error as logError } from '$lib/services/log';
 
 /// Threshold above which we use streamed directory listing.
 const STREAM_THRESHOLD = 50_000;
@@ -204,7 +203,6 @@ export class PanelData {
       if (cursorName) {
         const idx = this.filteredSortedEntries.findIndex((e) => e.name === cursorName);
         const newIdx = idx >= 0 ? idx : Math.max(0, this.filteredSortedEntries.length - 1);
-        logError(`[refresh] cursorName=${cursorName} idx=${idx} newIdx=${newIdx} total=${this.filteredSortedEntries.length}`);
         this.cursorIndex = newIdx;
       } else if (this.cursorIndex >= this.filteredSortedEntries.length) {
         this.cursorIndex = Math.max(0, this.filteredSortedEntries.length - 1);
@@ -278,10 +276,8 @@ export class PanelData {
       if (focusName) {
         const sorted = sortEntries(this.entries, this.sortField, this.sortDirection);
         const idx = sorted.findIndex((e) => e.name === focusName);
-        logError(`[loadDirectory] focusName=${focusName} idx=${idx} total=${sorted.length}`);
         this.cursorIndex = idx >= 0 ? idx : 0;
       } else {
-        logError(`[loadDirectory] no focusName, cursor=0`);
         this.cursorIndex = 0;
       }
     } catch (err: unknown) {
@@ -337,10 +333,8 @@ export class PanelData {
           if (focusName) {
             const sorted = sortEntries(this.entries, this.sortField, this.sortDirection);
             const idx = sorted.findIndex((e) => e.name === focusName);
-            logError(`[loadDirectoryStreamed] focusName=${focusName} idx=${idx} total=${sorted.length}`);
             this.cursorIndex = idx >= 0 ? idx : 0;
           } else {
-            logError(`[loadDirectoryStreamed] no focusName, cursor=0`);
             this.cursorIndex = 0;
           }
 

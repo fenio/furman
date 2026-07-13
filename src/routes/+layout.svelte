@@ -102,7 +102,6 @@
           return;
         }
         if (event.payload.type === 'drop') {
-          error(`[drag] onDragDropEvent drop: _dropProcessed=${_dropProcessed} src=${JSON.stringify(dragState.source)}`);
           // Skip if this is an internal drag (handled by handleNativeDragDrop)
           if (_dropProcessed || dragState.source) {
             _dropProcessed = false;
@@ -490,7 +489,6 @@
     const { x, y } = (e as CustomEvent).detail;
     const result = getTargetPanel({ x, y });
     const src = dragState.source;
-    error(`[drag] handleNativeDragDrop: src=${JSON.stringify(src)} tgt=${result?.side}`);
     if (!result || !src || src.side === result.side) {
       dragState.source = null;
       clearDragOverHighlight();
@@ -512,7 +510,6 @@
     const dragIdx = entries.findIndex((e) => e.name === draggedName);
     const neighbor = dragIdx >= 0 ? (entries[dragIdx + 1] ?? entries[dragIdx - 1]) : null;
     const srcFocusName = neighbor?.name;
-    error(`[drag] enqueue: type=${transferType} dest=${dest} srcFocusName=${srcFocusName}`);
 
     dragState.source = null;
 
@@ -563,7 +560,6 @@
     const destIsRight = destination && panels.right.path === destination;
     const destPanel = destIsLeft ? panels.left : destIsRight ? panels.right : null;
     const srcPanel = destIsLeft ? panels.right : destIsRight ? panels.left : null;
-    error(`[drag] transferDone: type=${type} dest=${destination} srcFocusName=${srcFocusName} destPanel=${destPanel ? (destIsLeft ? 'left' : 'right') : 'null'}`);
 
     if (type === 'copy') {
       // Only reload destination panel
