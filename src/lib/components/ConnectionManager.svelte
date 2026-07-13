@@ -44,12 +44,18 @@
 
   function handleDelete(profile: ConnectionProfile) {
     appState.showConfirm(`Delete connection "${profile.name}"?`, async () => {
-      if (profile.type === 's3' && profile.credentialType === 'keychain') {
-        await connectionsState.deleteSecret(profile.id);
-      } else if (profile.type === 'sftp' && profile.authMethod === 'password') {
-        await connectionsState.deleteSecret(profile.id);
+      appState.closeModal();
+      try {
+        if (profile.type === 's3' && profile.credentialType === 'keychain') {
+          await connectionsState.deleteSecret(profile.id);
+        } else if (profile.type === 'sftp' && profile.authMethod === 'password') {
+          await connectionsState.deleteSecret(profile.id);
+        }
+      } catch (err: unknown) {
+        error(String(err));
       }
       connectionsState.removeProfile(profile.id);
+      appState.showConnectionManager();
     });
   }
 
