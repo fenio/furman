@@ -83,7 +83,6 @@
       const isMove = ev.shiftKey;
       const mode = isMove ? 'move' : 'copy';
       dragState.source = { side: dragSide, backend: dragBackend, paths, s3ConnectionId: dragS3Id, sftpConnectionId: dragSftpId, isMove };
-      logError(`[drag] FileIcon SET dragState.source side=${dragSide} isMove=${isMove} paths=${paths.length}`);
 
       // Lock scrolling on the source panel to prevent macOS auto-scroll during drag
       const srcList = (ev.target as Element)?.closest('.file-list') as HTMLElement | null;
