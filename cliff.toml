@@ -10,24 +10,36 @@ body = """
 {% endif %}\
 {% for group, commits in commits | group_by(attribute="group") %}
     ### {{ group | striptags | trim | upper_first }}
-    {% for commit in commits %}
-        - {{ commit.message }}\
-    {% endfor %}
+    {% if "Dependencies" in group %}
+        - {{ commits | length }} dependency update(s) via Renovate\
+    {% else %}\
+        {% for commit in commits %}
+        - {{ commit.message | split(pat="\n") | first | trim }}\
+        {% endfor %}\
+    {% endif %}
 {% endfor %}\n
 """
 trim = true
 
 [git]
 conventional_commits = false
+commit_preprocessors = [
+    # Strip "vX.Y.Z: " prefixes from release-bump commits
+    { pattern = '^v\d+\.\d+\.\d+: ', replace = "" },
+]
 commit_parsers = [
-    { message = "^Add ", group = "Added", default_scope = "", scope = "" },
-    { message = "^feat", group = "Added" },
-    { message = "^Fix ", group = "Fixed" },
-    { message = "^fix", group = "Fixed" },
-    { message = "^Update ", group = "Changed" },
-    { message = "^Migrate ", group = "Changed" },
-    { message = "^Refactor ", group = "Changed" },
-    { message = "^refactor", group = "Changed" },
-    { message = "^Change ", group = "Changed" },
-    { message = ".*", group = "Other" },
+    { message = "^Merge (pull request|branch)", skip = true },
+    { message = "^Bump version", skip = true },
+    { message = "^bd: ", skip = true },
+    { message = '^Update (Rust crate|dependency|.+ monorepo|\S+/\S+ action)', group = "<!-- 3 -->Dependencies" },
+    { message = "^Add ", group = "<!-- 0 -->Added" },
+    { message = "^feat", group = "<!-- 0 -->Added" },
+    { message = "^Fix ", group = "<!-- 1 -->Fixed" },
+    { message = "^fix", group = "<!-- 1 -->Fixed" },
+    { message = "^Update ", group = "<!-- 2 -->Changed" },
+    { message = "^Migrate ", group = "<!-- 2 -->Changed" },
+    { message = "^Refactor ", group = "<!-- 2 -->Changed" },
+    { message = "^refactor", group = "<!-- 2 -->Changed" },
+    { message = "^Change ", group = "<!-- 2 -->Changed" },
+    { message = ".*", group = "<!-- 4 -->Other" },
 ]
