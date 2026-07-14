@@ -1,5 +1,29 @@
 # Changelog
 
+## [0.3.12] - 2026-07-14
+
+### Fixed
+
+- Fix frozen confirm dialog when deleting a saved connection
+
+### Changed
+
+- Update aes-gcm and chacha20poly1305 to 0.11
+- Update s3_integration tests for new delete_objects signature
+- Update Cargo.lock: russh-sftp 2.3.0 and compatible transitive updates
+
+### Dependencies
+
+- 49 dependency update(s) via Renovate
+
+### Other
+
+- ci: fix flaky SeaweedFS S3 tests with retries + pinned image
+- Hold TypeScript below v7 in Renovate until toolchain supports it
+- Show progress for S3/SFTP deletes in the transfer panel
+- Remove leftover debug traces logged at ERROR level
+- Reconstruct changelog for 0.3.3-0.3.11 and fix release notes generation
+
 ## [0.3.11] - 2026-06-21
 
 ### Added
