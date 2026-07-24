@@ -22,6 +22,7 @@
 	let loading = $state(true);
 	let error = $state<string | null>(null);
 	let saving = $state(false);
+	let showDiscardConfirm = $state(false);
 	let editorContainer: HTMLDivElement | undefined = $state(undefined);
 	let view: EditorView | undefined = $state(undefined);
 
@@ -135,6 +136,14 @@
 	}
 
 	function handleKeydown(e: KeyboardEvent) {
+		if (showDiscardConfirm) {
+			if (e.key === 'Escape') {
+				e.preventDefault();
+				e.stopPropagation();
+				showDiscardConfirm = false;
+			}
+			return;
+		}
 		if (e.key === 'Escape' || ((e.ctrlKey || e.metaKey) && e.key === 'w')) {
 			e.preventDefault();
 			e.stopPropagation();
@@ -159,10 +168,7 @@
 
 	function handleClose() {
 		if (dirty) {
-			appState.showConfirm('File has been modified. Discard changes?', () => {
-				appState.closeModal();
-				onClose();
-			});
+			showDiscardConfirm = true;
 		} else {
 			onClose();
 		}
@@ -199,6 +205,18 @@
 
 	{#if error && content}
 		<div class="editor-status-error">Error: {error}</div>
+	{/if}
+
+	{#if showDiscardConfirm}
+		<div class="discard-overlay" role="alertdialog" aria-modal="true" aria-label="Discard changes">
+			<div class="discard-dialog">
+				<div>File has been modified. Discard changes?</div>
+				<div class="discard-actions">
+					<button onclick={() => { showDiscardConfirm = false; onClose(); }}>Discard</button>
+					<button class="primary" onclick={() => { showDiscardConfirm = false; view?.focus(); }}>Keep editing</button>
+				</div>
+			</div>
+		</div>
 	{/if}
 </div>
 
@@ -266,5 +284,42 @@
 		flex: 0 0 auto;
 		font-size: 12px;
 		border-top: 1px solid var(--border-subtle);
+	}
+
+	.discard-overlay {
+		position: absolute;
+		inset: 0;
+		display: grid;
+		place-items: center;
+		background: color-mix(in srgb, var(--bg-primary) 70%, transparent);
+		z-index: 1;
+	}
+
+	.discard-dialog {
+		min-width: 320px;
+		padding: 18px;
+		background: var(--bg-secondary);
+		border: 1px solid var(--border-active);
+		border-radius: var(--radius-md);
+		box-shadow: var(--shadow-dialog);
+	}
+
+	.discard-actions {
+		display: flex;
+		justify-content: flex-end;
+		gap: 8px;
+		margin-top: 16px;
+	}
+
+	.discard-actions button {
+		padding: 5px 12px;
+		border: 1px solid var(--border-subtle);
+		border-radius: var(--radius-sm);
+		background: var(--bg-tertiary);
+		color: var(--text-primary);
+	}
+
+	.discard-actions button.primary {
+		border-color: var(--text-accent);
 	}
 </style>

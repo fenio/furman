@@ -1,6 +1,13 @@
 <script lang="ts">
   import { comparisonState, type ComparisonFilter } from '$lib/state/comparison.svelte';
 
+  interface Props {
+    side: 'left' | 'right';
+  }
+
+  let { side }: Props = $props();
+  const counts = $derived(comparisonState.countsFor(side));
+
   const filters: { id: ComparisonFilter; label: string; color: string }[] = [
     { id: 'all', label: 'All', color: 'var(--text-secondary)' },
     { id: 'new', label: 'Only here', color: 'var(--git-added)' },
@@ -14,15 +21,15 @@
     <span class="spinner"></span>
     <span class="bar-label">Comparing...</span>
   {:else}
-    <span class="badge green">{comparisonState.counts.new}</span>
-    <span class="badge yellow">{comparisonState.counts.modified}</span>
-    <span class="badge red">{comparisonState.counts.deleted}</span>
+    <span class="badge green">{counts.new}</span>
+    <span class="badge yellow">{counts.modified}</span>
+    <span class="badge red">{counts.deleted}</span>
     {#each filters as f (f.id)}
       <button
         class="filter-btn"
-        class:active={comparisonState.filter === f.id}
+        class:active={comparisonState.filterFor(side) === f.id}
         style="--filter-color: {f.color}"
-        onclick={() => comparisonState.setFilter(f.id)}
+        onclick={() => comparisonState.setFilter(f.id, side)}
       >{f.label}</button>
     {/each}
   {/if}

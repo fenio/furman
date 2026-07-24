@@ -1,26 +1,33 @@
 import { panels } from '$lib/state/panels.svelte';
 import { appState } from '$lib/state/app.svelte';
 import { statusState } from '$lib/state/status.svelte';
-import { openFileDefault, openInEditor, extractArchiveToTemp } from '$lib/services/tauri';
+import { openFileDefault, openInEditor, extractArchiveToTemp, cleanupTempPath } from '$lib/services/tauri';
 import { s3DownloadToTemp, s3IsObjectEncrypted } from '$lib/services/s3';
 import { sftpDownloadTemp } from '$lib/services/sftp';
 import { error } from '$lib/services/log';
 import { promptEncryptionPassword } from './fileops';
 
 let editorOpenGeneration = 0;
+let viewerOpenGeneration = 0;
 
 function showEditor(
   filePath: string,
   target?:
     | { backend: 's3'; connectionId: string; path: string }
     | { backend: 'sftp'; connectionId: string; path: string },
+  temporary = false,
 ) {
+  const previousTempPath = appState.editorTempPath;
+  if (previousTempPath && previousTempPath !== filePath) {
+    cleanupTempPath(previousTempPath).catch(() => {});
+  }
   appState.editorPath = filePath;
   appState.editorDirty = false;
   appState.editorS3ConnectionId = '';
   appState.editorS3Key = '';
   appState.editorSftpConnectionId = '';
   appState.editorSftpPath = '';
+  appState.editorTempPath = temporary ? filePath : '';
 
   if (target?.backend === 's3') {
     appState.editorS3ConnectionId = target.connectionId;
@@ -31,6 +38,34 @@ function showEditor(
   }
 
   appState.modal = 'editor';
+}
+
+function showViewer(filePath: string, ext: string | null, temporary = false) {
+  const previousTempPath = appState.viewerTempPath;
+  if (previousTempPath && previousTempPath !== filePath) {
+    cleanupTempPath(previousTempPath).catch(() => {});
+  }
+  const lower = (ext ?? '').toLowerCase();
+  appState.viewerMode = imageExtensions.has(lower) ? 'image' : 'text';
+  appState.viewerPath = filePath;
+  appState.viewerTempPath = temporary ? filePath : '';
+  appState.modal = 'viewer';
+}
+
+export function closeViewer() {
+  viewerOpenGeneration++;
+  const tempPath = appState.viewerTempPath;
+  appState.viewerTempPath = '';
+  appState.closeModal();
+  if (tempPath) cleanupTempPath(tempPath).catch(() => {});
+}
+
+export function closeEditor() {
+  editorOpenGeneration++;
+  const tempPath = appState.editorTempPath;
+  appState.editorTempPath = '';
+  appState.closeModal();
+  if (tempPath) cleanupTempPath(tempPath).catch(() => {});
 }
 
 // ── Extension constants ─────────────────────────────────────────────────────
@@ -146,14 +181,13 @@ export async function activateEntry() {
 }
 
 export function openViewer(filePath: string, ext: string | null) {
-  const lower = (ext ?? '').toLowerCase();
-  if (imageExtensions.has(lower)) {
-    appState.viewerMode = 'image';
-  } else {
-    appState.viewerMode = 'text';
-  }
-  appState.viewerPath = filePath;
-  appState.modal = 'viewer';
+  viewerOpenGeneration++;
+  showViewer(filePath, ext);
+}
+
+export function openTemporaryViewer(filePath: string, ext: string | null = null) {
+  viewerOpenGeneration++;
+  showViewer(filePath, ext, true);
 }
 
 export function openEditor(filePath: string) {
@@ -169,41 +203,51 @@ export function openEditor(filePath: string) {
 }
 
 export async function openS3Viewer(s3Path: string, ext: string | null, connectionId: string, password?: string) {
+  const generation = ++viewerOpenGeneration;
   if (!password) {
     try {
       const encrypted = await s3IsObjectEncrypted(connectionId, s3Path);
+      if (generation !== viewerOpenGeneration) return;
       if (encrypted) {
         promptEncryptionPassword((pw) => {
           openS3Viewer(s3Path, ext, connectionId, pw);
         }, 'Decryption password:');
         return;
       }
-    } catch { /* continue without encryption */ }
+    } catch {
+      if (generation !== viewerOpenGeneration) return;
+      // Continue without encryption when metadata detection is unavailable.
+    }
   }
 
   statusState.setMessage('Downloading for preview...');
   try {
     const localPath = await s3DownloadToTemp(connectionId, s3Path, password);
+    if (generation !== viewerOpenGeneration) {
+      cleanupTempPath(localPath).catch(() => {});
+      return;
+    }
     const lower = (ext ?? '').toLowerCase();
     if (systemOpenExtensions.has(lower)) {
-      await openFileDefault(localPath);
+      try {
+        await openFileDefault(localPath);
+      } catch (err) {
+        cleanupTempPath(localPath).catch(() => {});
+        throw err;
+      }
       statusState.setMessage('');
-    } else if (imageExtensions.has(lower)) {
-      appState.viewerMode = 'image';
-      appState.viewerPath = localPath;
-      appState.modal = 'viewer';
     } else {
-      appState.viewerMode = 'text';
-      appState.viewerPath = localPath;
-      appState.modal = 'viewer';
+      showViewer(localPath, ext, true);
     }
   } catch (err: unknown) {
+    if (generation !== viewerOpenGeneration) return;
     error(String(err));
     appState.showAlert('Preview failed: ' + String(err));
   }
 }
 
 export async function openArchiveViewer(entryPath: string, ext: string | null, archivePath: string) {
+  const generation = ++viewerOpenGeneration;
   const hashIdx = entryPath.indexOf('#');
   if (hashIdx < 0) return;
   const internalPath = entryPath.substring(hashIdx + 1);
@@ -211,43 +255,52 @@ export async function openArchiveViewer(entryPath: string, ext: string | null, a
   statusState.setMessage('Extracting for preview...');
   try {
     const localPath = await extractArchiveToTemp(archivePath, internalPath);
+    if (generation !== viewerOpenGeneration) {
+      cleanupTempPath(localPath).catch(() => {});
+      return;
+    }
     const lower = (ext ?? '').toLowerCase();
     if (systemOpenExtensions.has(lower)) {
-      await openFileDefault(localPath);
+      try {
+        await openFileDefault(localPath);
+      } catch (err) {
+        cleanupTempPath(localPath).catch(() => {});
+        throw err;
+      }
       statusState.setMessage('');
-    } else if (imageExtensions.has(lower)) {
-      appState.viewerMode = 'image';
-      appState.viewerPath = localPath;
-      appState.modal = 'viewer';
     } else {
-      appState.viewerMode = 'text';
-      appState.viewerPath = localPath;
-      appState.modal = 'viewer';
+      showViewer(localPath, ext, true);
     }
   } catch (err: unknown) {
+    if (generation !== viewerOpenGeneration) return;
     error(String(err));
     appState.showAlert('Preview failed: ' + String(err));
   }
 }
 
 export async function openSftpViewer(sftpPath: string, ext: string | null, connectionId: string) {
+  const generation = ++viewerOpenGeneration;
   statusState.setMessage('Downloading for preview...');
   try {
     const localPath = await sftpDownloadTemp(connectionId, sftpPath);
+    if (generation !== viewerOpenGeneration) {
+      cleanupTempPath(localPath).catch(() => {});
+      return;
+    }
     const lower = (ext ?? '').toLowerCase();
     if (systemOpenExtensions.has(lower)) {
-      await openFileDefault(localPath);
+      try {
+        await openFileDefault(localPath);
+      } catch (err) {
+        cleanupTempPath(localPath).catch(() => {});
+        throw err;
+      }
       statusState.setMessage('');
-    } else if (imageExtensions.has(lower)) {
-      appState.viewerMode = 'image';
-      appState.viewerPath = localPath;
-      appState.modal = 'viewer';
     } else {
-      appState.viewerMode = 'text';
-      appState.viewerPath = localPath;
-      appState.modal = 'viewer';
+      showViewer(localPath, ext, true);
     }
   } catch (err: unknown) {
+    if (generation !== viewerOpenGeneration) return;
     error(String(err));
     appState.showAlert('Preview failed: ' + String(err));
   }
@@ -274,8 +327,11 @@ export async function openS3Editor(s3Path: string, connectionId: string, passwor
   statusState.setMessage('Downloading for editing...');
   try {
     const localPath = await s3DownloadToTemp(connectionId, s3Path, password);
-    if (generation !== editorOpenGeneration) return;
-    showEditor(localPath, { backend: 's3', connectionId, path: s3Path });
+    if (generation !== editorOpenGeneration) {
+      cleanupTempPath(localPath).catch(() => {});
+      return;
+    }
+    showEditor(localPath, { backend: 's3', connectionId, path: s3Path }, true);
   } catch (err: unknown) {
     if (generation !== editorOpenGeneration) return;
     error(String(err));
@@ -288,8 +344,11 @@ export async function openSftpEditor(sftpPath: string, connectionId: string) {
   statusState.setMessage('Downloading for editing...');
   try {
     const localPath = await sftpDownloadTemp(connectionId, sftpPath);
-    if (generation !== editorOpenGeneration) return;
-    showEditor(localPath, { backend: 'sftp', connectionId, path: sftpPath });
+    if (generation !== editorOpenGeneration) {
+      cleanupTempPath(localPath).catch(() => {});
+      return;
+    }
+    showEditor(localPath, { backend: 'sftp', connectionId, path: sftpPath }, true);
   } catch (err: unknown) {
     if (generation !== editorOpenGeneration) return;
     error(String(err));

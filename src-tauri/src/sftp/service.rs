@@ -657,20 +657,28 @@ impl SftpService {
 
     /// Download a remote file to a temp location, returning the local path.
     pub async fn download_temp(&self, remote_path: &str) -> Result<String, FmError> {
-        let name = remote_path.rsplit('/').next().unwrap_or("file");
-        let tmp_dir = std::env::temp_dir().join("furman-sftp");
-        std::fs::create_dir_all(&tmp_dir).map_err(FmError::Io)?;
+        let name = crate::commands::temp::safe_filename(
+            remote_path.rsplit('/').next().unwrap_or("file"),
+        );
+        let tmp_dir = crate::commands::temp::create_temp_dir_path("preview")?;
         let local_path = tmp_dir.join(name);
 
-        let data = self
+        let data = match self
             .session
             .read(remote_path)
             .await
-            .map_err(|e| sftperr(format!("read '{remote_path}': {e}")))?;
+        {
+            Ok(data) => data,
+            Err(error) => {
+                let _ = std::fs::remove_dir_all(&tmp_dir);
+                return Err(sftperr(format!("read '{remote_path}': {error}")));
+            }
+        };
 
-        tokio::fs::write(&local_path, &data)
-            .await
-            .map_err(FmError::Io)?;
+        if let Err(error) = tokio::fs::write(&local_path, &data).await {
+            let _ = std::fs::remove_dir_all(&tmp_dir);
+            return Err(FmError::Io(error));
+        }
 
         Ok(local_path.to_string_lossy().to_string())
     }

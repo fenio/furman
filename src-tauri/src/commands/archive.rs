@@ -327,10 +327,8 @@ pub fn extract_archive_to_temp(
         return Err(FmError::NotFound(archive_path.clone()));
     }
 
-    // Create a temporary directory for the extraction
-    let tmp_dir = std::env::temp_dir().join("furman-archive-preview");
-    std::fs::create_dir_all(&tmp_dir)
-        .map_err(|e| FmError::Other(format!("Failed to create temp dir: {e}")))?;
+    let safe_internal_path = crate::commands::temp::safe_relative_path(&internal_path)?;
+    let tmp_dir = crate::commands::temp::create_temp_dir_path("archive")?;
 
     let output = Command::new("7z")
         .args([
@@ -338,10 +336,13 @@ pub fn extract_archive_to_temp(
             &archive_path,
             &format!("-o{}", tmp_dir.display()),
             "-y",
+            "-spd",
+            "--",
             &internal_path,
         ])
         .output()
         .map_err(|e| {
+            let _ = std::fs::remove_dir_all(&tmp_dir);
             if e.kind() == std::io::ErrorKind::NotFound {
                 #[cfg(target_os = "macos")]
                 { FmError::Other("7z not found. Install with: brew install 7zip".to_string()) }
@@ -354,15 +355,38 @@ pub fn extract_archive_to_temp(
 
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);
+        let _ = std::fs::remove_dir_all(&tmp_dir);
         return Err(FmError::Other(format!("7z extract failed: {stderr}")));
     }
 
-    let extracted = tmp_dir.join(&internal_path);
-    if !extracted.exists() {
-        return Err(FmError::NotFound(format!(
-            "Extracted file not found: {}",
-            extracted.display()
-        )));
+    let extracted = tmp_dir.join(safe_internal_path);
+    let canonical_tmp_dir = match std::fs::canonicalize(&tmp_dir) {
+        Ok(path) => path,
+        Err(error) => {
+            let _ = std::fs::remove_dir_all(&tmp_dir);
+            return Err(FmError::Io(error));
+        }
+    };
+    let canonical_extracted = match std::fs::canonicalize(&extracted) {
+        Ok(path) => path,
+        Err(error) => {
+            let _ = std::fs::remove_dir_all(&tmp_dir);
+            return Err(if error.kind() == std::io::ErrorKind::NotFound {
+                FmError::NotFound(format!("Extracted file not found: {}", extracted.display()))
+            } else {
+                FmError::Io(error)
+            });
+        }
+    };
+    let is_regular_file = canonical_extracted
+        .metadata()
+        .map(|metadata| metadata.is_file())
+        .unwrap_or(false);
+    if !canonical_extracted.starts_with(&canonical_tmp_dir) || !is_regular_file {
+        let _ = std::fs::remove_dir_all(&tmp_dir);
+        return Err(FmError::Other(
+            "Archive entry did not extract to a regular file".into(),
+        ));
     }
 
     Ok(extracted.to_string_lossy().into_owned())
@@ -391,6 +415,12 @@ pub fn extract_archive(
     if !dest.exists() {
         return Err(FmError::NotFound(destination.clone()));
     }
+    if internal_paths.is_empty() {
+        return Err(FmError::Other("No archive entries selected".into()));
+    }
+    for path in &internal_paths {
+        crate::commands::temp::safe_relative_path(path)?;
+    }
 
     let files_total = internal_paths.len() as u32;
 
@@ -398,18 +428,16 @@ pub fn extract_archive(
         cancel: AtomicBool::new(false),
         pause: AtomicBool::new(false),
     });
-    {
-        let mut map = state.0.lock().map_err(|e| FmError::Other(e.to_string()))?;
-        map.insert(id.clone(), flags.clone());
-    }
 
     // Use `7z x` to extract with full paths, targeting specific files.
-    // -o sets output directory, -y auto-confirms overwrites.
+    // -o sets output directory, -y auto-confirms overwrites, -spd treats names literally.
     let mut args = vec![
         "x".to_string(),
         archive_path.clone(),
         format!("-o{destination}"),
         "-y".to_string(),
+        "-spd".to_string(),
+        "--".to_string(),
     ];
     for p in &internal_paths {
         args.push(p.clone());
@@ -428,6 +456,18 @@ pub fn extract_archive(
                 FmError::Other(format!("Failed to run 7z: {e}"))
             }
         })?;
+
+    {
+        let mut map = match state.0.lock() {
+            Ok(map) => map,
+            Err(error) => {
+                let _ = child.kill();
+                let _ = child.wait();
+                return Err(FmError::Other(error.to_string()));
+            }
+        };
+        map.insert(id.clone(), flags.clone());
+    }
 
     // Poll the child process, checking cancel flag between polls.
     let result = loop {

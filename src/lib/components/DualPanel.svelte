@@ -51,6 +51,9 @@
               onAdd={() => { const path = panels.left.path; const tab = panels.addTab('left'); tab.loadDirectory(path); }}
             />
           {/if}
+          {#if comparisonState.active}
+            <ComparisonBar side="left" />
+          {/if}
           <FilePanel
             panel={panels.left}
             isActive={true}
@@ -77,6 +80,9 @@
               onClose={(i) => panels.closeTab('right', i)}
               onAdd={() => { const path = panels.right.path; const tab = panels.addTab('right'); tab.loadDirectory(path); }}
             />
+          {/if}
+          {#if comparisonState.active}
+            <ComparisonBar side="right" />
           {/if}
           <FilePanel
             panel={panels.right}
@@ -139,7 +145,7 @@
           />
         {/if}
         {#if comparisonState.active}
-          <ComparisonBar />
+          <ComparisonBar side="left" />
         {/if}
         <FilePanel
           panel={panels.left}
@@ -189,7 +195,7 @@
           />
         {/if}
         {#if comparisonState.active}
-          <ComparisonBar />
+          <ComparisonBar side="right" />
         {/if}
         <FilePanel
           panel={panels.right}

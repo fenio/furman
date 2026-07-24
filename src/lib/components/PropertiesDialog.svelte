@@ -1,7 +1,8 @@
 <script lang="ts">
-  import { onMount, untrack } from 'svelte';
+  import { onDestroy, onMount, untrack } from 'svelte';
   import { appState } from '$lib/state/app.svelte';
-  import { getFileProperties, getDirectorySize, inspectModel } from '$lib/services/tauri';
+  import { cleanupTempPath, getFileProperties, getDirectorySize, inspectModel } from '$lib/services/tauri';
+  import { openTemporaryViewer } from '$lib/actions/viewers';
   import { formatParams, formatVram, estimateVram, groupTensorsByCategory, groupTensorsByLayer, getCategoryColor, type VramEstimate } from '$lib/utils/model';
   import MfaDialog from './MfaDialog.svelte';
   import CloudFrontTab from './CloudFrontTab.svelte';
@@ -227,6 +228,11 @@
   let versionsLoading = $state(false);
   let versionsError = $state('');
   let versionActionLoading = $state<string | null>(null);
+  let versionDownloadGeneration = 0;
+
+  onDestroy(() => {
+    versionDownloadGeneration++;
+  });
 
   // Bucket-level: Versioning
   let bucketVersioning = $state<S3BucketVersioning | null>(null);
@@ -462,17 +468,19 @@
   }
 
   async function handleDownloadVersion(vid: string) {
+    const generation = ++versionDownloadGeneration;
     versionActionLoading = vid;
     try {
       const tempPath = await s3DownloadVersion(s3ConnectionId, path, vid);
-      const { appState: app } = await import('$lib/state/app.svelte');
-      app.viewerMode = 'text';
-      app.viewerPath = tempPath;
-      app.modal = 'viewer';
+      if (generation !== versionDownloadGeneration) {
+        cleanupTempPath(tempPath).catch(() => {});
+        return;
+      }
+      openTemporaryViewer(tempPath);
     } catch (err: unknown) {
-      versionsError = String(err);
+      if (generation === versionDownloadGeneration) versionsError = String(err);
     } finally {
-      versionActionLoading = null;
+      if (generation === versionDownloadGeneration) versionActionLoading = null;
     }
   }
 

@@ -1,11 +1,12 @@
 import type { FileEntry, SortField, SortDirection, ViewMode, PanelBackend, S3ConnectionInfo, SftpConnectionInfo, ArchiveInfo, GitRepoInfo, DirListEvent } from '$lib/types';
 import { SvelteMap, SvelteSet } from 'svelte/reactivity';
 import { sortEntries } from '$lib/utils/sort';
-import { listDirectory, listDirectoryStreamed, listArchive, watchDirectory, unwatchDirectory, getGitRepoInfo, getDirectorySize } from '$lib/services/tauri';
+import { listDirectory, listDirectoryStreamed, listArchive, watchDirectory, unwatchDirectory, getGitRepoInfo, getDirectorySize, cleanupTempPath } from '$lib/services/tauri';
 import { s3Connect, s3Disconnect, s3ListObjects, s3IsObjectEncrypted } from '$lib/services/s3';
 import { sftpConnect, sftpDisconnect, sftpListObjects } from '$lib/services/sftp';
 import { mountNetworkShare } from '$lib/services/mount';
 import { appState } from '$lib/state/app.svelte';
+import { comparisonState, type ComparisonSide } from '$lib/state/comparison.svelte';
 
 /// Threshold above which we use streamed directory listing.
 const STREAM_THRESHOLD = 50_000;
@@ -20,6 +21,7 @@ export class PanelData {
   entries = $state<FileEntry[]>([]);
   watchId: string;
   tabId: number;
+  side: ComparisonSide;
   cursorIndex = $state(0);
   selectionAnchor = $state(0);
   selectedPaths = $state<Set<string>>(new SvelteSet());
@@ -60,23 +62,28 @@ export class PanelData {
   private cachedGlobRegex: RegExp | null = null;
 
   filteredSortedEntries = $derived.by(() => {
-    if (!this.filterText) return this.sortedEntries;
-    const pattern = this.filterText;
-    const hasGlob = pattern.includes('*') || pattern.includes('?');
-    if (hasGlob) {
-      if (pattern !== this.cachedGlobPattern) {
-        this.cachedGlobPattern = pattern;
-        this.cachedGlobRegex = globToRegex(pattern);
+    let result = this.sortedEntries;
+    if (this.filterText) {
+      const pattern = this.filterText;
+      const hasGlob = pattern.includes('*') || pattern.includes('?');
+      if (hasGlob) {
+        if (pattern !== this.cachedGlobPattern) {
+          this.cachedGlobPattern = pattern;
+          this.cachedGlobRegex = globToRegex(pattern);
+        }
+        const re = this.cachedGlobRegex!;
+        result = result.filter((e) => e.name === '..' || re.test(e.name));
+      } else {
+        const lower = pattern.toLowerCase();
+        result = result.filter(
+          (e) => e.name === '..' || e.name.toLowerCase().includes(lower)
+        );
       }
-      const re = this.cachedGlobRegex!;
-      return this.sortedEntries.filter(
-        (e) => e.name === '..' || re.test(e.name)
-      );
     }
-    const lower = pattern.toLowerCase();
-    return this.sortedEntries.filter(
-      (e) => e.name === '..' || e.name.toLowerCase().includes(lower)
-    );
+    if (comparisonState.active && comparisonState.filterFor(this.side) !== 'all') {
+      result = result.filter((entry) => comparisonState.matchesFilter(this.side, this.path, entry));
+    }
+    return result;
   });
 
   currentEntry = $derived(this.filteredSortedEntries[this.cursorIndex] ?? null);
@@ -113,7 +120,8 @@ export class PanelData {
   private encryptionPending = new SvelteSet<string>();
   private encryptionDebounceTimer: ReturnType<typeof setTimeout> | null = null;
 
-  constructor(side: string) {
+  constructor(side: ComparisonSide) {
+    this.side = side;
     this.tabId = nextTabId++;
     this.watchId = `watch-${side}-${this.tabId}`;
   }
@@ -196,6 +204,7 @@ export class PanelData {
     try {
       const listing = await listDirectory(this.path, appState.showHidden);
       if (entriesEqual(this.entries, listing.entries)) return;
+      if (comparisonState.active) comparisonState.stopComparison();
       this.freeSpace = listing.free_space;
       // Preserve cursor by name across entry changes
       const cursorName = this.filteredSortedEntries[this.cursorIndex]?.name;
@@ -246,6 +255,12 @@ export class PanelData {
       return;
     }
 
+    if (comparisonState.active) {
+      if (path === this.path || !comparisonState.containsPanelPath(this.side, path)) {
+        comparisonState.stopComparison();
+      }
+    }
+
     this.loading = true;
     this.error = null;
     try {
@@ -274,12 +289,12 @@ export class PanelData {
       this.gitInfo = null;
       // Position cursor on focusName if provided (e.g. directory we just left)
       if (focusName) {
-        const sorted = sortEntries(this.entries, this.sortField, this.sortDirection);
-        const idx = sorted.findIndex((e) => e.name === focusName);
+        const idx = this.filteredSortedEntries.findIndex((e) => e.name === focusName);
         this.cursorIndex = idx >= 0 ? idx : 0;
       } else {
         this.cursorIndex = 0;
       }
+      this.selectionAnchor = this.cursorIndex;
     } catch (err: unknown) {
       this.error = err instanceof Error ? err.message : String(err);
     } finally {
@@ -300,6 +315,7 @@ export class PanelData {
     this.entries = [];
     this.selectedPaths = new SvelteSet();
     this.cursorIndex = 0;
+    this.selectionAnchor = 0;
 
     try {
       await listDirectoryStreamed(path, appState.showHidden, (event: DirListEvent) => {
@@ -331,12 +347,12 @@ export class PanelData {
 
           // Position cursor on focusName if provided
           if (focusName) {
-            const sorted = sortEntries(this.entries, this.sortField, this.sortDirection);
-            const idx = sorted.findIndex((e) => e.name === focusName);
+            const idx = this.filteredSortedEntries.findIndex((e) => e.name === focusName);
             this.cursorIndex = idx >= 0 ? idx : 0;
           } else {
             this.cursorIndex = 0;
           }
+          this.selectionAnchor = this.cursorIndex;
 
           // Fetch git info non-blocking
           getGitRepoInfo(event.path).then((info) => {
@@ -385,19 +401,28 @@ export class PanelData {
   }
 
   async enterArchive(archivePath: string, remoteOrigin?: ArchiveInfo['remoteOrigin']) {
+    if (comparisonState.active) comparisonState.stopComparison();
+    this.releaseTemporaryArchive();
     this.clearHistory();
     this.backend = 'archive';
-    this.archiveInfo = { archivePath, internalPath: '', remoteOrigin };
+    this.archiveInfo = {
+      archivePath,
+      internalPath: '',
+      remoteOrigin,
+      temporaryPath: remoteOrigin ? archivePath : undefined,
+    };
     await this.loadDirectory(`archive://${archivePath}#`);
   }
 
   private async exitArchive(realPath: string, focusName?: string) {
     this.clearHistory();
     const origin = this.archiveInfo?.remoteOrigin;
+    const temporaryPath = this.archiveInfo?.temporaryPath;
     const archiveName = this.archiveInfo
       ? this.archiveInfo.archivePath.replace(/\/+$/, '').split('/').pop() ?? ''
       : '';
     this.archiveInfo = null;
+    if (temporaryPath) cleanupTempPath(temporaryPath).catch(() => {});
 
     if (origin) {
       // Restore remote backend connection
@@ -411,12 +436,20 @@ export class PanelData {
     }
   }
 
+  private releaseTemporaryArchive() {
+    const temporaryPath = this.archiveInfo?.temporaryPath;
+    this.archiveInfo = null;
+    if (temporaryPath) cleanupTempPath(temporaryPath).catch(() => {});
+  }
+
   async connectS3(info: S3ConnectionInfo, endpoint?: string, profile?: string, accessKey?: string, secretKey?: string, roleArn?: string, externalId?: string, sessionName?: string, sessionDurationSecs?: number, useTransferAcceleration?: boolean, anonymous?: boolean, webIdentityToken?: string, proxyUrl?: string, proxyUsername?: string, proxyPassword?: string) {
+    if (comparisonState.active) comparisonState.stopComparison();
     this.clearHistory();
     this.loading = true;
     this.error = null;
     try {
       await s3Connect(info.connectionId, info.bucket, info.region, endpoint, profile, accessKey, secretKey, roleArn, externalId, sessionName, sessionDurationSecs, useTransferAcceleration, anonymous, webIdentityToken, proxyUrl, proxyUsername, proxyPassword);
+      this.releaseTemporaryArchive();
       this.backend = 's3';
       this.s3Connection = info;
       // Load root of the bucket
@@ -428,6 +461,8 @@ export class PanelData {
   }
 
   async disconnectS3(homePath?: string) {
+    if (comparisonState.active) comparisonState.stopComparison();
+    this.releaseTemporaryArchive();
     this.clearHistory();
     if (this.s3Connection) {
       try {
@@ -443,11 +478,13 @@ export class PanelData {
   }
 
   async connectSftp(info: SftpConnectionInfo, password?: string, keyPath?: string, keyPassphrase?: string, agentSocket?: string) {
+    if (comparisonState.active) comparisonState.stopComparison();
     this.clearHistory();
     this.loading = true;
     this.error = null;
     try {
       const homeDir = await sftpConnect(info.connectionId, info.host, info.port, info.username, password ? 'password' : keyPath ? 'key' : 'agent', password, keyPath, keyPassphrase, agentSocket, appState.sftpInactivityTimeout, appState.sftpKeepaliveInterval, appState.sftpOperationTimeout);
+      this.releaseTemporaryArchive();
       this.backend = 'sftp';
       this.sftpConnection = info;
       await this.loadDirectory(`sftp://${info.host}:${info.port}${homeDir.startsWith('/') ? '' : '/'}${homeDir}/`);
@@ -460,10 +497,12 @@ export class PanelData {
   /// Mount an SMB/NFS share through the OS and navigate this panel to it as a
   /// local folder. Throws on failure so the caller can surface the error.
   async mountShare(protocol: 'smb' | 'nfs', host: string, share: string, username?: string, password?: string, domain?: string) {
+    if (comparisonState.active) comparisonState.stopComparison();
     this.loading = true;
     this.error = null;
     try {
       const mountPoint = await mountNetworkShare(protocol, host, share, username, password, domain);
+      this.releaseTemporaryArchive();
       this.clearHistory();
       this.backend = 'local';
       await this.loadDirectory(mountPoint);
@@ -474,6 +513,8 @@ export class PanelData {
   }
 
   async disconnectSftp(homePath?: string) {
+    if (comparisonState.active) comparisonState.stopComparison();
+    this.releaseTemporaryArchive();
     this.clearHistory();
     if (this.sftpConnection) {
       try {
@@ -517,7 +558,7 @@ export class PanelData {
 
   selectAll() {
     const next = new SvelteSet<string>();
-    for (const entry of this.entries) {
+    for (const entry of this.filteredSortedEntries) {
       if (entry.name !== '..') {
         next.add(entry.path);
       }
@@ -531,7 +572,7 @@ export class PanelData {
 
   invertSelection() {
     const next = new SvelteSet<string>();
-    for (const entry of this.entries) {
+    for (const entry of this.filteredSortedEntries) {
       if (entry.name !== '..' && !this.selectedPaths.has(entry.path)) {
         next.add(entry.path);
       }
@@ -542,7 +583,7 @@ export class PanelData {
   selectByPattern(pattern: string) {
     const re = globToRegex(pattern);
     const next = new SvelteSet(this.selectedPaths);
-    for (const entry of this.entries) {
+    for (const entry of this.filteredSortedEntries) {
       if (entry.name !== '..' && re.test(entry.name)) {
         next.add(entry.path);
       }
@@ -553,7 +594,7 @@ export class PanelData {
   deselectByPattern(pattern: string) {
     const re = globToRegex(pattern);
     const next = new SvelteSet(this.selectedPaths);
-    for (const entry of this.entries) {
+    for (const entry of this.filteredSortedEntries) {
       if (re.test(entry.name)) {
         next.delete(entry.path);
       }
@@ -675,6 +716,7 @@ class PanelsState {
   }
 
   addTab(side: 'left' | 'right'): PanelData {
+    if (comparisonState.active) comparisonState.stopComparison();
     const tab = PanelData.createTab(side);
     if (side === 'left') {
       this.leftTabs = [...this.leftTabs, tab];
@@ -689,19 +731,28 @@ class PanelsState {
   closeTab(side: 'left' | 'right', index: number) {
     const tabs = side === 'left' ? this.leftTabs : this.rightTabs;
     if (tabs.length <= 1) return; // Can't close last tab
+    const activeIndex = side === 'left' ? this.leftActiveTab : this.rightActiveTab;
+    if (comparisonState.active && index === activeIndex) comparisonState.stopComparison();
     const tab = tabs[index];
     tab.stopWatching();
+    if (tab.archiveInfo?.temporaryPath) {
+      cleanupTempPath(tab.archiveInfo.temporaryPath).catch(() => {});
+    }
     const next = tabs.filter((_, i) => i !== index);
     if (side === 'left') {
       this.leftTabs = next;
-      if (this.leftActiveTab >= next.length) this.leftActiveTab = next.length - 1;
+      if (index < this.leftActiveTab) this.leftActiveTab--;
+      else if (this.leftActiveTab >= next.length) this.leftActiveTab = next.length - 1;
     } else {
       this.rightTabs = next;
-      if (this.rightActiveTab >= next.length) this.rightActiveTab = next.length - 1;
+      if (index < this.rightActiveTab) this.rightActiveTab--;
+      else if (this.rightActiveTab >= next.length) this.rightActiveTab = next.length - 1;
     }
   }
 
   switchTab(side: 'left' | 'right', index: number) {
+    const activeIndex = side === 'left' ? this.leftActiveTab : this.rightActiveTab;
+    if (comparisonState.active && index !== activeIndex) comparisonState.stopComparison();
     if (side === 'left') {
       this.leftActiveTab = index;
     } else {
@@ -710,6 +761,7 @@ class PanelsState {
   }
 
   swapPanels() {
+    if (comparisonState.active) comparisonState.stopComparison();
     const tmpTabs = this.leftTabs;
     const tmpActive = this.leftActiveTab;
     this.leftTabs = this.rightTabs;
@@ -717,8 +769,14 @@ class PanelsState {
     this.rightTabs = tmpTabs;
     this.rightActiveTab = tmpActive;
     // Fix watch IDs
-    for (const tab of this.leftTabs) tab.watchId = `watch-left-${tab.tabId}`;
-    for (const tab of this.rightTabs) tab.watchId = `watch-right-${tab.tabId}`;
+    for (const tab of this.leftTabs) {
+      tab.side = 'left';
+      tab.watchId = `watch-left-${tab.tabId}`;
+    }
+    for (const tab of this.rightTabs) {
+      tab.side = 'right';
+      tab.watchId = `watch-right-${tab.tabId}`;
+    }
   }
 }
 
