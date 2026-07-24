@@ -207,9 +207,16 @@ pub async fn sftp_download(
         .collect();
 
     let result = svc
-        .download(&remote_paths, &destination, &op_id, &flags.cancel, &|evt| {
-            let _ = channel.send(evt);
-        })
+        .download_with_pause(
+            &remote_paths,
+            &destination,
+            &op_id,
+            &flags.cancel,
+            &flags.pause,
+            &|evt| {
+                let _ = channel.send(evt);
+            },
+        )
         .await;
 
     // Clean up
@@ -246,9 +253,16 @@ pub async fn sftp_upload(
     let remote_dest = strip_sftp_prefix(&remote_prefix);
 
     let result = svc
-        .upload(&sources, remote_dest, &op_id, &flags.cancel, &|evt| {
-            let _ = channel.send(evt);
-        })
+        .upload_with_pause(
+            &sources,
+            remote_dest,
+            &op_id,
+            &flags.cancel,
+            &flags.pause,
+            &|evt| {
+                let _ = channel.send(evt);
+            },
+        )
         .await;
 
     // Clean up

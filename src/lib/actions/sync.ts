@@ -6,7 +6,7 @@ import { copyFiles, deleteFiles } from '$lib/services/tauri';
 import { s3Download, s3Upload, s3CopyObjects, s3DeleteObjects } from '$lib/services/s3';
 import { sftpDelete, sftpDownload, sftpUpload } from '$lib/services/sftp';
 import { error } from '$lib/services/log';
-import type { ProgressEvent, SyncEntry } from '$lib/types';
+import type { ProgressEvent, SyncEntry, TransferCheckpoint } from '$lib/types';
 
 export function executeSyncTransfer(detail: {
   entries: SyncEntry[];
@@ -32,41 +32,56 @@ export function executeSyncTransfer(detail: {
     transfersState.add(opId, 'copy', copySourcePaths, destPath);
 
     (async () => {
+      let copySucceeded = false;
       try {
         const onProgress = (e: ProgressEvent) => {
           transfersState.updateProgress(opId, e);
         };
+        let result: TransferCheckpoint | null;
 
         if (sourceBackend === 'local' && destBackend === 'local') {
-          await copyFiles(opId, copySourcePaths, destPath, onProgress);
+          result = await copyFiles(opId, copySourcePaths, destPath, onProgress);
         } else if (sourceBackend === 's3' && destBackend === 'local') {
-          await s3Download(sourceS3Id, opId, copySourcePaths, destPath, onProgress);
+          result = await s3Download(sourceS3Id, opId, copySourcePaths, destPath, onProgress);
         } else if (sourceBackend === 'local' && destBackend === 's3') {
           const prefix = s3PathToPrefix(destPath, '');
-          await s3Upload(destS3Id, opId, copySourcePaths, prefix, onProgress);
+          result = await s3Upload(destS3Id, opId, copySourcePaths, prefix, onProgress);
         } else if (sourceBackend === 's3' && destBackend === 's3') {
           const destPrefix = s3PathToPrefix(destPath, '');
-          await s3CopyObjects(sourceS3Id, opId, copySourcePaths, destS3Id, destPrefix, onProgress);
+          result = await s3CopyObjects(sourceS3Id, opId, copySourcePaths, destS3Id, destPrefix, onProgress);
         } else if (sourceBackend === 'sftp' && destBackend === 'local') {
           const sftpId = panels.active.backend === 'sftp' ? panels.active.sftpConnection?.connectionId : panels.inactive.sftpConnection?.connectionId;
-          if (sftpId) await sftpDownload(sftpId, opId, copySourcePaths, destPath, onProgress);
+          if (!sftpId) throw new Error('Missing source SFTP connection');
+          result = await sftpDownload(sftpId, opId, copySourcePaths, destPath, onProgress);
         } else if (sourceBackend === 'local' && destBackend === 'sftp') {
           const sftpId = panels.active.backend === 'sftp' ? panels.active.sftpConnection?.connectionId : panels.inactive.sftpConnection?.connectionId;
-          if (sftpId) await sftpUpload(sftpId, opId, copySourcePaths, destPath, onProgress);
+          if (!sftpId) throw new Error('Missing destination SFTP connection');
+          result = await sftpUpload(sftpId, opId, copySourcePaths, destPath, onProgress);
         } else if (sourceBackend === 'sftp' && destBackend === 'sftp') {
           const srcSftpId = panels.active.backend === 'sftp' ? panels.active.sftpConnection?.connectionId : panels.inactive.sftpConnection?.connectionId;
           const destSftpId = panels.inactive.backend === 'sftp' ? panels.inactive.sftpConnection?.connectionId : panels.active.sftpConnection?.connectionId;
-          if (srcSftpId && destSftpId) {
-            const tempDir = `/tmp/furman-sync-${opId}`;
-            await sftpDownload(srcSftpId, opId, copySourcePaths, tempDir, onProgress);
-            const downloaded = copySourcePaths.map((s) => {
-              const name = s.replace(/\/+$/, '').split('/').pop()!;
-              return `${tempDir}/${name}`;
-            });
-            await sftpUpload(destSftpId, opId + '-up', downloaded, destPath, onProgress);
+          if (!srcSftpId || !destSftpId) throw new Error('Missing SFTP connection');
+          const tempDir = `/tmp/furman-sync-${opId}`;
+          result = await sftpDownload(srcSftpId, opId, copySourcePaths, tempDir, onProgress);
+          if (result !== null) {
+            transfersState.markPaused(opId, result);
+            return;
           }
+          const downloaded = copySourcePaths.map((s) => {
+            const name = s.replace(/\/+$/, '').split('/').pop()!;
+            return `${tempDir}/${name}`;
+          });
+          result = await sftpUpload(destSftpId, opId, downloaded, destPath, onProgress);
+        } else {
+          throw new Error(`Unsupported sync: ${sourceBackend} -> ${destBackend}`);
         }
 
+        if (result !== null) {
+          transfersState.markPaused(opId, result);
+          return;
+        }
+
+        copySucceeded = true;
         transfersState.complete(opId);
         statusState.setMessage(`Synced ${toCopy.length} file(s)`);
       } catch (err: unknown) {
@@ -80,7 +95,7 @@ export function executeSyncTransfer(detail: {
           appState.showAlert('Sync failed: ' + msg);
         }
       } finally {
-        if (toDelete.length > 0) {
+        if (copySucceeded && toDelete.length > 0) {
           await executeSyncDeletes(toDelete, destBackend, destPath, destS3Id);
         }
         const reloads: Promise<void>[] = [];
@@ -116,7 +131,8 @@ export async function executeSyncDeletes(
       await s3DeleteObjects(destS3Id, 'sync-del-' + Date.now(), deletePaths);
     } else if (destBackend === 'sftp') {
       const sftpId = panels.active.backend === 'sftp' ? panels.active.sftpConnection?.connectionId : panels.inactive.sftpConnection?.connectionId;
-      if (sftpId) await sftpDelete(sftpId, deletePaths);
+      if (!sftpId) throw new Error('Missing destination SFTP connection');
+      await sftpDelete(sftpId, deletePaths);
     } else {
       await deleteFiles(deletePaths, true);
     }

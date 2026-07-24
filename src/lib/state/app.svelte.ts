@@ -449,6 +449,13 @@ class AppState {
 
   closeModal() {
     this.modal = 'none';
+    this.editorPath = '';
+    this.editorContent = '';
+    this.editorDirty = false;
+    this.editorS3ConnectionId = '';
+    this.editorS3Key = '';
+    this.editorSftpConnectionId = '';
+    this.editorSftpPath = '';
     this.confirmMessage = '';
     this.confirmCallback = null;
     this.confirmAlertOnly = false;

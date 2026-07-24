@@ -219,6 +219,20 @@ impl SftpService {
         cancel: &AtomicBool,
         on_progress: &(dyn Fn(ProgressEvent) + Send + Sync),
     ) -> Result<Option<TransferCheckpoint>, FmError> {
+        let pause = AtomicBool::new(false);
+        self.download_with_pause(remote_paths, local_dest, op_id, cancel, &pause, on_progress)
+            .await
+    }
+
+    pub async fn download_with_pause(
+        &self,
+        remote_paths: &[String],
+        local_dest: &str,
+        op_id: &str,
+        cancel: &AtomicBool,
+        pause: &AtomicBool,
+        on_progress: &(dyn Fn(ProgressEvent) + Send + Sync),
+    ) -> Result<Option<TransferCheckpoint>, FmError> {
         // Send an initial "scanning" progress event so the UI shows activity
         on_progress(ProgressEvent {
             id: op_id.to_string(),
@@ -267,8 +281,10 @@ impl SftpService {
                     clean,
                     file_list.len()
                 );
-            } else {
+            } else if meta.is_regular() {
                 file_list.push((clean.to_string(), local_target, meta.size.unwrap_or(0)));
+            } else {
+                return Err(sftperr(format!("unsupported remote file type: '{clean}'")));
             }
 
             // Report scanning progress so the UI stays responsive
@@ -290,10 +306,20 @@ impl SftpService {
         let files_total = file_list.len() as u32;
         let mut bytes_done: u64 = 0;
         let mut files_done: u32 = 0;
+        let mut completed_files: Vec<String> = Vec::new();
 
         for (remote, local, _size) in &file_list {
             if cancel.load(Ordering::Relaxed) {
                 return Err(FmError::Other("cancelled".into()));
+            }
+            if pause.load(Ordering::Relaxed) {
+                return Ok(Some(TransferCheckpoint {
+                    files_completed: completed_files,
+                    bytes_done,
+                    bytes_total,
+                    files_done,
+                    files_total,
+                }));
             }
 
             // Ensure parent directory exists
@@ -317,22 +343,7 @@ impl SftpService {
             .await
             {
                 Ok(Ok(d)) => d,
-                Ok(Err(e)) => {
-                    log::warn!("SFTP download: read '{remote}' failed: {e}, skipping");
-                    files_done += 1;
-                    on_progress(ProgressEvent {
-                        id: op_id.to_string(),
-                        bytes_done,
-                        bytes_total,
-                        current_file: format!(
-                            "Skipped: {}",
-                            remote.rsplit('/').next().unwrap_or(remote)
-                        ),
-                        files_done,
-                        files_total,
-                    });
-                    continue;
-                }
+                Ok(Err(e)) => return Err(sftperr(format!("read '{remote}': {e}"))),
                 Err(_) => {
                     log::error!(
                         "SFTP download: read '{remote}' timed out after {}s — connection likely dead",
@@ -349,6 +360,7 @@ impl SftpService {
 
             bytes_done += data.len() as u64;
             files_done += 1;
+            completed_files.push(remote.clone());
 
             on_progress(ProgressEvent {
                 id: op_id.to_string(),
@@ -373,15 +385,12 @@ impl SftpService {
         on_progress: &(dyn Fn(ProgressEvent) + Send + Sync),
     ) -> Result<(), FmError> {
         log::info!("SFTP collect: readdir '{remote_dir}'");
-        let entries = match self.session.read_dir(remote_dir).await {
-            Ok(iter) => iter.collect::<Vec<_>>(),
-            Err(e) => {
-                log::warn!(
-                    "SFTP collect: readdir '{remote_dir}' failed: {e}, skipping"
-                );
-                return Ok(());
-            }
-        };
+        let entries = self
+            .session
+            .read_dir(remote_dir)
+            .await
+            .map_err(|e| sftperr(format!("readdir '{remote_dir}': {e}")))?
+            .collect::<Vec<_>>();
         log::info!(
             "SFTP collect: '{}' has {} entries",
             remote_dir,
@@ -412,15 +421,11 @@ impl SftpService {
                         out.push((remote_child, local_child, verified.size.unwrap_or(0)));
                     }
                     Ok(_) => {
-                        log::info!(
-                            "SFTP collect: '{remote_child}' is not a regular file or dir, skipping"
-                        );
+                        return Err(sftperr(format!(
+                            "unsupported remote file type: '{remote_child}'"
+                        )));
                     }
-                    Err(e) => {
-                        log::warn!(
-                            "SFTP collect: stat '{remote_child}' failed: {e}, skipping"
-                        );
-                    }
+                    Err(e) => return Err(sftperr(format!("stat '{remote_child}': {e}"))),
                 }
             } else if meta.is_regular() {
                 out.push((remote_child, local_child, meta.size.unwrap_or(0)));
@@ -447,6 +452,20 @@ impl SftpService {
         cancel: &AtomicBool,
         on_progress: &(dyn Fn(ProgressEvent) + Send + Sync),
     ) -> Result<Option<TransferCheckpoint>, FmError> {
+        let pause = AtomicBool::new(false);
+        self.upload_with_pause(local_paths, remote_dest, op_id, cancel, &pause, on_progress)
+            .await
+    }
+
+    pub async fn upload_with_pause(
+        &self,
+        local_paths: &[String],
+        remote_dest: &str,
+        op_id: &str,
+        cancel: &AtomicBool,
+        pause: &AtomicBool,
+        on_progress: &(dyn Fn(ProgressEvent) + Send + Sync),
+    ) -> Result<Option<TransferCheckpoint>, FmError> {
         // Collect all local files
         let mut file_list: Vec<(std::path::PathBuf, String, u64)> = Vec::new();
         for local_path in local_paths {
@@ -469,10 +488,20 @@ impl SftpService {
         let files_total = file_list.len() as u32;
         let mut bytes_done: u64 = 0;
         let mut files_done: u32 = 0;
+        let mut completed_files: Vec<String> = Vec::new();
 
         for (local, remote, _size) in &file_list {
             if cancel.load(Ordering::Relaxed) {
                 return Err(FmError::Other("cancelled".into()));
+            }
+            if pause.load(Ordering::Relaxed) {
+                return Ok(Some(TransferCheckpoint {
+                    files_completed: completed_files,
+                    bytes_done,
+                    bytes_total,
+                    files_done,
+                    files_total,
+                }));
             }
 
             // Ensure remote parent directory exists
@@ -494,6 +523,7 @@ impl SftpService {
 
             bytes_done += len;
             files_done += 1;
+            completed_files.push(local.to_string_lossy().into_owned());
 
             on_progress(ProgressEvent {
                 id: op_id.to_string(),
