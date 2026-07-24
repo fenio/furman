@@ -31,6 +31,20 @@ jobs:
             sleep 1
           done
 
+          # Trust only the ephemeral server created for this CI job.
+          mkdir -p ~/.ssh
+          chmod 700 ~/.ssh
+          for i in $(seq 1 30); do
+            if ssh-keyscan -p 2222 localhost > ~/.ssh/known_hosts 2>/dev/null; then
+              chmod 600 ~/.ssh/known_hosts
+              echo "SFTP test server key enrolled"
+              break
+            fi
+            echo "Waiting for SFTP host key... ($i/30)"
+            sleep 1
+          done
+          test -s ~/.ssh/known_hosts
+
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
 
