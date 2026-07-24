@@ -12,6 +12,7 @@ pub mod s3;
 pub mod search;
 pub mod sftp;
 pub mod sync;
+pub mod temp;
 pub mod terminal;
 pub mod volumes;
 pub mod watcher;

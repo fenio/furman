@@ -201,7 +201,7 @@
       }},
       { id: 'select-all', label: 'Select / Deselect all', shortcut: '*', category: 'File', execute: () => {
         const active = panels.active;
-        const allCount = active.entries.filter(e => e.name !== '..').length;
+        const allCount = active.filteredSortedEntries.filter(e => e.name !== '..').length;
         if (active.selectedPaths.size === allCount) active.deselectAll(); else active.selectAll();
       }},
       { id: 'select-by-pattern', label: 'Select by pattern', shortcut: '+', category: 'File', execute: () => {
@@ -676,7 +676,7 @@
         if (!clipboardState.isEmpty) handleClipboardPaste();
         break;
       case 'select-all': {
-        const allCount = active.entries.filter(e => e.name !== '..').length;
+        const allCount = active.filteredSortedEntries.filter(e => e.name !== '..').length;
         if (active.selectedPaths.size === allCount) active.deselectAll();
         else active.selectAll();
         break;
@@ -1108,7 +1108,7 @@
         break;
       case '*': {
         e.preventDefault();
-        const allCount = active.entries.filter(e => e.name !== '..').length;
+        const allCount = active.filteredSortedEntries.filter(e => e.name !== '..').length;
         if (active.selectedPaths.size === allCount) {
           active.deselectAll();
         } else {

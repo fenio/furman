@@ -19,7 +19,7 @@
   interface Props {
     panel: PanelData;
     isActive: boolean;
-    side?: 'left' | 'right';
+    side: 'left' | 'right';
     onActivate?: () => void;
     onEntryActivate?: (index: number) => void;
     onDrop?: (sourceSide: 'left' | 'right', shiftKey: boolean) => void;
@@ -162,10 +162,35 @@
   });
 
   // Clamp cursor when filtered list length changes
+  let previousComparisonFilter = comparisonState.active && comparisonState.filter !== 'all'
+    ? ''
+    : `${comparisonState.filterSide}:${comparisonState.filter}`;
   $effect(() => {
+    const comparisonFilter = `${comparisonState.filterSide}:${comparisonState.filter}`;
+    if (comparisonFilter !== previousComparisonFilter) {
+      previousComparisonFilter = comparisonFilter;
+      panel.cursorIndex = 0;
+      panel.selectionAnchor = 0;
+    }
     const len = panel.filteredSortedEntries.length;
-    if (len > 0 && panel.cursorIndex >= len) {
-      panel.cursorIndex = len - 1;
+    const max = Math.max(0, len - 1);
+    if (panel.cursorIndex < 0 || panel.cursorIndex > max) {
+      panel.cursorIndex = max;
+    }
+    if (panel.selectionAnchor < 0 || panel.selectionAnchor > max) {
+      panel.selectionAnchor = max;
+    }
+    if (comparisonState.active && comparisonState.filterFor(side) !== 'all') {
+      const visiblePaths = new Set(
+        panel.entries
+          .filter((entry) => entry.name !== '..')
+          .filter((entry) => comparisonState.matchesFilter(side, panel.path, entry))
+          .map((entry) => entry.path),
+      );
+      const visibleSelection = [...panel.selectedPaths].filter((path) => visiblePaths.has(path));
+      if (visibleSelection.length !== panel.selectedPaths.size) {
+        panel.selectedPaths = new SvelteSet(visibleSelection);
+      }
     }
   });
 
@@ -186,36 +211,13 @@
     }
   });
 
-  // Comparison: derive a map from entry name → ComparisonStatus for this panel
-  // Pre-builds dirty-directory sets from statusMap (O(M)), then each entry lookup is O(1).
+  // Comparison: derive a map from entry name → ComparisonStatus for this panel.
   const comparisonStatusMap = $derived.by((): Map<string, ComparisonStatus> => {
     if (!comparisonState.active) return new SvelteMap();
-    const statusMap = side === 'right' ? comparisonState.rightStatuses : comparisonState.leftStatuses;
-
-    // Pre-build sets of top-level directories that have modified/changed children
-    const dirModified = new SvelteSet<string>();
-    const dirChanged = new SvelteSet<string>();
-    for (const [key, val] of statusMap) {
-      if (val === 'same') continue;
-      const slashIdx = key.indexOf('/');
-      if (slashIdx > 0) {
-        const topDir = key.substring(0, slashIdx);
-        if (val === 'modified') dirModified.add(topDir);
-        else dirChanged.add(topDir);
-      }
-    }
-
     const result = new SvelteMap<string, ComparisonStatus>();
     for (const entry of panel.filteredSortedEntries) {
-      if (entry.name === '..') continue;
-      const status = statusMap.get(entry.name);
-      if (status) {
-        result.set(entry.name, status);
-      } else if (entry.is_dir) {
-        if (dirModified.has(entry.name) || dirChanged.has(entry.name)) {
-          result.set(entry.name, 'modified');
-        }
-      }
+      const status = comparisonState.statusForEntry(side, panel.path, entry);
+      if (status) result.set(entry.name, status);
     }
     return result;
   });

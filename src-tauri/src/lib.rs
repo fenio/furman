@@ -246,6 +246,8 @@ pub fn run() {
             commands::file::restore_from_trash,
             commands::file::cancel_file_operation,
             commands::file::pause_file_operation,
+            commands::temp::create_temp_dir,
+            commands::temp::cleanup_temp_path,
             // metadata / content commands
             commands::metadata::read_file_text,
             commands::metadata::write_file_text,

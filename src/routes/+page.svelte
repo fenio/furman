@@ -37,6 +37,7 @@
   import { s3BookmarksState } from '$lib/state/s3bookmarks.svelte';
   import { sftpBookmarksState } from '$lib/state/sftpbookmarks.svelte';
   import type { SyncEntry } from '$lib/types';
+  import { closeViewer, closeEditor } from '$lib/actions/viewers';
 
   let _bottomResizing = $state(false);
   let _quakeResizing = $state(false);
@@ -288,17 +289,19 @@
   {/if}
 
   {#if appState.modal === 'viewer'}
-    <Viewer
-      path={appState.viewerPath}
-      mode={appState.viewerMode}
-      onClose={() => appState.closeModal()}
-    />
+    {#key appState.viewerPath}
+      <Viewer
+        path={appState.viewerPath}
+        mode={appState.viewerMode}
+        onClose={closeViewer}
+      />
+    {/key}
   {/if}
 
   {#if appState.modal === 'editor'}
     <Editor
       path={appState.editorPath}
-      onClose={() => appState.closeModal()}
+      onClose={closeEditor}
     />
   {/if}
 

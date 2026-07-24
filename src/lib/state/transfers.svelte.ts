@@ -1,12 +1,12 @@
 import type { ProgressEvent, TransferCheckpoint } from '$lib/types';
-import { cancelFileOperation, pauseFileOperation, copyFiles, moveFiles, deleteFiles, extractArchive } from '$lib/services/tauri';
+import { cancelFileOperation, pauseFileOperation, copyFiles, moveFiles, deleteFiles, extractArchive, createTempDir, cleanupTempPath } from '$lib/services/tauri';
 import { s3Download, s3Upload, s3CopyObjects, s3DeleteObjects, s3UploadEncrypted, type EncryptionConfig } from '$lib/services/s3';
 import { sftpDownload, sftpUpload, sftpDelete } from '$lib/services/sftp';
 import { formatSize } from '$lib/utils/format';
 
 export type TransferStatus = 'queued' | 'running' | 'paused' | 'completed' | 'failed' | 'cancelled';
 type TransferType = 'copy' | 'move' | 'extract' | 'delete';
-type TransferPhase = 'source-to-staging' | 'staging-ready' | 'staging-to-destination' | 'delete-source-ready' | 'delete-source';
+type TransferPhase = 'source-ready' | 'source-to-staging' | 'staging-ready' | 'staging-to-destination' | 'delete-source-ready' | 'delete-source';
 
 export interface Transfer {
   id: string;
@@ -35,6 +35,7 @@ export interface Transfer {
   phase?: TransferPhase;
   pauseRequested?: boolean;
   cancelRequested?: boolean;
+  stagingPath?: string;
   /** Name to focus in the source panel after a move completes. */
   srcFocusName?: string;
   speedBytesPerSec: number;
@@ -233,6 +234,7 @@ class TransfersState {
 
     if (t.status === 'queued' || t.status === 'paused') {
       this.markCancelled(id);
+      await this.releaseStaging(t);
       return;
     }
 
@@ -337,10 +339,12 @@ class TransfersState {
       }
 
       this.throwIfCancelled(t);
+      await this.releaseStaging(t);
       t.checkpoint = null;
       t.phase = undefined;
       this.complete(t.id);
     } catch (err: unknown) {
+      await this.releaseStaging(t);
       const msg = String(err);
       if (msg.includes('cancelled')) {
         this.markCancelled(t.id);
@@ -489,7 +493,13 @@ class TransfersState {
     download: (tempDir: string, checkpoint: TransferCheckpoint | null) => Promise<TransferCheckpoint | null>,
     upload: (sources: string[], checkpoint: TransferCheckpoint | null) => Promise<TransferCheckpoint | null>,
   ): Promise<TransferCheckpoint | null> {
-    const tempDir = `/tmp/furman-xfer-${t.id}`;
+    if (!t.stagingPath) t.stagingPath = await createTempDir('transfer');
+    const tempDir = t.stagingPath;
+    this.throwIfCancelled(t);
+    if (t.pauseRequested && t.phase !== 'source-to-staging') {
+      t.phase = 'source-ready';
+      return this.boundaryCheckpoint(t);
+    }
 
     if (t.phase !== 'staging-ready' && t.phase !== 'staging-to-destination') {
       const checkpoint = t.phase === 'source-to-staging' ? t.checkpoint ?? null : null;
@@ -514,6 +524,7 @@ class TransfersState {
     if (result !== null) return result;
     this.throwIfCancelled(t);
     t.checkpoint = null;
+    await this.releaseStaging(t);
     return null;
   }
 
@@ -554,6 +565,18 @@ class TransfersState {
       files_done: progress?.files_done ?? 0,
       files_total: progress?.files_total ?? 0,
     };
+  }
+
+  private async releaseStaging(t: Transfer) {
+    const path = t.stagingPath;
+    if (!path) return;
+    try {
+      await cleanupTempPath(path);
+    } catch {
+      // Cleanup is best-effort and must not change a completed transfer result.
+    } finally {
+      t.stagingPath = undefined;
+    }
   }
 }
 

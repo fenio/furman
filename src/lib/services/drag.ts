@@ -1,6 +1,7 @@
 import { startDrag } from '@crabnebula/tauri-plugin-drag';
 import { s3DownloadToTemp } from './s3';
 import { sftpDownloadTemp } from './sftp';
+import { cleanupTempPath } from './tauri';
 
 export interface DragSource {
   side: 'left' | 'right';
@@ -79,23 +80,46 @@ export async function startLocalFileDrag(paths: string[], mode: 'copy' | 'move' 
 }
 
 export async function startS3FileDrag(connectionId: string, keys: string[], mode: 'copy' | 'move' = 'copy'): Promise<void> {
-  const tempPaths = await Promise.all(
-    keys.map((key) => s3DownloadToTemp(connectionId, key)),
-  );
-  await startDrag({ item: tempPaths, icon: makeDragIcon(tempPaths.length), mode }, (payload) => {
-    if (payload.result === 'Dropped') {
-      emitInternalDrop(Number(payload.cursorPos.x), Number(payload.cursorPos.y));
-    }
-  });
+  await startRemoteFileDrag(keys, (key) => s3DownloadToTemp(connectionId, key), mode);
 }
 
 export async function startSftpFileDrag(connectionId: string, paths: string[], mode: 'copy' | 'move' = 'copy'): Promise<void> {
-  const tempPaths = await Promise.all(
-    paths.map((p) => sftpDownloadTemp(connectionId, p)),
-  );
-  await startDrag({ item: tempPaths, icon: makeDragIcon(tempPaths.length), mode }, (payload) => {
-    if (payload.result === 'Dropped') {
-      emitInternalDrop(Number(payload.cursorPos.x), Number(payload.cursorPos.y));
+  await startRemoteFileDrag(paths, (path) => sftpDownloadTemp(connectionId, path), mode);
+}
+
+async function startRemoteFileDrag(
+  sources: string[],
+  download: (source: string) => Promise<string>,
+  mode: 'copy' | 'move',
+) {
+  const results = await Promise.allSettled(sources.map(download));
+  const tempPaths = results
+    .filter((result): result is PromiseFulfilledResult<string> => result.status === 'fulfilled')
+    .map((result) => result.value);
+  const failed = results.find((result): result is PromiseRejectedResult => result.status === 'rejected');
+
+  if (failed) {
+    await Promise.allSettled(tempPaths.map(cleanupTempPath));
+    throw failed.reason;
+  }
+
+  let dropped = false;
+  try {
+    await new Promise<void>((resolve, reject) => {
+      startDrag({ item: tempPaths, icon: makeDragIcon(tempPaths.length), mode }, (payload) => {
+        if (payload.result === 'Dropped') {
+          dropped = true;
+          emitInternalDrop(Number(payload.cursorPos.x), Number(payload.cursorPos.y));
+        }
+        resolve();
+      }).catch(reject);
+    });
+  } finally {
+    if (dropped) {
+      // External drop targets may continue reading after accepting the paths.
+      setTimeout(() => void Promise.allSettled(tempPaths.map(cleanupTempPath)), 30 * 60 * 1000);
+    } else {
+      await Promise.allSettled(tempPaths.map(cleanupTempPath));
     }
-  });
+  }
 }

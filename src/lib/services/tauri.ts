@@ -48,6 +48,14 @@ export async function createDirectory(path: string): Promise<void> {
   await invoke('create_directory', { path });
 }
 
+export async function createTempDir(category: string): Promise<string> {
+  return await invoke<string>('create_temp_dir', { category });
+}
+
+export async function cleanupTempPath(path: string): Promise<void> {
+  await invoke('cleanup_temp_path', { path });
+}
+
 export async function copyFiles(
   id: string,
   sources: string[],

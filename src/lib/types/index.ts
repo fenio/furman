@@ -507,6 +507,8 @@ export type PanelBackend = 'local' | 's3' | 'sftp' | 'archive';
 export interface ArchiveInfo {
   archivePath: string;
   internalPath: string;
+  /** Temporary remote archive download owned by this panel. */
+  temporaryPath?: string;
   /** When opened from a remote backend, stores info to restore on exit. */
   remoteOrigin?: {
     backend: PanelBackend;

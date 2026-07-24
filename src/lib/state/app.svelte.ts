@@ -24,6 +24,7 @@ class AppState {
   viewerPath = $state('');
   viewerMode = $state<ViewerMode>('text');
   viewerContent = $state('');
+  viewerTempPath = $state('');
   editorPath = $state('');
   editorContent = $state('');
   editorDirty = $state(false);
@@ -31,6 +32,7 @@ class AppState {
   editorS3Key = $state('');
   editorSftpConnectionId = $state('');
   editorSftpPath = $state('');
+  editorTempPath = $state('');
   confirmMessage = $state('');
   confirmCallback = $state<(() => void) | null>(null);
   confirmAlertOnly = $state(false);

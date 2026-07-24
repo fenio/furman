@@ -1504,48 +1504,49 @@ impl S3Service {
             )));
         }
 
-        // Build temp path: {temp}/furman-preview/{hash}-{filename}
-        let filename = stripped_key.rsplit('/').next().unwrap_or(&stripped_key);
-        let hash = {
-            use std::hash::{Hash, Hasher};
-            let mut hasher = std::collections::hash_map::DefaultHasher::new();
-            key.hash(&mut hasher);
-            format!("{:016x}", hasher.finish())
-        };
-        let safe_name = format!("{}-{}", &hash[..8], filename);
-        let temp_path = std::env::temp_dir().join("furman-preview").join(&safe_name);
+        let filename = crate::commands::temp::safe_filename(
+            stripped_key.rsplit('/').next().unwrap_or(&stripped_key),
+        );
+        let temp_dir = crate::commands::temp::create_temp_dir_path("preview")?;
+        let temp_path = temp_dir.join(filename);
 
-        if let Some(parent) = temp_path.parent() {
-            std::fs::create_dir_all(parent)?;
-        }
+        let result: Result<(), FmError> = async {
+            let resp = self
+                .client
+                .get_object()
+                .bucket(&self.bucket)
+                .key(&stripped_key)
+                .send()
+                .await
+                .map_err(|e| s3err(e.to_string()))?;
 
-        // Download the object
-        let resp = self
-            .client
-            .get_object()
-            .bucket(&self.bucket)
-            .key(&stripped_key)
-            .send()
-            .await
-            .map_err(|e| s3err(e.to_string()))?;
+            let obj_metadata: HashMap<String, String> =
+                resp.metadata().cloned().unwrap_or_default();
+            let body = resp
+                .body
+                .collect()
+                .await
+                .map_err(|e| s3err(e.to_string()))?;
+            tokio::fs::write(&temp_path, body.into_bytes())
+                .await
+                .map_err(FmError::Io)?;
 
-        let obj_metadata: HashMap<String, String> = resp.metadata().cloned().unwrap_or_default();
-        let body = resp
-            .body
-            .collect()
-            .await
-            .map_err(|e| s3err(e.to_string()))?;
-        std::fs::write(&temp_path, body.into_bytes())?;
-
-        // Decrypt if encrypted
-        if let Some(pw) = password {
-            if let Some(enc_params) = super::crypto::EncryptionParams::from_metadata(&obj_metadata)
-            {
-                super::crypto::decrypt_file(&temp_path, pw, &enc_params)?;
+            if let Some(pw) = password {
+                if let Some(enc_params) =
+                    super::crypto::EncryptionParams::from_metadata(&obj_metadata)
+                {
+                    super::crypto::decrypt_file(&temp_path, pw, &enc_params)?;
+                }
+            } else if super::crypto::EncryptionParams::is_encrypted(&obj_metadata) {
+                return Err(s3err("File is encrypted — password required"));
             }
-        } else if super::crypto::EncryptionParams::is_encrypted(&obj_metadata) {
-            let _ = std::fs::remove_file(&temp_path);
-            return Err(s3err("File is encrypted — password required"));
+            Ok(())
+        }
+        .await;
+
+        if let Err(error) = result {
+            let _ = std::fs::remove_dir_all(&temp_dir);
+            return Err(error);
         }
 
         Ok(temp_path.to_string_lossy().to_string())
@@ -1761,25 +1762,20 @@ impl S3Service {
             .await
             .map_err(|e| s3err(e.to_string()))?;
 
-        let filename = stripped_key.rsplit('/').next().unwrap_or(&stripped_key);
-        let short_vid = if version_id.len() > 8 {
-            &version_id[..8]
-        } else {
-            version_id
-        };
-        let safe_name = format!("{short_vid}-{filename}");
-        let temp_path = std::env::temp_dir().join("furman-preview").join(&safe_name);
-
-        if let Some(parent) = temp_path.parent() {
-            std::fs::create_dir_all(parent)?;
-        }
-
         let body = resp
             .body
             .collect()
             .await
             .map_err(|e| s3err(e.to_string()))?;
-        std::fs::write(&temp_path, body.into_bytes())?;
+        let filename = crate::commands::temp::safe_filename(
+            stripped_key.rsplit('/').next().unwrap_or(&stripped_key),
+        );
+        let temp_dir = crate::commands::temp::create_temp_dir_path("preview")?;
+        let temp_path = temp_dir.join(filename);
+        if let Err(error) = std::fs::write(&temp_path, body.into_bytes()) {
+            let _ = std::fs::remove_dir_all(&temp_dir);
+            return Err(FmError::Io(error));
+        }
 
         Ok(temp_path.to_string_lossy().to_string())
     }
