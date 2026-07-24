@@ -7,6 +7,32 @@ import { sftpDownloadTemp } from '$lib/services/sftp';
 import { error } from '$lib/services/log';
 import { promptEncryptionPassword } from './fileops';
 
+let editorOpenGeneration = 0;
+
+function showEditor(
+  filePath: string,
+  target?:
+    | { backend: 's3'; connectionId: string; path: string }
+    | { backend: 'sftp'; connectionId: string; path: string },
+) {
+  appState.editorPath = filePath;
+  appState.editorDirty = false;
+  appState.editorS3ConnectionId = '';
+  appState.editorS3Key = '';
+  appState.editorSftpConnectionId = '';
+  appState.editorSftpPath = '';
+
+  if (target?.backend === 's3') {
+    appState.editorS3ConnectionId = target.connectionId;
+    appState.editorS3Key = target.path;
+  } else if (target?.backend === 'sftp') {
+    appState.editorSftpConnectionId = target.connectionId;
+    appState.editorSftpPath = target.path;
+  }
+
+  appState.modal = 'editor';
+}
+
 // ── Extension constants ─────────────────────────────────────────────────────
 
 export const imageExtensions = new Set(['png', 'jpg', 'jpeg', 'gif', 'bmp', 'svg', 'webp', 'ico']);
@@ -131,17 +157,15 @@ export function openViewer(filePath: string, ext: string | null) {
 }
 
 export function openEditor(filePath: string) {
+  editorOpenGeneration++;
+  statusState.setMessage('');
   if (appState.externalEditor.trim()) {
     openInEditor(filePath, appState.externalEditor.trim()).catch((err) => {
       error(String(err));
     });
     return;
   }
-  appState.editorPath = filePath;
-  appState.editorDirty = false;
-  appState.editorS3ConnectionId = '';
-  appState.editorS3Key = '';
-  appState.modal = 'editor';
+  showEditor(filePath);
 }
 
 export async function openS3Viewer(s3Path: string, ext: string | null, connectionId: string, password?: string) {
@@ -230,44 +254,44 @@ export async function openSftpViewer(sftpPath: string, ext: string | null, conne
 }
 
 export async function openS3Editor(s3Path: string, connectionId: string, password?: string) {
+  const generation = ++editorOpenGeneration;
   if (!password) {
     try {
       const encrypted = await s3IsObjectEncrypted(connectionId, s3Path);
+      if (generation !== editorOpenGeneration) return;
       if (encrypted) {
         promptEncryptionPassword((pw) => {
           openS3Editor(s3Path, connectionId, pw);
         }, 'Decryption password:');
         return;
       }
-    } catch { /* continue without encryption */ }
+    } catch {
+      if (generation !== editorOpenGeneration) return;
+      // Continue without encryption when metadata detection is unavailable.
+    }
   }
 
   statusState.setMessage('Downloading for editing...');
   try {
     const localPath = await s3DownloadToTemp(connectionId, s3Path, password);
-    appState.editorPath = localPath;
-    appState.editorDirty = false;
-    appState.editorS3ConnectionId = connectionId;
-    appState.editorS3Key = s3Path;
-    appState.modal = 'editor';
+    if (generation !== editorOpenGeneration) return;
+    showEditor(localPath, { backend: 's3', connectionId, path: s3Path });
   } catch (err: unknown) {
+    if (generation !== editorOpenGeneration) return;
     error(String(err));
     appState.showAlert('Edit failed: ' + String(err));
   }
 }
 
 export async function openSftpEditor(sftpPath: string, connectionId: string) {
+  const generation = ++editorOpenGeneration;
   statusState.setMessage('Downloading for editing...');
   try {
     const localPath = await sftpDownloadTemp(connectionId, sftpPath);
-    appState.editorPath = localPath;
-    appState.editorDirty = false;
-    appState.editorS3ConnectionId = '';
-    appState.editorS3Key = '';
-    appState.editorSftpConnectionId = connectionId;
-    appState.editorSftpPath = sftpPath;
-    appState.modal = 'editor';
+    if (generation !== editorOpenGeneration) return;
+    showEditor(localPath, { backend: 'sftp', connectionId, path: sftpPath });
   } catch (err: unknown) {
+    if (generation !== editorOpenGeneration) return;
     error(String(err));
     appState.showAlert('Edit failed: ' + String(err));
   }

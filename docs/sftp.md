@@ -14,6 +14,17 @@ Enter the host, port (default 22), and username, then click **Connect** or **Sav
 
 Saved SFTP connections appear in the Connection Manager sidebar. Press **Cmd+S** again while connected to disconnect.
 
+### Host key verification
+
+Furman verifies SSH server keys against `~/.ssh/known_hosts`. Unknown or changed keys are rejected. Before connecting to a new server, verify its fingerprint through a trusted channel and add it with OpenSSH, for example:
+
+```sh
+ssh-keyscan -p 22 example.com | ssh-keygen -lf -
+ssh-keyscan -p 22 example.com >> ~/.ssh/known_hosts
+```
+
+Replace `22` with the configured SSH port. Do not add a key until its displayed fingerprint matches the server administrator's fingerprint.
+
 ## Browsing & Navigation
 
 - Browse remote directories with standard dual-pane navigation

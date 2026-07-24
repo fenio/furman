@@ -107,12 +107,22 @@
 		if (saving || !view) return;
 		saving = true;
 		const text = view.state.doc.toString();
+		const localPath = path;
+		const s3Target = appState.editorS3ConnectionId
+			? { connectionId: appState.editorS3ConnectionId, path: appState.editorS3Key }
+			: null;
+		const sftpTarget = appState.editorSftpConnectionId
+			? { connectionId: appState.editorSftpConnectionId, path: appState.editorSftpPath }
+			: null;
 		try {
-			await writeFileText(path, text);
-			if (appState.editorS3ConnectionId) {
-				await s3PutText(appState.editorS3ConnectionId, appState.editorS3Key, text);
-			} else if (appState.editorSftpConnectionId) {
-				await sftpPutText(appState.editorSftpConnectionId, appState.editorSftpPath, text);
+			if (s3Target && sftpTarget) {
+				throw new Error('Editor has multiple remote destinations');
+			}
+			await writeFileText(localPath, text);
+			if (s3Target) {
+				await s3PutText(s3Target.connectionId, s3Target.path, text);
+			} else if (sftpTarget) {
+				await sftpPutText(sftpTarget.connectionId, sftpTarget.path, text);
 			}
 			originalContent = text;
 			content = text;

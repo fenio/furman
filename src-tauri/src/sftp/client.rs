@@ -31,19 +31,35 @@ pub struct SftpConnection {
 
 // ── SSH Handler ──────────────────────────────────────────────────────────────
 
-/// Minimal SSH client handler — accepts all host keys (TODO: known_hosts).
-pub struct SshHandler;
+/// SSH client handler that verifies server keys against ~/.ssh/known_hosts.
+pub struct SshHandler {
+    host: String,
+    port: u16,
+}
 
 impl client::Handler for SshHandler {
     type Error = russh::Error;
 
     fn check_server_key(
         &mut self,
-        _server_public_key: &ssh_key::PublicKey,
+        server_public_key: &ssh_key::PublicKey,
     ) -> impl Future<Output = Result<bool, Self::Error>> + Send {
-        // Accept all host keys for now
-        // TODO: implement known_hosts verification
-        std::future::ready(Ok(true))
+        let result = russh::keys::known_hosts::known_host_keys(&self.host, self.port)
+            .map_err(russh::Error::from)
+            .and_then(|known_keys| {
+                if known_keys
+                    .iter()
+                    .any(|(_, known_key)| known_key == server_public_key)
+                {
+                    Ok(true)
+                } else if let Some((line, _)) = known_keys.first() {
+                    Err(russh::Error::KeyChanged { line: *line })
+                } else {
+                    Ok(false)
+                }
+            });
+
+        std::future::ready(result)
     }
 }
 
@@ -70,7 +86,10 @@ pub async fn build_sftp_client(
         ..Default::default()
     };
 
-    let handler = SshHandler;
+    let handler = SshHandler {
+        host: host.to_owned(),
+        port,
+    };
     let mut handle = client::connect(Arc::new(config), (host, port), handler)
         .await
         .map_err(|e| sftperr(format!("SSH connect failed: {e}")))?;
