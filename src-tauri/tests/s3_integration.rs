@@ -4,7 +4,7 @@ use app_lib::models::S3PublicAccessBlock;
 use app_lib::s3::client::build_s3_client;
 use app_lib::s3::service::{self, S3Service};
 use common::TestContext;
-use std::sync::atomic::AtomicBool;
+use std::sync::atomic::{AtomicBool, Ordering};
 
 // ═══════════════════════════════════════════════════════════════════════════
 // P1 — Core CRUD
@@ -1124,6 +1124,67 @@ async fn test_download_files() {
     let c2 = std::fs::read_to_string(tmp_dir.path().join("file2.txt")).unwrap();
     assert_eq!(c1, "content1");
     assert_eq!(c2, "content2");
+
+    ctx.cleanup().await;
+}
+
+#[tokio::test]
+async fn test_download_resume_skips_completed_object() {
+    let ctx = TestContext::new().await;
+    ctx.put_object("resume/first.txt", b"first").await;
+    ctx.put_object("resume/second.txt", b"second").await;
+
+    let keys = vec![
+        "resume/first.txt".to_string(),
+        "resume/second.txt".to_string(),
+    ];
+    let tmp_dir = tempfile::tempdir().expect("tempdir");
+    let cancel = AtomicBool::new(false);
+    let pause = AtomicBool::new(false);
+    let pause_after_first = |event: app_lib::models::ProgressEvent| {
+        if event.files_done == 1 {
+            pause.store(true, Ordering::Relaxed);
+        }
+    };
+
+    let checkpoint = ctx
+        .service
+        .download_with_checkpoint(
+            &keys,
+            tmp_dir.path().to_str().unwrap(),
+            "op-dl-resume",
+            &cancel,
+            &pause,
+            &pause_after_first,
+            None,
+            None,
+        )
+        .await
+        .expect("download failed")
+        .expect("download should pause after the first object");
+    assert_eq!(checkpoint.files_completed.len(), 1);
+
+    let completed_name = checkpoint.files_completed[0].rsplit('/').next().unwrap();
+    let completed_local = tmp_dir.path().join(completed_name);
+    tokio::fs::write(&completed_local, b"sentinel").await.unwrap();
+
+    pause.store(false, Ordering::Relaxed);
+    let result = ctx
+        .service
+        .download_with_checkpoint(
+            &keys,
+            tmp_dir.path().to_str().unwrap(),
+            "op-dl-resume",
+            &cancel,
+            &pause,
+            &|_| {},
+            None,
+            Some(&checkpoint),
+        )
+        .await
+        .expect("resumed download failed");
+    assert!(result.is_none());
+    assert_eq!(tokio::fs::read(&completed_local).await.unwrap(), b"sentinel");
 
     ctx.cleanup().await;
 }

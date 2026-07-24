@@ -1,7 +1,7 @@
 use aws_config::BehaviorVersion;
 use aws_credential_types::provider::ProvideCredentials;
 use aws_sdk_s3::Client as S3Client;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::Arc;
@@ -266,6 +266,30 @@ impl S3Service {
         on_progress: &(dyn Fn(ProgressEvent) + Send + Sync),
         password: Option<&str>,
     ) -> Result<Option<TransferCheckpoint>, FmError> {
+        self.download_with_checkpoint(
+            keys,
+            destination,
+            op_id,
+            cancel,
+            pause,
+            on_progress,
+            password,
+            None,
+        )
+        .await
+    }
+
+    pub async fn download_with_checkpoint(
+        &self,
+        keys: &[String],
+        destination: &str,
+        op_id: &str,
+        cancel: &AtomicBool,
+        pause: &AtomicBool,
+        on_progress: &(dyn Fn(ProgressEvent) + Send + Sync),
+        password: Option<&str>,
+        checkpoint: Option<&TransferCheckpoint>,
+    ) -> Result<Option<TransferCheckpoint>, FmError> {
         let dest = PathBuf::from(destination);
 
         // Resolve actual keys: for prefix keys (dirs), list all children
@@ -291,11 +315,16 @@ impl S3Service {
             }
         }
 
-        let files_total = resolved.len() as u32;
-        let bytes_total: u64 = resolved.iter().map(|(_, s)| *s).sum();
-        let mut bytes_done: u64 = 0;
-        let mut files_done: u32 = 0;
-        let mut completed_files: Vec<String> = Vec::new();
+        let mut files_total = resolved.len() as u32;
+        let mut bytes_total: u64 = resolved.iter().map(|(_, s)| *s).sum();
+        let mut bytes_done = checkpoint.map_or(0, |c| c.bytes_done);
+        let mut files_done = checkpoint.map_or(0, |c| c.files_done);
+        let mut completed_files = checkpoint.map_or_else(Vec::new, |c| c.files_completed.clone());
+        let completed: HashSet<String> = completed_files.iter().cloned().collect();
+        if let Some(c) = checkpoint {
+            bytes_total = c.bytes_total;
+            files_total = c.files_total;
+        }
 
         for (key, _size) in &resolved {
             if cancel.load(Ordering::Relaxed) {
@@ -309,6 +338,9 @@ impl S3Service {
                     files_done,
                     files_total,
                 }));
+            }
+            if completed.contains(key) {
+                continue;
             }
 
             let filename = key.rsplit('/').next().unwrap_or(key);
@@ -450,6 +482,18 @@ impl S3Service {
             });
         }
 
+        if cancel.load(Ordering::Relaxed) {
+            return Err(FmError::Other("Operation cancelled".into()));
+        }
+        if pause.load(Ordering::Relaxed) {
+            return Ok(Some(TransferCheckpoint {
+                files_completed: completed_files,
+                bytes_done,
+                bytes_total,
+                files_done,
+                files_total,
+            }));
+        }
         Ok(None)
     }
 
@@ -464,6 +508,30 @@ impl S3Service {
         pause: &AtomicBool,
         on_progress: &(dyn Fn(ProgressEvent) + Send + Sync),
         metadata: Option<&HashMap<String, String>>,
+    ) -> Result<Option<TransferCheckpoint>, FmError> {
+        self.upload_with_checkpoint(
+            sources,
+            dest_prefix,
+            op_id,
+            cancel,
+            pause,
+            on_progress,
+            metadata,
+            None,
+        )
+        .await
+    }
+
+    pub async fn upload_with_checkpoint(
+        &self,
+        sources: &[String],
+        dest_prefix: &str,
+        op_id: &str,
+        cancel: &AtomicBool,
+        pause: &AtomicBool,
+        on_progress: &(dyn Fn(ProgressEvent) + Send + Sync),
+        metadata: Option<&HashMap<String, String>>,
+        checkpoint: Option<&TransferCheckpoint>,
     ) -> Result<Option<TransferCheckpoint>, FmError> {
         // Collect all files to upload (expand directories)
         let mut file_list: Vec<(PathBuf, String)> = Vec::new();
@@ -486,14 +554,19 @@ impl S3Service {
             }
         }
 
-        let files_total = file_list.len() as u32;
-        let bytes_total: u64 = file_list
+        let mut files_total = file_list.len() as u32;
+        let mut bytes_total: u64 = file_list
             .iter()
             .map(|(p, _)| std::fs::metadata(p).map(|m| m.len()).unwrap_or(0))
             .sum();
-        let mut bytes_done: u64 = 0;
-        let mut files_done: u32 = 0;
-        let mut completed_files: Vec<String> = Vec::new();
+        let mut bytes_done = checkpoint.map_or(0, |c| c.bytes_done);
+        let mut files_done = checkpoint.map_or(0, |c| c.files_done);
+        let mut completed_files = checkpoint.map_or_else(Vec::new, |c| c.files_completed.clone());
+        let completed: HashSet<String> = completed_files.iter().cloned().collect();
+        if let Some(c) = checkpoint {
+            bytes_total = c.bytes_total;
+            files_total = c.files_total;
+        }
 
         for (local_path, key) in &file_list {
             if cancel.load(Ordering::Relaxed) {
@@ -507,6 +580,10 @@ impl S3Service {
                     files_done,
                     files_total,
                 }));
+            }
+            let identity = local_path.to_string_lossy().into_owned();
+            if completed.contains(&identity) {
+                continue;
             }
 
             let file_size = std::fs::metadata(local_path).map(|m| m.len()).unwrap_or(0);
@@ -570,7 +647,7 @@ impl S3Service {
             }
 
             files_done += 1;
-            completed_files.push(key.clone());
+            completed_files.push(identity);
 
             on_progress(ProgressEvent {
                 id: op_id.to_string(),
@@ -582,6 +659,18 @@ impl S3Service {
             });
         }
 
+        if cancel.load(Ordering::Relaxed) {
+            return Err(FmError::Other("Operation cancelled".into()));
+        }
+        if pause.load(Ordering::Relaxed) {
+            return Ok(Some(TransferCheckpoint {
+                files_completed: completed_files,
+                bytes_done,
+                bytes_total,
+                files_done,
+                files_total,
+            }));
+        }
         Ok(None)
     }
 
@@ -596,6 +685,32 @@ impl S3Service {
         cancel: &AtomicBool,
         pause: &AtomicBool,
         on_progress: &(dyn Fn(ProgressEvent) + Send + Sync),
+    ) -> Result<Option<TransferCheckpoint>, FmError> {
+        self.upload_encrypted_with_checkpoint(
+            sources,
+            dest_prefix,
+            password,
+            config,
+            op_id,
+            cancel,
+            pause,
+            on_progress,
+            None,
+        )
+        .await
+    }
+
+    pub async fn upload_encrypted_with_checkpoint(
+        &self,
+        sources: &[String],
+        dest_prefix: &str,
+        password: &str,
+        config: &EncryptionConfig,
+        op_id: &str,
+        cancel: &AtomicBool,
+        pause: &AtomicBool,
+        on_progress: &(dyn Fn(ProgressEvent) + Send + Sync),
+        checkpoint: Option<&TransferCheckpoint>,
     ) -> Result<Option<TransferCheckpoint>, FmError> {
         use super::crypto;
 
@@ -619,14 +734,19 @@ impl S3Service {
             }
         }
 
-        let files_total = file_list.len() as u32;
-        let bytes_total: u64 = file_list
+        let mut files_total = file_list.len() as u32;
+        let mut bytes_total: u64 = file_list
             .iter()
             .map(|(p, _)| std::fs::metadata(p).map(|m| m.len()).unwrap_or(0))
             .sum();
-        let mut bytes_done: u64 = 0;
-        let mut files_done: u32 = 0;
-        let mut completed_files: Vec<String> = Vec::new();
+        let mut bytes_done = checkpoint.map_or(0, |c| c.bytes_done);
+        let mut files_done = checkpoint.map_or(0, |c| c.files_done);
+        let mut completed_files = checkpoint.map_or_else(Vec::new, |c| c.files_completed.clone());
+        let completed: HashSet<String> = completed_files.iter().cloned().collect();
+        if let Some(c) = checkpoint {
+            bytes_total = c.bytes_total;
+            files_total = c.files_total;
+        }
         let mut temp_files: Vec<PathBuf> = Vec::new();
 
         for (local_path, key) in &file_list {
@@ -643,6 +763,10 @@ impl S3Service {
                     files_done,
                     files_total,
                 }));
+            }
+            let identity = local_path.to_string_lossy().into_owned();
+            if completed.contains(&identity) {
+                continue;
             }
 
             let filename = local_path
@@ -736,7 +860,7 @@ impl S3Service {
             }
 
             files_done += 1;
-            completed_files.push(key.clone());
+            completed_files.push(identity);
             on_progress(ProgressEvent {
                 id: op_id.to_string(),
                 bytes_done,
@@ -748,6 +872,18 @@ impl S3Service {
         }
 
         crypto::cleanup_temp_files(&temp_files, config.secure_temp_cleanup);
+        if cancel.load(Ordering::Relaxed) {
+            return Err(FmError::Other("Operation cancelled".into()));
+        }
+        if pause.load(Ordering::Relaxed) {
+            return Ok(Some(TransferCheckpoint {
+                files_completed: completed_files,
+                bytes_done,
+                bytes_total,
+                files_done,
+                files_total,
+            }));
+        }
         Ok(None)
     }
 
@@ -782,6 +918,36 @@ impl S3Service {
         pause: &AtomicBool,
         on_progress: &(dyn Fn(ProgressEvent) + Send + Sync),
     ) -> Result<Option<TransferCheckpoint>, FmError> {
+        self.copy_objects_with_checkpoint(
+            src_client,
+            src_bucket,
+            src_keys,
+            dest_client,
+            dest_bucket,
+            dest_prefix,
+            op_id,
+            cancel,
+            pause,
+            on_progress,
+            None,
+        )
+        .await
+    }
+
+    pub async fn copy_objects_with_checkpoint(
+        &self,
+        src_client: &S3Client,
+        src_bucket: &str,
+        src_keys: &[String],
+        dest_client: &S3Client,
+        dest_bucket: &str,
+        dest_prefix: &str,
+        op_id: &str,
+        cancel: &AtomicBool,
+        pause: &AtomicBool,
+        on_progress: &(dyn Fn(ProgressEvent) + Send + Sync),
+        checkpoint: Option<&TransferCheckpoint>,
+    ) -> Result<Option<TransferCheckpoint>, FmError> {
         let mut resolved: Vec<(String, u64)> = Vec::new();
         for raw_key in src_keys {
             let key = strip_s3_prefix(raw_key, src_bucket);
@@ -803,11 +969,16 @@ impl S3Service {
             }
         }
 
-        let files_total = resolved.len() as u32;
-        let bytes_total: u64 = resolved.iter().map(|(_, s)| *s).sum();
-        let mut bytes_done: u64 = 0;
-        let mut files_done: u32 = 0;
-        let mut completed_files: Vec<String> = Vec::new();
+        let mut files_total = resolved.len() as u32;
+        let mut bytes_total: u64 = resolved.iter().map(|(_, s)| *s).sum();
+        let mut bytes_done = checkpoint.map_or(0, |c| c.bytes_done);
+        let mut files_done = checkpoint.map_or(0, |c| c.files_done);
+        let mut completed_files = checkpoint.map_or_else(Vec::new, |c| c.files_completed.clone());
+        let completed: HashSet<String> = completed_files.iter().cloned().collect();
+        if let Some(c) = checkpoint {
+            bytes_total = c.bytes_total;
+            files_total = c.files_total;
+        }
 
         for (key, size) in &resolved {
             if cancel.load(Ordering::Relaxed) {
@@ -821,6 +992,9 @@ impl S3Service {
                     files_done,
                     files_total,
                 }));
+            }
+            if completed.contains(key) {
+                continue;
             }
 
             let filename = key.rsplit('/').next().unwrap_or(key);
@@ -851,6 +1025,18 @@ impl S3Service {
             });
         }
 
+        if cancel.load(Ordering::Relaxed) {
+            return Err(FmError::Other("Operation cancelled".into()));
+        }
+        if pause.load(Ordering::Relaxed) {
+            return Ok(Some(TransferCheckpoint {
+                files_completed: completed_files,
+                bytes_done,
+                bytes_total,
+                files_done,
+                files_total,
+            }));
+        }
         Ok(None)
     }
 

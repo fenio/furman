@@ -279,6 +279,65 @@ async fn test_download_progress_events() {
 }
 
 #[tokio::test]
+async fn test_download_resume_skips_completed_remote_file() {
+    let ctx = SftpTestContext::new().await;
+    ctx.put_file("resume-a.txt", b"first").await;
+    ctx.put_file("resume-b.txt", b"second").await;
+
+    let tmp = tempfile::tempdir().unwrap();
+    let remotes = vec![
+        format!("{}/resume-a.txt", ctx.test_dir),
+        format!("{}/resume-b.txt", ctx.test_dir),
+    ];
+    let cancel = AtomicBool::new(false);
+    let pause = AtomicBool::new(false);
+    let pause_after_first = |event: app_lib::models::ProgressEvent| {
+        if event.files_done == 1 {
+            pause.store(true, Ordering::Relaxed);
+        }
+    };
+
+    let checkpoint = ctx
+        .service
+        .download_with_checkpoint(
+            &remotes,
+            tmp.path().to_str().unwrap(),
+            "op-dl-resume",
+            &cancel,
+            &pause,
+            &pause_after_first,
+            None,
+        )
+        .await
+        .unwrap()
+        .expect("download should pause after the first file");
+    assert_eq!(checkpoint.files_completed.len(), 1);
+
+    let completed_name = checkpoint.files_completed[0].rsplit('/').next().unwrap();
+    let completed_local = tmp.path().join(completed_name);
+    tokio::fs::write(&completed_local, b"sentinel").await.unwrap();
+
+    pause.store(false, Ordering::Relaxed);
+    let result = ctx
+        .service
+        .download_with_checkpoint(
+            &remotes,
+            tmp.path().to_str().unwrap(),
+            "op-dl-resume",
+            &cancel,
+            &pause,
+            &noop_progress(),
+            Some(&checkpoint),
+        )
+        .await
+        .unwrap();
+    assert!(result.is_none());
+    assert_eq!(tokio::fs::read(&completed_local).await.unwrap(), b"sentinel");
+
+    ctx.cleanup().await;
+}
+
+#[tokio::test]
 async fn test_download_scanning_phase() {
     let ctx = SftpTestContext::new().await;
 
