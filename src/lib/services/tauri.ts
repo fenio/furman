@@ -52,22 +52,24 @@ export async function copyFiles(
   id: string,
   sources: string[],
   destination: string,
-  onProgress: (e: ProgressEvent) => void
+  onProgress: (e: ProgressEvent) => void,
+  checkpoint?: TransferCheckpoint | null,
 ): Promise<TransferCheckpoint | null> {
   const channel = new Channel<ProgressEvent>();
   channel.onmessage = onProgress;
-  return await invoke<TransferCheckpoint | null>('copy_files', { id, sources, destination, channel });
+  return await invoke<TransferCheckpoint | null>('copy_files', { id, sources, destination, checkpoint: checkpoint ?? null, channel });
 }
 
 export async function moveFiles(
   id: string,
   sources: string[],
   destination: string,
-  onProgress: (e: ProgressEvent) => void
+  onProgress: (e: ProgressEvent) => void,
+  checkpoint?: TransferCheckpoint | null,
 ): Promise<TransferCheckpoint | null> {
   const channel = new Channel<ProgressEvent>();
   channel.onmessage = onProgress;
-  return await invoke<TransferCheckpoint | null>('move_files', { id, sources, destination, channel });
+  return await invoke<TransferCheckpoint | null>('move_files', { id, sources, destination, checkpoint: checkpoint ?? null, channel });
 }
 
 export async function cancelFileOperation(id: string): Promise<void> {

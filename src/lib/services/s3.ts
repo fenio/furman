@@ -95,10 +95,11 @@ export async function s3Download(
   destination: string,
   onProgress: (e: ProgressEvent) => void,
   password?: string,
+  checkpoint?: TransferCheckpoint | null,
 ): Promise<TransferCheckpoint | null> {
   const channel = new Channel<ProgressEvent>();
   channel.onmessage = onProgress;
-  return await invoke<TransferCheckpoint | null>('s3_download', { id, opId, keys, destination, password: password ?? null, channel });
+  return await invoke<TransferCheckpoint | null>('s3_download', { id, opId, keys, destination, password: password ?? null, checkpoint: checkpoint ?? null, channel });
 }
 
 export async function s3Upload(
@@ -106,11 +107,12 @@ export async function s3Upload(
   opId: string,
   sources: string[],
   destPrefix: string,
-  onProgress: (e: ProgressEvent) => void
+  onProgress: (e: ProgressEvent) => void,
+  checkpoint?: TransferCheckpoint | null,
 ): Promise<TransferCheckpoint | null> {
   const channel = new Channel<ProgressEvent>();
   channel.onmessage = onProgress;
-  return await invoke<TransferCheckpoint | null>('s3_upload', { id, opId, sources, destPrefix, channel });
+  return await invoke<TransferCheckpoint | null>('s3_upload', { id, opId, sources, destPrefix, checkpoint: checkpoint ?? null, channel });
 }
 
 export async function s3CopyObjects(
@@ -119,11 +121,12 @@ export async function s3CopyObjects(
   srcKeys: string[],
   destId: string,
   destPrefix: string,
-  onProgress: (e: ProgressEvent) => void
+  onProgress: (e: ProgressEvent) => void,
+  checkpoint?: TransferCheckpoint | null,
 ): Promise<TransferCheckpoint | null> {
   const channel = new Channel<ProgressEvent>();
   channel.onmessage = onProgress;
-  return await invoke<TransferCheckpoint | null>('s3_copy_objects', { srcId, opId, srcKeys, destId, destPrefix, channel });
+  return await invoke<TransferCheckpoint | null>('s3_copy_objects', { srcId, opId, srcKeys, destId, destPrefix, checkpoint: checkpoint ?? null, channel });
 }
 
 export async function s3HeadObject(
@@ -514,12 +517,14 @@ export async function s3UploadEncrypted(
   password: string,
   onProgress: (e: ProgressEvent) => void,
   encryptionConfig?: EncryptionConfig,
+  checkpoint?: TransferCheckpoint | null,
 ): Promise<TransferCheckpoint | null> {
   const channel = new Channel<ProgressEvent>();
   channel.onmessage = onProgress;
   return await invoke<TransferCheckpoint | null>('s3_upload_encrypted', {
     id, opId, sources, destPrefix, password,
     encryptionConfig: encryptionConfig ?? null,
+    checkpoint: checkpoint ?? null,
     channel,
   });
 }

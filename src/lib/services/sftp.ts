@@ -57,11 +57,12 @@ export async function sftpDownload(
   keys: string[],
   destination: string,
   onProgress: (e: ProgressEvent) => void,
+  checkpoint?: TransferCheckpoint | null,
 ): Promise<TransferCheckpoint | null> {
   const channel = new Channel<ProgressEvent>();
   channel.onmessage = onProgress;
   return await invoke<TransferCheckpoint | null>('sftp_download', {
-    id, opId, keys, destination, channel,
+    id, opId, keys, destination, checkpoint: checkpoint ?? null, channel,
   });
 }
 
@@ -71,11 +72,12 @@ export async function sftpUpload(
   sources: string[],
   remotePrefix: string,
   onProgress: (e: ProgressEvent) => void,
+  checkpoint?: TransferCheckpoint | null,
 ): Promise<TransferCheckpoint | null> {
   const channel = new Channel<ProgressEvent>();
   channel.onmessage = onProgress;
   return await invoke<TransferCheckpoint | null>('sftp_upload', {
-    id, opId, sources, remotePrefix, channel,
+    id, opId, sources, remotePrefix, checkpoint: checkpoint ?? null, channel,
   });
 }
 

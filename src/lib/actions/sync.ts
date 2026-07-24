@@ -1,10 +1,9 @@
 import { panels, s3PathToPrefix } from '$lib/state/panels.svelte';
-import { appState } from '$lib/state/app.svelte';
+import { appState, canSyncBackends } from '$lib/state/app.svelte';
 import { statusState } from '$lib/state/status.svelte';
 import { transfersState } from '$lib/state/transfers.svelte';
 import { copyFiles, deleteFiles } from '$lib/services/tauri';
 import { s3Download, s3Upload, s3CopyObjects, s3DeleteObjects } from '$lib/services/s3';
-import { sftpDelete, sftpDownload, sftpUpload } from '$lib/services/sftp';
 import { error } from '$lib/services/log';
 import type { ProgressEvent, SyncEntry, TransferCheckpoint } from '$lib/types';
 
@@ -18,6 +17,10 @@ export function executeSyncTransfer(detail: {
   destS3Id: string;
 }) {
   const { entries, sourceBackend, sourcePath, sourceS3Id, destBackend, destPath, destS3Id } = detail;
+  if (!canSyncBackends(sourceBackend, destBackend)) {
+    statusState.setMessage('Sync not supported for SFTP/archive panels');
+    return;
+  }
 
   const toCopy = entries.filter((e) => e.status === 'new' || e.status === 'modified');
   const toDelete = entries.filter((e) => e.status === 'deleted');
@@ -49,29 +52,6 @@ export function executeSyncTransfer(detail: {
         } else if (sourceBackend === 's3' && destBackend === 's3') {
           const destPrefix = s3PathToPrefix(destPath, '');
           result = await s3CopyObjects(sourceS3Id, opId, copySourcePaths, destS3Id, destPrefix, onProgress);
-        } else if (sourceBackend === 'sftp' && destBackend === 'local') {
-          const sftpId = panels.active.backend === 'sftp' ? panels.active.sftpConnection?.connectionId : panels.inactive.sftpConnection?.connectionId;
-          if (!sftpId) throw new Error('Missing source SFTP connection');
-          result = await sftpDownload(sftpId, opId, copySourcePaths, destPath, onProgress);
-        } else if (sourceBackend === 'local' && destBackend === 'sftp') {
-          const sftpId = panels.active.backend === 'sftp' ? panels.active.sftpConnection?.connectionId : panels.inactive.sftpConnection?.connectionId;
-          if (!sftpId) throw new Error('Missing destination SFTP connection');
-          result = await sftpUpload(sftpId, opId, copySourcePaths, destPath, onProgress);
-        } else if (sourceBackend === 'sftp' && destBackend === 'sftp') {
-          const srcSftpId = panels.active.backend === 'sftp' ? panels.active.sftpConnection?.connectionId : panels.inactive.sftpConnection?.connectionId;
-          const destSftpId = panels.inactive.backend === 'sftp' ? panels.inactive.sftpConnection?.connectionId : panels.active.sftpConnection?.connectionId;
-          if (!srcSftpId || !destSftpId) throw new Error('Missing SFTP connection');
-          const tempDir = `/tmp/furman-sync-${opId}`;
-          result = await sftpDownload(srcSftpId, opId, copySourcePaths, tempDir, onProgress);
-          if (result !== null) {
-            transfersState.markPaused(opId, result);
-            return;
-          }
-          const downloaded = copySourcePaths.map((s) => {
-            const name = s.replace(/\/+$/, '').split('/').pop()!;
-            return `${tempDir}/${name}`;
-          });
-          result = await sftpUpload(destSftpId, opId, downloaded, destPath, onProgress);
         } else {
           throw new Error(`Unsupported sync: ${sourceBackend} -> ${destBackend}`);
         }
@@ -129,12 +109,10 @@ export async function executeSyncDeletes(
   try {
     if (destBackend === 's3') {
       await s3DeleteObjects(destS3Id, 'sync-del-' + Date.now(), deletePaths);
-    } else if (destBackend === 'sftp') {
-      const sftpId = panels.active.backend === 'sftp' ? panels.active.sftpConnection?.connectionId : panels.inactive.sftpConnection?.connectionId;
-      if (!sftpId) throw new Error('Missing destination SFTP connection');
-      await sftpDelete(sftpId, deletePaths);
-    } else {
+    } else if (destBackend === 'local') {
       await deleteFiles(deletePaths, true);
+    } else {
+      throw new Error(`Unsupported sync destination: ${destBackend}`);
     }
     statusState.setMessage(`Deleted ${toDelete.length} file(s) from destination`);
   } catch (err: unknown) {

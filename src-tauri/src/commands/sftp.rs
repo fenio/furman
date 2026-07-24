@@ -188,6 +188,7 @@ pub async fn sftp_download(
     op_id: String,
     keys: Vec<String>,
     destination: String,
+    checkpoint: Option<TransferCheckpoint>,
     channel: Channel<ProgressEvent>,
 ) -> Result<Option<TransferCheckpoint>, FmError> {
     let flags = {
@@ -207,7 +208,7 @@ pub async fn sftp_download(
         .collect();
 
     let result = svc
-        .download_with_pause(
+        .download_with_checkpoint(
             &remote_paths,
             &destination,
             &op_id,
@@ -216,6 +217,7 @@ pub async fn sftp_download(
             &|evt| {
                 let _ = channel.send(evt);
             },
+            checkpoint.as_ref(),
         )
         .await;
 
@@ -237,6 +239,7 @@ pub async fn sftp_upload(
     op_id: String,
     sources: Vec<String>,
     remote_prefix: String,
+    checkpoint: Option<TransferCheckpoint>,
     channel: Channel<ProgressEvent>,
 ) -> Result<Option<TransferCheckpoint>, FmError> {
     let flags = {
@@ -253,7 +256,7 @@ pub async fn sftp_upload(
     let remote_dest = strip_sftp_prefix(&remote_prefix);
 
     let result = svc
-        .upload_with_pause(
+        .upload_with_checkpoint(
             &sources,
             remote_dest,
             &op_id,
@@ -262,6 +265,7 @@ pub async fn sftp_upload(
             &|evt| {
                 let _ = channel.send(evt);
             },
+            checkpoint.as_ref(),
         )
         .await;
 

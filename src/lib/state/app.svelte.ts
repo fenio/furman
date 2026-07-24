@@ -8,8 +8,14 @@ import { connectionsState } from '$lib/state/connections.svelte';
 import { s3BookmarksState } from '$lib/state/s3bookmarks.svelte';
 import { sftpBookmarksState } from '$lib/state/sftpbookmarks.svelte';
 import { transfersState } from '$lib/state/transfers.svelte';
+import { statusState } from '$lib/state/status.svelte';
 import { s3SetBandwidthLimit, s3SetMultipartConfig } from '$lib/services/s3';
 import type { ViewMode } from '$lib/types';
+
+export function canSyncBackends(source: string, destination: string): boolean {
+  const supported = (backend: string) => backend === 'local' || backend === 's3';
+  return supported(source) && supported(destination);
+}
 
 class AppState {
   theme = $state<'dark' | 'light'>('dark');
@@ -344,6 +350,10 @@ class AppState {
     source: { backend: PanelBackend; path: string; s3Id: string },
     dest: { backend: PanelBackend; path: string; s3Id: string },
   ) {
+    if (!canSyncBackends(source.backend, dest.backend)) {
+      statusState.setMessage('Sync not supported for SFTP/archive panels');
+      return;
+    }
     this.syncSourceBackend = source.backend;
     this.syncSourcePath = source.path;
     this.syncSourceS3Id = source.s3Id;

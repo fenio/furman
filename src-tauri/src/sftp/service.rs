@@ -1,3 +1,4 @@
+use std::collections::HashSet;
 use std::path::Path;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
@@ -233,6 +234,28 @@ impl SftpService {
         pause: &AtomicBool,
         on_progress: &(dyn Fn(ProgressEvent) + Send + Sync),
     ) -> Result<Option<TransferCheckpoint>, FmError> {
+        self.download_with_checkpoint(
+            remote_paths,
+            local_dest,
+            op_id,
+            cancel,
+            pause,
+            on_progress,
+            None,
+        )
+        .await
+    }
+
+    pub async fn download_with_checkpoint(
+        &self,
+        remote_paths: &[String],
+        local_dest: &str,
+        op_id: &str,
+        cancel: &AtomicBool,
+        pause: &AtomicBool,
+        on_progress: &(dyn Fn(ProgressEvent) + Send + Sync),
+        checkpoint: Option<&TransferCheckpoint>,
+    ) -> Result<Option<TransferCheckpoint>, FmError> {
         // Send an initial "scanning" progress event so the UI shows activity
         on_progress(ProgressEvent {
             id: op_id.to_string(),
@@ -302,11 +325,16 @@ impl SftpService {
             "SFTP download: scan complete, {} files, starting download",
             file_list.len()
         );
-        let bytes_total: u64 = file_list.iter().map(|(_, _, s)| s).sum();
-        let files_total = file_list.len() as u32;
-        let mut bytes_done: u64 = 0;
-        let mut files_done: u32 = 0;
-        let mut completed_files: Vec<String> = Vec::new();
+        let mut bytes_total: u64 = file_list.iter().map(|(_, _, s)| s).sum();
+        let mut files_total = file_list.len() as u32;
+        let mut bytes_done = checkpoint.map_or(0, |c| c.bytes_done);
+        let mut files_done = checkpoint.map_or(0, |c| c.files_done);
+        let mut completed_files = checkpoint.map_or_else(Vec::new, |c| c.files_completed.clone());
+        let completed: HashSet<String> = completed_files.iter().cloned().collect();
+        if let Some(c) = checkpoint {
+            bytes_total = c.bytes_total;
+            files_total = c.files_total;
+        }
 
         for (remote, local, _size) in &file_list {
             if cancel.load(Ordering::Relaxed) {
@@ -320,6 +348,9 @@ impl SftpService {
                     files_done,
                     files_total,
                 }));
+            }
+            if completed.contains(remote) {
+                continue;
             }
 
             // Ensure parent directory exists
@@ -372,6 +403,18 @@ impl SftpService {
             });
         }
 
+        if cancel.load(Ordering::Relaxed) {
+            return Err(FmError::Other("cancelled".into()));
+        }
+        if pause.load(Ordering::Relaxed) {
+            return Ok(Some(TransferCheckpoint {
+                files_completed: completed_files,
+                bytes_done,
+                bytes_total,
+                files_done,
+                files_total,
+            }));
+        }
         Ok(None)
     }
 
@@ -466,6 +509,28 @@ impl SftpService {
         pause: &AtomicBool,
         on_progress: &(dyn Fn(ProgressEvent) + Send + Sync),
     ) -> Result<Option<TransferCheckpoint>, FmError> {
+        self.upload_with_checkpoint(
+            local_paths,
+            remote_dest,
+            op_id,
+            cancel,
+            pause,
+            on_progress,
+            None,
+        )
+        .await
+    }
+
+    pub async fn upload_with_checkpoint(
+        &self,
+        local_paths: &[String],
+        remote_dest: &str,
+        op_id: &str,
+        cancel: &AtomicBool,
+        pause: &AtomicBool,
+        on_progress: &(dyn Fn(ProgressEvent) + Send + Sync),
+        checkpoint: Option<&TransferCheckpoint>,
+    ) -> Result<Option<TransferCheckpoint>, FmError> {
         // Collect all local files
         let mut file_list: Vec<(std::path::PathBuf, String, u64)> = Vec::new();
         for local_path in local_paths {
@@ -484,11 +549,16 @@ impl SftpService {
             }
         }
 
-        let bytes_total: u64 = file_list.iter().map(|(_, _, s)| s).sum();
-        let files_total = file_list.len() as u32;
-        let mut bytes_done: u64 = 0;
-        let mut files_done: u32 = 0;
-        let mut completed_files: Vec<String> = Vec::new();
+        let mut bytes_total: u64 = file_list.iter().map(|(_, _, s)| s).sum();
+        let mut files_total = file_list.len() as u32;
+        let mut bytes_done = checkpoint.map_or(0, |c| c.bytes_done);
+        let mut files_done = checkpoint.map_or(0, |c| c.files_done);
+        let mut completed_files = checkpoint.map_or_else(Vec::new, |c| c.files_completed.clone());
+        let completed: HashSet<String> = completed_files.iter().cloned().collect();
+        if let Some(c) = checkpoint {
+            bytes_total = c.bytes_total;
+            files_total = c.files_total;
+        }
 
         for (local, remote, _size) in &file_list {
             if cancel.load(Ordering::Relaxed) {
@@ -502,6 +572,10 @@ impl SftpService {
                     files_done,
                     files_total,
                 }));
+            }
+            let identity = local.to_string_lossy().into_owned();
+            if completed.contains(&identity) {
+                continue;
             }
 
             // Ensure remote parent directory exists
@@ -523,7 +597,7 @@ impl SftpService {
 
             bytes_done += len;
             files_done += 1;
-            completed_files.push(local.to_string_lossy().into_owned());
+            completed_files.push(identity);
 
             on_progress(ProgressEvent {
                 id: op_id.to_string(),
@@ -538,6 +612,18 @@ impl SftpService {
             });
         }
 
+        if cancel.load(Ordering::Relaxed) {
+            return Err(FmError::Other("cancelled".into()));
+        }
+        if pause.load(Ordering::Relaxed) {
+            return Ok(Some(TransferCheckpoint {
+                files_completed: completed_files,
+                bytes_done,
+                bytes_total,
+                files_done,
+                files_total,
+            }));
+        }
         Ok(None)
     }
 

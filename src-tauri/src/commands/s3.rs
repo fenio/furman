@@ -167,6 +167,7 @@ pub async fn s3_download(
     keys: Vec<String>,
     destination: String,
     password: Option<String>,
+    checkpoint: Option<TransferCheckpoint>,
     channel: Channel<ProgressEvent>,
 ) -> Result<Option<TransferCheckpoint>, FmError> {
     let service = get_service(&state, &id)?;
@@ -184,7 +185,7 @@ pub async fn s3_download(
     }
 
     let result = service
-        .download(
+        .download_with_checkpoint(
             &keys,
             &destination,
             &op_id,
@@ -194,6 +195,7 @@ pub async fn s3_download(
                 let _ = channel.send(evt);
             },
             password.as_deref(),
+            checkpoint.as_ref(),
         )
         .await;
 
@@ -212,6 +214,7 @@ pub async fn s3_upload(
     op_id: String,
     sources: Vec<String>,
     dest_prefix: String,
+    checkpoint: Option<TransferCheckpoint>,
     channel: Channel<ProgressEvent>,
 ) -> Result<Option<TransferCheckpoint>, FmError> {
     let service = get_service(&state, &id)?;
@@ -229,7 +232,7 @@ pub async fn s3_upload(
     }
 
     let result = service
-        .upload(
+        .upload_with_checkpoint(
             &sources,
             &dest_prefix,
             &op_id,
@@ -239,6 +242,7 @@ pub async fn s3_upload(
                 let _ = channel.send(evt);
             },
             None,
+            checkpoint.as_ref(),
         )
         .await;
 
@@ -259,6 +263,7 @@ pub async fn s3_upload_encrypted(
     dest_prefix: String,
     password: String,
     encryption_config: Option<crate::s3::crypto::EncryptionConfig>,
+    checkpoint: Option<TransferCheckpoint>,
     channel: Channel<ProgressEvent>,
 ) -> Result<Option<TransferCheckpoint>, FmError> {
     let service = get_service(&state, &id)?;
@@ -277,7 +282,7 @@ pub async fn s3_upload_encrypted(
     }
 
     let result = service
-        .upload_encrypted(
+        .upload_encrypted_with_checkpoint(
             &sources,
             &dest_prefix,
             &password,
@@ -288,6 +293,7 @@ pub async fn s3_upload_encrypted(
             &|evt| {
                 let _ = channel.send(evt);
             },
+            checkpoint.as_ref(),
         )
         .await;
 
@@ -307,6 +313,7 @@ pub async fn s3_copy_objects(
     src_keys: Vec<String>,
     dest_id: String,
     dest_prefix: String,
+    checkpoint: Option<TransferCheckpoint>,
     channel: Channel<ProgressEvent>,
 ) -> Result<Option<TransferCheckpoint>, FmError> {
     let (src_client, src_bucket, dest_client, dest_bucket) = {
@@ -341,7 +348,7 @@ pub async fn s3_copy_objects(
     let service = S3Service::new(src_client.clone(), src_bucket.clone());
 
     let result = service
-        .copy_objects(
+        .copy_objects_with_checkpoint(
             &src_client,
             &src_bucket,
             &src_keys,
@@ -354,6 +361,7 @@ pub async fn s3_copy_objects(
             &|evt| {
                 let _ = channel.send(evt);
             },
+            checkpoint.as_ref(),
         )
         .await;
 

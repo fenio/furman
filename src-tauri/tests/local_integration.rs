@@ -964,3 +964,112 @@ fn copy_cancel_mid_operation() {
     // Should be cancelled (error) since we set cancel after first file progress
     assert!(result.is_err());
 }
+
+#[test]
+fn copy_resume_skips_completed_files_and_accumulates_checkpoint() {
+    let ctx = LocalTestContext::new();
+    ctx.put_file("resume/a.txt", b"first");
+    ctx.put_file("resume/b.txt", b"second");
+    let dst = ctx.create_dest();
+    let sources = vec![ctx.abs("resume")];
+    let flags = OpFlags {
+        cancel: AtomicBool::new(false),
+        pause: AtomicBool::new(false),
+    };
+
+    let pause = &flags.pause;
+    let pause_after_progress = |_event: app_lib::models::ProgressEvent| {
+        pause.store(true, Ordering::Relaxed);
+    };
+    let first = local::copy_files_core_with_checkpoint(
+        "resume-copy",
+        &sources,
+        &dst,
+        &flags,
+        &pause_after_progress,
+        None,
+    )
+    .unwrap()
+    .expect("first pause should return a checkpoint");
+    assert_eq!(first.files_completed.len(), 1);
+
+    let completed_source = std::path::Path::new(&first.files_completed[0]);
+    let relative = completed_source
+        .strip_prefix(ctx.root.path().join("resume"))
+        .unwrap();
+    let completed_dest = std::path::Path::new(&dst).join("resume").join(relative);
+    std::fs::write(&completed_dest, b"sentinel").unwrap();
+
+    flags.pause.store(false, Ordering::Relaxed);
+    let second = local::copy_files_core_with_checkpoint(
+        "resume-copy",
+        &sources,
+        &dst,
+        &flags,
+        &pause_after_progress,
+        Some(&first),
+    )
+    .unwrap()
+    .expect("pause after the final file should return a full checkpoint");
+    assert_eq!(second.files_completed.len(), 2);
+    assert_eq!(second.files_done, 2);
+    assert_eq!(std::fs::read(&completed_dest).unwrap(), b"sentinel");
+
+    flags.pause.store(false, Ordering::Relaxed);
+    let result = local::copy_files_core_with_checkpoint(
+        "resume-copy",
+        &sources,
+        &dst,
+        &flags,
+        &noop_progress(),
+        Some(&second),
+    )
+    .unwrap();
+    assert!(result.is_none());
+    assert_eq!(std::fs::read(&completed_dest).unwrap(), b"sentinel");
+}
+
+#[test]
+fn move_resume_skips_already_renamed_source() {
+    let ctx = LocalTestContext::new();
+    ctx.put_file("first.txt", b"first");
+    ctx.put_file("second.txt", b"second");
+    let dst = ctx.create_dest();
+    let sources = vec![ctx.abs("first.txt"), ctx.abs("second.txt")];
+    let flags = OpFlags {
+        cancel: AtomicBool::new(false),
+        pause: AtomicBool::new(false),
+    };
+
+    let pause = &flags.pause;
+    let pause_after_progress = |_event: app_lib::models::ProgressEvent| {
+        pause.store(true, Ordering::Relaxed);
+    };
+    let checkpoint = local::move_files_core_with_checkpoint(
+        "resume-move",
+        &sources,
+        &dst,
+        &flags,
+        &pause_after_progress,
+        None,
+    )
+    .unwrap()
+    .expect("move should pause after the first rename");
+    assert_eq!(checkpoint.files_completed, vec![sources[0].clone()]);
+    ctx.assert_not_exists("first.txt");
+
+    flags.pause.store(false, Ordering::Relaxed);
+    let result = local::move_files_core_with_checkpoint(
+        "resume-move",
+        &sources,
+        &dst,
+        &flags,
+        &noop_progress(),
+        Some(&checkpoint),
+    )
+    .unwrap();
+    assert!(result.is_none());
+    ctx.assert_file_content("dst/first.txt", b"first");
+    ctx.assert_file_content("dst/second.txt", b"second");
+    ctx.assert_not_exists("second.txt");
+}

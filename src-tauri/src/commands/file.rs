@@ -19,6 +19,7 @@ pub fn copy_files(
     id: String,
     sources: Vec<String>,
     destination: String,
+    checkpoint: Option<TransferCheckpoint>,
     channel: Channel<ProgressEvent>,
     state: tauri::State<'_, FileOpState>,
 ) -> Result<Option<TransferCheckpoint>, FmError> {
@@ -31,9 +32,16 @@ pub fn copy_files(
         map.insert(id.clone(), flags.clone());
     }
 
-    let result = local::copy_files_core(&id, &sources, &destination, &flags, &|event| {
-        let _ = channel.send(event);
-    });
+    let result = local::copy_files_core_with_checkpoint(
+        &id,
+        &sources,
+        &destination,
+        &flags,
+        &|event| {
+            let _ = channel.send(event);
+        },
+        checkpoint.as_ref(),
+    );
 
     // Clean up the flags from state.
     if let Ok(mut map) = state.0.lock() {
@@ -53,6 +61,7 @@ pub fn move_files(
     id: String,
     sources: Vec<String>,
     destination: String,
+    checkpoint: Option<TransferCheckpoint>,
     channel: Channel<ProgressEvent>,
     state: tauri::State<'_, FileOpState>,
 ) -> Result<Option<TransferCheckpoint>, FmError> {
@@ -65,9 +74,16 @@ pub fn move_files(
         map.insert(id.clone(), flags.clone());
     }
 
-    let result = local::move_files_core(&id, &sources, &destination, &flags, &|event| {
-        let _ = channel.send(event);
-    });
+    let result = local::move_files_core_with_checkpoint(
+        &id,
+        &sources,
+        &destination,
+        &flags,
+        &|event| {
+            let _ = channel.send(event);
+        },
+        checkpoint.as_ref(),
+    );
 
     // Clean up the flags from state.
     if let Ok(mut map) = state.0.lock() {

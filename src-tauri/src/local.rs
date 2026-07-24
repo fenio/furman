@@ -5,6 +5,7 @@
 //! without needing a Tauri runtime.
 
 use crate::models::{FmError, ProgressEvent, TransferCheckpoint};
+use std::collections::HashSet;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -82,6 +83,37 @@ pub fn copy_recursive(
     completed_files: &mut Vec<String>,
     last_progress: &mut Instant,
 ) -> Result<CopyResult, FmError> {
+    let mut completed = completed_files.iter().cloned().collect();
+    copy_recursive_with_completed(
+        src,
+        dst,
+        id,
+        bytes_done,
+        bytes_total,
+        files_done,
+        files_total,
+        on_progress,
+        flags,
+        completed_files,
+        &mut completed,
+        last_progress,
+    )
+}
+
+fn copy_recursive_with_completed(
+    src: &Path,
+    dst: &Path,
+    id: &str,
+    bytes_done: &mut u64,
+    bytes_total: u64,
+    files_done: &mut u32,
+    files_total: u32,
+    on_progress: &dyn Fn(ProgressEvent),
+    flags: &OpFlags,
+    completed_files: &mut Vec<String>,
+    completed: &mut HashSet<String>,
+    last_progress: &mut Instant,
+) -> Result<CopyResult, FmError> {
     if flags.cancel.load(Ordering::Relaxed) {
         return Err(FmError::Other("Operation cancelled".into()));
     }
@@ -100,7 +132,7 @@ pub fn copy_recursive(
             let entry = entry?;
             let child_src = entry.path();
             let child_dst = dst.join(entry.file_name());
-            match copy_recursive(
+            match copy_recursive_with_completed(
                 &child_src,
                 &child_dst,
                 id,
@@ -111,6 +143,7 @@ pub fn copy_recursive(
                 on_progress,
                 flags,
                 completed_files,
+                completed,
                 last_progress,
             )? {
                 CopyResult::Done => {}
@@ -118,6 +151,11 @@ pub fn copy_recursive(
             }
         }
     } else {
+        let identity = src.to_string_lossy().into_owned();
+        if completed.contains(&identity) {
+            return Ok(CopyResult::Done);
+        }
+
         // Ensure parent directory exists.
         if let Some(parent) = dst.parent() {
             fs::create_dir_all(parent)?;
@@ -127,7 +165,8 @@ pub fn copy_recursive(
         fs::copy(src, dst)?;
         *bytes_done += size;
         *files_done += 1;
-        completed_files.push(src.to_string_lossy().into_owned());
+        completed_files.push(identity.clone());
+        completed.insert(identity);
 
         // Throttle progress events; always emit first and final
         let now = Instant::now();
@@ -160,6 +199,17 @@ pub fn copy_files_core(
     flags: &OpFlags,
     on_progress: &dyn Fn(ProgressEvent),
 ) -> Result<Option<TransferCheckpoint>, FmError> {
+    copy_files_core_with_checkpoint(id, sources, destination, flags, on_progress, None)
+}
+
+pub fn copy_files_core_with_checkpoint(
+    id: &str,
+    sources: &[String],
+    destination: &str,
+    flags: &OpFlags,
+    on_progress: &dyn Fn(ProgressEvent),
+    checkpoint: Option<&TransferCheckpoint>,
+) -> Result<Option<TransferCheckpoint>, FmError> {
     let dest = PathBuf::from(destination);
 
     // Pre-calculate totals for progress.
@@ -171,9 +221,14 @@ pub fn copy_files_core(
         files_total += count_files(&p);
     }
 
-    let mut bytes_done: u64 = 0;
-    let mut files_done: u32 = 0;
-    let mut completed_files: Vec<String> = Vec::new();
+    let mut bytes_done = checkpoint.map_or(0, |c| c.bytes_done);
+    let mut files_done = checkpoint.map_or(0, |c| c.files_done);
+    let mut completed_files = checkpoint.map_or_else(Vec::new, |c| c.files_completed.clone());
+    let mut completed: HashSet<String> = completed_files.iter().cloned().collect();
+    if let Some(c) = checkpoint {
+        bytes_total = c.bytes_total;
+        files_total = c.files_total;
+    }
     let mut last_progress = Instant::now();
 
     for src in sources {
@@ -183,7 +238,7 @@ pub fn copy_files_core(
             .ok_or_else(|| FmError::Other(format!("invalid source path: {src}")))?;
         let dst_path = dest.join(file_name);
 
-        match copy_recursive(
+        match copy_recursive_with_completed(
             &src_path,
             &dst_path,
             id,
@@ -194,6 +249,7 @@ pub fn copy_files_core(
             on_progress,
             flags,
             &mut completed_files,
+            &mut completed,
             &mut last_progress,
         )? {
             CopyResult::Done => {}
@@ -207,6 +263,19 @@ pub fn copy_files_core(
                 }));
             }
         }
+    }
+
+    if flags.cancel.load(Ordering::Relaxed) {
+        return Err(FmError::Other("Operation cancelled".into()));
+    }
+    if flags.pause.load(Ordering::Relaxed) {
+        return Ok(Some(TransferCheckpoint {
+            files_completed: completed_files,
+            bytes_done,
+            bytes_total,
+            files_done,
+            files_total,
+        }));
     }
     Ok(None)
 }
@@ -223,6 +292,17 @@ pub fn move_files_core(
     flags: &OpFlags,
     on_progress: &dyn Fn(ProgressEvent),
 ) -> Result<Option<TransferCheckpoint>, FmError> {
+    move_files_core_with_checkpoint(id, sources, destination, flags, on_progress, None)
+}
+
+pub fn move_files_core_with_checkpoint(
+    id: &str,
+    sources: &[String],
+    destination: &str,
+    flags: &OpFlags,
+    on_progress: &dyn Fn(ProgressEvent),
+    checkpoint: Option<&TransferCheckpoint>,
+) -> Result<Option<TransferCheckpoint>, FmError> {
     let dest = PathBuf::from(destination);
 
     // Pre-calculate totals.
@@ -234,9 +314,14 @@ pub fn move_files_core(
         files_total += count_files(&p);
     }
 
-    let mut bytes_done: u64 = 0;
-    let mut files_done: u32 = 0;
-    let mut completed_files: Vec<String> = Vec::new();
+    let mut bytes_done = checkpoint.map_or(0, |c| c.bytes_done);
+    let mut files_done = checkpoint.map_or(0, |c| c.files_done);
+    let mut completed_files = checkpoint.map_or_else(Vec::new, |c| c.files_completed.clone());
+    let mut completed: HashSet<String> = completed_files.iter().cloned().collect();
+    if let Some(c) = checkpoint {
+        bytes_total = c.bytes_total;
+        files_total = c.files_total;
+    }
     let mut last_progress = Instant::now();
 
     for src in sources {
@@ -252,6 +337,9 @@ pub fn move_files_core(
                 files_total,
             }));
         }
+        if completed.contains(src) {
+            continue;
+        }
 
         let src_path = PathBuf::from(src);
         let file_name = src_path
@@ -266,6 +354,7 @@ pub fn move_files_core(
             bytes_done += size;
             files_done += count;
             completed_files.push(src.clone());
+            completed.insert(src.clone());
 
             on_progress(ProgressEvent {
                 id: id.to_string(),
@@ -277,7 +366,7 @@ pub fn move_files_core(
             });
         } else {
             // Cross-device: copy then delete source.
-            match copy_recursive(
+            match copy_recursive_with_completed(
                 &src_path,
                 &dst_path,
                 id,
@@ -288,13 +377,29 @@ pub fn move_files_core(
                 on_progress,
                 flags,
                 &mut completed_files,
+                &mut completed,
                 &mut last_progress,
             )? {
                 CopyResult::Done => {
+                    if flags.cancel.load(Ordering::Relaxed) {
+                        return Err(FmError::Other("Operation cancelled".into()));
+                    }
+                    if flags.pause.load(Ordering::Relaxed) {
+                        return Ok(Some(TransferCheckpoint {
+                            files_completed: completed_files,
+                            bytes_done,
+                            bytes_total,
+                            files_done,
+                            files_total,
+                        }));
+                    }
                     if src_path.is_dir() {
                         fs::remove_dir_all(&src_path)?;
                     } else {
                         fs::remove_file(&src_path)?;
+                    }
+                    if completed.insert(src.clone()) {
+                        completed_files.push(src.clone());
                     }
                 }
                 CopyResult::Paused => {
@@ -308,6 +413,19 @@ pub fn move_files_core(
                 }
             }
         }
+    }
+
+    if flags.cancel.load(Ordering::Relaxed) {
+        return Err(FmError::Other("Operation cancelled".into()));
+    }
+    if flags.pause.load(Ordering::Relaxed) {
+        return Ok(Some(TransferCheckpoint {
+            files_completed: completed_files,
+            bytes_done,
+            bytes_total,
+            files_done,
+            files_total,
+        }));
     }
     Ok(None)
 }

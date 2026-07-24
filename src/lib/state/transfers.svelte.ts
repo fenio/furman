@@ -6,6 +6,7 @@ import { formatSize } from '$lib/utils/format';
 
 export type TransferStatus = 'queued' | 'running' | 'paused' | 'completed' | 'failed' | 'cancelled';
 type TransferType = 'copy' | 'move' | 'extract' | 'delete';
+type TransferPhase = 'source-to-staging' | 'staging-ready' | 'staging-to-destination' | 'delete-source-ready' | 'delete-source';
 
 export interface Transfer {
   id: string;
@@ -31,6 +32,9 @@ export interface Transfer {
   encryptionPassword?: string;
   encryptionConfig?: EncryptionConfig;
   checkpoint?: TransferCheckpoint | null;
+  phase?: TransferPhase;
+  pauseRequested?: boolean;
+  cancelRequested?: boolean;
   /** Name to focus in the source panel after a move completes. */
   srcFocusName?: string;
   speedBytesPerSec: number;
@@ -203,6 +207,8 @@ class TransfersState {
     if (t) {
       t.status = 'cancelled';
       t.completedAt = Date.now();
+      t.checkpoint = null;
+      t.phase = undefined;
     }
     this.processQueue();
     if (!this.hasActive && this.queued.length === 0) {
@@ -215,7 +221,7 @@ class TransfersState {
     const t = this.transfers.find((t) => t.id === id);
     if (t) {
       t.status = 'paused';
-      if (checkpoint) t.checkpoint = checkpoint;
+      t.checkpoint = checkpoint ?? null;
     }
     this.processQueue();
   }
@@ -223,14 +229,14 @@ class TransfersState {
   async cancel(id: string) {
     const t = this.transfers.find((t) => t.id === id);
     if (!t) return;
+    if (t.phase === 'delete-source') return;
 
-    if (t.status === 'queued') {
-      // Never started — just remove
-      t.status = 'cancelled';
-      t.completedAt = Date.now();
+    if (t.status === 'queued' || t.status === 'paused') {
+      this.markCancelled(id);
       return;
     }
 
+    t.cancelRequested = true;
     try {
       await cancelFileOperation(id);
     } catch {
@@ -242,6 +248,7 @@ class TransfersState {
     const t = this.transfers.find((t) => t.id === id);
     if (!t || t.status !== 'running') return;
 
+    t.pauseRequested = true;
     try {
       await pauseFileOperation(id);
       // The backend will return a checkpoint via the dispatch promise,
@@ -254,6 +261,8 @@ class TransfersState {
   resume(id: string) {
     const t = this.transfers.find((t) => t.id === id);
     if (!t || t.status !== 'paused') return;
+    t.pauseRequested = false;
+    t.cancelRequested = false;
     t.status = 'queued';
     t.priority = Date.now();
     this.processQueue();
@@ -291,6 +300,14 @@ class TransfersState {
     this.panelVisible = !this.panelVisible;
   }
 
+  canPause(t: Transfer): boolean {
+    return (t.type === 'copy' || t.type === 'move') && !t.id.startsWith('sync-') && t.phase !== 'delete-source';
+  }
+
+  canCancel(t: Transfer): boolean {
+    return t.phase !== 'delete-source';
+  }
+
   /** Dispatch a transfer to the appropriate backend. */
   private async dispatchTransfer(t: Transfer) {
     const onProgress = (e: ProgressEvent) => {
@@ -313,11 +330,15 @@ class TransfersState {
       }
 
       // Check if paused (backend returned checkpoint)
-      if (result) {
+      if (result !== null && result !== undefined) {
+        this.throwIfCancelled(t);
         this.markPaused(t.id, result);
         return;
       }
 
+      this.throwIfCancelled(t);
+      t.checkpoint = null;
+      t.phase = undefined;
       this.complete(t.id);
     } catch (err: unknown) {
       const msg = String(err);
@@ -335,154 +356,204 @@ class TransfersState {
   ): Promise<TransferCheckpoint | null> {
     const { srcBackend, destBackend } = t;
 
+    if (t.type === 'move' && t.phase === 'delete-source-ready') {
+      t.phase = 'delete-source';
+      await this.deleteMoveSources(t);
+      return null;
+    }
+
     if (t.type === 'copy') {
       if (srcBackend === 'local' && destBackend === 'local') {
-        return await copyFiles(t.id, t.sources, t.destination, onProgress);
+        return await copyFiles(t.id, t.sources, t.destination, onProgress, t.checkpoint);
       }
       if (srcBackend === 's3' && destBackend === 'local') {
-        return await s3Download(t.s3SrcConnectionId!, t.id, t.sources, t.destination, onProgress, t.encryptionPassword);
+        return await s3Download(t.s3SrcConnectionId!, t.id, t.sources, t.destination, onProgress, t.encryptionPassword, t.checkpoint);
       }
       if (srcBackend === 'local' && destBackend === 's3') {
         if (t.encryptionPassword) {
-          return await s3UploadEncrypted(t.s3DestConnectionId!, t.id, t.sources, t.s3DestPrefix!, t.encryptionPassword, onProgress, t.encryptionConfig);
+          return await s3UploadEncrypted(t.s3DestConnectionId!, t.id, t.sources, t.s3DestPrefix!, t.encryptionPassword, onProgress, t.encryptionConfig, t.checkpoint);
         }
-        return await s3Upload(t.s3DestConnectionId!, t.id, t.sources, t.s3DestPrefix!, onProgress);
+        return await s3Upload(t.s3DestConnectionId!, t.id, t.sources, t.s3DestPrefix!, onProgress, t.checkpoint);
       }
       if (srcBackend === 's3' && destBackend === 's3') {
         return await s3CopyObjects(
           t.s3SrcConnectionId!, t.id, t.sources,
-          t.s3DestConnectionId!, t.s3DestPrefix!, onProgress,
+          t.s3DestConnectionId!, t.s3DestPrefix!, onProgress, t.checkpoint,
         );
       }
       // SFTP transfers
       if (srcBackend === 'sftp' && destBackend === 'local') {
-        return await sftpDownload(t.sftpSrcConnectionId!, t.id, t.sources, t.destination, onProgress);
+        return await sftpDownload(t.sftpSrcConnectionId!, t.id, t.sources, t.destination, onProgress, t.checkpoint);
       }
       if (srcBackend === 'local' && destBackend === 'sftp') {
-        return await sftpUpload(t.sftpDestConnectionId!, t.id, t.sources, t.sftpDestPath!, onProgress);
+        return await sftpUpload(t.sftpDestConnectionId!, t.id, t.sources, t.sftpDestPath!, onProgress, t.checkpoint);
       }
       if (srcBackend === 'sftp' && destBackend === 'sftp') {
-        // No server-side copy in SFTP — download to temp then upload
-        const tempDir = `/tmp/furman-xfer-${t.id}`;
-        const stagingResult = await sftpDownload(t.sftpSrcConnectionId!, t.id, t.sources, tempDir, onProgress);
-        if (stagingResult !== null) return stagingResult;
-        // Build list of downloaded files for upload
-        const downloaded = t.sources.map((s) => {
-          const name = s.replace(/\/+$/, '').split('/').pop()!;
-          return `${tempDir}/${name}`;
-        });
-        return await sftpUpload(t.sftpDestConnectionId!, t.id, downloaded, t.sftpDestPath!, onProgress);
+        return await this.dispatchStaged(
+          t,
+          (tempDir, checkpoint) => sftpDownload(t.sftpSrcConnectionId!, t.id, t.sources, tempDir, onProgress, checkpoint),
+          (downloaded, checkpoint) => sftpUpload(t.sftpDestConnectionId!, t.id, downloaded, t.sftpDestPath!, onProgress, checkpoint),
+        );
       }
       // Cross-protocol: S3 ↔ SFTP (via temp dir)
       if (srcBackend === 's3' && destBackend === 'sftp') {
-        const tempDir = `/tmp/furman-xfer-${t.id}`;
-        const stagingResult = await s3Download(t.s3SrcConnectionId!, t.id, t.sources, tempDir, onProgress, t.encryptionPassword);
-        if (stagingResult !== null) return stagingResult;
-        const downloaded = t.sources.map((s) => {
-          const name = s.replace(/\/+$/, '').split('/').pop()!;
-          return `${tempDir}/${name}`;
-        });
-        return await sftpUpload(t.sftpDestConnectionId!, t.id, downloaded, t.sftpDestPath!, onProgress);
+        return await this.dispatchStaged(
+          t,
+          (tempDir, checkpoint) => s3Download(t.s3SrcConnectionId!, t.id, t.sources, tempDir, onProgress, t.encryptionPassword, checkpoint),
+          (downloaded, checkpoint) => sftpUpload(t.sftpDestConnectionId!, t.id, downloaded, t.sftpDestPath!, onProgress, checkpoint),
+        );
       }
       if (srcBackend === 'sftp' && destBackend === 's3') {
-        const tempDir = `/tmp/furman-xfer-${t.id}`;
-        const stagingResult = await sftpDownload(t.sftpSrcConnectionId!, t.id, t.sources, tempDir, onProgress);
-        if (stagingResult !== null) return stagingResult;
-        const downloaded = t.sources.map((s) => {
-          const name = s.replace(/\/+$/, '').split('/').pop()!;
-          return `${tempDir}/${name}`;
-        });
-        return await s3Upload(t.s3DestConnectionId!, t.id, downloaded, t.s3DestPrefix!, onProgress);
+        return await this.dispatchStaged(
+          t,
+          (tempDir, checkpoint) => sftpDownload(t.sftpSrcConnectionId!, t.id, t.sources, tempDir, onProgress, checkpoint),
+          (downloaded, checkpoint) => s3Upload(t.s3DestConnectionId!, t.id, downloaded, t.s3DestPrefix!, onProgress, checkpoint),
+        );
       }
     }
 
     if (t.type === 'move') {
       if (srcBackend === 'local' && destBackend === 'local') {
-        return await moveFiles(t.id, t.sources, t.destination, onProgress);
+        return await moveFiles(t.id, t.sources, t.destination, onProgress, t.checkpoint);
       }
       // S3 move = copy/download + delete source
       if (srcBackend === 's3' && destBackend === 'local') {
-        const result = await s3Download(t.s3SrcConnectionId!, t.id, t.sources, t.destination, onProgress, t.encryptionPassword);
+        const result = await s3Download(t.s3SrcConnectionId!, t.id, t.sources, t.destination, onProgress, t.encryptionPassword, t.checkpoint);
         if (result !== null) return result;
-        await s3DeleteObjects(t.s3SrcConnectionId!, t.id + '-del', t.sources);
-        return null;
+        return await this.finishMove(t);
       }
       if (srcBackend === 'local' && destBackend === 's3') {
         let result;
         if (t.encryptionPassword) {
-          result = await s3UploadEncrypted(t.s3DestConnectionId!, t.id, t.sources, t.s3DestPrefix!, t.encryptionPassword, onProgress, t.encryptionConfig);
+          result = await s3UploadEncrypted(t.s3DestConnectionId!, t.id, t.sources, t.s3DestPrefix!, t.encryptionPassword, onProgress, t.encryptionConfig, t.checkpoint);
         } else {
-          result = await s3Upload(t.s3DestConnectionId!, t.id, t.sources, t.s3DestPrefix!, onProgress);
+          result = await s3Upload(t.s3DestConnectionId!, t.id, t.sources, t.s3DestPrefix!, onProgress, t.checkpoint);
         }
         if (result !== null) return result;
-        await deleteFiles(t.sources, true);
-        return null;
+        return await this.finishMove(t);
       }
       if (srcBackend === 's3' && destBackend === 's3') {
         const result = await s3CopyObjects(
           t.s3SrcConnectionId!, t.id, t.sources,
-          t.s3DestConnectionId!, t.s3DestPrefix!, onProgress,
+          t.s3DestConnectionId!, t.s3DestPrefix!, onProgress, t.checkpoint,
         );
         if (result !== null) return result;
-        await s3DeleteObjects(t.s3SrcConnectionId!, t.id + '-del', t.sources);
-        return null;
+        return await this.finishMove(t);
       }
       // SFTP move = download/upload + delete source
       if (srcBackend === 'sftp' && destBackend === 'local') {
-        const result = await sftpDownload(t.sftpSrcConnectionId!, t.id, t.sources, t.destination, onProgress);
+        const result = await sftpDownload(t.sftpSrcConnectionId!, t.id, t.sources, t.destination, onProgress, t.checkpoint);
         if (result !== null) return result;
-        await sftpDelete(t.sftpSrcConnectionId!, t.sources);
-        return null;
+        return await this.finishMove(t);
       }
       if (srcBackend === 'local' && destBackend === 'sftp') {
-        const result = await sftpUpload(t.sftpDestConnectionId!, t.id, t.sources, t.sftpDestPath!, onProgress);
+        const result = await sftpUpload(t.sftpDestConnectionId!, t.id, t.sources, t.sftpDestPath!, onProgress, t.checkpoint);
         if (result !== null) return result;
-        await deleteFiles(t.sources, true);
-        return null;
+        return await this.finishMove(t);
       }
       if (srcBackend === 'sftp' && destBackend === 'sftp') {
-        const tempDir = `/tmp/furman-xfer-${t.id}`;
-        const stagingResult = await sftpDownload(t.sftpSrcConnectionId!, t.id, t.sources, tempDir, onProgress);
-        if (stagingResult !== null) return stagingResult;
-        const downloaded = t.sources.map((s) => {
-          const name = s.replace(/\/+$/, '').split('/').pop()!;
-          return `${tempDir}/${name}`;
-        });
-        const result = await sftpUpload(t.sftpDestConnectionId!, t.id, downloaded, t.sftpDestPath!, onProgress);
+        const result = await this.dispatchStaged(
+          t,
+          (tempDir, checkpoint) => sftpDownload(t.sftpSrcConnectionId!, t.id, t.sources, tempDir, onProgress, checkpoint),
+          (downloaded, checkpoint) => sftpUpload(t.sftpDestConnectionId!, t.id, downloaded, t.sftpDestPath!, onProgress, checkpoint),
+        );
         if (result !== null) return result;
-        await sftpDelete(t.sftpSrcConnectionId!, t.sources);
-        return null;
+        return await this.finishMove(t);
       }
       // Cross-protocol: S3 ↔ SFTP (via temp dir)
       if (srcBackend === 's3' && destBackend === 'sftp') {
-        const tempDir = `/tmp/furman-xfer-${t.id}`;
-        const stagingResult = await s3Download(t.s3SrcConnectionId!, t.id, t.sources, tempDir, onProgress, t.encryptionPassword);
-        if (stagingResult !== null) return stagingResult;
-        const downloaded = t.sources.map((s) => {
-          const name = s.replace(/\/+$/, '').split('/').pop()!;
-          return `${tempDir}/${name}`;
-        });
-        const result = await sftpUpload(t.sftpDestConnectionId!, t.id, downloaded, t.sftpDestPath!, onProgress);
+        const result = await this.dispatchStaged(
+          t,
+          (tempDir, checkpoint) => s3Download(t.s3SrcConnectionId!, t.id, t.sources, tempDir, onProgress, t.encryptionPassword, checkpoint),
+          (downloaded, checkpoint) => sftpUpload(t.sftpDestConnectionId!, t.id, downloaded, t.sftpDestPath!, onProgress, checkpoint),
+        );
         if (result !== null) return result;
-        await s3DeleteObjects(t.s3SrcConnectionId!, t.id + '-del', t.sources);
-        return null;
+        return await this.finishMove(t);
       }
       if (srcBackend === 'sftp' && destBackend === 's3') {
-        const tempDir = `/tmp/furman-xfer-${t.id}`;
-        const stagingResult = await sftpDownload(t.sftpSrcConnectionId!, t.id, t.sources, tempDir, onProgress);
-        if (stagingResult !== null) return stagingResult;
-        const downloaded = t.sources.map((s) => {
-          const name = s.replace(/\/+$/, '').split('/').pop()!;
-          return `${tempDir}/${name}`;
-        });
-        const result = await s3Upload(t.s3DestConnectionId!, t.id, downloaded, t.s3DestPrefix!, onProgress);
+        const result = await this.dispatchStaged(
+          t,
+          (tempDir, checkpoint) => sftpDownload(t.sftpSrcConnectionId!, t.id, t.sources, tempDir, onProgress, checkpoint),
+          (downloaded, checkpoint) => s3Upload(t.s3DestConnectionId!, t.id, downloaded, t.s3DestPrefix!, onProgress, checkpoint),
+        );
         if (result !== null) return result;
-        await sftpDelete(t.sftpSrcConnectionId!, t.sources);
-        return null;
+        return await this.finishMove(t);
       }
     }
 
     throw new Error(`Unsupported transfer: ${t.type} ${srcBackend} -> ${destBackend}`);
+  }
+
+  private async dispatchStaged(
+    t: Transfer,
+    download: (tempDir: string, checkpoint: TransferCheckpoint | null) => Promise<TransferCheckpoint | null>,
+    upload: (sources: string[], checkpoint: TransferCheckpoint | null) => Promise<TransferCheckpoint | null>,
+  ): Promise<TransferCheckpoint | null> {
+    const tempDir = `/tmp/furman-xfer-${t.id}`;
+
+    if (t.phase !== 'staging-ready' && t.phase !== 'staging-to-destination') {
+      const checkpoint = t.phase === 'source-to-staging' ? t.checkpoint ?? null : null;
+      const result = await download(tempDir, checkpoint);
+      if (result !== null) {
+        t.phase = 'source-to-staging';
+        return result;
+      }
+      this.throwIfCancelled(t);
+      t.checkpoint = null;
+      t.phase = 'staging-ready';
+      if (t.pauseRequested) return this.boundaryCheckpoint(t);
+    }
+
+    const downloaded = t.sources.map((source) => {
+      const name = source.replace(/\/+$/, '').split('/').pop()!;
+      return `${tempDir}/${name}`;
+    });
+    const checkpoint = t.phase === 'staging-to-destination' ? t.checkpoint ?? null : null;
+    t.phase = 'staging-to-destination';
+    const result = await upload(downloaded, checkpoint);
+    if (result !== null) return result;
+    this.throwIfCancelled(t);
+    t.checkpoint = null;
+    return null;
+  }
+
+  private async finishMove(t: Transfer): Promise<TransferCheckpoint | null> {
+    this.throwIfCancelled(t);
+    if (t.pauseRequested) {
+      t.phase = 'delete-source-ready';
+      return this.boundaryCheckpoint(t);
+    }
+    t.phase = 'delete-source';
+    await this.deleteMoveSources(t);
+    return null;
+  }
+
+  private async deleteMoveSources(t: Transfer) {
+    this.throwIfCancelled(t);
+    if (t.srcBackend === 's3') {
+      await s3DeleteObjects(t.s3SrcConnectionId!, t.id + '-del', t.sources);
+    } else if (t.srcBackend === 'sftp') {
+      await sftpDelete(t.sftpSrcConnectionId!, t.sources);
+    } else if (t.srcBackend === 'local') {
+      await deleteFiles(t.sources, true);
+    } else {
+      throw new Error(`Unsupported move source: ${t.srcBackend}`);
+    }
+  }
+
+  private throwIfCancelled(t: Transfer) {
+    if (t.cancelRequested) throw new Error('cancelled');
+  }
+
+  private boundaryCheckpoint(t: Transfer): TransferCheckpoint {
+    const progress = t.progress;
+    return {
+      files_completed: [],
+      bytes_done: progress?.bytes_done ?? 0,
+      bytes_total: progress?.bytes_total ?? 0,
+      files_done: progress?.files_done ?? 0,
+      files_total: progress?.files_total ?? 0,
+    };
   }
 }
 

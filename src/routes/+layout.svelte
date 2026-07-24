@@ -5,7 +5,7 @@
   import { listen } from '@tauri-apps/api/event';
   import { invoke } from '@tauri-apps/api/core';
   import { panels, s3PathToPrefix } from '$lib/state/panels.svelte';
-  import { appState } from '$lib/state/app.svelte';
+  import { appState, canSyncBackends } from '$lib/state/app.svelte';
   import { terminalState } from '$lib/state/terminal.svelte';
   import { sidebarState } from '$lib/state/sidebar.svelte';
   import { workspacesState } from '$lib/state/workspaces.svelte';
@@ -176,6 +176,7 @@
     const isS3 = () => panels.active.backend === 's3';
     const isSftp = () => panels.active.backend === 'sftp';
     const isLocal = () => panels.active.backend === 'local';
+    const canSync = () => canSyncBackends(panels.active.backend, panels.inactive.backend);
 
     const cmds: Command[] = [
       // File operations
@@ -257,13 +258,11 @@
       { id: 'sync', label: 'Sync directories', shortcut: `${mod}Y`, category: 'Panel', execute: () => {
         const src = panels.active;
         const dst = panels.inactive;
-        if (src.backend !== 'archive' && dst.backend !== 'archive') {
-          appState.showSync(
-            { backend: src.backend, path: src.path, s3Id: src.s3Connection?.connectionId ?? '' },
-            { backend: dst.backend, path: dst.path, s3Id: dst.s3Connection?.connectionId ?? '' },
-          );
-        }
-      }},
+        appState.showSync(
+          { backend: src.backend, path: src.path, s3Id: src.s3Connection?.connectionId ?? '' },
+          { backend: dst.backend, path: dst.path, s3Id: dst.s3Connection?.connectionId ?? '' },
+        );
+      }, enabled: canSync },
       { id: 'new-tab', label: 'New tab', shortcut: `${mod}${alt}T`, category: 'Panel', execute: () => {
         const side = panels.activePanel;
         const path = panels.active.path;
@@ -777,12 +776,10 @@
       case 'sync': {
         const src = panels.active;
         const dst = panels.inactive;
-        if (src.backend !== 'archive' && dst.backend !== 'archive') {
-          appState.showSync(
-            { backend: src.backend, path: src.path, s3Id: src.s3Connection?.connectionId ?? '' },
-            { backend: dst.backend, path: dst.path, s3Id: dst.s3Connection?.connectionId ?? '' },
-          );
-        }
+        appState.showSync(
+          { backend: src.backend, path: src.path, s3Id: src.s3Connection?.connectionId ?? '' },
+          { backend: dst.backend, path: dst.path, s3Id: dst.s3Connection?.connectionId ?? '' },
+        );
         break;
       }
       case 'shortcuts':

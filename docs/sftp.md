@@ -47,7 +47,7 @@ Replace `22` with the configured SSH port. Do not add a key until its displayed 
 
 ## Sync
 
-Press **Cmd+Y** to sync between an SFTP panel and a local or SFTP panel. Supports the same diff view, exclude patterns, and selective transfer as S3 sync.
+Directory comparison and sync are not currently available for SFTP panels. Copy and move operations remain available between SFTP, local, and S3 panels.
 
 ## Bookmarks
 

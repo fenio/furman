@@ -191,17 +191,23 @@
         {/if}
         <div class="transfer-actions">
           {#if t.status === 'running'}
-            {#if t.type !== 'delete'}
+            {#if transfersState.canPause(t)}
               <button class="tp-btn" onclick={() => transfersState.pause(t.id)}>Pause</button>
             {/if}
-            <button class="tp-btn tp-btn-cancel" onclick={() => transfersState.cancel(t.id)}>Cancel</button>
+            {#if transfersState.canCancel(t)}
+              <button class="tp-btn tp-btn-cancel" onclick={() => transfersState.cancel(t.id)}>Cancel</button>
+            {/if}
           {:else if t.status === 'paused'}
             <button class="tp-btn" onclick={() => transfersState.resume(t.id)}>Resume</button>
-            <button class="tp-btn tp-btn-cancel" onclick={() => transfersState.cancel(t.id)}>Cancel</button>
+            {#if transfersState.canCancel(t)}
+              <button class="tp-btn tp-btn-cancel" onclick={() => transfersState.cancel(t.id)}>Cancel</button>
+            {/if}
           {:else if t.status === 'queued'}
             <button class="tp-btn" onclick={() => transfersState.moveUp(t.id)} title="Move up">&uarr;</button>
             <button class="tp-btn" onclick={() => transfersState.moveDown(t.id)} title="Move down">&darr;</button>
-            <button class="tp-btn tp-btn-cancel" onclick={() => transfersState.cancel(t.id)}>Cancel</button>
+            {#if transfersState.canCancel(t)}
+              <button class="tp-btn tp-btn-cancel" onclick={() => transfersState.cancel(t.id)}>Cancel</button>
+            {/if}
           {:else}
             <button class="tp-btn" onclick={() => transfersState.dismiss(t.id)}>Dismiss</button>
           {/if}
