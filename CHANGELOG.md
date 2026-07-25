@@ -1,5 +1,26 @@
 # Changelog
 
+## [0.3.13] - 2026-07-25
+
+### Fixed
+
+- Fix critical remote operation safety
+- Fix SFTP test host enrollment
+- Fix temp cleanup and comparison filters
+
+### Changed
+
+- Update CHANGELOG.md for v0.3.12
+- Update dependencies and Node.js 26
+
+### Dependencies
+
+- 27 dependency update(s) via Renovate
+
+### Other
+
+- Implement resumable file transfers
+
 ## [0.3.12] - 2026-07-14
 
 ### Fixed
