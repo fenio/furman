@@ -31,9 +31,9 @@ dependencies = [
 
 [[package]]
 name = "aes"
-version = "0.9.1"
+version = "0.9.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f1fc76eaeac4c9164506c466d4ffdd8ec9d0c5bf57ee97177c4d8eceb3a0e138"
+checksum = "f8eb277bec05f56a0e0591f155a484cbd0f4f07ff2905051a48c72f004f7ed58"
 dependencies = [
  "cipher 0.5.2",
  "cpubits",
@@ -48,7 +48,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "fdf011db2e21ce0d575593d749db5554b47fed37aff429e4dc50bc91ac93a028"
 dependencies = [
  "aead",
- "aes 0.9.1",
+ "aes 0.9.2",
  "cipher 0.5.2",
  "ctr",
  "ghash",
@@ -4456,7 +4456,7 @@ version = "0.8.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "63d440a804ec8d6fafbb6b84471e013286658d373248927692ab3366686220ca"
 dependencies = [
- "aes 0.9.1",
+ "aes 0.9.2",
  "aes-gcm",
  "cbc 0.2.1",
  "der 0.8.1",
@@ -5034,7 +5034,7 @@ version = "0.62.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b8b67b5a0d8068c89dcbe9d95df986af7a851d1f3c604525274c37468e60464f"
 dependencies = [
- "aes 0.9.1",
+ "aes 0.9.2",
  "aws-lc-rs",
  "bitflags 2.13.1",
  "block-padding 0.4.2",
@@ -5956,7 +5956,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d801accda99469cde6d73da741422610fdf6508a72d9a69d1b55cb241c720597"
 dependencies = [
  "aead",
- "aes 0.9.1",
+ "aes 0.9.2",
  "aes-gcm",
  "chacha20",
  "cipher 0.5.2",
@@ -6886,9 +6886,9 @@ dependencies = [
 
 [[package]]
 name = "tray-icon"
-version = "0.24.1"
+version = "0.24.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "65ba1e5f6b9ef9fd87e21b9c6f351554dbd717960089168fcfdef854686961dc"
+checksum = "045979e3f037cd18ad1cb2a419dfda133c5c29c9f3453370079f2255d46c257e"
 dependencies = [
  "crossbeam-channel",
  "dirs",
