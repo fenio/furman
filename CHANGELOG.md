@@ -1,5 +1,20 @@
 # Changelog
 
+## [0.3.14] - 2026-07-27
+
+### Fixed
+
+- Fix viewer and editor text selection
+
+### Changed
+
+- Update CHANGELOG.md for v0.3.13
+- Update transitive Rust dependencies
+
+### Dependencies
+
+- 1 dependency update(s) via Renovate
+
 ## [0.3.13] - 2026-07-25
 
 ### Fixed
