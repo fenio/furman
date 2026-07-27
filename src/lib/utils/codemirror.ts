@@ -121,6 +121,9 @@ export const editorTheme = EditorView.theme({
 	'.cm-searchMatch.cm-searchMatch-selected': {
 		backgroundColor: 'rgba(110,168,254,0.5)',
 	},
+	'.cm-selectionMatch': {
+		backgroundColor: 'transparent',
+	},
 	'.cm-panel input': {
 		backgroundColor: 'var(--bg-surface)',
 		color: 'var(--text-primary)',

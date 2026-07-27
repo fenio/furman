@@ -426,6 +426,8 @@
     flex: 1 1 0;
     overflow: auto;
     padding: 4px;
+    user-select: text;
+    -webkit-user-select: text;
   }
 
   .viewer-loading,
