@@ -3,7 +3,7 @@ use std::future::Future;
 use std::sync::{Arc, Mutex};
 
 use russh::client;
-use russh::keys::ssh_key;
+use russh::keys::PublicKeyOrCertificate;
 use russh_sftp::client::SftpSession;
 
 use super::helpers::sftperr;
@@ -42,22 +42,25 @@ impl client::Handler for SshHandler {
 
     fn check_server_key(
         &mut self,
-        server_public_key: &ssh_key::PublicKey,
+        server_identity: &PublicKeyOrCertificate,
     ) -> impl Future<Output = Result<bool, Self::Error>> + Send {
-        let result = russh::keys::known_hosts::known_host_keys(&self.host, self.port)
-            .map_err(russh::Error::from)
-            .and_then(|known_keys| {
-                if known_keys
-                    .iter()
-                    .any(|(_, known_key)| known_key == server_public_key)
-                {
-                    Ok(true)
-                } else if let Some((line, _)) = known_keys.first() {
-                    Err(russh::Error::KeyChanged { line: *line })
-                } else {
-                    Ok(false)
-                }
-            });
+        let result = match server_identity {
+            PublicKeyOrCertificate::PublicKey { key, .. } => {
+                russh::keys::known_hosts::known_host_keys(&self.host, self.port)
+                    .map_err(russh::Error::from)
+                    .and_then(|known_keys| {
+                        if known_keys.iter().any(|(_, known_key)| known_key == key) {
+                            Ok(true)
+                        } else if let Some((line, _)) = known_keys.first() {
+                            Err(russh::Error::KeyChanged { line: *line })
+                        } else {
+                            Ok(false)
+                        }
+                    })
+            }
+            // Certificate trust requires CA, principal, and validity checks.
+            PublicKeyOrCertificate::Certificate(_) => Ok(false),
+        };
 
         std::future::ready(result)
     }
