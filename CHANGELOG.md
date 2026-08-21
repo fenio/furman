@@ -1,5 +1,20 @@
 # Changelog
 
+## [0.3.15] - 2026-08-21
+
+### Changed
+
+- Update CHANGELOG.md for v0.3.14
+- Update CodeMirror
+
+### Dependencies
+
+- 45 dependency update(s) via Renovate
+
+### Other
+
+- Adapt SFTP for russh 0.63
+
 ## [0.3.14] - 2026-07-27
 
 ### Fixed
