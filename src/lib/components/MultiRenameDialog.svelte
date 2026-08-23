@@ -24,6 +24,7 @@
   let findText = $state('');
   let replaceText = $state('');
   let useRegex = $state(false);
+  let regexHelpOpen = $state(false);
   let prefix = $state('');
   let suffix = $state('');
   let numberingEnabled = $state(false);
@@ -178,13 +179,16 @@
     if (e.key === 'Escape') {
       e.preventDefault();
       e.stopPropagation();
-      if (phase === 'edit') onClose();
+      if (regexHelpOpen) regexHelpOpen = false;
+      else if (phase === 'edit') onClose();
       else if (phase === 'progress') cancelled = true;
     }
   }
 
   function handleOverlayClick(e: MouseEvent) {
-    if ((e.target as HTMLElement).classList.contains('dialog-overlay')) {
+    const target = e.target as HTMLElement;
+    if (regexHelpOpen && !target.closest('.regex-help')) regexHelpOpen = false;
+    if (target.classList.contains('dialog-overlay')) {
       if (phase === 'edit') onClose();
     }
   }
@@ -211,6 +215,34 @@
             <label class="regex-toggle">
               <input type="checkbox" bind:checked={useRegex} /> Regex
             </label>
+            <span class="regex-help">
+              <button
+                class="regex-help-btn"
+                type="button"
+                aria-label="Regex help"
+                aria-expanded={regexHelpOpen}
+                aria-controls="regex-help-popup"
+                onclick={() => { regexHelpOpen = !regexHelpOpen; }}
+              >?</button>
+              {#if regexHelpOpen}
+                <span id="regex-help-popup" class="regex-help-popup" role="note">
+                  <strong>JavaScript regular expressions</strong>
+                  <span>Patterns are global, case-sensitive, and apply to the name before its extension. Do not add <code>/</code> delimiters. Use <code>$1</code>, <code>$2</code>, etc. for captured groups.</span>
+                  <span class="regex-example">
+                    <span>Pad one-digit names</span>
+                    <code>Find: ^(\d)(m)$</code>
+                    <code>Replace: 0$1$2</code>
+                    <span>2m.webp &rarr; 02m.webp</span>
+                  </span>
+                  <span class="regex-example">
+                    <span>Remove a suffix</span>
+                    <code>Find: -copy$</code>
+                    <code>Replace: (empty)</code>
+                    <span>report-copy.pdf &rarr; report.pdf</span>
+                  </span>
+                </span>
+              {/if}
+            </span>
           </div>
           <div class="control-row">
             <span class="control-label">Replace:</span>
@@ -429,6 +461,82 @@
 
   .regex-toggle input {
     margin: 0;
+  }
+
+  .regex-help {
+    position: relative;
+    flex-shrink: 0;
+  }
+
+  .regex-help-btn {
+    width: 18px;
+    height: 18px;
+    padding: 0;
+    border: 1px solid var(--border-subtle);
+    border-radius: 50%;
+    background: var(--bg-surface);
+    color: var(--text-secondary);
+    font-family: inherit;
+    font-size: 11px;
+    font-weight: 600;
+    line-height: 16px;
+    cursor: pointer;
+  }
+
+  .regex-help-btn:hover,
+  .regex-help-btn:focus-visible,
+  .regex-help-btn[aria-expanded="true"] {
+    color: var(--text-accent);
+    border-color: var(--border-active);
+    outline: none;
+  }
+
+  .regex-help-popup {
+    position: absolute;
+    top: calc(100% + 6px);
+    right: 0;
+    z-index: 20;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    width: 290px;
+    max-width: calc(100vw - 64px);
+    padding: 12px;
+    border: 1px solid var(--dialog-border);
+    border-radius: var(--radius-md);
+    background: var(--dialog-bg);
+    box-shadow: var(--shadow-dialog);
+    color: var(--text-secondary);
+    font-size: 11px;
+    line-height: 1.45;
+    white-space: normal;
+  }
+
+  .regex-help-popup strong {
+    color: var(--text-primary);
+    font-size: 12px;
+  }
+
+  .regex-help-popup code {
+    padding: 1px 4px;
+    border-radius: 3px;
+    background: var(--bg-surface);
+    color: var(--text-accent);
+    font-family: monospace;
+  }
+
+  .regex-example {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 3px;
+    padding-top: 8px;
+    border-top: 1px solid var(--border-subtle);
+  }
+
+  .regex-example > span:first-child {
+    color: var(--text-primary);
+    font-weight: 600;
   }
 
   .preview-table {
