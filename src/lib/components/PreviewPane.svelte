@@ -43,6 +43,7 @@
 
   let textContent = $state('');
   let highlightedContent = $state('');
+  let textError = $state('');
   let loading = $state(false);
   let debounceTimer: ReturnType<typeof setTimeout> | null = null;
   let loadedPath = $state('');
@@ -92,6 +93,7 @@
       if (loadedPath) {
         textContent = '';
         highlightedContent = '';
+        textError = '';
         loadedPath = '';
       }
       return;
@@ -102,16 +104,18 @@
     loading = true;
     textContent = '';
     highlightedContent = '';
+    textError = '';
     debounceTimer = setTimeout(() => {
       readFileText(currentEntry.path).then((content) => {
         const lines = content.split('\n');
         textContent = lines.slice(0, 200).join('\n');
         if (lines.length > 200) textContent += '\n… (truncated)';
+        if (!textContent) textContent = '(Empty file)';
         const lang = detectLanguage(currentEntry.name);
         highlightedContent = highlightCode(textContent, lang);
         loadedPath = currentEntry.path;
-      }).catch(() => {
-        textContent = '(Unable to read file)';
+      }).catch((err) => {
+        textError = `Unable to read file: ${String(err)}`;
         loadedPath = currentEntry.path;
       }).finally(() => {
         loading = false;
@@ -193,6 +197,8 @@
   {:else if previewType === 'text'}
     {#if loading}
       <div class="preview-loading">Loading...</div>
+    {:else if textError}
+      <div class="preview-error">{textError}</div>
     {:else}
       <pre class="preview-text hljs">{@html highlightedContent}</pre>
     {/if}
@@ -406,6 +412,7 @@
 
   .preview-pdf {
     flex: 1;
+    width: 100%;
     border: none;
     min-height: 0;
     background: white;
@@ -423,6 +430,18 @@
     word-break: break-all;
     min-height: 0;
     tab-size: 4;
+  }
+
+  .preview-error {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 16px;
+    color: var(--text-secondary);
+    font-size: 12px;
+    text-align: center;
+    overflow: auto;
   }
 
   .preview-info-bar {
