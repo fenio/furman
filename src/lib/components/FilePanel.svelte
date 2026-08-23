@@ -1,5 +1,5 @@
 <script lang="ts">
-  import type { PanelData } from '$lib/state/panels.svelte';
+  import { panels, type PanelData } from '$lib/state/panels.svelte';
   import type { SortField, ColumnId } from '$lib/types';
   import { SvelteMap, SvelteSet } from 'svelte/reactivity';
   import { appState } from '$lib/state/app.svelte';
@@ -695,6 +695,19 @@
       </button>
     {/if}
     <button
+      class="swap-toggle"
+      onclick={(e) => {
+        e.stopPropagation();
+        panels.swapPanels();
+      }}
+      title="Swap panels (Alt+S)"
+      aria-label="Swap panels"
+    >
+      <svg viewBox="0 0 24 24" aria-hidden="true">
+        <path d="M4 7h14m0 0-3-3m3 3-3 3M20 17H6m0 0 3-3m-3 3 3 3" />
+      </svg>
+    </button>
+    <button
       class="preview-toggle"
       class:active={previewState.visible}
       onclick={() => previewState.toggle()}
@@ -984,9 +997,9 @@
     opacity: 1;
   }
 
-  .preview-toggle {
+  .preview-toggle,
+  .swap-toggle {
     position: absolute;
-    right: 30px;
     top: 50%;
     transform: translateY(-50%);
     display: flex;
@@ -1002,8 +1015,17 @@
     transition: color var(--transition-fast), opacity var(--transition-fast);
   }
 
+  .preview-toggle {
+    right: 30px;
+  }
+
+  .swap-toggle {
+    right: 54px;
+  }
+
   .preview-toggle:hover,
-  .preview-toggle.active {
+  .preview-toggle.active,
+  .swap-toggle:hover {
     opacity: 1;
   }
 
@@ -1011,7 +1033,8 @@
     color: var(--border-active);
   }
 
-  .preview-toggle svg {
+  .preview-toggle svg,
+  .swap-toggle svg {
     width: 16px;
     height: 16px;
     fill: none;
@@ -1023,7 +1046,7 @@
 
   .backend-indicator {
     position: absolute;
-    right: 54px;
+    right: 78px;
     top: 50%;
     transform: translateY(-50%);
     display: flex;
