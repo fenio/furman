@@ -447,9 +447,11 @@ pub async fn s3_search_objects(
     search_id: String,
     prefix: String,
     query: String,
+    use_regex: bool,
     channel: Channel<SearchEvent>,
 ) -> Result<(), FmError> {
     let service = get_service(&state, &id)?;
+    let matcher = crate::search_matcher::SearchMatcher::new(&query, use_regex)?;
 
     let cancel_flag = Arc::new(AtomicBool::new(false));
     {
@@ -461,7 +463,7 @@ pub async fn s3_search_objects(
     }
 
     service
-        .search_objects(&prefix, &query, &cancel_flag, &|evt| {
+        .search_objects(&prefix, &matcher, &cancel_flag, &|evt| {
             let _ = channel.send(evt);
         })
         .await

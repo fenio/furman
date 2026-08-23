@@ -225,11 +225,12 @@ export async function s3SearchObjects(
   searchId: string,
   prefix: string,
   query: string,
+  useRegex: boolean,
   onEvent: (e: SearchEvent) => void,
 ): Promise<void> {
   const channel = new Channel<SearchEvent>();
   channel.onmessage = onEvent;
-  await invoke('s3_search_objects', { id, searchId, prefix, query, channel });
+  await invoke('s3_search_objects', { id, searchId, prefix, query, useRegex, channel });
 }
 
 // ── Bucket Management ───────────────────────────────────────────────────────

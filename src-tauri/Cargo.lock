@@ -2261,6 +2261,7 @@ dependencies = [
  "objc2-foundation",
  "portable-pty",
  "rand",
+ "regex",
  "reqwest",
  "rmcp",
  "russh",

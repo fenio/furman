@@ -16,11 +16,13 @@
 
   let query = $state('');
   let mode = $state<SearchMode>('name');
+  let useRegex = $state(false);
   let results = $state<SearchResult[]>([]);
   let cursorIndex = $state(0);
   let searching = $state(false);
   let totalFound = $state(0);
   let searchComplete = $state(false);
+  let searchError = $state('');
   let currentSearchId = $state('');
   let inputEl: HTMLInputElement | undefined = $state(undefined);
   let resultsEl: HTMLDivElement | undefined = $state(undefined);
@@ -65,10 +67,11 @@
       await cancelSearch(currentSearchId).catch(() => {});
     }
 
-    if (query.length < 2) {
+    if (query.length < (useRegex ? 1 : 2)) {
       results = [];
       searching = false;
       searchComplete = false;
+      searchError = '';
       totalFound = 0;
       currentSearchId = '';
       return;
@@ -80,6 +83,7 @@
     cursorIndex = 0;
     totalFound = 0;
     searchComplete = false;
+    searchError = '';
     searching = true;
 
     const handleEvent = (event: SearchEvent) => {
@@ -101,12 +105,13 @@
           // Extract prefix from s3://bucket/prefix path
           const m = root.match(/^s3:\/\/[^/]+\/(.*)$/);
           const prefix = m ? m[1] : '';
-          return s3SearchObjects(s3ConnectionId, id, prefix, query, handleEvent);
+          return s3SearchObjects(s3ConnectionId, id, prefix, query, useRegex, handleEvent);
         })()
-      : searchFiles(id, root, query, mode, handleEvent);
+      : searchFiles(id, root, query, mode, useRegex, handleEvent);
 
-    searchPromise.catch(() => {
+    searchPromise.catch((error: unknown) => {
       if (id === currentSearchId) {
+        searchError = String(error);
         searching = false;
         searchComplete = true;
       }
@@ -123,6 +128,11 @@
   function handleModeChange(newMode: SearchMode) {
     mode = newMode;
     // Re-trigger search with the new mode.
+    clearTimeout(debounceTimer);
+    doSearch();
+  }
+
+  function handleRegexChange() {
     clearTimeout(debounceTimer);
     doSearch();
   }
@@ -216,23 +226,34 @@
           bind:value={query}
           bind:this={inputEl}
           oninput={handleInput}
-          placeholder={mode === 'name' ? 'File or directory name...' : 'Search file contents...'}
+          placeholder={useRegex ? 'Regular expression...' : mode === 'name' ? 'File or directory name...' : 'Search file contents...'}
+          aria-invalid={searchError ? 'true' : undefined}
+          aria-describedby={searchError ? 'search-error' : undefined}
         />
       </div>
 
-      {#if backend !== 's3'}
-        <div class="mode-toggle">
-          <button
-            class="mode-btn"
-            class:active={mode === 'name'}
-            onclick={() => handleModeChange('name')}
-          >Name</button>
-          <button
-            class="mode-btn"
-            class:active={mode === 'content'}
-            onclick={() => handleModeChange('content')}
-          >Content</button>
-        </div>
+      <div class="search-options">
+        {#if backend !== 's3'}
+          <div class="mode-toggle">
+            <button
+              class="mode-btn"
+              class:active={mode === 'name'}
+              onclick={() => handleModeChange('name')}
+            >Name</button>
+            <button
+              class="mode-btn"
+              class:active={mode === 'content'}
+              onclick={() => handleModeChange('content')}
+            >Content</button>
+          </div>
+        {/if}
+        <label class="regex-toggle" title="Case-insensitive Rust regular expression">
+          <input type="checkbox" bind:checked={useRegex} onchange={handleRegexChange} />
+          Regex
+        </label>
+      </div>
+      {#if searchError}
+        <div id="search-error" class="search-error">{searchError}</div>
       {/if}
 
       <div class="results-list" bind:this={resultsEl}>
@@ -355,7 +376,32 @@
     border: 1px solid var(--border-subtle);
     border-radius: var(--radius-sm);
     overflow: hidden;
-    align-self: flex-start;
+  }
+
+  .search-options {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+
+  .regex-toggle {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    color: var(--text-secondary);
+    font-size: 12px;
+    cursor: pointer;
+  }
+
+  .regex-toggle input {
+    margin: 0;
+  }
+
+  .search-error {
+    color: var(--error-color);
+    font-size: 11px;
+    line-height: 1.4;
+    white-space: pre-wrap;
   }
 
   .mode-btn {

@@ -1,4 +1,5 @@
 use crate::models::{FmError, SearchDone, SearchEvent, SearchResult};
+use crate::search_matcher::SearchMatcher;
 use std::collections::HashMap;
 use std::fs;
 use std::io::{BufRead, BufReader};
@@ -25,9 +26,11 @@ pub fn search_files(
     root: String,
     query: String,
     mode: String, // "name" | "content"
+    use_regex: bool,
     channel: Channel<SearchEvent>,
     state: tauri::State<'_, SearchState>,
 ) -> Result<(), FmError> {
+    let matcher = SearchMatcher::new(&query, use_regex)?;
     let cancel_flag = Arc::new(AtomicBool::new(false));
     {
         let mut map = state.0.lock().map_err(|e| FmError::Other(e.to_string()))?;
@@ -37,7 +40,7 @@ pub fn search_files(
     // Spawn a thread for the blocking directory walk.
     // The channel streams results back to the frontend as they're found.
     std::thread::spawn(move || {
-        do_search(&root, &query, &mode, &channel, &cancel_flag);
+        do_search(&root, &mode, &matcher, &channel, &cancel_flag);
     });
 
     Ok(())
@@ -56,12 +59,11 @@ pub fn cancel_search(id: String, state: tauri::State<'_, SearchState>) -> Result
 
 fn do_search(
     root: &str,
-    query: &str,
     mode: &str,
+    matcher: &SearchMatcher,
     channel: &Channel<SearchEvent>,
     cancel_flag: &Arc<AtomicBool>,
 ) {
-    let query_lower = query.to_lowercase();
     let is_content = mode == "content";
     let root_path = PathBuf::from(root);
 
@@ -119,7 +121,7 @@ fn do_search(
                 if file_size > MAX_CONTENT_FILE_SIZE {
                     continue;
                 }
-                if let Some((line_num, snippet)) = search_file_content(&path, &query_lower) {
+                if let Some((line_num, snippet)) = search_file_content(&path, matcher) {
                     total_found += 1;
                     if streamed < MAX_STREAMED_RESULTS {
                         let _ = channel.send(SearchEvent::Result(SearchResult {
@@ -134,8 +136,8 @@ fn do_search(
                     }
                 }
             } else {
-                // Name search: case-insensitive substring match.
-                if file_name.to_lowercase().contains(&query_lower) {
+                // Name search: literal substring or regular expression.
+                if matcher.is_match(&file_name) {
                     total_found += 1;
                     if streamed < MAX_STREAMED_RESULTS {
                         let _ = channel.send(SearchEvent::Result(SearchResult {
@@ -161,9 +163,9 @@ fn do_search(
 
 // ── Helpers ─────────────────────────────────────────────────────────────────
 
-/// Search a file's content line-by-line for a case-insensitive substring match.
+/// Search a file's content line-by-line and return the first match.
 /// Returns the first match as (line_number, trimmed_snippet).
-fn search_file_content(path: &PathBuf, query_lower: &str) -> Option<(u32, String)> {
+fn search_file_content(path: &PathBuf, matcher: &SearchMatcher) -> Option<(u32, String)> {
     let file = fs::File::open(path).ok()?;
     let reader = BufReader::new(file);
 
@@ -172,7 +174,7 @@ fn search_file_content(path: &PathBuf, query_lower: &str) -> Option<(u32, String
             Ok(l) => l,
             Err(_) => return None, // binary / non-UTF-8 — skip entire file
         };
-        if line.to_lowercase().contains(query_lower) {
+        if matcher.is_match(&line) {
             let trimmed = line.trim().to_string();
             // Cap snippet length for the frontend.
             let snippet = if trimmed.len() > 200 {

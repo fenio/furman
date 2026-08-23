@@ -7,6 +7,7 @@ pub mod model_inspector;
 pub mod models;
 pub mod oidc;
 pub mod s3;
+mod search_matcher;
 pub mod sftp;
 
 use commands::disk_usage::DiskUsageState;

@@ -201,11 +201,12 @@ export async function searchFiles(
   root: string,
   query: string,
   mode: SearchMode,
+  useRegex: boolean,
   onEvent: (e: SearchEvent) => void
 ): Promise<void> {
   const channel = new Channel<SearchEvent>();
   channel.onmessage = onEvent;
-  await invoke('search_files', { id, root, query, mode, channel });
+  await invoke('search_files', { id, root, query, mode, useRegex, channel });
 }
 
 export async function cancelSearch(id: string): Promise<void> {
