@@ -1393,10 +1393,12 @@ impl S3Service {
     pub async fn search_objects(
         &self,
         prefix: &str,
-        matcher: &crate::search_matcher::SearchMatcher,
+        query: &str,
+        use_regex: bool,
         cancel: &AtomicBool,
         on_result: &(dyn Fn(SearchEvent) + Send + Sync),
     ) -> Result<(), FmError> {
+        let matcher = crate::search_matcher::SearchMatcher::new(query, use_regex)?;
         let mut continuation_token: Option<String> = None;
         let mut total_found: u32 = 0;
         let mut streamed: u32 = 0;

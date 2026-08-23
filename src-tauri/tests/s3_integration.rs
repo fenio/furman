@@ -960,7 +960,7 @@ async fn test_search_objects() {
     let results = std::sync::Mutex::new(Vec::new());
 
     ctx.service
-        .search_objects("search/", "hello", &cancel, &|evt| {
+        .search_objects("search/", "hello", false, &cancel, &|evt| {
             results.lock().unwrap().push(evt);
         })
         .await
