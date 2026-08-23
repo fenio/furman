@@ -1394,10 +1394,11 @@ impl S3Service {
         &self,
         prefix: &str,
         query: &str,
+        use_regex: bool,
         cancel: &AtomicBool,
         on_result: &(dyn Fn(SearchEvent) + Send + Sync),
     ) -> Result<(), FmError> {
-        let query_lower = query.to_lowercase();
+        let matcher = crate::search_matcher::SearchMatcher::new(query, use_regex)?;
         let mut continuation_token: Option<String> = None;
         let mut total_found: u32 = 0;
         let mut streamed: u32 = 0;
@@ -1443,7 +1444,7 @@ impl S3Service {
                     continue;
                 }
 
-                if filename.to_lowercase().contains(&query_lower) {
+                if matcher.is_match(filename) {
                     total_found += 1;
                     if streamed < MAX_STREAMED {
                         let size = obj.size().unwrap_or(0) as u64;

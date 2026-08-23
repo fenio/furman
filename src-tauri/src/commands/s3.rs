@@ -447,6 +447,7 @@ pub async fn s3_search_objects(
     search_id: String,
     prefix: String,
     query: String,
+    use_regex: bool,
     channel: Channel<SearchEvent>,
 ) -> Result<(), FmError> {
     let service = get_service(&state, &id)?;
@@ -461,7 +462,7 @@ pub async fn s3_search_objects(
     }
 
     service
-        .search_objects(&prefix, &query, &cancel_flag, &|evt| {
+        .search_objects(&prefix, &query, use_regex, &cancel_flag, &|evt| {
             let _ = channel.send(evt);
         })
         .await
