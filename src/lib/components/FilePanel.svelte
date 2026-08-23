@@ -14,6 +14,7 @@
   import BreadcrumbBar from './BreadcrumbBar.svelte';
   import ContextMenu from './ContextMenu.svelte';
   import { comparisonState, type ComparisonStatus } from '$lib/state/comparison.svelte';
+  import { previewState } from '$lib/state/preview.svelte';
   import { ALL_COLUMNS } from '$lib/utils/columns';
 
   interface Props {
@@ -693,7 +694,25 @@
         <span class="backend-label">Archive</span>
       </button>
     {/if}
-    <button class="view-toggle" onclick={() => panel.toggleViewMode()} title={panel.viewMode === 'list' ? 'Switch to icon view' : panel.viewMode === 'icon' ? 'Switch to column view' : 'Switch to list view'}>
+    <button
+      class="preview-toggle"
+      class:active={previewState.visible}
+      onclick={() => previewState.toggle()}
+      title={previewState.visible ? 'Hide preview (Alt+P)' : 'Show preview (Alt+P)'}
+      aria-label={previewState.visible ? 'Hide preview' : 'Show preview'}
+      aria-pressed={previewState.visible}
+    >
+      <svg viewBox="0 0 24 24" aria-hidden="true">
+        <path d="M2.25 12s3.5-6 9.75-6 9.75 6 9.75 6-3.5 6-9.75 6S2.25 12 2.25 12Z" />
+        <circle cx="12" cy="12" r="2.75" />
+      </svg>
+    </button>
+    <button
+      class="view-toggle"
+      onclick={() => panel.toggleViewMode()}
+      title={panel.viewMode === 'list' ? 'Switch to icon view' : panel.viewMode === 'icon' ? 'Switch to column view' : 'Switch to list view'}
+      aria-label={panel.viewMode === 'list' ? 'Switch to icon view' : panel.viewMode === 'icon' ? 'Switch to column view' : 'Switch to list view'}
+    >
       {panel.viewMode === 'list' ? '\u229E' : panel.viewMode === 'icon' ? '\u25A5' : '\u2630'}
     </button>
   </div>
@@ -965,9 +984,46 @@
     opacity: 1;
   }
 
-  .backend-indicator {
+  .preview-toggle {
     position: absolute;
     right: 30px;
+    top: 50%;
+    transform: translateY(-50%);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: none;
+    border: none;
+    color: var(--header-text);
+    cursor: pointer;
+    padding: 2px 4px;
+    line-height: 1;
+    opacity: 0.6;
+    transition: color var(--transition-fast), opacity var(--transition-fast);
+  }
+
+  .preview-toggle:hover,
+  .preview-toggle.active {
+    opacity: 1;
+  }
+
+  .preview-toggle.active {
+    color: var(--border-active);
+  }
+
+  .preview-toggle svg {
+    width: 16px;
+    height: 16px;
+    fill: none;
+    stroke: currentColor;
+    stroke-width: 1.7;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+  }
+
+  .backend-indicator {
+    position: absolute;
+    right: 54px;
     top: 50%;
     transform: translateY(-50%);
     display: flex;
