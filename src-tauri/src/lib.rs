@@ -169,7 +169,11 @@ pub fn run() {
                 .item(&MenuItemBuilder::with_id("toggle-theme", "Toggle Theme").accelerator("CmdOrCtrl+Shift+L").build(handle)?)
                 .separator()
                 .item(&MenuItemBuilder::with_id("refresh", "Refresh").accelerator("CmdOrCtrl+Shift+R").build(handle)?)
-                .item(&MenuItemBuilder::with_id("swap-panels", "Swap Panels").build(handle)?)
+                .item(
+                    &MenuItemBuilder::with_id("swap-panels", "Swap Panels")
+                        .accelerator("Alt+S")
+                        .build(handle)?,
+                )
                 .item(&MenuItemBuilder::with_id("equal-panels", "Equal Panels").build(handle)?)
                 .item(&MenuItemBuilder::with_id("compare", "Compare Dirs").accelerator("CmdOrCtrl+Shift+D").build(handle)?)
                 .build()?;

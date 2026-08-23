@@ -233,6 +233,7 @@
 
       // Panel
       { id: 'toggle-layout', label: 'Toggle single / dual pane', shortcut: `${mod}P`, category: 'Panel', execute: () => appState.toggleLayout() },
+      { id: 'swap-panels', label: 'Swap panels', shortcut: `${alt}S`, category: 'Panel', execute: () => panels.swapPanels() },
       { id: 'toggle-sidebar', label: 'Toggle sidebar', shortcut: `${mod}B`, category: 'Panel', execute: () => {
         if (sidebarState.focused) sidebarState.toggle();
         else if (sidebarState.visible) sidebarState.focus();
