@@ -54,7 +54,7 @@
 		"@xterm/xterm": "^6.0.0",
 		"chart.js": "^4.5.1",
 		"codemirror": "^6.0.2",
-		"codemirror-lang-hcl": "^0.1.0",
+		"codemirror-lang-hcl": "^0.2.0",
 		"highlight.js": "^11.11.1"
 	}
 }
