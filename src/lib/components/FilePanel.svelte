@@ -15,6 +15,7 @@
   import ContextMenu from './ContextMenu.svelte';
   import { comparisonState, type ComparisonStatus } from '$lib/state/comparison.svelte';
   import { previewState } from '$lib/state/preview.svelte';
+  import { sidebarState } from '$lib/state/sidebar.svelte';
   import { ALL_COLUMNS } from '$lib/utils/columns';
 
   interface Props {
@@ -321,6 +322,16 @@
       if (entry && entry.is_dir && panel.backend === 'local') {
         const targetPath = entry.name === '..' ? panel.path : entry.path;
         window.dispatchEvent(new CustomEvent('disk-usage-request', { detail: targetPath }));
+      }
+      return;
+    }
+    if (key === 'add-favorite') {
+      const entry = panel.currentEntry;
+      if (entry?.is_dir) {
+        const path = entry.path.replace(/\/+$/, '') || '/';
+        const name = path.split('/').pop() || path;
+        sidebarState.addFavorite(name, path);
+        statusState.setMessage(`Added ${name} to favorites`);
       }
       return;
     }
@@ -695,6 +706,40 @@
       </button>
     {/if}
     <button
+      class="sidebar-toggle"
+      class:active={sidebarState.visible}
+      onclick={(e) => {
+        e.stopPropagation();
+        sidebarState.toggle();
+      }}
+      title={sidebarState.visible ? `Hide sidebar (${platform.mod}B)` : `Show sidebar (${platform.mod}B)`}
+      aria-label={sidebarState.visible ? 'Hide sidebar' : 'Show sidebar'}
+      aria-pressed={sidebarState.visible}
+    >
+      <svg viewBox="0 0 24 24" aria-hidden="true">
+        <rect x="3" y="4" width="18" height="16" rx="2" />
+        <path d="M8 4v16" />
+      </svg>
+    </button>
+    <button
+      class="layout-toggle"
+      class:active={appState.layoutMode === 'dual'}
+      onclick={(e) => {
+        e.stopPropagation();
+        appState.toggleLayout();
+      }}
+      title={appState.layoutMode === 'dual' ? `Switch to single pane (${platform.mod}P)` : `Switch to dual pane (${platform.mod}P)`}
+      aria-label={appState.layoutMode === 'dual' ? 'Switch to single pane' : 'Switch to dual pane'}
+      aria-pressed={appState.layoutMode === 'dual'}
+    >
+      <svg viewBox="0 0 24 24" aria-hidden="true">
+        <rect x="3" y="4" width="18" height="16" rx="2" />
+        {#if appState.layoutMode === 'dual'}
+          <path d="M12 4v16" />
+        {/if}
+      </svg>
+    </button>
+    <button
       class="swap-toggle"
       onclick={(e) => {
         e.stopPropagation();
@@ -912,6 +957,7 @@
       isFile={!!(panel.currentEntry && !panel.currentEntry.is_dir && panel.currentEntry.name !== '..')}
       isArchive={panel.backend === 'archive'}
       isLocalDir={panel.backend === 'local' && !!(panel.currentEntry && panel.currentEntry.is_dir)}
+      isFavorite={sidebarState.hasFavorite(panel.currentEntry?.path ?? '')}
       onEmpty={contextMenuOnEmpty}
     />
   {/if}
@@ -998,7 +1044,9 @@
   }
 
   .preview-toggle,
-  .swap-toggle {
+  .swap-toggle,
+  .layout-toggle,
+  .sidebar-toggle {
     position: absolute;
     top: 50%;
     transform: translateY(-50%);
@@ -1023,18 +1071,34 @@
     right: 54px;
   }
 
+  .layout-toggle {
+    right: 78px;
+  }
+
+  .sidebar-toggle {
+    right: 102px;
+  }
+
   .preview-toggle:hover,
   .preview-toggle.active,
-  .swap-toggle:hover {
+  .swap-toggle:hover,
+  .layout-toggle:hover,
+  .layout-toggle.active,
+  .sidebar-toggle:hover,
+  .sidebar-toggle.active {
     opacity: 1;
   }
 
-  .preview-toggle.active {
+  .preview-toggle.active,
+  .layout-toggle.active,
+  .sidebar-toggle.active {
     color: var(--border-active);
   }
 
   .preview-toggle svg,
-  .swap-toggle svg {
+  .swap-toggle svg,
+  .layout-toggle svg,
+  .sidebar-toggle svg {
     width: 16px;
     height: 16px;
     fill: none;
@@ -1046,7 +1110,7 @@
 
   .backend-indicator {
     position: absolute;
-    right: 78px;
+    right: 126px;
     top: 50%;
     transform: translateY(-50%);
     display: flex;

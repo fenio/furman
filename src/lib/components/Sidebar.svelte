@@ -133,6 +133,13 @@
     sidebarState.addFavorite(name, path);
   }
 
+  function renameFavorite(path: string, currentName: string) {
+    appState.showInput('Favorite name:', currentName, (name) => {
+      appState.closeModal();
+      sidebarState.renameFavorite(path, name);
+    });
+  }
+
   async function navigateWorkspace(ws: { name: string; leftPath: string; rightPath: string; activePanel: 'left' | 'right'; leftTabs?: string[]; rightTabs?: string[]; leftActiveTab?: number; rightActiveTab?: number }) {
     sidebarState.blur();
     panels.activePanel = ws.activePanel;
@@ -316,6 +323,12 @@
         <!-- svelte-ignore a11y_click_events_have_key_events -->
         <div class="sidebar-item" class:focused={isFocused(i)} onclick={() => navigateFavorite(fav.path)} role="button" tabindex="-1">
           <span class="item-name">{fav.name}</span>
+          <button
+            class="rename-btn"
+            onclick={(e) => { e.stopPropagation(); renameFavorite(fav.path, fav.name); }}
+            title="Rename favorite"
+            aria-label={`Rename ${fav.name}`}
+          >&#x270E;</button>
           <button
             class="remove-btn"
             onclick={(e) => { e.stopPropagation(); sidebarState.removeFavorite(fav.path); }}
@@ -523,18 +536,32 @@
     white-space: nowrap;
   }
 
+  .rename-btn,
   .remove-btn {
     display: none;
-    font-size: 16px;
     line-height: 1;
     color: var(--text-secondary);
     padding: 0 2px;
+    background: transparent;
+    border: none;
+    cursor: pointer;
   }
 
+  .rename-btn {
+    font-size: 13px;
+  }
+
+  .remove-btn {
+    font-size: 16px;
+  }
+
+  .rename-btn:hover,
   .remove-btn:hover {
     color: var(--text-primary);
   }
 
+  .sidebar-item:hover .rename-btn,
+  .sidebar-item.focused .rename-btn,
   .sidebar-item:hover .remove-btn,
   .sidebar-item.focused .remove-btn {
     display: block;

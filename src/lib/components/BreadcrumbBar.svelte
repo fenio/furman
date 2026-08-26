@@ -138,7 +138,7 @@
     align-items: center;
     overflow-x: auto;
     white-space: nowrap;
-    padding-right: 76px;
+    padding-right: 124px;
     scrollbar-width: none;
     gap: 2px;
   }
