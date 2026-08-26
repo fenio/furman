@@ -1,5 +1,28 @@
 # Changelog
 
+## [0.3.16] - 2026-08-26
+
+### Added
+
+- Add preview toolbar toggle
+- Add swap panels toolbar action
+- Add batch rename regex help
+- Add regex search support
+- Add navigation toolbar and favorite actions
+
+### Fixed
+
+- Fix PDF and text previews
+- Fix S3 search integration API
+
+### Changed
+
+- Update CHANGELOG.md for v0.3.15
+
+### Dependencies
+
+- 9 dependency update(s) via Renovate
+
 ## [0.3.15] - 2026-08-21
 
 ### Changed
