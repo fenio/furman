@@ -12,10 +12,11 @@
     isFile?: boolean;
     isArchive?: boolean;
     isLocalDir?: boolean;
+    isFavorite?: boolean;
     onEmpty?: boolean;
   }
 
-  let { x, y, onClose, onAction, isS3 = false, isFile = false, isArchive: _isArchive = false, isLocalDir = false, onEmpty = false }: Props = $props();
+  let { x, y, onClose, onAction, isS3 = false, isFile = false, isArchive: _isArchive = false, isLocalDir = false, isFavorite = false, onEmpty = false }: Props = $props();
 
   let menuEl: HTMLDivElement | undefined = $state(undefined);
   let adjustX = $state(0);
@@ -135,6 +136,9 @@
       </button>
 
       {#if isLocalDir}
+        <button class="menu-row" role="menuitem" disabled={isFavorite} onclick={() => act('add-favorite')}>
+          {isFavorite ? 'In Favorites' : 'Add to Favorites'}
+        </button>
         <button class="menu-row" role="menuitem" onclick={() => act('disk-usage')}>
           Disk Usage
           <span class="menu-shortcut">{platform.mod}{platform.shift}U</span>

@@ -64,13 +64,30 @@ class SidebarState {
   }
 
   addFavorite(name: string, path: string) {
-    if (this.favorites.some((f) => f.path === path)) return;
+    if (this.hasFavorite(path)) return;
     this.favorites = [...this.favorites, { name, path }];
     this.persistFavorites();
   }
 
+  hasFavorite(path: string): boolean {
+    const normalized = path.replace(/\/+$/, '') || '/';
+    return this.favorites.some((favorite) => (favorite.path.replace(/\/+$/, '') || '/') === normalized);
+  }
+
   removeFavorite(path: string) {
     this.favorites = this.favorites.filter((f) => f.path !== path);
+    this.persistFavorites();
+  }
+
+  renameFavorite(path: string, name: string) {
+    const trimmed = name.trim();
+    if (!trimmed) return;
+    const normalized = path.replace(/\/+$/, '') || '/';
+    this.favorites = this.favorites.map((favorite) =>
+      (favorite.path.replace(/\/+$/, '') || '/') === normalized
+        ? { ...favorite, name: trimmed }
+        : favorite
+    );
     this.persistFavorites();
   }
 
