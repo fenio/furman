@@ -1,6 +1,7 @@
 use crate::models::{DiskUsageDone, DiskUsageEntry, DiskUsageEvent, DiskUsageLevelData, FmError};
 use std::collections::HashMap;
 use std::fs;
+use std::os::unix::fs::MetadataExt;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
@@ -46,6 +47,11 @@ pub fn cancel_disk_usage(
 }
 
 // ── Implementation ──────────────────────────────────────────────────────────
+
+fn allocated_size(metadata: &fs::Metadata) -> u64 {
+    // Unix st_blocks values are expressed in 512-byte units.
+    metadata.blocks().saturating_mul(512)
+}
 
 /// Recursively walks `path`, collecting direct children with their sizes and
 /// emitting a `Level` event for each directory so the frontend can cache every
@@ -125,7 +131,7 @@ fn walk_recursive(
                 item_count: child_items,
             });
         } else {
-            let file_size = child_meta.len();
+            let file_size = allocated_size(&child_meta);
             dir_size += file_size;
             item_count += 1;
             level_files += 1;
@@ -140,7 +146,9 @@ fn walk_recursive(
             });
 
             if last_progress.elapsed().as_millis() >= 50 {
-                let _ = channel.send(DiskUsageEvent::Progress { files_scanned: *files_scanned });
+                let _ = channel.send(DiskUsageEvent::Progress {
+                    files_scanned: *files_scanned,
+                });
                 *last_progress = Instant::now();
             }
         }
@@ -234,7 +242,7 @@ fn do_analyze(root: &str, channel: &Channel<DiskUsageEvent>, cancel_flag: &Arc<A
                 }
             }
         } else {
-            let file_size = top_meta.len();
+            let file_size = allocated_size(&top_meta);
             total_size += file_size;
             total_files += 1;
             files_scanned += 1;
@@ -260,4 +268,18 @@ fn do_analyze(root: &str, channel: &Channel<DiskUsageEvent>, cancel_flag: &Arc<A
         total_dirs,
         cancelled: false,
     }));
+}
+
+#[cfg(test)]
+mod tests {
+    use super::allocated_size;
+
+    #[test]
+    fn sparse_file_reports_allocated_size() {
+        let file = tempfile::NamedTempFile::new().unwrap();
+        file.as_file().set_len(1024 * 1024 * 1024).unwrap();
+        let metadata = file.as_file().metadata().unwrap();
+
+        assert!(allocated_size(&metadata) < metadata.len());
+    }
 }
