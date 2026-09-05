@@ -30,7 +30,7 @@ portable-pty = "0.9"
 
 nix = { version = "0.31", features = ["fs", "user"] }
 chrono = { version = "0.4", features = ["serde"] }
-dirs = "6"
+dirs = "7"
 
 aws-config = { version = "1", features = ["behavior-version-latest"] }
 aws-sdk-s3 = "1"
