@@ -334,9 +334,9 @@ dependencies = [
 
 [[package]]
 name = "aws-sdk-s3"
-version = "1.145.0"
+version = "1.146.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f0e6320417a37c8a62f78b443d0b4cf628b57cd340a09b0eb56173d47cc94e93"
+checksum = "37b5ffaae346b9bd486ebdc3eb7053ec8ab8a1ad0f19a332eefeff036ed559e6"
 dependencies = [
  "arc-swap",
  "aws-credential-types",
@@ -371,9 +371,9 @@ dependencies = [
 
 [[package]]
 name = "aws-sdk-s3control"
-version = "1.127.0"
+version = "1.128.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "32709f675290635605422c9c0ba30a55d00dc0f2b9ed220d6037e408f497933f"
+checksum = "66855da9c2c56287889eaebf0d4fcf4cf2840d794ebede40e8d4b9df880663e3"
 dependencies = [
  "arc-swap",
  "aws-credential-types",
