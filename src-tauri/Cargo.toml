@@ -53,7 +53,7 @@ reqwest = { version = "0.13", features = ["json", "form", "rustls"], default-fea
 urlencoding = "2"
 uuid = { version = "1", features = ["v4"] }
 russh = "0.63.0"
-russh-sftp = "2.1"
+russh-sftp = "3.0"
 glob-match = "0.2"
 regex = "1"
 aws-smithy-http-client = { version = "1", features = ["rustls-aws-lc", "default-client"] }
