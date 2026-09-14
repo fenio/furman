@@ -1,6 +1,6 @@
 services:
   minio:
-    image: minio/minio:latest
+    image: ghcr.io/coollabsio/minio:RELEASE.2025-10-15T17-29-55Z
     command: server /data
     ports:
       - "9000:9000"

@@ -20,7 +20,7 @@ jobs:
             -p 9000:9000 \
             -e MINIO_ROOT_USER=minioadmin \
             -e MINIO_ROOT_PASSWORD=minioadmin \
-            minio/minio:latest server /data
+            ghcr.io/coollabsio/minio:RELEASE.2025-10-15T17-29-55Z server /data
 
           # Wait for MinIO to be ready
           for i in $(seq 1 30); do
