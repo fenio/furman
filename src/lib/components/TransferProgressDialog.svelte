@@ -40,6 +40,7 @@
       case 'copy': return 'Copying';
       case 'move': return 'Moving';
       case 'extract': return 'Extracting';
+      case 'delete': return 'Deleting';
       default: return type;
     }
   }
@@ -49,6 +50,7 @@
       case 'copy': return 'Copy';
       case 'move': return 'Move';
       case 'extract': return 'Extract';
+      case 'delete': return 'Delete';
       default: return type;
     }
   }
@@ -56,7 +58,8 @@
   function title(t: Transfer): string {
     const count = t.progress?.files_total || t.sources.length;
     const dest = t.destination.split('/').filter(Boolean).pop() ?? t.destination;
-    return `${typeLabel(t.type)} ${count} item(s) to ${dest}`;
+    const direction = t.type === 'delete' ? 'from' : 'to';
+    return `${typeLabel(t.type)} ${count} item(s) ${direction} ${dest}`;
   }
 
   function handleBackground() {
@@ -159,7 +162,7 @@
           <div class="queue-list">
             {#each queued as q (q.id)}
               <div class="queue-item">
-                {queueTypeLabel(q.type)} {q.sources.length} item(s) to {q.destination.split('/').filter(Boolean).pop() ?? q.destination}
+                {queueTypeLabel(q.type)} {q.sources.length} item(s) {q.type === 'delete' ? 'from' : 'to'} {q.destination.split('/').filter(Boolean).pop() ?? q.destination}
                 <span class="queue-status">
                   {q.status === 'running' ? '(active)' : '(queued)'}
                 </span>
