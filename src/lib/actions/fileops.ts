@@ -388,7 +388,10 @@ export async function handleDelete() {
   const sources = active.getSelectedOrCurrent();
   if (sources.length === 0) return;
 
-  const names = sources.map((s) => s.split('/').pop()).join(', ');
+  const allNames = sources.map((s) => s.replace(/\/+$/, '').split('/').pop() ?? s);
+  const names = allNames.length > 5
+    ? allNames.slice(0, 5).join(', ') + ` … and ${allNames.length - 5} more`
+    : allNames.join(', ');
 
   appState.showConfirm(`Delete ${sources.length} item(s)?\n${names}`, async () => {
     appState.closeModal();
