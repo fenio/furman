@@ -48,7 +48,7 @@ export default ts.config(
 		},
 	},
 	{
-		files: ['scripts/**'],
+		files: ['scripts/**', 'benchmarks/**'],
 		rules: {
 			'no-console': 'off',
 		},
@@ -56,6 +56,7 @@ export default ts.config(
 	{
 		ignores: [
 			'build/',
+			'benchmarks/gui/.build/',
 			'.svelte-kit/',
 			'node_modules/',
 			'src-tauri/target/',

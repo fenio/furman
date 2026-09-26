@@ -1,5 +1,6 @@
+/* eslint-disable svelte/prefer-svelte-reactivity -- Native collections here are non-reactive indexes or internal bookkeeping. */
 import type { FileEntry, SortField, SortDirection, ViewMode, PanelBackend, S3ConnectionInfo, SftpConnectionInfo, ArchiveInfo, GitRepoInfo, DirListEvent } from '$lib/types';
-import { SvelteMap, SvelteSet } from 'svelte/reactivity';
+import { SvelteSet } from 'svelte/reactivity';
 import { sortEntries } from '$lib/utils/sort';
 import { listDirectory, listDirectoryStreamed, listArchive, watchDirectory, unwatchDirectory, getGitRepoInfo, getDirectorySize, cleanupTempPath } from '$lib/services/tauri';
 import { s3Connect, s3Disconnect, s3ListObjects, s3IsObjectEncrypted } from '$lib/services/s3';
@@ -18,7 +19,7 @@ let nextTabId = 0;
 
 export class PanelData {
   path = $state('');
-  entries = $state<FileEntry[]>([]);
+  entries = $state.raw<FileEntry[]>([]);
   watchId: string;
   tabId: number;
   side: ComparisonSide;
@@ -92,7 +93,7 @@ export class PanelData {
 
   // Path→entry index for O(1) lookups (rebuilt when entries change)
   private entryByPath = $derived.by(() => {
-    const map = new SvelteMap<string, FileEntry>();
+    const map = new Map<string, FileEntry>();
     for (const e of this.entries) map.set(e.path, e);
     return map;
   });
@@ -113,11 +114,11 @@ export class PanelData {
 
   /** Cache of computed recursive directory sizes (path → bytes). */
   dirSizeCache = $state<Record<string, number>>({});
-  private dirSizePending = new SvelteSet<string>();
+  private dirSizePending = new Set<string>();
 
   /** Cache of encryption status for S3 objects (key → encrypted). */
   encryptionCache = $state<Record<string, boolean>>({});
-  private encryptionPending = new SvelteSet<string>();
+  private encryptionPending = new Set<string>();
   private encryptionDebounceTimer: ReturnType<typeof setTimeout> | null = null;
 
   constructor(side: ComparisonSide) {
@@ -133,11 +134,11 @@ export class PanelData {
   /** Compute recursive sizes for any selected directories not yet cached. */
   computeSelectedDirSizes() {
     if (this.backend !== 'local' || !appState.calculateDirSizes) return;
-    for (const entry of this.entries) {
+    for (const path of this.selectedPaths) {
+      const entry = this.entryByPath.get(path);
       if (
-        entry.is_dir &&
+        entry?.is_dir &&
         entry.name !== '..' &&
-        this.selectedPaths.has(entry.path) &&
         !(entry.path in this.dirSizeCache) &&
         !this.dirSizePending.has(entry.path)
       ) {
@@ -217,7 +218,7 @@ export class PanelData {
         this.cursorIndex = Math.max(0, this.filteredSortedEntries.length - 1);
       }
       // Prune selections that no longer exist
-      const validPaths = new SvelteSet(listing.entries.map(e => e.path));
+      const validPaths = new Set(listing.entries.map(e => e.path));
       let pruned = false;
       for (const p of this.selectedPaths) {
         if (!validPaths.has(p)) { pruned = true; break; }
