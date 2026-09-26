@@ -7,7 +7,7 @@ Run on 2026-09-25 using 100,000 entries and five iterations per implementation.
 - MacBook Air, Apple M5, 10 cores, 24 GB memory
 - macOS 27.0 (26A428)
 - Swift 6.4, optimized with `swiftc -O`
-- Svelte 5.53.6, SolidJS 1.9.15, and Vite 8.3.0 production builds
+- Svelte 5.53.6, SolidJS 1.9.15, and Vite 8.3.1 production builds
 - Google Chrome 154.0.8037.58, headless
 
 ## Five-Run Medians
