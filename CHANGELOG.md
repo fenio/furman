@@ -1,5 +1,26 @@
 # Changelog
 
+## [0.3.17] - 2026-09-26
+
+### Fixed
+
+- Fix sparse file disk usage
+- Fix S3 delete labels
+
+### Changed
+
+- Update CHANGELOG.md for v0.3.16
+- Update benchmark environment
+
+### Dependencies
+
+- 48 dependency update(s) via Renovate
+
+### Other
+
+- Switch MinIO tests to pinned Coollabs image
+- Benchmark and optimize file list rendering
+
 ## [0.3.16] - 2026-08-26
 
 ### Added
