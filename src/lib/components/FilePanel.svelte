@@ -1,7 +1,7 @@
 <script lang="ts">
   import { panels, type PanelData } from '$lib/state/panels.svelte';
   import type { SortField, ColumnId } from '$lib/types';
-  import { SvelteMap, SvelteSet } from 'svelte/reactivity';
+  import { SvelteSet } from 'svelte/reactivity';
   import { appState } from '$lib/state/app.svelte';
   import { statusState } from '$lib/state/status.svelte';
   import { formatSize } from '$lib/utils/format';
@@ -37,7 +37,7 @@
   // Virtualized scrolling for list mode
   const ROW_HEIGHT_MAP = { compact: 22, normal: 28, comfortable: 34 } as const;
   const ROW_HEIGHT = $derived(ROW_HEIGHT_MAP[appState.rowHeight]);
-  const BUFFER_ROWS = 10; // extra rows above/below viewport
+  const BUFFER_ROWS = 4; // extra rows above/below viewport
   let viewportHeight = $state(0);
   let scrollTop = $state(0);
   let containerWidth = $state(0);
@@ -80,7 +80,6 @@
   function handleListScroll(e: Event) {
     const el = e.target as HTMLElement;
     scrollTop = el.scrollTop;
-    containerWidth = el.clientWidth;
   }
 
   // Context menu state
@@ -215,8 +214,9 @@
 
   // Comparison: derive a map from entry name → ComparisonStatus for this panel.
   const comparisonStatusMap = $derived.by((): Map<string, ComparisonStatus> => {
-    if (!comparisonState.active) return new SvelteMap();
-    const result = new SvelteMap<string, ComparisonStatus>();
+    if (!comparisonState.active) return new Map();
+    // eslint-disable-next-line svelte/prefer-svelte-reactivity -- Built once and immutable after publication.
+    const result = new Map<string, ComparisonStatus>();
     for (const entry of panel.filteredSortedEntries) {
       const status = comparisonState.statusForEntry(side, panel.path, entry);
       if (status) result.set(entry.name, status);
@@ -361,24 +361,24 @@
     const next = new SvelteSet(prevSelected);
 
     if (panel.viewMode === 'icon') {
-      // Icon mode: pure math using grid geometry (virtualized)
+      // Icon mode: inspect only grid cells touched by the selection rectangle.
       const tileW = ICON_TILE_WIDTH;
       const tileH = ICON_TILE_HEIGHT;
       const cols = iconCols;
-      const totalEntries = panel.filteredSortedEntries.length;
+      const containerWidth = listContainer.clientWidth;
 
-      for (let i = 0; i < totalEntries; i++) {
-        const row = Math.floor(i / cols);
-        const col = i % cols;
-        const tileTop = row * tileH;
-        const tileLeft = col * tileW;
-        const tileBottom = tileTop + tileH;
-        const tileRight = tileLeft + tileW;
-        const intersects = !(tileRight < minX || tileLeft > maxX || tileBottom < minY || tileTop > maxY);
-        const entry = panel.filteredSortedEntries[i];
-        if (!entry || entry.name === '..') continue;
-        if (intersects) next.add(entry.path);
-        else if (!prevSelected.has(entry.path)) next.delete(entry.path);
+      if (maxX >= 0 && minX <= containerWidth && maxY >= 0) {
+        const firstRow = Math.max(0, Math.floor(minY / tileH));
+        const lastRow = Math.min(iconTotalRows - 1, Math.floor(maxY / tileH));
+        const firstCol = Math.max(0, Math.floor(minX / tileW));
+        const lastCol = Math.min(cols - 1, Math.floor(maxX / tileW));
+
+        for (let row = firstRow; row <= lastRow; row++) {
+          for (let col = firstCol; col <= lastCol; col++) {
+            const entry = panel.filteredSortedEntries[row * cols + col];
+            if (entry && entry.name !== '..') next.add(entry.path);
+          }
+        }
       }
     } else {
       // List mode: pure math, no DOM queries (works with virtualization)
@@ -421,12 +421,27 @@
       panel.deselectAll();
     }
 
-    function onMove(ev: MouseEvent) {
-      rubberCurrent = getContentCoords(ev);
+    let pendingCoords: { x: number; y: number } | null = null;
+    let frame: number | null = null;
+
+    function applyPendingSelection() {
+      frame = null;
+      if (!pendingCoords) return;
+      rubberCurrent = pendingCoords;
+      pendingCoords = null;
       updateRubberBandSelection(prevSelected);
     }
 
+    function onMove(ev: MouseEvent) {
+      pendingCoords = getContentCoords(ev);
+      if (frame === null) frame = requestAnimationFrame(applyPendingSelection);
+    }
+
     function onUp() {
+      if (frame !== null) {
+        cancelAnimationFrame(frame);
+        applyPendingSelection();
+      }
       rubberBanding = false;
       window.removeEventListener('mousemove', onMove);
       window.removeEventListener('mouseup', onUp);
@@ -866,7 +881,7 @@
       <!-- Virtualized icon grid -->
       <div style="height: {iconTotalHeight}px; position: relative;">
         <div style="position: absolute; top: {iconOffsetY}px; left: 0; right: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(var(--grid-min, 80px), 1fr)); gap: 4px; padding: 0 8px;">
-          {#each iconVisibleEntries as entry, vi (entry.path + entry.name)}
+          {#each iconVisibleEntries as entry, vi (entry.path)}
             {@const i = iconStartIndex + vi}
             <FileIcon
               {entry}
@@ -889,8 +904,8 @@
     {:else}
       <!-- Virtualized list mode: sentinel div creates full scroll height -->
       <div style="height: {totalHeight}px; position: relative;">
-        <div style="position: absolute; top: {offsetY}px; left: 0; right: 0;">
-          {#each visibleEntries as entry, vi (entry.path + entry.name)}
+        <div style="position: absolute; top: 0; left: 0; right: 0; transform: translateY({offsetY}px);">
+          {#each visibleEntries as entry, vi (entry.path)}
             {@const i = startIndex + vi}
             <FileRow
               {entry}

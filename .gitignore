@@ -7,6 +7,7 @@ node_modules
 .wrangler
 /.svelte-kit
 /build
+/benchmarks/gui/.build
 
 # OS
 .DS_Store

@@ -1,0 +1,16 @@
+* { box-sizing: border-box; }
+body { margin: 0; background: #17171b; color: #eeeeef; font: 13px -apple-system, BlinkMacSystemFont, sans-serif; }
+main { width: 1050px; height: 700px; margin: 0; overflow: hidden; }
+header { height: 42px; display: flex; align-items: center; justify-content: space-between; padding: 0 12px; border-bottom: 1px solid #38383d; }
+.table-header, .row { display: grid; grid-template-columns: 1fr 150px 180px; }
+.table-header { height: 28px; align-items: center; padding: 0 12px; color: #aaaab1; border-bottom: 1px solid #38383d; }
+.list { height: 630px; overflow-y: auto; }
+.spacer { position: relative; }
+.visible { position: absolute; inset: 0 0 auto; }
+.row { height: 28px; align-items: center; padding: 0 12px; border-bottom: 1px solid #25252a; }
+.row:nth-child(even) { background: #1c1c21; }
+.row.selected { background: #335c93; }
+.row.pooled { position: absolute; top: 0; width: 100%; }
+.row.hidden { visibility: hidden; }
+.row span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+#benchmark-result { display: none; }

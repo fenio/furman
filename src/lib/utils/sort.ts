@@ -1,5 +1,7 @@
 import type { FileEntry, SortField, SortDirection } from '$lib/types';
 
+const nameCollator = new Intl.Collator(undefined, { sensitivity: 'base' });
+
 function compareField(
   a: FileEntry,
   b: FileEntry,
@@ -10,7 +12,7 @@ function compareField(
 
   switch (field) {
     case 'name':
-      return dir * a.name.localeCompare(b.name, undefined, { sensitivity: 'base' });
+      return dir * nameCollator.compare(a.name, b.name);
     case 'size':
       return dir * (a.size - b.size);
     case 'modified':
@@ -18,16 +20,16 @@ function compareField(
     case 'extension': {
       const extA = a.extension ?? '';
       const extB = b.extension ?? '';
-      const cmp = extA.localeCompare(extB, undefined, { sensitivity: 'base' });
+      const cmp = nameCollator.compare(extA, extB);
       if (cmp !== 0) return dir * cmp;
-      return dir * a.name.localeCompare(b.name, undefined, { sensitivity: 'base' });
+      return dir * nameCollator.compare(a.name, b.name);
     }
     case 'storage_class': {
       const scA = a.storage_class ?? '';
       const scB = b.storage_class ?? '';
-      const cmp = scA.localeCompare(scB, undefined, { sensitivity: 'base' });
+      const cmp = nameCollator.compare(scA, scB);
       if (cmp !== 0) return dir * cmp;
-      return dir * a.name.localeCompare(b.name, undefined, { sensitivity: 'base' });
+      return dir * nameCollator.compare(a.name, b.name);
     }
     default:
       return 0;
