@@ -1,6 +1,6 @@
 <script lang="ts">
   import { untrack } from 'svelte';
-  import type { SftpProfile } from '$lib/types';
+  import type { SftpProfile } from '#lib/types/index.js';
 
   interface Props {
     onConnect: (host: string, port: number, username: string, authMethod: string, password?: string, keyPath?: string, keyPassphrase?: string, agentSocket?: string) => void;

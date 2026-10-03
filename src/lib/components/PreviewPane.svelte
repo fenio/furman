@@ -1,11 +1,11 @@
 <script lang="ts">
-  import type { FileEntry, PanelBackend, ModelMetadata } from '$lib/types';
+  import type { FileEntry, PanelBackend, ModelMetadata } from '#lib/types/index.js';
   import { convertFileSrc } from '@tauri-apps/api/core';
-  import { readFileText, inspectModel } from '$lib/services/tauri';
-  import { formatSize, formatDate } from '$lib/utils/format';
-  import { formatParams, formatVram, estimateVram, compareValues, type VramEstimate, type CompareResult } from '$lib/utils/model';
-  import { appState } from '$lib/state/app.svelte';
-  import { highlightCode, detectLanguage } from '$lib/utils/highlight';
+  import { readFileText, inspectModel } from '#lib/services/tauri.js';
+  import { formatSize, formatDate } from '#lib/utils/format.js';
+  import { formatParams, formatVram, estimateVram, compareValues, type VramEstimate, type CompareResult } from '#lib/utils/model.js';
+  import { appState } from '#lib/state/app.svelte.js';
+  import { highlightCode, detectLanguage } from '#lib/utils/highlight.js';
 
   interface Props {
     entry: FileEntry | null;

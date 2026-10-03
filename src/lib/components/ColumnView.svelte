@@ -1,7 +1,7 @@
 <script lang="ts">
-  import type { PanelData } from '$lib/state/panels.svelte';
-  import type { FileEntry } from '$lib/types';
-  import type { ComparisonStatus } from '$lib/state/comparison.svelte';
+  import type { PanelData } from '#lib/state/panels.svelte.js';
+  import type { FileEntry } from '#lib/types/index.js';
+  import type { ComparisonStatus } from '#lib/state/comparison.svelte.js';
 
   interface Props {
     panel: PanelData;
@@ -13,7 +13,7 @@
     onEntryContextMenu?: (index: number, e: MouseEvent) => void;
   }
 
-  import { appState } from '$lib/state/app.svelte';
+  import { appState } from '#lib/state/app.svelte.js';
 
   let { panel, isActive, side: _side, comparisonStatusMap, onEntryClick, onEntryDblClick, onEntryContextMenu }: Props = $props();
 

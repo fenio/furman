@@ -1,5 +1,5 @@
-import type { S3Bookmark } from '$lib/types';
-import { appState } from '$lib/state/app.svelte';
+import type { S3Bookmark } from '#lib/types/index.js';
+import { appState } from '#lib/state/app.svelte.js';
 
 class S3BookmarksState {
   bookmarks = $state<S3Bookmark[]>([]);

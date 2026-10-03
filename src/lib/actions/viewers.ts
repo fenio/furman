@@ -1,10 +1,10 @@
-import { panels } from '$lib/state/panels.svelte';
-import { appState } from '$lib/state/app.svelte';
-import { statusState } from '$lib/state/status.svelte';
-import { openFileDefault, openInEditor, extractArchiveToTemp, cleanupTempPath } from '$lib/services/tauri';
-import { s3DownloadToTemp, s3IsObjectEncrypted } from '$lib/services/s3';
-import { sftpDownloadTemp } from '$lib/services/sftp';
-import { error } from '$lib/services/log';
+import { panels } from '#lib/state/panels.svelte.js';
+import { appState } from '#lib/state/app.svelte.js';
+import { statusState } from '#lib/state/status.svelte.js';
+import { openFileDefault, openInEditor, extractArchiveToTemp, cleanupTempPath } from '#lib/services/tauri.js';
+import { s3DownloadToTemp, s3IsObjectEncrypted } from '#lib/services/s3.js';
+import { sftpDownloadTemp } from '#lib/services/sftp.js';
+import { error } from '#lib/services/log.js';
 import { promptEncryptionPassword } from './fileops';
 
 let editorOpenGeneration = 0;
@@ -81,7 +81,7 @@ export const systemOpenExtensions = new Set([
   'pages', 'numbers', 'keynote',
 ]);
 
-import { formatSize } from '$lib/utils/format';
+import { formatSize } from '#lib/utils/format.js';
 
 /** Returns true if the user approves downloading a remote file (or if no prompt needed). */
 function confirmRemoteDownload(size: number, name: string): Promise<boolean> {

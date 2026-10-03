@@ -1,6 +1,6 @@
-import type { ConnectionProfile, S3Profile, SftpProfile } from '$lib/types';
-import { keychainSet, keychainGet, keychainDelete } from '$lib/services/keychain';
-import { appState } from '$lib/state/app.svelte';
+import type { ConnectionProfile, S3Profile, SftpProfile } from '#lib/types/index.js';
+import { keychainSet, keychainGet, keychainDelete } from '#lib/services/keychain.js';
+import { appState } from '#lib/state/app.svelte.js';
 
 class ConnectionsState {
   profiles = $state<ConnectionProfile[]>([]);

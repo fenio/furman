@@ -8,8 +8,8 @@
     s3GetAccessPointPolicy,
     s3PutAccessPointPolicy,
     s3DeleteAccessPointPolicy,
-  } from '$lib/services/s3';
-  import type { S3AccessPoint, S3AccessPointDetail, S3PublicAccessBlock } from '$lib/types';
+  } from '#lib/services/s3.js';
+  import type { S3AccessPoint, S3AccessPointDetail, S3PublicAccessBlock } from '#lib/types/index.js';
 
   interface Props {
     s3ConnectionId: string;

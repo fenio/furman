@@ -1,9 +1,9 @@
 <script lang="ts">
   import { onMount, onDestroy, tick } from 'svelte';
   import { SvelteMap } from 'svelte/reactivity';
-  import { analyzeDiskUsage, cancelDiskUsage } from '$lib/services/tauri';
-  import { formatSize } from '$lib/utils/format';
-  import type { DiskUsageEntry, DiskUsageEvent } from '$lib/types';
+  import { analyzeDiskUsage, cancelDiskUsage } from '#lib/services/tauri.js';
+  import { formatSize } from '#lib/utils/format.js';
+  import type { DiskUsageEntry, DiskUsageEvent } from '#lib/types/index.js';
   import {
     Chart, ArcElement, BarElement, CategoryScale, LinearScale,
     DoughnutController, BarController, Tooltip, Legend,

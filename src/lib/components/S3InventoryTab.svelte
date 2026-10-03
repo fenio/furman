@@ -4,8 +4,8 @@
     s3ListInventoryConfigurations,
     s3PutInventoryConfiguration,
     s3DeleteInventoryConfiguration,
-  } from '$lib/services/s3';
-  import type { S3InventoryConfiguration } from '$lib/types';
+  } from '#lib/services/s3.js';
+  import type { S3InventoryConfiguration } from '#lib/types/index.js';
 
   interface Props {
     s3ConnectionId: string;

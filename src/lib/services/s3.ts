@@ -1,5 +1,5 @@
 import { invoke, Channel } from '@tauri-apps/api/core';
-import type { DirListing, KmsKeyInfo, ProgressEvent, S3AccessPoint, S3AccessPointDetail, S3Bucket, S3BucketAcl, S3BucketEncryption, S3BucketVersioning, S3CorsRule, S3InventoryConfiguration, S3LifecycleRule, S3MultipartUpload, S3NotificationConfiguration, S3ObjectLegalHold, S3ObjectLockConfig, S3ObjectMetadata, S3ObjectProperties, S3ObjectRetention, S3ObjectVersion, S3PublicAccessBlock, S3ReplicationConfiguration, S3Tag, SearchEvent, TransferCheckpoint } from '$lib/types';
+import type { DirListing, KmsKeyInfo, ProgressEvent, S3AccessPoint, S3AccessPointDetail, S3Bucket, S3BucketAcl, S3BucketEncryption, S3BucketVersioning, S3CorsRule, S3InventoryConfiguration, S3LifecycleRule, S3MultipartUpload, S3NotificationConfiguration, S3ObjectLegalHold, S3ObjectLockConfig, S3ObjectMetadata, S3ObjectProperties, S3ObjectRetention, S3ObjectVersion, S3PublicAccessBlock, S3ReplicationConfiguration, S3Tag, SearchEvent, TransferCheckpoint } from '#lib/types/index.js';
 
 export async function s3CheckCredentials(): Promise<boolean> {
   return await invoke<boolean>('s3_check_credentials');
@@ -456,11 +456,11 @@ export async function s3PutBucketEncryption(
 
 // ── Static Website Hosting ──────────────────────────────────────────────
 
-export async function s3GetBucketWebsite(id: string): Promise<import('$lib/types').S3BucketWebsite> {
-  return await invoke<import('$lib/types').S3BucketWebsite>('s3_get_bucket_website', { id });
+export async function s3GetBucketWebsite(id: string): Promise<import('#lib/types/index.js').S3BucketWebsite> {
+  return await invoke<import('#lib/types/index.js').S3BucketWebsite>('s3_get_bucket_website', { id });
 }
 
-export async function s3PutBucketWebsite(id: string, config: import('$lib/types').S3BucketWebsite): Promise<void> {
+export async function s3PutBucketWebsite(id: string, config: import('#lib/types/index.js').S3BucketWebsite): Promise<void> {
   await invoke('s3_put_bucket_website', { id, config });
 }
 
@@ -476,8 +476,8 @@ export async function s3PutRequestPayment(id: string, requesterPays: boolean): P
 
 // ── Object Ownership ───────────────────────────────────────────────────
 
-export async function s3GetBucketOwnership(id: string): Promise<import('$lib/types').S3BucketOwnership> {
-  return await invoke<import('$lib/types').S3BucketOwnership>('s3_get_bucket_ownership', { id });
+export async function s3GetBucketOwnership(id: string): Promise<import('#lib/types/index.js').S3BucketOwnership> {
+  return await invoke<import('#lib/types/index.js').S3BucketOwnership>('s3_get_bucket_ownership', { id });
 }
 
 export async function s3PutBucketOwnership(id: string, ownership: string): Promise<void> {
@@ -486,11 +486,11 @@ export async function s3PutBucketOwnership(id: string, ownership: string): Promi
 
 // ── Server Access Logging ──────────────────────────────────────────────
 
-export async function s3GetBucketLogging(id: string): Promise<import('$lib/types').S3BucketLogging> {
-  return await invoke<import('$lib/types').S3BucketLogging>('s3_get_bucket_logging', { id });
+export async function s3GetBucketLogging(id: string): Promise<import('#lib/types/index.js').S3BucketLogging> {
+  return await invoke<import('#lib/types/index.js').S3BucketLogging>('s3_get_bucket_logging', { id });
 }
 
-export async function s3PutBucketLogging(id: string, config: import('$lib/types').S3BucketLogging): Promise<void> {
+export async function s3PutBucketLogging(id: string, config: import('#lib/types/index.js').S3BucketLogging): Promise<void> {
   await invoke('s3_put_bucket_logging', { id, config });
 }
 

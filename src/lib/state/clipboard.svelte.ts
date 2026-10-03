@@ -1,4 +1,4 @@
-import type { PanelBackend } from '$lib/types';
+import type { PanelBackend } from '#lib/types/index.js';
 
 export type ClipboardMode = 'copy' | 'cut';
 

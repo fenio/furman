@@ -1,8 +1,8 @@
 <script lang="ts">
   import { onMount, untrack } from 'svelte';
-  import { s3BatchPutObjectMetadata, s3BatchPutObjectTags } from '$lib/services/s3';
-  import { cancelFileOperation } from '$lib/services/tauri';
-  import type { ProgressEvent, S3ProviderCapabilities, S3Tag } from '$lib/types';
+  import { s3BatchPutObjectMetadata, s3BatchPutObjectTags } from '#lib/services/s3.js';
+  import { cancelFileOperation } from '#lib/services/tauri.js';
+  import type { ProgressEvent, S3ProviderCapabilities, S3Tag } from '#lib/types/index.js';
 
   interface Props {
     keys: string[];

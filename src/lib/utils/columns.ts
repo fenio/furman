@@ -1,4 +1,4 @@
-import type { ColumnId, SortField } from '$lib/types';
+import type { ColumnId, SortField } from '#lib/types/index.js';
 
 export interface ColumnDef {
   id: ColumnId;

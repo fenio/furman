@@ -1,5 +1,5 @@
 import { invoke, Channel } from '@tauri-apps/api/core';
-import type { DirListing, DirListEvent, VolumeInfo, ProgressEvent, SearchEvent, SearchMode, SyncEvent, GitRepoInfo, FileProperties, TransferCheckpoint, ModelMetadata, DiskUsageEvent } from '$lib/types';
+import type { DirListing, DirListEvent, VolumeInfo, ProgressEvent, SearchEvent, SearchMode, SyncEvent, GitRepoInfo, FileProperties, TransferCheckpoint, ModelMetadata, DiskUsageEvent } from '#lib/types/index.js';
 
 export async function listArchive(
   archivePath: string,

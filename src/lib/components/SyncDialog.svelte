@@ -1,9 +1,9 @@
 <script lang="ts">
   import { onMount, onDestroy } from 'svelte';
   import { SvelteSet } from 'svelte/reactivity';
-  import { syncDiff, cancelSync } from '$lib/services/tauri';
-  import { appState } from '$lib/state/app.svelte';
-  import type { SyncEntry, SyncEvent, PanelBackend } from '$lib/types';
+  import { syncDiff, cancelSync } from '#lib/services/tauri.js';
+  import { appState } from '#lib/state/app.svelte.js';
+  import type { SyncEntry, SyncEvent, PanelBackend } from '#lib/types/index.js';
 
   interface Props {
     sourceBackend: PanelBackend;

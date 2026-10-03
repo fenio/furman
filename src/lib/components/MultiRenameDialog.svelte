@@ -1,10 +1,10 @@
 <script lang="ts">
-  import type { FileEntry, PanelBackend } from '$lib/types';
+  import type { FileEntry, PanelBackend } from '#lib/types/index.js';
   import { SvelteMap } from 'svelte/reactivity';
-  import { renameFile } from '$lib/services/tauri';
-  import { s3RenameObject } from '$lib/services/s3';
-  import { sftpRename } from '$lib/services/sftp';
-  import { error as logError } from '$lib/services/log';
+  import { renameFile } from '#lib/services/tauri.js';
+  import { s3RenameObject } from '#lib/services/s3.js';
+  import { sftpRename } from '#lib/services/sftp.js';
+  import { error as logError } from '#lib/services/log.js';
 
   interface Props {
     entries: FileEntry[];

@@ -7,16 +7,16 @@
 </script>
 
 <script lang="ts">
-  import type { FileEntry, PanelBackend, ColumnId } from '$lib/types';
-  import { formatSize, formatDate, formatPermissions } from '$lib/utils/format';
+  import type { FileEntry, PanelBackend, ColumnId } from '#lib/types/index.js';
+  import { formatSize, formatDate, formatPermissions } from '#lib/utils/format.js';
   import { convertFileSrc } from '@tauri-apps/api/core';
   import ImageTooltip from './ImageTooltip.svelte';
-  import { startLocalFileDrag, startS3FileDrag, startSftpFileDrag, dragState } from '$lib/services/drag';
-  import { statusState } from '$lib/state/status.svelte';
-  import { appState } from '$lib/state/app.svelte';
-  import { error as logError } from '$lib/services/log';
+  import { startLocalFileDrag, startS3FileDrag, startSftpFileDrag, dragState } from '#lib/services/drag.js';
+  import { statusState } from '#lib/state/status.svelte.js';
+  import { appState } from '#lib/state/app.svelte.js';
+  import { error as logError } from '#lib/services/log.js';
 
-  import type { ComparisonStatus } from '$lib/state/comparison.svelte';
+  import type { ComparisonStatus } from '#lib/state/comparison.svelte.js';
 
   interface Props {
     entry: FileEntry;

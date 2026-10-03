@@ -1,9 +1,9 @@
 <script lang="ts">
   import { onDestroy, onMount, untrack } from 'svelte';
-  import { appState } from '$lib/state/app.svelte';
-  import { cleanupTempPath, getFileProperties, getDirectorySize, inspectModel } from '$lib/services/tauri';
-  import { openTemporaryViewer } from '$lib/actions/viewers';
-  import { formatParams, formatVram, estimateVram, groupTensorsByCategory, groupTensorsByLayer, getCategoryColor, type VramEstimate } from '$lib/utils/model';
+  import { appState } from '#lib/state/app.svelte.js';
+  import { cleanupTempPath, getFileProperties, getDirectorySize, inspectModel } from '#lib/services/tauri.js';
+  import { openTemporaryViewer } from '#lib/actions/viewers.js';
+  import { formatParams, formatVram, estimateVram, groupTensorsByCategory, groupTensorsByLayer, getCategoryColor, type VramEstimate } from '#lib/utils/model.js';
   import MfaDialog from './MfaDialog.svelte';
   import CloudFrontTab from './CloudFrontTab.svelte';
   import S3InventoryTab from './S3InventoryTab.svelte';
@@ -29,11 +29,11 @@
     s3GetObjectLockConfiguration, s3PutObjectLockConfiguration,
     s3GetObjectRetention, s3PutObjectRetention,
     s3GetObjectLegalHold, s3PutObjectLegalHold,
-  } from '$lib/services/s3';
+  } from '#lib/services/s3.js';
   import { invoke } from '@tauri-apps/api/core';
-  import { sftpHead } from '$lib/services/sftp';
-  import { formatSize, formatDate, formatPermissions } from '$lib/utils/format';
-  import { connectionsState } from '$lib/state/connections.svelte';
+  import { sftpHead } from '#lib/services/sftp.js';
+  import { formatSize, formatDate, formatPermissions } from '#lib/utils/format.js';
+  import { connectionsState } from '#lib/state/connections.svelte.js';
   import type {
     FileProperties, S3ObjectProperties, S3ObjectVersion, PanelBackend,
     S3BucketVersioning, S3BucketEncryption, S3Tag, S3MultipartUpload,
@@ -42,7 +42,7 @@
     S3ObjectLockConfig, S3ObjectRetention, S3ObjectLegalHold,
     KmsKeyInfo, S3ConnectionInfo, SftpConnectionInfo, ArchiveInfo,
     ModelMetadata,
-  } from '$lib/types';
+  } from '#lib/types/index.js';
 
   interface Props {
     path: string;
@@ -917,7 +917,7 @@
     }
   }
 
-  function friendlyGrantee(grant: import('$lib/types').S3AclGrant): string {
+  function friendlyGrantee(grant: import('#lib/types/index.js').S3AclGrant): string {
     if (grant.grantee_uri) {
       switch (grant.grantee_uri) {
         case 'http://acs.amazonaws.com/groups/global/AllUsers':

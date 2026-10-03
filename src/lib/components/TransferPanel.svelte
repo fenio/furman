@@ -1,9 +1,9 @@
 <script lang="ts">
-  import { transfersState } from '$lib/state/transfers.svelte';
-  import type { TransferStatus } from '$lib/state/transfers.svelte';
-  import { formatSize, formatSpeed, formatEta } from '$lib/utils/format';
-  import { s3SetBandwidthLimit } from '$lib/services/s3';
-  import { appState } from '$lib/state/app.svelte';
+  import { transfersState } from '#lib/state/transfers.svelte.js';
+  import type { TransferStatus } from '#lib/state/transfers.svelte.js';
+  import { formatSize, formatSpeed, formatEta } from '#lib/utils/format.js';
+  import { s3SetBandwidthLimit } from '#lib/services/s3.js';
+  import { appState } from '#lib/state/app.svelte.js';
 
   const visible = $derived(transfersState.panelVisible);
   const activeCount = $derived(transfersState.active.length);

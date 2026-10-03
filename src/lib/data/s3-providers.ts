@@ -1,14 +1,14 @@
-import type { S3ProviderCapabilities } from '$lib/types';
+import type { S3ProviderCapabilities } from '#lib/types/index.js';
 
-import awsIcon from '$lib/assets/providers/aws.svg?url';
-import minioIcon from '$lib/assets/providers/minio.svg?url';
-import b2Icon from '$lib/assets/providers/b2.svg?url';
-import r2Icon from '$lib/assets/providers/r2.svg?url';
-import doIcon from '$lib/assets/providers/do.svg?url';
-import linodeIcon from '$lib/assets/providers/linode.svg?url';
-import wasabiIcon from '$lib/assets/providers/wasabi.svg?url';
-import gcsIcon from '$lib/assets/providers/gcs.svg?url';
-import genericIcon from '$lib/assets/providers/generic.svg?url';
+import awsIcon from '#lib/assets/providers/aws.svg?url';
+import minioIcon from '#lib/assets/providers/minio.svg?url';
+import b2Icon from '#lib/assets/providers/b2.svg?url';
+import r2Icon from '#lib/assets/providers/r2.svg?url';
+import doIcon from '#lib/assets/providers/do.svg?url';
+import linodeIcon from '#lib/assets/providers/linode.svg?url';
+import wasabiIcon from '#lib/assets/providers/wasabi.svg?url';
+import gcsIcon from '#lib/assets/providers/gcs.svg?url';
+import genericIcon from '#lib/assets/providers/generic.svg?url';
 
 // Auto-discover PNG icons for imported providers (Vite glob import)
 const pngIconModules = import.meta.glob<string>('../assets/providers/*.png', { eager: true, query: '?url', import: 'default' });

@@ -1,15 +1,15 @@
-import { panels } from '$lib/state/panels.svelte';
-import { appState } from '$lib/state/app.svelte';
-import { statusState } from '$lib/state/status.svelte';
-import { sidebarState } from '$lib/state/sidebar.svelte';
-import { workspacesState } from '$lib/state/workspaces.svelte';
-import { connectionsState } from '$lib/state/connections.svelte';
-import { s3BookmarksState } from '$lib/state/s3bookmarks.svelte';
-import { sftpBookmarksState } from '$lib/state/sftpbookmarks.svelte';
-import { keychainGet } from '$lib/services/keychain';
-import { resolveCapabilities } from '$lib/data/s3-providers';
-import { error } from '$lib/services/log';
-import type { S3Bookmark, SftpBookmark, S3ConnectionInfo } from '$lib/types';
+import { panels } from '#lib/state/panels.svelte.js';
+import { appState } from '#lib/state/app.svelte.js';
+import { statusState } from '#lib/state/status.svelte.js';
+import { sidebarState } from '#lib/state/sidebar.svelte.js';
+import { workspacesState } from '#lib/state/workspaces.svelte.js';
+import { connectionsState } from '#lib/state/connections.svelte.js';
+import { s3BookmarksState } from '#lib/state/s3bookmarks.svelte.js';
+import { sftpBookmarksState } from '#lib/state/sftpbookmarks.svelte.js';
+import { keychainGet } from '#lib/services/keychain.js';
+import { resolveCapabilities } from '#lib/data/s3-providers.js';
+import { error } from '#lib/services/log.js';
+import type { S3Bookmark, SftpBookmark, S3ConnectionInfo } from '#lib/types/index.js';
 
 // ── Sidebar action types ────────────────────────────────────────────────────
 

@@ -1,4 +1,4 @@
-import type { ModelMetadata, TensorInfo } from '$lib/types';
+import type { ModelMetadata, TensorInfo } from '#lib/types/index.js';
 
 // ── Formatting ───────────────────────────────────────────────────────────────
 

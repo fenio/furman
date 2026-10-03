@@ -1,7 +1,7 @@
 <script lang="ts">
-  import { terminalState } from '$lib/state/terminal.svelte';
-  import { panels } from '$lib/state/panels.svelte';
-  import { terminalClose } from '$lib/services/tauri';
+  import { terminalState } from '#lib/state/terminal.svelte.js';
+  import { panels } from '#lib/state/panels.svelte.js';
+  import { terminalClose } from '#lib/services/tauri.js';
   import XTerm from './XTerm.svelte';
 
   function addTerminal() {

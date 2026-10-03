@@ -1,46 +1,46 @@
 <script lang="ts">
-  import favicon from '$lib/assets/favicon.svg';
+  import favicon from '#lib/assets/favicon.svg';
   import '../app.css';
   import { onMount, onDestroy } from 'svelte';
   import { listen } from '@tauri-apps/api/event';
   import { invoke } from '@tauri-apps/api/core';
-  import { panels, s3PathToPrefix } from '$lib/state/panels.svelte';
-  import { appState, canSyncBackends } from '$lib/state/app.svelte';
-  import { terminalState } from '$lib/state/terminal.svelte';
-  import { sidebarState } from '$lib/state/sidebar.svelte';
-  import { workspacesState } from '$lib/state/workspaces.svelte';
-  import { s3BookmarksState } from '$lib/state/s3bookmarks.svelte';
-  import { renameFile, restoreFromTrash } from '$lib/services/tauri';
-  import { operationsState } from '$lib/state/operations.svelte';
-  import { statusState } from '$lib/state/status.svelte';
-  import { transfersState } from '$lib/state/transfers.svelte';
-  import { error } from '$lib/services/log';
-  import { dragState, type DragSource } from '$lib/services/drag';
-  import type { PanelData } from '$lib/state/panels.svelte';
-  import type { SyncEntry } from '$lib/types';
-  import { commandRegistry, type Command } from '$lib/state/commands.svelte';
-  import { platform } from '$lib/state/platform.svelte';
-  import { comparisonState } from '$lib/state/comparison.svelte';
-  import { clipboardState } from '$lib/state/clipboard.svelte';
-  import { previewState } from '$lib/state/preview.svelte';
+  import { panels, s3PathToPrefix } from '#lib/state/panels.svelte.js';
+  import { appState, canSyncBackends } from '#lib/state/app.svelte.js';
+  import { terminalState } from '#lib/state/terminal.svelte.js';
+  import { sidebarState } from '#lib/state/sidebar.svelte.js';
+  import { workspacesState } from '#lib/state/workspaces.svelte.js';
+  import { s3BookmarksState } from '#lib/state/s3bookmarks.svelte.js';
+  import { renameFile, restoreFromTrash } from '#lib/services/tauri.js';
+  import { operationsState } from '#lib/state/operations.svelte.js';
+  import { statusState } from '#lib/state/status.svelte.js';
+  import { transfersState } from '#lib/state/transfers.svelte.js';
+  import { error } from '#lib/services/log.js';
+  import { dragState, type DragSource } from '#lib/services/drag.js';
+  import type { PanelData } from '#lib/state/panels.svelte.js';
+  import type { SyncEntry } from '#lib/types/index.js';
+  import { commandRegistry, type Command } from '#lib/state/commands.svelte.js';
+  import { platform } from '#lib/state/platform.svelte.js';
+  import { comparisonState } from '#lib/state/comparison.svelte.js';
+  import { clipboardState } from '#lib/state/clipboard.svelte.js';
+  import { previewState } from '#lib/state/preview.svelte.js';
 
   // ── Extracted action modules ──────────────────────────────────────────────
   import {
     activateEntry, openEditor, openS3Editor, openSftpEditor, quickLook,
-  } from '$lib/actions/viewers';
+  } from '#lib/actions/viewers.js';
   import {
     handleCopy, handleMove, handleDelete, handleRename, handleMkDir,
     handleClipboardPaste, withConflictCheck,
-  } from '$lib/actions/fileops';
-  import { executeSyncTransfer } from '$lib/actions/sync';
+  } from '#lib/actions/fileops.js';
+  import { executeSyncTransfer } from '#lib/actions/sync.js';
   import {
     handlePresignUrl, handleCopyS3Uri, handleBulkStorageClassChange,
     handleBucketProperties, handleBookmarkS3, handleBookmarkSftp,
     handleProperties, handleQuit,
-  } from '$lib/actions/s3sftp';
+  } from '#lib/actions/s3sftp.js';
   import {
     buildSidebarItems, activateSidebarItem,
-  } from '$lib/actions/navigation';
+  } from '#lib/actions/navigation.js';
 
   let { children } = $props();
 

@@ -1,5 +1,5 @@
-import type { SftpBookmark } from '$lib/types';
-import { appState } from '$lib/state/app.svelte';
+import type { SftpBookmark } from '#lib/types/index.js';
+import { appState } from '#lib/state/app.svelte.js';
 
 class SftpBookmarksState {
   bookmarks = $state<SftpBookmark[]>([]);

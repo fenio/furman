@@ -1,17 +1,17 @@
 <script lang="ts">
-  import { sidebarState } from '$lib/state/sidebar.svelte';
-  import { panels } from '$lib/state/panels.svelte';
-  import { appState } from '$lib/state/app.svelte';
-  import { workspacesState } from '$lib/state/workspaces.svelte';
-  import { s3BookmarksState } from '$lib/state/s3bookmarks.svelte';
-  import { sftpBookmarksState } from '$lib/state/sftpbookmarks.svelte';
-  import { connectionsState } from '$lib/state/connections.svelte';
-  import { keychainGet } from '$lib/services/keychain';
-  import { resolveCapabilities } from '$lib/data/s3-providers';
-  import { statusState } from '$lib/state/status.svelte';
-  import { error } from '$lib/services/log';
-  import { ejectVolume } from '$lib/services/tauri';
-  import type { S3ConnectionInfo } from '$lib/types';
+  import { sidebarState } from '#lib/state/sidebar.svelte.js';
+  import { panels } from '#lib/state/panels.svelte.js';
+  import { appState } from '#lib/state/app.svelte.js';
+  import { workspacesState } from '#lib/state/workspaces.svelte.js';
+  import { s3BookmarksState } from '#lib/state/s3bookmarks.svelte.js';
+  import { sftpBookmarksState } from '#lib/state/sftpbookmarks.svelte.js';
+  import { connectionsState } from '#lib/state/connections.svelte.js';
+  import { keychainGet } from '#lib/services/keychain.js';
+  import { resolveCapabilities } from '#lib/data/s3-providers.js';
+  import { statusState } from '#lib/state/status.svelte.js';
+  import { error } from '#lib/services/log.js';
+  import { ejectVolume } from '#lib/services/tauri.js';
+  import type { S3ConnectionInfo } from '#lib/types/index.js';
 
   // Compute base offsets for each section so we can derive flat indices in the template
   const favCount = $derived(sidebarState.favorites.length);
