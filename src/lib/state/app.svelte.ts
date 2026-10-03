@@ -1,16 +1,16 @@
-import type { ModalType, ViewerMode, PanelBackend, S3ProviderCapabilities, S3ConnectionInfo, SftpConnectionInfo, S3Profile, SortField, SortDirection, ArchiveInfo, FileEntry, ColumnId } from '$lib/types';
-import { DEFAULT_VISIBLE_COLUMNS } from '$lib/utils/columns';
+import type { ModalType, ViewerMode, PanelBackend, S3ProviderCapabilities, S3ConnectionInfo, SftpConnectionInfo, S3Profile, SortField, SortDirection, ArchiveInfo, FileEntry, ColumnId } from '#lib/types/index.js';
+import { DEFAULT_VISIBLE_COLUMNS } from '#lib/utils/columns.js';
 import type { Theme } from '@tauri-apps/api/window';
-import { saveConfig, type Config } from '$lib/services/config';
-import { sidebarState } from '$lib/state/sidebar.svelte';
-import { workspacesState } from '$lib/state/workspaces.svelte';
-import { connectionsState } from '$lib/state/connections.svelte';
-import { s3BookmarksState } from '$lib/state/s3bookmarks.svelte';
-import { sftpBookmarksState } from '$lib/state/sftpbookmarks.svelte';
-import { transfersState } from '$lib/state/transfers.svelte';
-import { statusState } from '$lib/state/status.svelte';
-import { s3SetBandwidthLimit, s3SetMultipartConfig } from '$lib/services/s3';
-import type { ViewMode } from '$lib/types';
+import { saveConfig, type Config } from '#lib/services/config.js';
+import { sidebarState } from '#lib/state/sidebar.svelte.js';
+import { workspacesState } from '#lib/state/workspaces.svelte.js';
+import { connectionsState } from '#lib/state/connections.svelte.js';
+import { s3BookmarksState } from '#lib/state/s3bookmarks.svelte.js';
+import { sftpBookmarksState } from '#lib/state/sftpbookmarks.svelte.js';
+import { transfersState } from '#lib/state/transfers.svelte.js';
+import { statusState } from '#lib/state/status.svelte.js';
+import { s3SetBandwidthLimit, s3SetMultipartConfig } from '#lib/services/s3.js';
+import type { ViewMode } from '#lib/types/index.js';
 
 export function canSyncBackends(source: string, destination: string): boolean {
   const supported = (backend: string) => backend === 'local' || backend === 's3';

@@ -1,4 +1,4 @@
-import type { TerminalDisplayMode } from '$lib/types';
+import type { TerminalDisplayMode } from '#lib/types/index.js';
 
 export interface TerminalInstance {
   id: string;

@@ -1,4 +1,4 @@
-import type { FileEntry, SortField, SortDirection } from '$lib/types';
+import type { FileEntry, SortField, SortDirection } from '#lib/types/index.js';
 
 const nameCollator = new Intl.Collator(undefined, { sensitivity: 'base' });
 

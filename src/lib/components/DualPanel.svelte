@@ -1,14 +1,14 @@
 <script lang="ts">
-  import { panels } from '$lib/state/panels.svelte';
-  import { appState } from '$lib/state/app.svelte';
-  import { terminalState } from '$lib/state/terminal.svelte';
+  import { panels } from '#lib/state/panels.svelte.js';
+  import { appState } from '#lib/state/app.svelte.js';
+  import { terminalState } from '#lib/state/terminal.svelte.js';
   import FilePanel from './FilePanel.svelte';
   import TerminalPanel from './TerminalPanel.svelte';
   import TabBar from './TabBar.svelte';
   import ComparisonBar from './ComparisonBar.svelte';
   import PreviewPane from './PreviewPane.svelte';
-  import { comparisonState } from '$lib/state/comparison.svelte';
-  import { previewState } from '$lib/state/preview.svelte';
+  import { comparisonState } from '#lib/state/comparison.svelte.js';
+  import { previewState } from '#lib/state/preview.svelte.js';
   import DiskUsagePane from './DiskUsagePane.svelte';
 
   interface Props {

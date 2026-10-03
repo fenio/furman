@@ -1,8 +1,8 @@
-import type { ProgressEvent, TransferCheckpoint } from '$lib/types';
-import { cancelFileOperation, pauseFileOperation, copyFiles, moveFiles, deleteFiles, extractArchive, createTempDir, cleanupTempPath } from '$lib/services/tauri';
-import { s3Download, s3Upload, s3CopyObjects, s3DeleteObjects, s3UploadEncrypted, type EncryptionConfig } from '$lib/services/s3';
-import { sftpDownload, sftpUpload, sftpDelete } from '$lib/services/sftp';
-import { formatSize } from '$lib/utils/format';
+import type { ProgressEvent, TransferCheckpoint } from '#lib/types/index.js';
+import { cancelFileOperation, pauseFileOperation, copyFiles, moveFiles, deleteFiles, extractArchive, createTempDir, cleanupTempPath } from '#lib/services/tauri.js';
+import { s3Download, s3Upload, s3CopyObjects, s3DeleteObjects, s3UploadEncrypted, type EncryptionConfig } from '#lib/services/s3.js';
+import { sftpDownload, sftpUpload, sftpDelete } from '#lib/services/sftp.js';
+import { formatSize } from '#lib/utils/format.js';
 
 export type TransferStatus = 'queued' | 'running' | 'paused' | 'completed' | 'failed' | 'cancelled';
 type TransferType = 'copy' | 'move' | 'extract' | 'delete';

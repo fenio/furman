@@ -1,8 +1,8 @@
-import { readFileText, writeFileText } from '$lib/services/tauri';
-import type { FavoriteItem } from '$lib/state/sidebar.svelte';
-import type { Workspace } from '$lib/state/workspaces.svelte';
-import type { S3Bookmark, SftpBookmark, ConnectionProfile, SortField, SortDirection, ColumnId } from '$lib/types';
-import { inferProviderFromEndpoint } from '$lib/data/s3-providers';
+import { readFileText, writeFileText } from '#lib/services/tauri.js';
+import type { FavoriteItem } from '#lib/state/sidebar.svelte.js';
+import type { Workspace } from '#lib/state/workspaces.svelte.js';
+import type { S3Bookmark, SftpBookmark, ConnectionProfile, SortField, SortDirection, ColumnId } from '#lib/types/index.js';
+import { inferProviderFromEndpoint } from '#lib/data/s3-providers.js';
 
 export interface Config {
   theme: 'dark' | 'light';

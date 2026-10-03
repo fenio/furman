@@ -1,13 +1,13 @@
 <script lang="ts">
-	import { readFileText, writeFileText } from '$lib/services/tauri';
-	import { s3PutText } from '$lib/services/s3';
-	import { sftpPutText } from '$lib/services/sftp';
-	import { appState } from '$lib/state/app.svelte';
+	import { readFileText, writeFileText } from '#lib/services/tauri.js';
+	import { s3PutText } from '#lib/services/s3.js';
+	import { sftpPutText } from '#lib/services/sftp.js';
+	import { appState } from '#lib/state/app.svelte.js';
 	import { onMount, untrack } from 'svelte';
 	import { EditorView, keymap } from '@codemirror/view';
 	import { EditorState, Prec } from '@codemirror/state';
 	import { basicSetup } from 'codemirror';
-	import { getLanguageExtension, editorTheme, getSyntaxHighlighting } from '$lib/utils/codemirror';
+	import { getLanguageExtension, editorTheme, getSyntaxHighlighting } from '#lib/utils/codemirror.js';
 
 	interface Props {
 		path: string;

@@ -4,8 +4,8 @@
     s3GetReplicationConfiguration,
     s3PutReplicationConfiguration,
     s3DeleteReplicationConfiguration,
-  } from '$lib/services/s3';
-  import type { S3ReplicationConfiguration, S3ReplicationRule } from '$lib/types';
+  } from '#lib/services/s3.js';
+  import type { S3ReplicationConfiguration, S3ReplicationRule } from '#lib/types/index.js';
 
   interface Props {
     s3ConnectionId: string;

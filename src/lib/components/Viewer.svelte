@@ -1,9 +1,9 @@
 <script lang="ts">
-  import type { ViewerMode } from '$lib/types';
-  import { readFileText, readFileBinary } from '$lib/services/tauri';
+  import type { ViewerMode } from '#lib/types/index.js';
+  import { readFileText, readFileBinary } from '#lib/services/tauri.js';
   import { convertFileSrc } from '@tauri-apps/api/core';
   import { onMount, tick } from 'svelte';
-  import { highlightCode, detectLanguage } from '$lib/utils/highlight';
+  import { highlightCode, detectLanguage } from '#lib/utils/highlight.js';
 
   interface Props {
     path: string;

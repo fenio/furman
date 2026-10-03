@@ -8,12 +8,12 @@
 </script>
 
 <script lang="ts">
-  import type { FileEntry, PanelBackend } from '$lib/types';
-  import type { ComparisonStatus } from '$lib/state/comparison.svelte';
+  import type { FileEntry, PanelBackend } from '#lib/types/index.js';
+  import type { ComparisonStatus } from '#lib/state/comparison.svelte.js';
   import { convertFileSrc } from '@tauri-apps/api/core';
-  import { startLocalFileDrag, startS3FileDrag, startSftpFileDrag, dragState } from '$lib/services/drag';
-  import { statusState } from '$lib/state/status.svelte';
-  import { error as logError } from '$lib/services/log';
+  import { startLocalFileDrag, startS3FileDrag, startSftpFileDrag, dragState } from '#lib/services/drag.js';
+  import { statusState } from '#lib/state/status.svelte.js';
+  import { error as logError } from '#lib/services/log.js';
 
   interface Props {
     entry: FileEntry;

@@ -1,10 +1,10 @@
 <script lang="ts">
   import { onMount } from 'svelte';
-  import { batchChmod, batchTouch } from '$lib/services/tauri';
-  import { sftpBatchChmod } from '$lib/services/sftp';
-  import { cancelFileOperation } from '$lib/services/tauri';
-  import { formatPermissions } from '$lib/utils/format';
-  import type { ProgressEvent } from '$lib/types';
+  import { batchChmod, batchTouch } from '#lib/services/tauri.js';
+  import { sftpBatchChmod } from '#lib/services/sftp.js';
+  import { cancelFileOperation } from '#lib/services/tauri.js';
+  import { formatPermissions } from '#lib/utils/format.js';
+  import type { ProgressEvent } from '#lib/types/index.js';
 
   interface Props {
     paths: string[];

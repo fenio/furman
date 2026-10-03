@@ -1,10 +1,10 @@
 <script lang="ts">
   import { onMount, untrack } from 'svelte';
-  import { s3CheckCredentials, s3ListBuckets, s3CreateBucket, s3DeleteBucket, oidcStartAuth } from '$lib/services/s3';
-  import { connectionsState } from '$lib/state/connections.svelte';
-  import { S3_PROVIDERS, getProvider, inferProviderFromEndpoint } from '$lib/data/s3-providers';
-  import type { S3ProviderProfile } from '$lib/data/s3-providers';
-  import type { S3Bucket, S3Profile, S3ProviderCapabilities } from '$lib/types';
+  import { s3CheckCredentials, s3ListBuckets, s3CreateBucket, s3DeleteBucket, oidcStartAuth } from '#lib/services/s3.js';
+  import { connectionsState } from '#lib/state/connections.svelte.js';
+  import { S3_PROVIDERS, getProvider, inferProviderFromEndpoint } from '#lib/data/s3-providers.js';
+  import type { S3ProviderProfile } from '#lib/data/s3-providers.js';
+  import type { S3Bucket, S3Profile, S3ProviderCapabilities } from '#lib/types/index.js';
 
   interface Props {
     onConnect: (bucket: string, region: string, endpoint?: string, profile?: string, accessKey?: string, secretKey?: string, provider?: string, customCapabilities?: S3ProviderCapabilities, roleArn?: string, externalId?: string, sessionName?: string, sessionDurationSecs?: number, useTransferAcceleration?: boolean, anonymous?: boolean, webIdentityToken?: string, proxyUrl?: string, proxyUsername?: string, proxyPassword?: string) => void;

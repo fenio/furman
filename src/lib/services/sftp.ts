@@ -1,5 +1,5 @@
 import { invoke, Channel } from '@tauri-apps/api/core';
-import type { DirListing, FileProperties, ProgressEvent, TransferCheckpoint } from '$lib/types';
+import type { DirListing, FileProperties, ProgressEvent, TransferCheckpoint } from '#lib/types/index.js';
 
 export async function sftpConnect(
   id: string,

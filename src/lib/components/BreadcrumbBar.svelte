@@ -1,5 +1,5 @@
 <script lang="ts">
-  import type { PanelBackend, S3ConnectionInfo, SftpConnectionInfo, ArchiveInfo } from '$lib/types';
+  import type { PanelBackend, S3ConnectionInfo, SftpConnectionInfo, ArchiveInfo } from '#lib/types/index.js';
   import { tick } from 'svelte';
 
   interface Props {

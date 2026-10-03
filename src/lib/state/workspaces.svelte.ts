@@ -1,4 +1,4 @@
-import { appState } from '$lib/state/app.svelte';
+import { appState } from '#lib/state/app.svelte.js';
 
 export interface Workspace {
   name: string;

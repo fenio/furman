@@ -1,7 +1,7 @@
-import { syncDiff, cancelSync } from '$lib/services/tauri';
-import type { SyncEvent, SyncEntry, PanelBackend, FileEntry } from '$lib/types';
-import { statusState } from '$lib/state/status.svelte';
-import { appState } from '$lib/state/app.svelte';
+import { syncDiff, cancelSync } from '#lib/services/tauri.js';
+import type { SyncEvent, SyncEntry, PanelBackend, FileEntry } from '#lib/types/index.js';
+import { statusState } from '#lib/state/status.svelte.js';
+import { appState } from '#lib/state/app.svelte.js';
 import { SvelteMap, SvelteSet } from 'svelte/reactivity';
 
 export type ComparisonStatus = 'new' | 'modified' | 'deleted' | 'same';

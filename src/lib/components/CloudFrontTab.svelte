@@ -3,11 +3,11 @@
   import {
     cfListDistributions, cfGetDistribution, cfCreateDistribution,
     cfUpdateDistribution, cfDeleteDistribution, cfCreateInvalidation, cfListInvalidations,
-  } from '$lib/services/cloudfront';
+  } from '#lib/services/cloudfront.js';
   import type {
     CfDistributionSummary, CfDistribution, CfDistributionConfig,
     CfCustomErrorResponse, CfInvalidation,
-  } from '$lib/types';
+  } from '#lib/types/index.js';
 
   interface Props {
     s3ConnectionId: string;

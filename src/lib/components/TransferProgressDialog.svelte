@@ -1,7 +1,7 @@
 <script lang="ts">
-  import { transfersState } from '$lib/state/transfers.svelte';
-  import type { Transfer } from '$lib/state/transfers.svelte';
-  import { formatSize, formatSpeed, formatEta } from '$lib/utils/format';
+  import { transfersState } from '#lib/state/transfers.svelte.js';
+  import type { Transfer } from '#lib/state/transfers.svelte.js';
+  import { formatSize, formatSpeed, formatEta } from '#lib/utils/format.js';
 
   let dialogEl: HTMLDivElement | undefined = $state();
 

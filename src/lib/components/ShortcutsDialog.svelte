@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { platform } from '$lib/state/platform.svelte';
+  import { platform } from '#lib/state/platform.svelte.js';
 
   interface Props {
     onClose: () => void;

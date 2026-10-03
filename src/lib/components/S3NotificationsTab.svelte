@@ -3,8 +3,8 @@
   import {
     s3GetNotificationConfiguration,
     s3PutNotificationConfiguration,
-  } from '$lib/services/s3';
-  import type { S3NotificationConfiguration, S3NotificationRule } from '$lib/types';
+  } from '#lib/services/s3.js';
+  import type { S3NotificationConfiguration, S3NotificationRule } from '#lib/types/index.js';
 
   interface Props {
     s3ConnectionId: string;

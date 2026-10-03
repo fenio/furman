@@ -1,18 +1,18 @@
-import { panels, s3PathToPrefix } from '$lib/state/panels.svelte';
-import { appState } from '$lib/state/app.svelte';
-import { statusState } from '$lib/state/status.svelte';
-import { operationsState } from '$lib/state/operations.svelte';
-import { transfersState } from '$lib/state/transfers.svelte';
-import { connectionsState } from '$lib/state/connections.svelte';
-import { clipboardState } from '$lib/state/clipboard.svelte';
-import { checkConflicts, deleteFilesUndoable, renameFile, createDirectory } from '$lib/services/tauri';
-import { s3RenameObject, s3CreateFolder, s3IsObjectEncrypted, type EncryptionConfig } from '$lib/services/s3';
-import { sftpRename, sftpCreateFolder } from '$lib/services/sftp';
-import { error } from '$lib/services/log';
+import { panels, s3PathToPrefix } from '#lib/state/panels.svelte.js';
+import { appState } from '#lib/state/app.svelte.js';
+import { statusState } from '#lib/state/status.svelte.js';
+import { operationsState } from '#lib/state/operations.svelte.js';
+import { transfersState } from '#lib/state/transfers.svelte.js';
+import { connectionsState } from '#lib/state/connections.svelte.js';
+import { clipboardState } from '#lib/state/clipboard.svelte.js';
+import { checkConflicts, deleteFilesUndoable, renameFile, createDirectory } from '#lib/services/tauri.js';
+import { s3RenameObject, s3CreateFolder, s3IsObjectEncrypted, type EncryptionConfig } from '#lib/services/s3.js';
+import { sftpRename, sftpCreateFolder } from '#lib/services/sftp.js';
+import { error } from '#lib/services/log.js';
 
 // ── Encryption helpers ──────────────────────────────────────────────────────
 
-export function findProfileForConnection(connectionId: string): import('$lib/types').S3Profile | undefined {
+export function findProfileForConnection(connectionId: string): import('#lib/types/index.js').S3Profile | undefined {
   const panel = [panels.left, panels.right].find(
     (p) => p.s3Connection?.connectionId === connectionId,
   );
@@ -22,7 +22,7 @@ export function findProfileForConnection(connectionId: string): import('$lib/typ
   );
 }
 
-export function buildEncryptionConfig(profile: import('$lib/types').S3Profile): EncryptionConfig {
+export function buildEncryptionConfig(profile: import('#lib/types/index.js').S3Profile): EncryptionConfig {
   return {
     algorithm: profile.encryptionCipher ?? 'aes-256-gcm',
     kdf_memory_cost: profile.kdfMemoryCost ?? 19456,
@@ -32,7 +32,7 @@ export function buildEncryptionConfig(profile: import('$lib/types').S3Profile): 
   };
 }
 
-export function shouldAutoEncrypt(sources: string[], profile: import('$lib/types').S3Profile): boolean {
+export function shouldAutoEncrypt(sources: string[], profile: import('#lib/types/index.js').S3Profile): boolean {
   const exts = profile.autoEncryptExtensions;
   if (exts && exts.length > 0) {
     const extSet = new Set(exts.map((e) => e.toLowerCase().replace(/^\./, '')));

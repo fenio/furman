@@ -1,13 +1,13 @@
 /* eslint-disable svelte/prefer-svelte-reactivity -- Native collections here are non-reactive indexes or internal bookkeeping. */
-import type { FileEntry, SortField, SortDirection, ViewMode, PanelBackend, S3ConnectionInfo, SftpConnectionInfo, ArchiveInfo, GitRepoInfo, DirListEvent } from '$lib/types';
+import type { FileEntry, SortField, SortDirection, ViewMode, PanelBackend, S3ConnectionInfo, SftpConnectionInfo, ArchiveInfo, GitRepoInfo, DirListEvent } from '#lib/types/index.js';
 import { SvelteSet } from 'svelte/reactivity';
-import { sortEntries } from '$lib/utils/sort';
-import { listDirectory, listDirectoryStreamed, listArchive, watchDirectory, unwatchDirectory, getGitRepoInfo, getDirectorySize, cleanupTempPath } from '$lib/services/tauri';
-import { s3Connect, s3Disconnect, s3ListObjects, s3IsObjectEncrypted } from '$lib/services/s3';
-import { sftpConnect, sftpDisconnect, sftpListObjects } from '$lib/services/sftp';
-import { mountNetworkShare } from '$lib/services/mount';
-import { appState } from '$lib/state/app.svelte';
-import { comparisonState, type ComparisonSide } from '$lib/state/comparison.svelte';
+import { sortEntries } from '#lib/utils/sort.js';
+import { listDirectory, listDirectoryStreamed, listArchive, watchDirectory, unwatchDirectory, getGitRepoInfo, getDirectorySize, cleanupTempPath } from '#lib/services/tauri.js';
+import { s3Connect, s3Disconnect, s3ListObjects, s3IsObjectEncrypted } from '#lib/services/s3.js';
+import { sftpConnect, sftpDisconnect, sftpListObjects } from '#lib/services/sftp.js';
+import { mountNetworkShare } from '#lib/services/mount.js';
+import { appState } from '#lib/state/app.svelte.js';
+import { comparisonState, type ComparisonSide } from '#lib/state/comparison.svelte.js';
 
 /// Threshold above which we use streamed directory listing.
 const STREAM_THRESHOLD = 50_000;

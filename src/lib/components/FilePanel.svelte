@@ -1,22 +1,22 @@
 <script lang="ts">
-  import { panels, type PanelData } from '$lib/state/panels.svelte';
-  import type { SortField, ColumnId } from '$lib/types';
+  import { panels, type PanelData } from '#lib/state/panels.svelte.js';
+  import type { SortField, ColumnId } from '#lib/types/index.js';
   import { SvelteSet } from 'svelte/reactivity';
-  import { appState } from '$lib/state/app.svelte';
-  import { statusState } from '$lib/state/status.svelte';
-  import { formatSize } from '$lib/utils/format';
-  import { platform } from '$lib/state/platform.svelte';
-  import { gitPull, getGitRepoInfo, gitListBranches, gitCheckout } from '$lib/services/tauri';
+  import { appState } from '#lib/state/app.svelte.js';
+  import { statusState } from '#lib/state/status.svelte.js';
+  import { formatSize } from '#lib/utils/format.js';
+  import { platform } from '#lib/state/platform.svelte.js';
+  import { gitPull, getGitRepoInfo, gitListBranches, gitCheckout } from '#lib/services/tauri.js';
   import { onMount, tick } from 'svelte';
   import FileRow from './FileRow.svelte';
   import FileIcon from './FileIcon.svelte';
   import ColumnView from './ColumnView.svelte';
   import BreadcrumbBar from './BreadcrumbBar.svelte';
   import ContextMenu from './ContextMenu.svelte';
-  import { comparisonState, type ComparisonStatus } from '$lib/state/comparison.svelte';
-  import { previewState } from '$lib/state/preview.svelte';
-  import { sidebarState } from '$lib/state/sidebar.svelte';
-  import { ALL_COLUMNS } from '$lib/utils/columns';
+  import { comparisonState, type ComparisonStatus } from '#lib/state/comparison.svelte.js';
+  import { previewState } from '#lib/state/preview.svelte.js';
+  import { sidebarState } from '#lib/state/sidebar.svelte.js';
+  import { ALL_COLUMNS } from '#lib/utils/columns.js';
 
   interface Props {
     panel: PanelData;

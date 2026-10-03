@@ -1,4 +1,4 @@
-import type { FileEntry } from '$lib/types';
+import type { FileEntry } from '#lib/types/index.js';
 
 export function formatSize(bytes: number): string {
   if (bytes < 0) return '0';

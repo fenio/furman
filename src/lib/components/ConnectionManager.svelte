@@ -1,15 +1,15 @@
 <script lang="ts">
   import { untrack } from 'svelte';
-  import { panels } from '$lib/state/panels.svelte';
-  import { appState } from '$lib/state/app.svelte';
-  import { connectionsState } from '$lib/state/connections.svelte';
-  import S3ConnectDialog from '$lib/components/S3ConnectDialog.svelte';
-  import SftpConnectDialog from '$lib/components/SftpConnectDialog.svelte';
-  import NetworkShareDialog from '$lib/components/NetworkShareDialog.svelte';
-  import { resolveCapabilities, getProviderIcon } from '$lib/data/s3-providers';
-  import { error } from '$lib/services/log';
-  import { oidcRefresh } from '$lib/services/s3';
-  import type { S3Profile, S3ConnectionInfo, SftpConnectionInfo, S3ProviderCapabilities, SftpProfile, ConnectionProfile } from '$lib/types';
+  import { panels } from '#lib/state/panels.svelte.js';
+  import { appState } from '#lib/state/app.svelte.js';
+  import { connectionsState } from '#lib/state/connections.svelte.js';
+  import S3ConnectDialog from '#lib/components/S3ConnectDialog.svelte';
+  import SftpConnectDialog from '#lib/components/SftpConnectDialog.svelte';
+  import NetworkShareDialog from '#lib/components/NetworkShareDialog.svelte';
+  import { resolveCapabilities, getProviderIcon } from '#lib/data/s3-providers.js';
+  import { error } from '#lib/services/log.js';
+  import { oidcRefresh } from '#lib/services/s3.js';
+  import type { S3Profile, S3ConnectionInfo, SftpConnectionInfo, S3ProviderCapabilities, SftpProfile, ConnectionProfile } from '#lib/types/index.js';
 
   interface Props {
     onClose: () => void;

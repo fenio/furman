@@ -1,5 +1,5 @@
 <script lang="ts">
-  import type { PanelData } from '$lib/state/panels.svelte';
+  import type { PanelData } from '#lib/state/panels.svelte.js';
 
   interface Props {
     tabs: PanelData[];

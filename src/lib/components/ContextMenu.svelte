@@ -1,6 +1,6 @@
 <script lang="ts">
-  import { platform } from '$lib/state/platform.svelte';
-  import { clipboardState } from '$lib/state/clipboard.svelte';
+  import { platform } from '#lib/state/platform.svelte.js';
+  import { clipboardState } from '#lib/state/clipboard.svelte.js';
   import { onMount } from 'svelte';
 
   interface Props {

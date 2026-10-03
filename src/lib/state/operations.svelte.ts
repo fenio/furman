@@ -1,4 +1,4 @@
-import type { TrashInfo } from '$lib/services/tauri';
+import type { TrashInfo } from '#lib/services/tauri.js';
 
 export interface Operation {
   id: string;

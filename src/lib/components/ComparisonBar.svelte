@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { comparisonState, type ComparisonFilter } from '$lib/state/comparison.svelte';
+  import { comparisonState, type ComparisonFilter } from '#lib/state/comparison.svelte.js';
 
   interface Props {
     side: 'left' | 'right';

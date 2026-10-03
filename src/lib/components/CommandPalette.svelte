@@ -1,5 +1,5 @@
 <script lang="ts">
-  import type { Command } from '$lib/state/commands.svelte';
+  import type { Command } from '#lib/state/commands.svelte.js';
 
   interface Props {
     commands: Command[];

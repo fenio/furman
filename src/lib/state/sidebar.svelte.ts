@@ -1,7 +1,7 @@
-import type { VolumeInfo } from '$lib/types';
-import { listVolumes } from '$lib/services/tauri';
-import { error } from '$lib/services/log';
-import { appState } from '$lib/state/app.svelte';
+import type { VolumeInfo } from '#lib/types/index.js';
+import { listVolumes } from '#lib/services/tauri.js';
+import { error } from '#lib/services/log.js';
+import { appState } from '#lib/state/app.svelte.js';
 
 export interface FavoriteItem {
   name: string;

@@ -1,8 +1,8 @@
 <script lang="ts">
-  import { appState } from '$lib/state/app.svelte';
-  import { panels } from '$lib/state/panels.svelte';
-  import { transfersState } from '$lib/state/transfers.svelte';
-  import { getLogPath, openFileDefault } from '$lib/services/tauri';
+  import { appState } from '#lib/state/app.svelte.js';
+  import { panels } from '#lib/state/panels.svelte.js';
+  import { transfersState } from '#lib/state/transfers.svelte.js';
+  import { getLogPath, openFileDefault } from '#lib/services/tauri.js';
 
   interface Props {
     onClose: () => void;

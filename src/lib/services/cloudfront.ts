@@ -1,7 +1,7 @@
 import { invoke } from '@tauri-apps/api/core';
 import type {
   CfDistributionSummary, CfDistribution, CfDistributionConfig, CfInvalidation,
-} from '$lib/types';
+} from '#lib/types/index.js';
 
 export async function cfListDistributions(id: string): Promise<CfDistributionSummary[]> {
   return await invoke<CfDistributionSummary[]>('cf_list_distributions', { id });

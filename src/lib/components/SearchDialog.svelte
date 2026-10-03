@@ -1,8 +1,8 @@
 <script lang="ts">
   import { onMount, onDestroy } from 'svelte';
-  import { searchFiles, cancelSearch } from '$lib/services/tauri';
-  import { s3SearchObjects } from '$lib/services/s3';
-  import type { SearchResult, SearchEvent, SearchMode, PanelBackend } from '$lib/types';
+  import { searchFiles, cancelSearch } from '#lib/services/tauri.js';
+  import { s3SearchObjects } from '#lib/services/s3.js';
+  import type { SearchResult, SearchEvent, SearchMode, PanelBackend } from '#lib/types/index.js';
 
   interface Props {
     root: string;

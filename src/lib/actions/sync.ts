@@ -1,11 +1,11 @@
-import { panels, s3PathToPrefix } from '$lib/state/panels.svelte';
-import { appState, canSyncBackends } from '$lib/state/app.svelte';
-import { statusState } from '$lib/state/status.svelte';
-import { transfersState } from '$lib/state/transfers.svelte';
-import { copyFiles, deleteFiles } from '$lib/services/tauri';
-import { s3Download, s3Upload, s3CopyObjects, s3DeleteObjects } from '$lib/services/s3';
-import { error } from '$lib/services/log';
-import type { ProgressEvent, SyncEntry, TransferCheckpoint } from '$lib/types';
+import { panels, s3PathToPrefix } from '#lib/state/panels.svelte.js';
+import { appState, canSyncBackends } from '#lib/state/app.svelte.js';
+import { statusState } from '#lib/state/status.svelte.js';
+import { transfersState } from '#lib/state/transfers.svelte.js';
+import { copyFiles, deleteFiles } from '#lib/services/tauri.js';
+import { s3Download, s3Upload, s3CopyObjects, s3DeleteObjects } from '#lib/services/s3.js';
+import { error } from '#lib/services/log.js';
+import type { ProgressEvent, SyncEntry, TransferCheckpoint } from '#lib/types/index.js';
 
 export function executeSyncTransfer(detail: {
   entries: SyncEntry[];
