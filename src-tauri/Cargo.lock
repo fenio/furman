@@ -280,9 +280,9 @@ dependencies = [
 
 [[package]]
 name = "aws-sdk-cloudfront"
-version = "1.134.0"
+version = "1.135.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d852d0380372691062d1ffeb53f38a95894173b80f4b75ccea79d06d7c404b82"
+checksum = "adacdf8fe5928dead8578a0eafa696fd815da46eca827adbd9c4fd92c3f04e69"
 dependencies = [
  "arc-swap",
  "aws-credential-types",
@@ -305,9 +305,9 @@ dependencies = [
 
 [[package]]
 name = "aws-sdk-kms"
-version = "1.122.0"
+version = "1.123.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ae92186214a60f1316f6e25df2b5bef8f67b5b08b45f8e3eb6e1278b9ddd7b29"
+checksum = "0bbe8833a7ad3b970f2a6a856939c9cb171942dcdfd2ab65f2db3a8baaf73cc1"
 dependencies = [
  "arc-swap",
  "aws-credential-types",
@@ -330,9 +330,9 @@ dependencies = [
 
 [[package]]
 name = "aws-sdk-s3"
-version = "1.151.0"
+version = "1.152.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c82d4b41fe41bfca3c9e1de55645d9a525868ef5ce5e14cee9499ccaf1fc7225"
+checksum = "004d5acbd6850ab58789a43822e0a2ef23927a46b012c17f8fa51253103db9f8"
 dependencies = [
  "arc-swap",
  "aws-credential-types",
@@ -366,9 +366,9 @@ dependencies = [
 
 [[package]]
 name = "aws-sdk-s3control"
-version = "1.132.0"
+version = "1.133.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e2867704692877aaeeb5d392f82b8907817eca6e6e3aeb854e508b5bd1c8f1f8"
+checksum = "3ef8c1f051bfa15f9e553043ef48ce5d9ebe2a4fac270ea19ef9c8725b94c319"
 dependencies = [
  "arc-swap",
  "aws-credential-types",
@@ -445,9 +445,9 @@ dependencies = [
 
 [[package]]
 name = "aws-sdk-sts"
-version = "1.118.0"
+version = "1.119.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "df7572569d018ca72923073494eac3c4671a0daea90b9e3923c2d27a3a02a2c1"
+checksum = "03e490aa904849b38e770922faac779dd245f5cf8be81f19065acf18d276e4ad"
 dependencies = [
  "arc-swap",
  "aws-credential-types",
@@ -625,9 +625,9 @@ dependencies = [
 
 [[package]]
 name = "aws-smithy-runtime"
-version = "1.15.0"
+version = "1.16.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "591e0024cdf2a8de8711860f7e1d5cfbca26b800ce13793a9aa2f4f5918e6d95"
+checksum = "d6e302ac1d88b99652489df31abdec6ac42a2ab2ac3982ad0ac49f64dfaf28ba"
 dependencies = [
  "aws-smithy-async",
  "aws-smithy-http",
@@ -2005,7 +2005,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "39cab71617ae0d63f51a36d69f866391735b51691dbda63cf6f96d042b63efeb"
 dependencies = [
  "libc",
- "windows-sys 0.52.0",
+ "windows-sys 0.59.0",
 ]
 
 [[package]]
@@ -2983,7 +2983,7 @@ dependencies = [
  "libc",
  "percent-encoding",
  "pin-project-lite",
- "socket2 0.5.10",
+ "socket2 0.6.5",
  "tokio",
  "tower-service",
  "tracing",
@@ -3644,7 +3644,7 @@ dependencies = [
  "png 0.18.1",
  "serde",
  "thiserror 2.0.21",
- "windows-sys 0.61.2",
+ "windows-sys 0.60.2",
 ]
 
 [[package]]
@@ -4679,7 +4679,7 @@ dependencies = [
  "quinn-udp",
  "rustc-hash",
  "rustls 0.23.42",
- "socket2 0.5.10",
+ "socket2 0.6.5",
  "thiserror 2.0.21",
  "tokio",
  "tracing",
@@ -4718,9 +4718,9 @@ dependencies = [
  "cfg_aliases 0.2.2",
  "libc",
  "once_cell",
- "socket2 0.5.10",
+ "socket2 0.6.5",
  "tracing",
- "windows-sys 0.52.0",
+ "windows-sys 0.59.0",
 ]
 
 [[package]]
@@ -5130,7 +5130,7 @@ dependencies = [
  "errno",
  "libc",
  "linux-raw-sys",
- "windows-sys 0.52.0",
+ "windows-sys 0.59.0",
 ]
 
 [[package]]
@@ -5199,7 +5199,7 @@ dependencies = [
  "security-framework",
  "security-framework-sys",
  "webpki-root-certs",
- "windows-sys 0.52.0",
+ "windows-sys 0.59.0",
 ]
 
 [[package]]
@@ -5838,7 +5838,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c3d1e2c7f27f8d4cb10542a02c49005dbd6e93095799d6f3be745fae9f8fedd4"
 dependencies = [
  "libc",
- "windows-sys 0.61.2",
+ "windows-sys 0.60.2",
 ]
 
 [[package]]
@@ -6428,10 +6428,10 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "32497e9a4c7b38532efcdebeef879707aa9f794296a4f0244f6f69e9bc8574bd"
 dependencies = [
  "fastrand",
- "getrandom 0.4.3",
+ "getrandom 0.3.4",
  "once_cell",
  "rustix",
- "windows-sys 0.52.0",
+ "windows-sys 0.59.0",
 ]
 
 [[package]]
@@ -6851,7 +6851,7 @@ dependencies = [
  "png 0.18.1",
  "serde",
  "thiserror 2.0.21",
- "windows-sys 0.61.2",
+ "windows-sys 0.60.2",
 ]
 
 [[package]]
@@ -7248,7 +7248,7 @@ version = "0.1.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c2a7b1c03c876122aa43f3020e6c3c3ee5c05081c9a00739faf7503aeba10d22"
 dependencies = [
- "windows-sys 0.52.0",
+ "windows-sys 0.59.0",
 ]
 
 [[package]]
@@ -7269,7 +7269,7 @@ dependencies = [
  "objc2-foundation",
  "objc2-quartz-core",
  "raw-window-handle",
- "windows-sys 0.61.2",
+ "windows-sys 0.60.2",
  "windows-version",
 ]
 
