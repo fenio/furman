@@ -52,7 +52,7 @@ sha2 = "0.11"
 reqwest = { version = "0.13", features = ["json", "form", "rustls"], default-features = false }
 urlencoding = "2"
 uuid = { version = "1", features = ["v4"] }
-russh = "0.63.0"
+russh = "0.64.0"
 russh-sftp = "3.0"
 glob-match = "0.2"
 regex = "1"
