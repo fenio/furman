@@ -531,6 +531,34 @@ async fn test_download_version() {
 }
 
 #[tokio::test]
+async fn test_version_history_payload_sizes() {
+    let ctx = TestContext::new().await;
+    ctx.service.put_bucket_versioning(true, None, None).await.unwrap();
+    ctx.put_object("size.txt", b"abc").await;
+    ctx.put_object("size.txt", b"abcde").await;
+    ctx.put_object("size.txt", b"abcdefghijk").await;
+    // Prefix matches must not contribute versions from a different object key.
+    ctx.put_object("size.txt.other", b"not part of this object's total").await;
+
+    let versions = ctx.service.list_object_versions("size.txt").await.unwrap();
+    assert_eq!(versions.len(), 3);
+    assert_eq!(versions.iter().filter(|v| !v.is_delete_marker).map(|v| v.size).sum::<u64>(), 19);
+    assert_eq!(versions.iter().filter(|v| v.is_latest && !v.is_delete_marker).map(|v| v.size).sum::<u64>(), 11);
+    let oldest = versions.iter().find(|v| v.size == 3).unwrap().version_id.clone();
+
+    ctx.client.delete_object().bucket(&ctx.bucket).key("size.txt").send().await.unwrap();
+    let deleted = ctx.service.list_object_versions("size.txt").await.unwrap();
+    assert!(deleted.iter().any(|v| v.is_latest && v.is_delete_marker));
+    assert_eq!(deleted.iter().filter(|v| !v.is_delete_marker).map(|v| v.size).sum::<u64>(), 19);
+    assert_eq!(deleted.iter().filter(|v| v.is_latest && !v.is_delete_marker).count(), 0);
+
+    ctx.service.delete_version("size.txt", &oldest, None).await.unwrap();
+    let remaining = ctx.service.list_object_versions("size.txt").await.unwrap();
+    assert_eq!(remaining.iter().filter(|v| !v.is_delete_marker).map(|v| v.size).sum::<u64>(), 16);
+    ctx.cleanup().await;
+}
+
+#[tokio::test]
 async fn test_restore_version() {
     let ctx = TestContext::new().await;
 

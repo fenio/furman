@@ -5,6 +5,7 @@ on:
     branches: [main]
     paths:
       - 'src/**'
+      - 'tests/**'
       - 'static/**'
       - 'package.json'
       - 'package-lock.json'
@@ -16,6 +17,7 @@ on:
     branches: [main]
     paths:
       - 'src/**'
+      - 'tests/**'
       - 'static/**'
       - 'package.json'
       - 'package-lock.json'
@@ -45,6 +47,9 @@ jobs:
 
       - name: Run eslint
         run: npm run lint
+
+      - name: Test S3 version size totals
+        run: npm run test:s3-versions
 
       - name: Build static frontend
         run: npm run build
