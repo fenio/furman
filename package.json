@@ -1,7 +1,7 @@
 {
 	"name": "furman-filemanager",
 	"private": true,
-	"version": "0.3.17",
+	"version": "0.3.18",
 	"type": "module",
 	"engines": {
 		"node": ">=22.17"
