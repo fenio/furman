@@ -19,11 +19,13 @@
 <div class="comparison-bar">
   {#if comparisonState.scanning}
     <span class="spinner"></span>
-    <span class="bar-label">Comparing...</span>
+    <span class="bar-label">{comparisonState.mode === 'sha256' ? 'Reading contents for SHA-256...' : 'Comparing metadata...'}</span>
   {:else}
     <span class="badge green">{counts.new}</span>
     <span class="badge yellow">{counts.modified}</span>
     <span class="badge red">{counts.deleted}</span>
+    <span class="bar-label">{comparisonState.mode === 'sha256' ? 'SHA-256' : 'Metadata only'}</span>
+    <button class="filter-btn" title="Read all object contents on both sides; S3 download charges may apply" onclick={() => comparisonState.verifyContents()}>Verify SHA-256</button>
     {#each filters as f (f.id)}
       <button
         class="filter-btn"

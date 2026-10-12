@@ -11,6 +11,8 @@ export type ComparisonSide = 'left' | 'right';
 class ComparisonState {
   active = $state(false);
   scanning = $state(false);
+  mode = $state<'size_mtime' | 'sha256'>('size_mtime');
+  private lastComparison: [string, PanelBackend, string, string, PanelBackend, string] | null = null;
   filter = $state<ComparisonFilter>('all');
   filterSide = $state<ComparisonSide>('left');
   leftStatuses: Map<string, ComparisonStatus> = $state(new SvelteMap());
@@ -44,6 +46,7 @@ class ComparisonState {
     rightPath: string,
     rightBackend: PanelBackend,
     rightS3Id: string,
+    mode: 'size_mtime' | 'sha256' = 'size_mtime',
   ) {
     // Check supported backends
     if (leftBackend === 'sftp' || leftBackend === 'archive' ||
@@ -53,6 +56,8 @@ class ComparisonState {
     }
 
     this.stopComparison();
+    this.lastComparison = [leftPath, leftBackend, leftS3Id, rightPath, rightBackend, rightS3Id];
+    this.mode = mode;
     this.active = true;
     this.scanning = true;
     this.filter = 'all';
@@ -75,8 +80,8 @@ class ComparisonState {
         rightBackend,
         rightPath,
         rightS3Id,
-        ['.DS_Store', 'Thumbs.db'],
-        'size-and-date',
+        mode === 'sha256' ? [] : ['.DS_Store', 'Thumbs.db'],
+        mode,
         (event: SyncEvent) => {
           if (this.syncId !== syncId) return;
           if (event.type === 'Entry') {
@@ -116,11 +121,18 @@ class ComparisonState {
     } catch (err: unknown) {
       if (this.syncId !== syncId) return;
       const msg = String(err);
+      this.stopComparison();
       if (!msg.includes('cancelled')) {
         appState.showAlert('Comparison failed: ' + msg);
       }
       this.scanning = false;
       this.syncId = '';
+    }
+  }
+
+  verifyContents() {
+    if (this.lastComparison) {
+      return this.startComparison(...this.lastComparison, 'sha256');
     }
   }
 

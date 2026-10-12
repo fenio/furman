@@ -2,6 +2,7 @@ pub mod client;
 pub mod crypto;
 pub mod helpers;
 pub mod service;
+pub mod verification;
 
 pub use client::{build_s3_client, S3Connection, S3State};
 pub use helpers::{

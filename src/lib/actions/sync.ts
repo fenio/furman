@@ -51,7 +51,8 @@ export function executeSyncTransfer(detail: {
           result = await s3Upload(destS3Id, opId, copySourcePaths, prefix, onProgress);
         } else if (sourceBackend === 's3' && destBackend === 's3') {
           const destPrefix = s3PathToPrefix(destPath, '');
-          result = await s3CopyObjects(sourceS3Id, opId, copySourcePaths, destS3Id, destPrefix, onProgress);
+          const sourcePrefix = s3PathToPrefix(sourcePath, '');
+          result = await s3CopyObjects(sourceS3Id, opId, copySourcePaths, destS3Id, destPrefix, onProgress, null, sourcePrefix, true);
         } else {
           throw new Error(`Unsupported sync: ${sourceBackend} -> ${destBackend}`);
         }

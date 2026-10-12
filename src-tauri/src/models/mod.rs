@@ -238,8 +238,8 @@ pub struct SyncEntry {
     pub dest_size: u64,
     pub source_modified: i64, // epoch ms, 0 if missing
     pub dest_modified: i64,   // epoch ms, 0 if missing
-    pub source_etag: String,  // MD5 hex for local, ETag for S3 (empty if unavailable)
-    pub dest_etag: String,    // MD5 hex for local, ETag for S3 (empty if unavailable)
+    pub source_etag: String, // Legacy field name: actual SHA-256 in content mode; empty in metadata mode
+    pub dest_etag: String, // Legacy field name: actual SHA-256 in content mode; empty in metadata mode
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

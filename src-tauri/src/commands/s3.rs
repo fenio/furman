@@ -313,10 +313,12 @@ pub async fn s3_copy_objects(
     src_keys: Vec<String>,
     dest_id: String,
     dest_prefix: String,
+    source_prefix: Option<String>,
+    verify_contents: Option<bool>,
     checkpoint: Option<TransferCheckpoint>,
     channel: Channel<ProgressEvent>,
 ) -> Result<Option<TransferCheckpoint>, FmError> {
-    let (src_client, src_bucket, dest_client, dest_bucket) = {
+    let (src_client, src_bucket, dest_client, dest_bucket, same_server) = {
         let map = state.0.lock().map_err(|e| s3err(e.to_string()))?;
         let src_conn = map
             .get(&src_id)
@@ -329,6 +331,7 @@ pub async fn s3_copy_objects(
             src_conn.bucket.clone(),
             dest_conn.client.clone(),
             dest_conn.bucket.clone(),
+            src_conn.sdk_config.endpoint_url() == dest_conn.sdk_config.endpoint_url(),
         )
     };
 
@@ -362,6 +365,9 @@ pub async fn s3_copy_objects(
                 let _ = channel.send(evt);
             },
             checkpoint.as_ref(),
+            source_prefix.as_deref(),
+            verify_contents.unwrap_or(false),
+            same_server,
         )
         .await;
 
@@ -993,7 +999,7 @@ pub async fn s3_set_multipart_config(
     part_size: u64,
     concurrent_parts: u64,
 ) -> Result<(), FmError> {
-    use crate::s3::helpers::{MULTIPART_THRESHOLD_BYTES, PART_SIZE_BYTES, CONCURRENT_PARTS};
+    use crate::s3::helpers::{CONCURRENT_PARTS, MULTIPART_THRESHOLD_BYTES, PART_SIZE_BYTES};
     MULTIPART_THRESHOLD_BYTES.store(threshold, std::sync::atomic::Ordering::Relaxed);
     PART_SIZE_BYTES.store(part_size, std::sync::atomic::Ordering::Relaxed);
     CONCURRENT_PARTS.store(concurrent_parts, std::sync::atomic::Ordering::Relaxed);
