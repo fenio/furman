@@ -33,6 +33,7 @@
   import { invoke } from '@tauri-apps/api/core';
   import { sftpHead } from '#lib/services/sftp.js';
   import { formatSize, formatDate, formatPermissions } from '#lib/utils/format.js';
+  import { summarizeVersionSizes } from '#lib/utils/s3-versions.js';
   import { connectionsState } from '#lib/state/connections.svelte.js';
   import type {
     FileProperties, S3ObjectProperties, S3ObjectVersion, PanelBackend,
@@ -226,7 +227,9 @@
   let _versionsExpanded = $state(false);
   let versions = $state<S3ObjectVersion[]>([]);
   let versionsLoading = $state(false);
+  let versionsLoaded = $state(false);
   let versionsError = $state('');
+  const versionSizes = $derived(summarizeVersionSizes(versions));
   let versionActionLoading = $state<string | null>(null);
   let versionDownloadGeneration = 0;
 
@@ -452,14 +455,16 @@
     }
   }
 
-  async function loadVersions() {
+  async function loadVersions(force = false) {
     if (versionsLoading) return;
     _versionsExpanded = true;
-    if (versions.length > 0) return;
+    if (versionsLoaded && !force) return;
     versionsLoading = true;
+    versionsLoaded = false;
     versionsError = '';
     try {
       versions = await s3ListObjectVersions(s3ConnectionId, path);
+      versionsLoaded = true;
     } catch (err: unknown) {
       versionsError = String(err);
     } finally {
@@ -489,7 +494,7 @@
     versionActionLoading = vid;
     try {
       await s3RestoreVersion(s3ConnectionId, path, vid);
-      versions = await s3ListObjectVersions(s3ConnectionId, path);
+      await loadVersions(true);
       s3Props = await s3HeadObject(s3ConnectionId, path);
     } catch (err: unknown) {
       versionsError = String(err);
@@ -508,7 +513,7 @@
     versionActionLoading = vid;
     try {
       await s3DeleteVersion(s3ConnectionId, path, vid);
-      versions = versions.filter(v => v.version_id !== vid);
+      await loadVersions(true);
     } catch (err: unknown) {
       versionsError = String(err);
     } finally {
@@ -525,7 +530,7 @@
       versionActionLoading = vid;
       try {
         await s3DeleteVersion(s3ConnectionId, path, vid, mfa);
-        versions = versions.filter(v => v.version_id !== vid);
+        await loadVersions(true);
       } catch (err: unknown) {
         versionsError = String(err);
       } finally {
@@ -1445,6 +1450,7 @@
         } else {
           s3Props = await s3HeadObject(s3ConnectionId, path);
           selectedStorageClass = s3Props.storage_class ?? 'STANDARD';
+          if (caps.versioning) void loadVersions();
           // Load object-level Object Lock data
           if (caps.objectLock) {
             objRetentionLoading = true;
@@ -1821,7 +1827,17 @@
         <table class="props-table">
           <tbody>
             <tr><td class="prop-label">Key</td><td class="prop-value path">{s3Props.key}</td></tr>
-            <tr><td class="prop-label">Size</td><td class="prop-value">{formatSize(s3Props.size)} ({s3Props.size.toLocaleString()} bytes)</td></tr>
+            <tr><td class="prop-label">Current version size</td><td class="prop-value">{#if versionsLoaded}{formatSize(Number(versionSizes.currentBytes))} ({versionSizes.currentBytes.toLocaleString()} bytes){:else}{formatSize(s3Props.size)} ({s3Props.size.toLocaleString()} bytes){/if}</td></tr>
+            {#if caps.versioning}
+              {#if versionsLoading}
+                <tr><td class="prop-label">Size including history</td><td class="prop-value">Loading version sizes...</td></tr>
+              {:else if versionsError}
+                <tr><td class="prop-label">Size including history</td><td class="prop-value">Unavailable <button class="version-action-btn" title={versionsError} onclick={() => loadVersions(true)}>Retry</button></td></tr>
+              {:else if versionsLoaded}
+                <tr><td class="prop-label">Previous versions size</td><td class="prop-value">{formatSize(Number(versionSizes.previousBytes))} ({versionSizes.previousBytes.toLocaleString()} bytes) — {versionSizes.previousVersionCount} version(s)</td></tr>
+                <tr><td class="prop-label">Total including history</td><td class="prop-value">{formatSize(Number(versionSizes.totalBytes))} ({versionSizes.totalBytes.toLocaleString()} bytes) — {versionSizes.dataVersionCount} stored version(s)</td></tr>
+              {/if}
+            {/if}
             <tr><td class="prop-label">Last Modified</td><td class="prop-value">{formatDate(s3Props.modified, appState.dateFormat)}</td></tr>
             <tr><td class="prop-label">Content Type</td><td class="prop-value">{s3Props.content_type ?? '--'}</td></tr>
             <tr><td class="prop-label">ETag</td><td class="prop-value mono">{s3Props.etag ?? '--'}</td></tr>
@@ -2128,14 +2144,14 @@
                           <button
                             class="version-action-btn"
                             onclick={() => handleDownloadVersion(ver.version_id)}
-                            disabled={versionActionLoading === ver.version_id}
+                            disabled={versionActionLoading !== null || versionsLoading}
                             title="Download this version"
                           >DL</button>
                           {#if !ver.is_latest}
                             <button
                               class="version-action-btn"
                               onclick={() => handleRestoreVersion(ver.version_id)}
-                              disabled={versionActionLoading === ver.version_id}
+                              disabled={versionActionLoading !== null || versionsLoading}
                               title="Restore as current"
                             >Restore</button>
                           {/if}
@@ -2143,7 +2159,7 @@
                         <button
                           class="version-action-btn danger"
                           onclick={() => handleDeleteVersion(ver.version_id)}
-                          disabled={versionActionLoading === ver.version_id}
+                          disabled={versionActionLoading !== null || versionsLoading}
                           title="Delete this version"
                         >Del</button>
                       </div>
