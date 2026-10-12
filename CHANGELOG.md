@@ -1,5 +1,25 @@
 # Changelog
 
+## [0.3.18] - 2026-10-12
+
+### Changed
+
+- Update CHANGELOG.md for v0.3.17
+- Migrate to SvelteKit 3 and adapter-static 4
+- Update CodeMirror language for shared stream parser types
+- Update vulnerable transitive development dependencies
+
+### Dependencies
+
+- 40 dependency update(s) via Renovate
+
+### Other
+
+- Use structured Homebrew postflight steps
+- Show S3 object size including retained versions
+- Preserve S3 migration paths and verify contents with SHA-256
+- Block releases when tag and source versions disagree
+
 ## [0.3.17] - 2026-09-26
 
 ### Fixed
