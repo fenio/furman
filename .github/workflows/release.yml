@@ -9,7 +9,22 @@ permissions:
   contents: write
 
 jobs:
+  validate-version:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+
+      - name: Validate release tag against source versions
+        env:
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: python3 scripts/check-release-version.py "$RELEASE_TAG"
+
   changelog:
+    needs: validate-version
     runs-on: ubuntu-latest
     outputs:
       body: ${{ steps.changelog.outputs.content }}
@@ -25,7 +40,7 @@ jobs:
           args: --latest --strip header
 
   build:
-    needs: changelog
+    needs: [validate-version, changelog]
     strategy:
       fail-fast: false
       matrix:

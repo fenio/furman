@@ -1,0 +1,46 @@
+name: Release Version Validation Tests
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'scripts/check-release-version.py'
+      - 'tests/test_release_version.py'
+      - 'package.json'
+      - 'package-lock.json'
+      - 'src-tauri/Cargo.toml'
+      - 'src-tauri/Cargo.lock'
+      - 'src-tauri/tauri.conf.json'
+      - '.github/workflows/release.yml'
+      - '.github/workflows/test-release-version.yml'
+  pull_request:
+    branches: [main]
+    paths:
+      - 'scripts/check-release-version.py'
+      - 'tests/test_release_version.py'
+      - 'package.json'
+      - 'package-lock.json'
+      - 'src-tauri/Cargo.toml'
+      - 'src-tauri/Cargo.lock'
+      - 'src-tauri/tauri.conf.json'
+      - '.github/workflows/release.yml'
+      - '.github/workflows/test-release-version.yml'
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+
+      - name: Test release version validation
+        run: python3 -B -m unittest discover -s tests -p 'test_release_version.py' -v
+
+      - name: Check current source version consistency
+        run: |
+          TAG=$(python3 -c 'import json; print("v" + json.load(open("package.json"))["version"])')
+          python3 scripts/check-release-version.py "$TAG"
