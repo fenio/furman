@@ -123,10 +123,12 @@ export async function s3CopyObjects(
   destPrefix: string,
   onProgress: (e: ProgressEvent) => void,
   checkpoint?: TransferCheckpoint | null,
+  sourcePrefix?: string,
+  verifyContents = false,
 ): Promise<TransferCheckpoint | null> {
   const channel = new Channel<ProgressEvent>();
   channel.onmessage = onProgress;
-  return await invoke<TransferCheckpoint | null>('s3_copy_objects', { srcId, opId, srcKeys, destId, destPrefix, checkpoint: checkpoint ?? null, channel });
+  return await invoke<TransferCheckpoint | null>('s3_copy_objects', { srcId, opId, srcKeys, destId, destPrefix, sourcePrefix: sourcePrefix ?? null, verifyContents, checkpoint: checkpoint ?? null, channel });
 }
 
 export async function s3HeadObject(

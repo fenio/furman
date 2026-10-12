@@ -30,6 +30,7 @@
   let allEntries = $state<SyncEntry[]>([]);
   let scanning = $state(false);
   let scanComplete = $state(false);
+  let scanError = $state('');
   let filter = $state<'all' | 'new' | 'modified' | 'deleted'>('all');
   let selectedPaths = new SvelteSet<string>();
   let cursorIndex = $state(0);
@@ -39,7 +40,7 @@
 
   // Options
   let excludeText = $state(appState.syncExcludePatterns);
-  let compareMode = $state<'size_mtime' | 'checksum'>('size_mtime');
+  let compareMode = $state<'size_mtime' | 'sha256'>('sha256');
 
   // Summary counts
   let newCount = $state(0);
@@ -82,6 +83,7 @@
     cursorIndex = 0;
     scanning = true;
     scanComplete = false;
+    scanError = '';
     newCount = 0;
     modifiedCount = 0;
     deletedCount = 0;
@@ -121,12 +123,23 @@
       parseExcludePatterns(),
       compareMode,
       handleEvent,
-    ).catch(() => {
+    ).catch((err: unknown) => {
       if (id === currentSyncId) {
         scanning = false;
-        scanComplete = true;
+        scanComplete = false;
+        scanError = 'Comparison failed: ' + String(err);
+        selectedPaths.clear();
       }
     });
+  }
+
+  function invalidateScan() {
+    if (currentSyncId) cancelSync(currentSyncId).catch(() => {});
+    currentSyncId = '';
+    scanning = false;
+    scanComplete = false;
+    selectedPaths.clear();
+    scanError = 'Options changed or scan cancelled. Rescan before syncing.';
   }
 
   function toggleSelection(path: string) {
@@ -148,6 +161,7 @@
   }
 
   function handleSync() {
+    if (!scanComplete || scanning) return;
     const selected = allEntries.filter((e) => selectedPaths.has(e.relative_path));
     onSync(selected);
   }
@@ -172,9 +186,7 @@
       e.preventDefault();
       e.stopPropagation();
       if (scanning && currentSyncId) {
-        cancelSync(currentSyncId).catch(() => {});
-        scanning = false;
-        scanComplete = true;
+        invalidateScan();
       } else {
         onClose();
       }
@@ -291,18 +303,19 @@
            
             bind:this={excludeInput}
             bind:value={excludeText}
+            oninput={invalidateScan}
             placeholder=".DS_Store, node_modules/**, *.tmp"
           />
         </div>
         <div class="option-group">
           <span class="option-label">Compare:</span>
           <label class="radio-label">
-            <input type="radio" bind:group={compareMode} value="size_mtime" />
+            <input type="radio" bind:group={compareMode} value="size_mtime" onchange={invalidateScan} />
             Size + Date
           </label>
           <label class="radio-label">
-            <input type="radio" bind:group={compareMode} value="checksum" />
-            Checksum <span class="hint">(slower)</span>
+            <input type="radio" bind:group={compareMode} value="sha256" onchange={invalidateScan} />
+            SHA-256 <span class="hint">(reads all contents)</span>
           </label>
         </div>
         <button class="rescan-btn" onclick={startScan} disabled={scanning}>Rescan</button>
@@ -367,7 +380,7 @@
         {#if filtered.length === 0 && scanComplete}
           <div class="no-entries">
             {#if filter === 'all'}
-              Directories are in sync
+              {compareMode === 'sha256' ? 'SHA-256 contents match for all included files' : 'Size and timestamps match (contents not verified)'}
             {:else}
               No {filter} files found
             {/if}
@@ -380,7 +393,9 @@
     <div class="dialog-footer">
       <span class="status-text">
         {#if scanning}
-          Scanning{compareMode === 'checksum' ? ' (checksumming)' : ''}... ({allEntries.length} files)
+          Scanning{compareMode === 'sha256' ? ' (reading contents for SHA-256; S3 download charges may apply)' : ''}... ({allEntries.length} files)
+        {:else if scanError}
+          {scanError}
         {:else if scanComplete}
           {filterCount('new')} new, {filterCount('modified')} modified, {filterCount('deleted')} deleted &mdash; {selectedPaths.size} selected
         {/if}
@@ -389,7 +404,7 @@
         <button class="dialog-btn" onclick={onClose}>Cancel</button>
         <button
           class="dialog-btn sync-btn"
-          disabled={selectedPaths.size === 0 || scanning}
+          disabled={selectedPaths.size === 0 || scanning || !scanComplete}
           onclick={handleSync}
         >Sync ({selectedPaths.size})</button>
       </div>

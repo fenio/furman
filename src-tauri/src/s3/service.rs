@@ -18,7 +18,11 @@ use crate::models::{
     SearchEvent, SearchResult, TransferCheckpoint,
 };
 
-use super::helpers::{s3err, s3_path, strip_s3_prefix, list_all_objects, throttle, collect_local_files, get_multipart_threshold, upload_file_multipart, copy_single_or_multipart, PREVIEW_MAX_SIZE, COPY_MULTIPART_THRESHOLD};
+use super::helpers::{
+    collect_local_files, copy_single_or_multipart, get_multipart_threshold, list_all_objects,
+    s3_path, s3err, strip_s3_prefix, throttle, upload_file_multipart, COPY_MULTIPART_THRESHOLD,
+    PREVIEW_MAX_SIZE,
+};
 
 use super::crypto::EncryptionConfig;
 
@@ -215,7 +219,9 @@ impl S3Service {
                     .and_then(|t| t.to_millis().ok())
                     .unwrap_or(0);
                 let extension = if name.contains('.') {
-                    name.rsplit('.').next().map(std::string::ToString::to_string)
+                    name.rsplit('.')
+                        .next()
+                        .map(std::string::ToString::to_string)
                 } else {
                     None
                 };
@@ -238,7 +244,9 @@ impl S3Service {
             }
 
             if resp.is_truncated() == Some(true) {
-                continuation_token = resp.next_continuation_token().map(std::string::ToString::to_string);
+                continuation_token = resp
+                    .next_continuation_token()
+                    .map(std::string::ToString::to_string);
             } else {
                 break;
             }
@@ -370,7 +378,9 @@ impl S3Service {
                 .map_err(|e| s3err(e.to_string()))?;
 
             let etag = resp.e_tag().map(|s| s.trim_matches('"').to_string());
-            let expected_crc32c = resp.checksum_crc32_c().map(std::string::ToString::to_string);
+            let expected_crc32c = resp
+                .checksum_crc32_c()
+                .map(std::string::ToString::to_string);
             let obj_metadata: HashMap<String, String> =
                 resp.metadata().cloned().unwrap_or_default();
             let expected_size = *_size;
@@ -543,11 +553,7 @@ impl S3Service {
                 .unwrap_or_default();
 
             if src_path.is_dir() {
-                collect_local_files(
-                    &src_path,
-                    &format!("{dest_prefix}{name}"),
-                    &mut file_list,
-                )?;
+                collect_local_files(&src_path, &format!("{dest_prefix}{name}"), &mut file_list)?;
             } else {
                 let key = format!("{dest_prefix}{name}");
                 file_list.push((src_path, key));
@@ -723,11 +729,7 @@ impl S3Service {
                 .map(|n| n.to_string_lossy().to_string())
                 .unwrap_or_default();
             if src_path.is_dir() {
-                collect_local_files(
-                    &src_path,
-                    &format!("{dest_prefix}{name}"),
-                    &mut file_list,
-                )?;
+                collect_local_files(&src_path, &format!("{dest_prefix}{name}"), &mut file_list)?;
             } else {
                 let key = format!("{dest_prefix}{name}");
                 file_list.push((src_path, key));
@@ -930,6 +932,9 @@ impl S3Service {
             pause,
             on_progress,
             None,
+            None,
+            false,
+            std::ptr::eq(src_client.config(), dest_client.config()),
         )
         .await
     }
@@ -947,14 +952,21 @@ impl S3Service {
         pause: &AtomicBool,
         on_progress: &(dyn Fn(ProgressEvent) + Send + Sync),
         checkpoint: Option<&TransferCheckpoint>,
+        source_prefix: Option<&str>,
+        verify_contents: bool,
+        same_server: bool,
     ) -> Result<Option<TransferCheckpoint>, FmError> {
-        let mut resolved: Vec<(String, u64)> = Vec::new();
+        let mut resolved: Vec<(String, u64, String)> = Vec::new();
+        let mut destinations = std::collections::HashMap::new();
         for raw_key in src_keys {
+            super::verification::check_cancelled(cancel)?;
             let key = strip_s3_prefix(raw_key, src_bucket);
             if key.ends_with('/') {
                 let children = list_all_objects(src_client, src_bucket, &key).await?;
                 for (k, size, _) in children {
-                    resolved.push((k, size));
+                    let dest =
+                        super::verification::destination_key(&k, &key, source_prefix, dest_prefix)?;
+                    resolved.push((k, size, dest));
                 }
             } else {
                 let head = src_client
@@ -965,12 +977,44 @@ impl S3Service {
                     .await
                     .map_err(|e| s3err(e.to_string()))?;
                 let size = head.content_length().unwrap_or(0) as u64;
-                resolved.push((key, size));
+                let dest =
+                    super::verification::destination_key(&key, &key, source_prefix, dest_prefix)?;
+                resolved.push((key, size, dest));
             }
         }
 
+        // Preflight the entire mapping before writing: never silently flatten
+        // distinct source keys onto one destination, or copy an object to itself.
+        for (key, _, dest) in &resolved {
+            if let Some(previous) = destinations.insert(dest.clone(), key.clone()) {
+                if previous != *key {
+                    return Err(s3err(format!(
+                        "Destination collision: {previous} and {key} both map to {dest}"
+                    )));
+                }
+            }
+            if same_server && src_bucket == dest_bucket && key == dest {
+                return Err(s3err(format!(
+                    "Source and destination are identical: {key}"
+                )));
+            }
+        }
+        if same_server && src_bucket == dest_bucket {
+            let source_keys: HashSet<_> = resolved.iter().map(|(key, _, _)| key).collect();
+            if resolved
+                .iter()
+                .any(|(_, _, dest)| source_keys.contains(dest))
+            {
+                return Err(s3err(
+                    "Destination overlaps source objects; copy to a separate prefix or bucket",
+                ));
+            }
+        }
+        let mut seen = HashSet::new();
+        resolved.retain(|(key, _, _)| seen.insert(key.clone()));
+
         let mut files_total = resolved.len() as u32;
-        let mut bytes_total: u64 = resolved.iter().map(|(_, s)| *s).sum();
+        let mut bytes_total: u64 = resolved.iter().map(|(_, s, _)| *s).sum();
         let mut bytes_done = checkpoint.map_or(0, |c| c.bytes_done);
         let mut files_done = checkpoint.map_or(0, |c| c.files_done);
         let mut completed_files = checkpoint.map_or_else(Vec::new, |c| c.files_completed.clone());
@@ -980,7 +1024,7 @@ impl S3Service {
             files_total = c.files_total;
         }
 
-        for (key, size) in &resolved {
+        for (key, size, dest_key) in &resolved {
             if cancel.load(Ordering::Relaxed) {
                 return Err(FmError::Other("Operation cancelled".into()));
             }
@@ -998,18 +1042,88 @@ impl S3Service {
             }
 
             let filename = key.rsplit('/').next().unwrap_or(key);
-            let dest_key = format!("{dest_prefix}{filename}");
 
-            copy_single_or_multipart(
-                src_client,
-                src_bucket,
-                key,
-                dest_client,
-                dest_bucket,
-                &dest_key,
-                *size,
-            )
-            .await?;
+            let source_hash = if verify_contents {
+                on_progress(ProgressEvent {
+                    id: op_id.to_owned(),
+                    bytes_done,
+                    bytes_total,
+                    current_file: format!("Verifying source: {key}"),
+                    files_done,
+                    files_total,
+                });
+                let head = src_client
+                    .head_object()
+                    .bucket(src_bucket)
+                    .key(key)
+                    .send()
+                    .await
+                    .map_err(|e| s3err(e.to_string()))?;
+                Some(
+                    super::verification::object_sha256(
+                        src_client,
+                        src_bucket,
+                        key,
+                        *size,
+                        head.e_tag(),
+                        cancel,
+                    )
+                    .await?,
+                )
+            } else {
+                None
+            };
+
+            if same_server {
+                copy_single_or_multipart(
+                    src_client,
+                    src_bucket,
+                    key,
+                    dest_client,
+                    dest_bucket,
+                    dest_key,
+                    *size,
+                )
+                .await?;
+            } else {
+                // Never ask a foreign server to find the source bucket: an
+                // unrelated bucket of that name could exist and copy successfully.
+                super::helpers::copy_via_download(
+                    src_client,
+                    src_bucket,
+                    key,
+                    dest_client,
+                    dest_bucket,
+                    dest_key,
+                    *size,
+                )
+                .await?;
+            }
+
+            if let Some(source_hash) = source_hash {
+                on_progress(ProgressEvent {
+                    id: op_id.to_owned(),
+                    bytes_done,
+                    bytes_total,
+                    current_file: format!("Verifying destination: {dest_key}"),
+                    files_done,
+                    files_total,
+                });
+                let destination_hash = super::verification::object_sha256(
+                    dest_client,
+                    dest_bucket,
+                    dest_key,
+                    *size,
+                    None,
+                    cancel,
+                )
+                .await?;
+                if source_hash != destination_hash {
+                    return Err(s3err(format!(
+                        "SHA-256 verification failed for {key} -> {dest_key}; source retained"
+                    )));
+                }
+            }
 
             bytes_done += size;
             files_done += 1;
@@ -1463,7 +1577,9 @@ impl S3Service {
             }
 
             if resp.is_truncated() == Some(true) {
-                continuation_token = resp.next_continuation_token().map(std::string::ToString::to_string);
+                continuation_token = resp
+                    .next_continuation_token()
+                    .map(std::string::ToString::to_string);
             } else {
                 break;
             }
@@ -1737,7 +1853,9 @@ impl S3Service {
 
             if resp.is_truncated() == Some(true) {
                 key_marker = resp.next_key_marker().map(std::string::ToString::to_string);
-                version_id_marker = resp.next_version_id_marker().map(std::string::ToString::to_string);
+                version_id_marker = resp
+                    .next_version_id_marker()
+                    .map(std::string::ToString::to_string);
             } else {
                 break;
             }
@@ -1937,7 +2055,9 @@ impl S3Service {
                                 let default = rule.apply_server_side_encryption_by_default()?;
                                 Some(S3EncryptionRule {
                                     sse_algorithm: default.sse_algorithm().as_str().to_string(),
-                                    kms_key_id: default.kms_master_key_id().map(std::string::ToString::to_string),
+                                    kms_key_id: default
+                                        .kms_master_key_id()
+                                        .map(std::string::ToString::to_string),
                                     bucket_key_enabled: rule.bucket_key_enabled().unwrap_or(false),
                                 })
                             })
@@ -1985,9 +2105,13 @@ impl S3Service {
 
         Ok(S3ObjectMetadata {
             content_type: head.content_type().map(std::string::ToString::to_string),
-            content_disposition: head.content_disposition().map(std::string::ToString::to_string),
+            content_disposition: head
+                .content_disposition()
+                .map(std::string::ToString::to_string),
             cache_control: head.cache_control().map(std::string::ToString::to_string),
-            content_encoding: head.content_encoding().map(std::string::ToString::to_string),
+            content_encoding: head
+                .content_encoding()
+                .map(std::string::ToString::to_string),
             custom,
         })
     }
@@ -2245,7 +2369,9 @@ impl S3Service {
 
             if resp.is_truncated() == Some(true) {
                 key_marker = resp.next_key_marker().map(std::string::ToString::to_string);
-                upload_id_marker = resp.next_upload_id_marker().map(std::string::ToString::to_string);
+                upload_id_marker = resp
+                    .next_upload_id_marker()
+                    .map(std::string::ToString::to_string);
             } else {
                 break;
             }
@@ -2480,14 +2606,10 @@ impl S3Service {
                     .cors_rules()
                     .iter()
                     .map(|rule| S3CorsRule {
-                        allowed_origins: rule
-                            .allowed_origins().to_vec(),
-                        allowed_methods: rule
-                            .allowed_methods().to_vec(),
-                        allowed_headers: rule
-                            .allowed_headers().to_vec(),
-                        expose_headers: rule
-                            .expose_headers().to_vec(),
+                        allowed_origins: rule.allowed_origins().to_vec(),
+                        allowed_methods: rule.allowed_methods().to_vec(),
+                        allowed_headers: rule.allowed_headers().to_vec(),
+                        expose_headers: rule.expose_headers().to_vec(),
                         max_age_seconds: rule.max_age_seconds().map(|v| v),
                     })
                     .collect();
@@ -2711,7 +2833,9 @@ impl S3Service {
                             gt,
                             grantee.id().map(std::string::ToString::to_string),
                             grantee.uri().map(std::string::ToString::to_string),
-                            grantee.email_address().map(std::string::ToString::to_string),
+                            grantee
+                                .email_address()
+                                .map(std::string::ToString::to_string),
                             grantee.display_name().map(std::string::ToString::to_string),
                         )
                     } else {
@@ -3757,7 +3881,9 @@ impl S3Service {
                     let storage_class = dest
                         .and_then(|d| d.storage_class())
                         .map(|sc| sc.as_str().to_string());
-                    let account = dest.and_then(|d| d.account()).map(std::string::ToString::to_string);
+                    let account = dest
+                        .and_then(|d| d.account())
+                        .map(std::string::ToString::to_string);
                     let kms_key_id = dest
                         .and_then(|d| d.encryption_configuration())
                         .and_then(|ec| ec.replica_kms_key_id())
