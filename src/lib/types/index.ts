@@ -64,6 +64,7 @@ export type ModalType =
   | 'editor'
   | 'volume-selector'
   | 'connection-manager'
+  | 'compare'
   | 'overwrite'
   | 'search'
   | 'sync'
@@ -135,6 +136,7 @@ export interface FileProperties {
 }
 
 export interface S3ObjectProperties {
+  server_side_encryption?: string | null;
   key: string;
   size: number;
   modified: number; // epoch ms
@@ -548,6 +550,8 @@ export interface S3ProviderCapabilities {
 }
 
 export interface S3ConnectionInfo {
+  profileId?: string;
+  sseCustomerKeyEnabled?: boolean;
   bucket: string;
   region: string;
   endpoint?: string;
@@ -556,6 +560,15 @@ export interface S3ConnectionInfo {
   provider?: string;
   capabilities?: S3ProviderCapabilities;
 }
+
+export type S3ConnectCallback = (
+  bucket: string, region: string, endpoint?: string, profile?: string,
+  accessKey?: string, secretKey?: string, provider?: string,
+  customCapabilities?: S3ProviderCapabilities, roleArn?: string,
+  externalId?: string, sessionName?: string, sessionDurationSecs?: number,
+  useTransferAcceleration?: boolean, anonymous?: boolean, webIdentityToken?: string,
+  proxyUrl?: string, proxyUsername?: string, proxyPassword?: string, sseCustomerKey?: string,
+) => void | Promise<void>;
 
 export interface S3Bookmark {
   id: string;
@@ -580,6 +593,7 @@ export interface ConnectionProfileBase {
 }
 
 export interface S3Profile extends ConnectionProfileBase {
+  sseCustomerKeyEnabled?: boolean; // Actual key is stored only in OS keychain.
   type: 's3';
   bucket: string;
   region: string;

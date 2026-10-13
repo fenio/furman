@@ -25,6 +25,8 @@
   import OverwriteDialog from '#lib/components/OverwriteDialog.svelte';
   import PropertiesDialog from '#lib/components/PropertiesDialog.svelte';
   import SyncDialog from '#lib/components/SyncDialog.svelte';
+  import CompareDialog from '#lib/components/CompareDialog.svelte';
+  import { comparisonState } from '#lib/state/comparison.svelte.js';
   import ShortcutsDialog from '#lib/components/ShortcutsDialog.svelte';
   import S3BatchEditDialog from '#lib/components/S3BatchEditDialog.svelte';
   import LocalBatchEditDialog from '#lib/components/LocalBatchEditDialog.svelte';
@@ -315,15 +317,31 @@
     />
   {/if}
 
+  {#if appState.modal === 'compare'}
+    <CompareDialog
+      leftPath={panels.left.path} leftBackend={panels.left.backend}
+      rightPath={panels.right.path} rightBackend={panels.right.backend}
+      onCompare={(mode, excludes) => {
+        appState.closeModal();
+        comparisonState.startComparison(
+          panels.left.path, panels.left.backend, panels.left.s3Connection?.connectionId ?? '',
+          panels.right.path, panels.right.backend, panels.right.s3Connection?.connectionId ?? '',
+          mode, excludes,
+        );
+      }}
+      onClose={() => appState.closeModal()}
+    />
+  {/if}
+
   {#if appState.modal === 'connection-manager'}
     <ConnectionManager
       initialTab={appState.connectionManagerTab}
       initialData={appState.connectionManagerInitialData}
-      onConnect={(bucket, region, endpoint, profile, accessKey, secretKey, provider, customCapabilities, _roleArn, _externalId, _sessionName, _sessionDurationSecs, _useTransferAcceleration) => {
+      onConnect={appState.connectCallback ? (...args) => {
         const cb = appState.connectCallback;
         appState.closeModal();
-        if (cb) cb(bucket, region, endpoint, profile, accessKey, secretKey, provider, customCapabilities);
-      }}
+        return cb?.(...args);
+      } : undefined}
       onClose={() => appState.closeModal()}
     />
   {/if}

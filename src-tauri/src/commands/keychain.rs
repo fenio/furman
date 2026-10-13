@@ -38,6 +38,17 @@ pub fn keychain_set(profile_id: String, secret: String) -> Result<(), FmError> {
 
 #[tauri::command]
 pub fn keychain_get(profile_id: String) -> Result<Option<String>, FmError> {
+    // Identify why macOS may prompt, without logging account IDs or secrets.
+    let purpose = if profile_id.ends_with(":sse-c") {
+        "SSE-C encryption key"
+    } else if profile_id.ends_with(":proxy") {
+        "proxy password"
+    } else if profile_id.ends_with(":oidc-refresh") {
+        "OIDC refresh token"
+    } else {
+        "connection credential"
+    };
+    log::info!("Keychain read requested: {purpose}");
     let entry = entry_for(&profile_id)?;
     match entry.get_password() {
         Ok(secret) => Ok(Some(secret)),

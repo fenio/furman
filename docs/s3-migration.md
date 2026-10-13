@@ -13,7 +13,7 @@ Open the source bucket/prefix in one pane and the destination in the other.
 
 ## Verification
 
-Use **Verify SHA-256** in the pane comparison bar, or select **SHA-256** in the Sync dialog and rescan. The Sync dialog defaults to SHA-256. Merely scanning does not modify either bucket.
+Use **View → Compare Panes…** to select **Contents — SHA-256** before comparing. Comparisons involving S3 default to SHA-256; the dialog also offers metadata comparison and explicit exclusion patterns. You can also use **Verify SHA-256** in the comparison bar, or select **SHA-256** in the Sync dialog and rescan. The Sync dialog defaults to SHA-256. Merely scanning does not modify either bucket.
 
 Verification streams actual object bytes into SHA-256 on both sides. ETags are used only as conditional-read validators, never interpreted as MD5/SHA-256 digests. Multipart uploads, server-side encryption and provider-specific ETags do not cause size-only fallback. Modification timestamps are ignored in content mode. Metadata comparison remains available, but is explicitly labelled as not verifying contents and compares timestamps symmetrically.
 
@@ -27,7 +27,7 @@ Read failures, changed-object conditional-read failures and incomplete reads fai
 2. Choose source and destination roots; run a SHA-256 scan.
 3. Review selected new/modified files and any explicitly selected destination deletions. Sync is source-authoritative, not a bidirectional merge.
 4. Run Sync. Do not delete source data when any operation failed, paused or was cancelled.
-5. Run **Verify SHA-256** across both panes after completion. This mode includes all file names (unlike metadata pane comparison, which excludes `.DS_Store` and `Thumbs.db`). Clear any Sync-dialog exclusion patterns when checking a complete migration.
+5. Run a **Contents — SHA-256** comparison across both panes after completion. Leave exclusions empty when checking a complete migration. The comparison-bar **Verify SHA-256** action retains the exclusions of the preceding comparison. Clear any Sync-dialog exclusion patterns when checking a complete migration.
 6. Confirm there are no missing or modified files; review destination-only files separately before removing the source.
 
 ## Scope and remaining work

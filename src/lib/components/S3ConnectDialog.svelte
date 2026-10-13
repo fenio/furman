@@ -2,22 +2,32 @@
   import { onMount, untrack } from 'svelte';
   import { s3CheckCredentials, s3ListBuckets, s3CreateBucket, s3DeleteBucket, oidcStartAuth } from '#lib/services/s3.js';
   import { connectionsState } from '#lib/state/connections.svelte.js';
+  import { saveThenConnect } from '#lib/utils/connection-flow.js';
+  import { normalizeSseCustomerKey, type SseKeyFormat } from '#lib/utils/sse-c.js';
+  import type { S3ConnectCallback } from '#lib/types/index.js';
   import { S3_PROVIDERS, getProvider, inferProviderFromEndpoint } from '#lib/data/s3-providers.js';
   import type { S3ProviderProfile } from '#lib/data/s3-providers.js';
   import type { S3Bucket, S3Profile, S3ProviderCapabilities } from '#lib/types/index.js';
 
   interface Props {
-    onConnect: (bucket: string, region: string, endpoint?: string, profile?: string, accessKey?: string, secretKey?: string, provider?: string, customCapabilities?: S3ProviderCapabilities, roleArn?: string, externalId?: string, sessionName?: string, sessionDurationSecs?: number, useTransferAcceleration?: boolean, anonymous?: boolean, webIdentityToken?: string, proxyUrl?: string, proxyUsername?: string, proxyPassword?: string) => void;
+    onConnect: S3ConnectCallback;
     onCancel: () => void;
     saveMode?: boolean;
     initialData?: S3Profile;
-    onSave?: (profile: Omit<S3Profile, 'id'> & { id?: string }, secretKey?: string) => void;
+    onSave?: (profile: Omit<S3Profile, 'id'> & { id?: string }, secretKey?: string, sseCustomerKey?: string) => void | Promise<void>;
     embedded?: boolean;
   }
 
   let { onConnect, onCancel, saveMode = false, initialData, onSave, embedded = false }: Props = $props();
 
   const init = untrack(() => initialData);
+  let useSseCustomerKey = $state(init?.sseCustomerKeyEnabled ?? false);
+  let sseCustomerKey = $state('');
+  let sseKeyFormat = $state<SseKeyFormat>('base64');
+
+  function encryptionKey(): string | undefined {
+    return useSseCustomerKey ? normalizeSseCustomerKey(sseCustomerKey, sseKeyFormat) : undefined;
+  }
 
   let name = $state(init?.name ?? '');
   let bucket = $state(init?.bucket ?? '');
@@ -34,6 +44,8 @@
   let oidcScopes = $state(init?.oidcScopes ?? 'openid');
   let oidcAuthenticating = $state(false);
   let oidcError = $state('');
+  let saveError = $state('');
+  let saving = $state(false);
   let useDefaultCreds = $state(init?.credentialType !== 'keychain' && init?.credentialType !== 'anonymous' && init?.credentialType !== 'oidc');
   let hasDefaultCreds = $state(true);
   let checking = $state(true);
@@ -218,6 +230,10 @@
       } catch { /* ignore — user can re-enter manually */ }
     }
     // Load proxy password from keychain when editing
+    if (init?.sseCustomerKeyEnabled) {
+      try { sseCustomerKey = await connectionsState.getSseCustomerKey(init) ?? ''; }
+      catch { saveError = 'Stored SSE-C key is unavailable; please enter it again.'; }
+    }
     if (init?.proxyUrl && init.id) {
       try {
         const pp = await connectionsState.getSecret(init.id + ':proxy');
@@ -259,6 +275,7 @@
       ...(defaultEncryption && kdfParallelism !== 1 ? { kdfParallelism } : {}),
       ...(defaultEncryption && autoEncryptMinSize > 0 ? { autoEncryptMinSize } : {}),
       ...(defaultEncryption && autoEncryptExtensions.trim() ? { autoEncryptExtensions: autoEncryptExtensions.split(',').map(s => s.trim()).filter(Boolean) } : {}),
+      ...(useSseCustomerKey ? { sseCustomerKeyEnabled: true } : {}),
       ...(useProxy && proxyMode === 'system' ? { proxyUrl: 'system' } : {}),
       ...(useProxy && proxyMode === 'manual' && proxyUrl.trim() ? { proxyUrl: proxyUrl.trim() } : {}),
       ...(useProxy && proxyMode === 'manual' && proxyUsername.trim() ? { proxyUsername: proxyUsername.trim() } : {}),
@@ -267,6 +284,9 @@
 
   async function handleConnect() {
     if (!bucket.trim()) return;
+    let key: string | undefined;
+    try { key = encryptionKey(); }
+    catch (err: unknown) { saveError = String(err); return; }
     const [pUrl, pUser, pPass] = currentProxyArgs();
     if (useOidc) {
       if (!oidcIssuerUrl.trim() || !oidcClientId.trim() || !roleArn.trim()) return;
@@ -274,7 +294,7 @@
       oidcError = '';
       try {
         const result = await oidcStartAuth(oidcIssuerUrl.trim(), oidcClientId.trim(), oidcScopes.trim() || undefined);
-        onConnect(
+        await onConnect(
           bucket.trim(),
           region.trim() || 'us-east-1',
           endpoint.trim() || undefined,
@@ -287,7 +307,7 @@
           sessionDuration,
           undefined, false,
           result.id_token,
-          pUrl, pUser, pPass,
+          pUrl, pUser, pPass, key,
         );
       } catch (e: unknown) {
         oidcError = e instanceof Error ? e.message : String(e);
@@ -296,7 +316,7 @@
       }
       return;
     }
-    onConnect(
+    await onConnect(
       bucket.trim(),
       region.trim() || 'us-east-1',
       endpoint.trim() || undefined,
@@ -312,12 +332,12 @@
       useAnonymous ? undefined : (useAcceleration || undefined),
       useAnonymous || undefined,
       undefined, // webIdentityToken
-      pUrl, pUser, pPass,
+      pUrl, pUser, pPass, key,
     );
   }
 
-  async function handleSaveAndConnect() {
-    if (!bucket.trim() || !name.trim()) return;
+  async function saveProfile() {
+    const key = encryptionKey();
     const p = buildProfile();
     const sk = useAnonymous ? undefined : (secretKey.trim() || undefined);
     // Save proxy password to keychain
@@ -327,69 +347,33 @@
     } else if (p.id && !pp) {
       try { await connectionsState.deleteSecret(p.id + ':proxy'); } catch { /* ignore */ }
     }
-    onSave?.(p, sk);
-    const [pUrl, pUser, pPass] = currentProxyArgs();
-    if (useOidc) {
-      if (!oidcIssuerUrl.trim() || !oidcClientId.trim() || !roleArn.trim()) return;
-      oidcAuthenticating = true;
-      oidcError = '';
-      try {
-        const result = await oidcStartAuth(oidcIssuerUrl.trim(), oidcClientId.trim(), oidcScopes.trim() || undefined);
-        onConnect(
-          bucket.trim(),
-          region.trim() || 'us-east-1',
-          endpoint.trim() || undefined,
-          undefined, undefined, undefined,
-          selectedProvider,
-          selectedProvider === 'custom' ? { ...customCaps } : undefined,
-          roleArn.trim(),
-          externalIdVal.trim() || undefined,
-          undefined,
-          sessionDuration,
-          undefined, false,
-          result.id_token,
-          pUrl, pUser, pPass,
-        );
-      } catch (e: unknown) {
-        oidcError = e instanceof Error ? e.message : String(e);
-      } finally {
-        oidcAuthenticating = false;
-      }
-      return;
+    await onSave?.(p, sk, key);
+  }
+
+  async function handleSaveAndConnect() {
+    if (!bucket.trim() || !name.trim() || saving) return;
+    saving = true;
+    saveError = '';
+    try {
+      await saveThenConnect(saveProfile, handleConnect);
+    } catch (err: unknown) {
+      saveError = 'Save & Connect failed: ' + String(err);
+    } finally {
+      saving = false;
     }
-    onConnect(
-      bucket.trim(),
-      region.trim() || 'us-east-1',
-      endpoint.trim() || undefined,
-      useAnonymous ? undefined : (profile.trim() || undefined),
-      useAnonymous ? undefined : (accessKey.trim() || undefined),
-      useAnonymous ? undefined : (secretKey.trim() || undefined),
-      selectedProvider,
-      selectedProvider === 'custom' ? { ...customCaps } : undefined,
-      useAnonymous ? undefined : (roleArn.trim() || undefined),
-      useAnonymous ? undefined : (externalIdVal.trim() || undefined),
-      useAnonymous ? undefined : (roleArn.trim() ? undefined : undefined),
-      useAnonymous ? undefined : (roleArn.trim() ? sessionDuration : undefined),
-      useAnonymous ? undefined : (useAcceleration || undefined),
-      useAnonymous || undefined,
-      undefined, // webIdentityToken
-      pUrl, pUser, pPass,
-    );
   }
 
   async function handleSave() {
-    if (!bucket.trim() || !name.trim()) return;
-    const p = buildProfile();
-    const sk = secretKey.trim() || undefined;
-    // Save proxy password to keychain
-    const pp = useProxy && proxyMode === 'manual' && proxyPassword.trim() ? proxyPassword.trim() : undefined;
-    if (pp && p.id) {
-      await connectionsState.saveSecret(p.id + ':proxy', pp);
-    } else if (p.id && !pp) {
-      try { await connectionsState.deleteSecret(p.id + ':proxy'); } catch { /* ignore */ }
+    if (!bucket.trim() || !name.trim() || saving) return;
+    saving = true;
+    saveError = '';
+    try {
+      await saveThenConnect(saveProfile, onCancel);
+    } catch (err: unknown) {
+      saveError = 'Could not save connection: ' + String(err);
+    } finally {
+      saving = false;
     }
-    onSave?.(p, sk);
-    onCancel();
   }
 
   async function handleBrowse() {
@@ -909,6 +893,21 @@
       {/if}
 
       {#if activeTab === 'encryption'}
+        <div class="sse-c-section">
+          <label class="checkbox-label"><input type="checkbox" bind:checked={useSseCustomerKey} /> Customer-provided server-side encryption (SSE-C)</label>
+          {#if useSseCustomerKey}
+            <p class="field-hint">Enter the original encryption key used by Terraform or the uploader. It is separate from your S3 access secret. Saved only in the OS keychain. HTTPS is required.</p>
+            <label class="field-label" for="sse-c-format">Key format</label>
+            <select class="dialog-input" id="sse-c-format" bind:value={sseKeyFormat}>
+              <option value="base64">Base64 (Terraform sse_customer_key)</option>
+              <option value="hex">Hex — 64 digits</option>
+              <option value="raw">Raw — 32 UTF-8 bytes</option>
+            </select>
+            <label class="field-label" for="sse-c-key">SSE-C encryption key</label>
+            <input class="dialog-input" id="sse-c-key" type="password" autocomplete="off" spellcheck="false" bind:value={sseCustomerKey} />
+            <p class="field-hint">This connection uses this key for object reads and writes. Use separate profiles for different keys. Copies decrypt using the source key and encrypt using the destination connection's settings.</p>
+          {/if}
+        </div>
       {#if !useAnonymous && !useOidc}
         <div class="creds-toggle">
           <label class="checkbox-label">
@@ -990,17 +989,18 @@
 {/snippet}
 
 {#snippet formButtons()}
+    {#if saveError}<div class="browse-error" role="alert">{saveError}</div>{/if}
     <div class="dialog-footer">
       {#if saveMode}
-        <button class="dialog-btn primary" onclick={handleSaveAndConnect} disabled={!bucket.trim() || !name.trim() || oidcAuthenticating}>
-          {oidcAuthenticating ? 'Authenticating...' : 'Save & Connect'}
+        <button class="dialog-btn primary" onclick={handleSaveAndConnect} disabled={!bucket.trim() || !name.trim() || oidcAuthenticating || saving}>
+          {oidcAuthenticating ? 'Authenticating...' : saving ? 'Saving...' : 'Save & Connect'}
         </button>
         {#if !isEditing}
           <button class="dialog-btn" onclick={handleConnect} disabled={!bucket.trim() || oidcAuthenticating}>
             {oidcAuthenticating ? 'Authenticating...' : 'Connect Without Saving'}
           </button>
         {:else}
-          <button class="dialog-btn" onclick={handleSave} disabled={!bucket.trim() || !name.trim()}>Save</button>
+          <button class="dialog-btn" onclick={handleSave} disabled={!bucket.trim() || !name.trim() || saving}>Save</button>
         {/if}
       {:else}
         <button class="dialog-btn primary" onclick={handleConnect} disabled={!bucket.trim() || oidcAuthenticating}>

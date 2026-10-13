@@ -97,6 +97,7 @@
       credentialType: 'default',
       ...(s3Connection.provider ? { provider: s3Connection.provider } : {}),
       ...(s3Connection.capabilities ? { customCapabilities: s3Connection.capabilities } : {}),
+      ...(s3Connection.sseCustomerKeyEnabled ? { sseCustomerKeyEnabled: true } : {}),
     });
   }
   let dirSize = $state<number | null>(null);
@@ -1840,6 +1841,7 @@
             {/if}
             <tr><td class="prop-label">Last Modified</td><td class="prop-value">{formatDate(s3Props.modified, appState.dateFormat)}</td></tr>
             <tr><td class="prop-label">Content Type</td><td class="prop-value">{s3Props.content_type ?? '--'}</td></tr>
+            <tr><td class="prop-label">Server-side encryption</td><td class="prop-value">{s3Props.server_side_encryption ?? 'None reported'}</td></tr>
             <tr><td class="prop-label">ETag</td><td class="prop-value mono">{s3Props.etag ?? '--'}</td></tr>
             {#if s3Props.version_id}
               <tr><td class="prop-label">Version ID</td><td class="prop-value mono">{s3Props.version_id}</td></tr>

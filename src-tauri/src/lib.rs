@@ -176,7 +176,7 @@ pub fn run() {
                         .build(handle)?,
                 )
                 .item(&MenuItemBuilder::with_id("equal-panels", "Equal Panels").build(handle)?)
-                .item(&MenuItemBuilder::with_id("compare", "Compare Dirs").accelerator("CmdOrCtrl+Shift+D").build(handle)?)
+                .item(&MenuItemBuilder::with_id("compare", "Compare Panes…").accelerator("CmdOrCtrl+Shift+D").build(handle)?)
                 .build()?;
 
             // Go menu

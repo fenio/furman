@@ -7,6 +7,7 @@ import { s3Connect, s3Disconnect, s3ListObjects, s3IsObjectEncrypted } from '#li
 import { sftpConnect, sftpDisconnect, sftpListObjects } from '#lib/services/sftp.js';
 import { mountNetworkShare } from '#lib/services/mount.js';
 import { appState } from '#lib/state/app.svelte.js';
+import { connectionsState } from '#lib/state/connections.svelte.js';
 import { comparisonState, type ComparisonSide } from '#lib/state/comparison.svelte.js';
 
 /// Threshold above which we use streamed directory listing.
@@ -443,13 +444,18 @@ export class PanelData {
     if (temporaryPath) cleanupTempPath(temporaryPath).catch(() => {});
   }
 
-  async connectS3(info: S3ConnectionInfo, endpoint?: string, profile?: string, accessKey?: string, secretKey?: string, roleArn?: string, externalId?: string, sessionName?: string, sessionDurationSecs?: number, useTransferAcceleration?: boolean, anonymous?: boolean, webIdentityToken?: string, proxyUrl?: string, proxyUsername?: string, proxyPassword?: string) {
+  async connectS3(info: S3ConnectionInfo, endpoint?: string, profile?: string, accessKey?: string, secretKey?: string, roleArn?: string, externalId?: string, sessionName?: string, sessionDurationSecs?: number, useTransferAcceleration?: boolean, anonymous?: boolean, webIdentityToken?: string, proxyUrl?: string, proxyUsername?: string, proxyPassword?: string, sseCustomerKey?: string) {
     if (comparisonState.active) comparisonState.stopComparison();
     this.clearHistory();
     this.loading = true;
     this.error = null;
     try {
-      await s3Connect(info.connectionId, info.bucket, info.region, endpoint, profile, accessKey, secretKey, roleArn, externalId, sessionName, sessionDurationSecs, useTransferAcceleration, anonymous, webIdentityToken, proxyUrl, proxyUsername, proxyPassword);
+      if (info.profileId && sseCustomerKey === undefined) {
+        const saved = connectionsState.s3Profiles.find(profile => profile.id === info.profileId);
+        if (saved) sseCustomerKey = await connectionsState.getSseCustomerKey(saved);
+      }
+      info.sseCustomerKeyEnabled = sseCustomerKey !== undefined;
+      await s3Connect(info.connectionId, info.bucket, info.region, endpoint, profile, accessKey, secretKey, roleArn, externalId, sessionName, sessionDurationSecs, useTransferAcceleration, anonymous, webIdentityToken, proxyUrl, proxyUsername, proxyPassword, sseCustomerKey);
       this.releaseTemporaryArchive();
       this.backend = 's3';
       this.s3Connection = info;
@@ -458,6 +464,7 @@ export class PanelData {
     } catch (err: unknown) {
       this.error = err instanceof Error ? err.message : String(err);
       this.loading = false;
+      throw err;
     }
   }
 

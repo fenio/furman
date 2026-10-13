@@ -88,7 +88,7 @@ export async function navigateBookmark(bm: S3Bookmark) {
 
   const connectionId = `s3-${Date.now()}`;
   const caps = resolveCapabilities({ provider: profile.provider, customCapabilities: profile.customCapabilities });
-  const info: S3ConnectionInfo = { bucket: profile.bucket, region: profile.region, connectionId, provider: profile.provider, capabilities: caps };
+  const info: S3ConnectionInfo = { bucket: profile.bucket, region: profile.region, connectionId, provider: profile.provider, capabilities: caps, profileId: profile.id };
   if (profile.endpoint) info.endpoint = profile.endpoint;
   if (profile.profile) info.profile = profile.profile;
 

@@ -298,6 +298,7 @@ impl S3Service {
         password: Option<&str>,
         checkpoint: Option<&TransferCheckpoint>,
     ) -> Result<Option<TransferCheckpoint>, FmError> {
+        use aws_sdk_s3::error::ProvideErrorMetadata;
         let dest = PathBuf::from(destination);
 
         // Resolve actual keys: for prefix keys (dirs), list all children
@@ -310,15 +311,7 @@ impl S3Service {
                     resolved.push((k, size));
                 }
             } else {
-                let head = self
-                    .client
-                    .head_object()
-                    .bucket(&self.bucket)
-                    .key(&key)
-                    .send()
-                    .await
-                    .map_err(|e| s3err(e.to_string()))?;
-                let size = head.content_length().unwrap_or(0) as u64;
+                let size = self.head_object(&key).await?.size;
                 resolved.push((key, size));
             }
         }
@@ -375,7 +368,14 @@ impl S3Service {
                 .checksum_mode(aws_sdk_s3::types::ChecksumMode::Enabled)
                 .send()
                 .await
-                .map_err(|e| s3err(e.to_string()))?;
+                .map_err(|e| {
+                    let service = e.as_service_error();
+                    let code = service.and_then(|error| error.code()).unwrap_or("unknown");
+                    let message = service.and_then(|error| error.message()).unwrap_or("No service error message returned");
+                    let detail = format!("S3 GetObject failed for {}/{} (code {code}): {message}. {}", self.bucket, key, super::sse_c::failure_hint(super::sse_c::enabled(&self.client)));
+                    log::warn!("{detail}");
+                    s3err(detail)
+                })?;
 
             let etag = resp.e_tag().map(|s| s.trim_matches('"').to_string());
             let expected_crc32c = resp
@@ -445,7 +445,7 @@ impl S3Service {
                     }
                 }
             } else if let Some(ref etag_val) = etag {
-                if !etag_val.contains('-') {
+                if !etag_val.contains('-') && !super::sse_c::enabled(&self.client) {
                     // No CRC32C available: fall back to MD5/ETag
                     let computed = format!("{:x}", hasher.finalize());
                     if computed != *etag_val {
@@ -1074,7 +1074,7 @@ impl S3Service {
                 None
             };
 
-            if same_server {
+            if same_server && !super::sse_c::enabled(src_client) && !super::sse_c::enabled(dest_client) {
                 copy_single_or_multipart(
                     src_client,
                     src_bucket,
@@ -1158,16 +1158,57 @@ impl S3Service {
 
     /// Get properties of a single S3 object via head_object.
     pub async fn head_object(&self, key: &str) -> Result<S3ObjectProperties, FmError> {
+        use aws_sdk_s3::error::ProvideErrorMetadata;
         let actual_key = strip_s3_prefix(key, &self.bucket);
 
-        let head = self
+        let head_result = self
             .client
             .head_object()
             .bucket(&self.bucket)
             .key(&actual_key)
             .send()
-            .await
-            .map_err(|e| s3err(e.to_string()))?;
+            .await;
+        let head = match head_result {
+            Ok(head) => head,
+            Err(e) => {
+                let status = e.raw_response().map(|response| response.status().as_u16());
+                let service_error = e.as_service_error();
+                let code = service_error.and_then(|error| error.code()).unwrap_or("unknown");
+                let message = service_error.and_then(|error| error.message()).unwrap_or("No service error message returned");
+                let detail = format!("S3 HeadObject failed for {}/{} (HTTP {}, code {code}): {message}", self.bucket, actual_key, status.map_or_else(|| "unavailable".into(), |status| status.to_string()));
+                let detail = if status == Some(400) {
+                    format!("{detail}. {}", super::sse_c::failure_hint(super::sse_c::enabled(&self.client)))
+                } else { detail };
+                let detail = if status == Some(400) && super::sse_c::enabled(&self.client) {
+                    // HEAD error responses have no XML body. Preserve the first
+                    // GET error instead of allowing the plain-read retry to hide it.
+                    // Request one byte, but never consume or log object contents.
+                    let probe = S3Client::from_conf(self.client.config().to_builder()
+                        .retry_config(aws_sdk_s3::config::retry::RetryConfig::disabled()).build());
+                    let diagnostic = match probe.get_object().bucket(&self.bucket).key(&actual_key).range("bytes=0-0").send().await {
+                        Ok(response) => {
+                            let confirmed = response.sse_customer_algorithm().is_some();
+                            drop(response);
+                            if confirmed {
+                                "GET diagnostic succeeded with SSE-C response headers; the configured key was accepted for this read. Investigate HEAD compatibility".to_owned()
+                            } else {
+                                "GET diagnostic succeeded, but the response did not identify SSE-C. Investigate HEAD/request compatibility rather than assuming a wrong key".to_owned()
+                            }
+                        }
+                        Err(error) => {
+                            let service = error.as_service_error();
+                            let code = service.and_then(|error| error.code()).unwrap_or("unknown");
+                            let message = service.and_then(|error| error.message()).unwrap_or("No service error message returned");
+                            let status = error.raw_response().map(|response| response.status().as_u16());
+                            format!("GET diagnostic: HTTP {}, code {code}: {message}", status.map_or_else(|| "unavailable".into(), |status| status.to_string()))
+                        }
+                    };
+                    format!("{detail}. {diagnostic}")
+                } else { detail };
+                log::warn!("{detail}");
+                return Err(s3err(detail));
+            }
+        };
 
         let size = head.content_length().unwrap_or(0) as u64;
         let modified = head
@@ -1181,6 +1222,9 @@ impl S3Service {
         let version_id = head.version_id().map(std::string::ToString::to_string);
 
         Ok(S3ObjectProperties {
+            server_side_encryption: if head.sse_customer_algorithm().is_some() {
+                Some("SSE-C (AES256)".into())
+            } else { head.server_side_encryption().map(|algorithm| algorithm.as_str().to_owned()) },
             key: actual_key,
             size,
             modified,
@@ -1951,6 +1995,9 @@ impl S3Service {
 
     /// Generate a presigned GET URL for an S3 object.
     pub async fn presign_url(&self, key: &str, expires_in_secs: u64) -> Result<String, FmError> {
+        if super::sse_c::enabled(&self.client) {
+            return Err(s3err("SSE-C objects require encryption headers and cannot be shared as a plain presigned URL. Use Download instead; encryption keys are never included in links."));
+        }
         let actual_key = strip_s3_prefix(key, &self.bucket);
 
         let presign_config = aws_sdk_s3::presigning::PresigningConfig::expires_in(

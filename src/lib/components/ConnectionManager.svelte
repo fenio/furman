@@ -15,7 +15,7 @@
     onClose: () => void;
     initialTab?: 'saved' | 'connect';
     initialData?: Partial<S3Profile>;
-    onConnect?: (bucket: string, region: string, endpoint?: string, profile?: string, accessKey?: string, secretKey?: string, provider?: string, customCapabilities?: S3ProviderCapabilities, roleArn?: string, externalId?: string, sessionName?: string, sessionDurationSecs?: number, useTransferAcceleration?: boolean, anonymous?: boolean, webIdentityToken?: string, proxyUrl?: string, proxyUsername?: string, proxyPassword?: string) => void;
+    onConnect?: (bucket: string, region: string, endpoint?: string, profile?: string, accessKey?: string, secretKey?: string, provider?: string, customCapabilities?: S3ProviderCapabilities, roleArn?: string, externalId?: string, sessionName?: string, sessionDurationSecs?: number, useTransferAcceleration?: boolean, anonymous?: boolean, webIdentityToken?: string, proxyUrl?: string, proxyUsername?: string, proxyPassword?: string, sseCustomerKey?: string) => void;
   }
 
   let { onClose, initialTab = 'saved', initialData, onConnect: onConnectProp }: Props = $props();
@@ -54,6 +54,10 @@
       } catch (err: unknown) {
         error(String(err));
       }
+      if (profile.type === 's3' && profile.sseCustomerKeyEnabled) {
+        try { await connectionsState.deleteSecret(profile.id + ':sse-c'); }
+        catch { error('Could not remove the SSE-C key from the keychain'); }
+      }
       connectionsState.removeProfile(profile.id);
       appState.showConnectionManager();
     });
@@ -78,6 +82,7 @@
     proxyUrl?: string,
     proxyUsername?: string,
     proxyPassword?: string,
+    sseCustomerKey?: string,
   ) {
     connectError = '';
     const panel = panels.active;
@@ -87,7 +92,7 @@
     if (endpoint) info.endpoint = endpoint;
     if (profile) info.profile = profile;
     try {
-      await panel.connectS3(info, endpoint, profile, accessKey, secretKey, roleArn, externalId, sessionName, sessionDurationSecs, useTransferAcceleration, anonymous, webIdentityToken, proxyUrl, proxyUsername, proxyPassword);
+      await panel.connectS3(info, endpoint, profile, accessKey, secretKey, roleArn, externalId, sessionName, sessionDurationSecs, useTransferAcceleration, anonymous, webIdentityToken, proxyUrl, proxyUsername, proxyPassword, sseCustomerKey);
       onClose();
     } catch (err: unknown) {
       connectError = err instanceof Error ? err.message : String(err);
@@ -185,6 +190,13 @@
     connectError = '';
     let secretKey: string | undefined;
     let accessKey: string | undefined = p.accessKeyId;
+    let sseCustomerKey: string | undefined;
+    try {
+      sseCustomerKey = await connectionsState.getSseCustomerKey(p);
+    } catch (err: unknown) {
+      connectError = String(err);
+      return;
+    }
 
     // Load proxy password from keychain
     let proxyPassword: string | undefined;
@@ -203,7 +215,7 @@
         undefined, undefined, undefined, undefined, undefined,
         true,
         undefined,
-        p.proxyUrl, p.proxyUsername, proxyPassword,
+        p.proxyUrl, p.proxyUsername, proxyPassword, sseCustomerKey,
       );
       return;
     }
@@ -226,7 +238,7 @@
               p.roleArn, p.externalId, p.sessionName, p.sessionDurationSecs,
               undefined, false,
               result.id_token,
-              p.proxyUrl, p.proxyUsername, proxyPassword,
+              p.proxyUrl, p.proxyUsername, proxyPassword, sseCustomerKey,
             );
             return;
           } catch {
@@ -274,10 +286,11 @@
       p.proxyUrl,
       p.proxyUsername,
       proxyPassword,
+      sseCustomerKey,
     );
   }
 
-  async function handleSave(profileData: Omit<S3Profile, 'id'> & { id?: string }, secretKey?: string) {
+  async function handleSave(profileData: Omit<S3Profile, 'id'> & { id?: string }, secretKey?: string, sseCustomerKey?: string) {
     const isEdit = !!profileData.id;
     const id = profileData.id || `s3-profile-${Date.now()}`;
     const profile: S3Profile = { ...profileData, id, type: 's3' } as S3Profile;
@@ -286,10 +299,17 @@
       await connectionsState.saveSecret(id, secretKey);
     }
 
+    if (profile.sseCustomerKeyEnabled) {
+      if (!sseCustomerKey) throw new Error('Enter the original SSE-C key before saving.');
+      await connectionsState.saveSecret(id + ':sse-c', sseCustomerKey);
+    } else if (isEdit && connectionsState.s3Profiles.find(saved => saved.id === id)?.sseCustomerKeyEnabled) {
+      await connectionsState.deleteSecret(id + ':sse-c');
+    }
+
     if (isEdit) {
-      connectionsState.updateProfile(profile);
+      await connectionsState.updateProfile(profile);
     } else {
-      connectionsState.addProfile(profile);
+      await connectionsState.addProfile(profile);
     }
 
     selected = { mode: 'saved' };
@@ -375,11 +395,11 @@
       </div>
 
       <div class="manager-main">
+        {#if connectError}
+          <div class="error-msg" role="alert">{connectError}</div>
+        {/if}
         {#if selected.mode === 'saved'}
           <div class="main-body">
-            {#if connectError}
-              <div class="error-msg">{connectError}</div>
-            {/if}
 
             {#if connectionsState.profiles.length === 0}
               <div class="empty-state">
