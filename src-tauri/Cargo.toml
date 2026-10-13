@@ -1,6 +1,6 @@
 [package]
 name = "furman"
-version = "0.3.18"
+version = "0.3.19"
 description = "Furman File Manager"
 authors = ["Bartosz Fenski"]
 license = "GPL-3.0-only"
@@ -57,6 +57,9 @@ russh-sftp = "3.0"
 glob-match = "0.2"
 regex = "1"
 aws-smithy-http-client = { version = "1", features = ["rustls-aws-lc", "default-client"] }
+aws-smithy-runtime-api = { version = "1", features = ["client"] }
+aws-smithy-types = "1"
+zeroize = "1"
 
 # MCP server (optional)
 rmcp = { version = "3.0", features = ["server", "transport-io", "macros"], optional = true }
@@ -85,6 +88,7 @@ wildcard_imports = "warn"
 too_many_arguments = "allow"  # build_s3_client and Tauri commands have many params
 
 [dev-dependencies]
+aws-smithy-http-client = { version = "1", features = ["test-util"] }
 tokio = { version = "1", features = ["full"] }
 tempfile = "3"
 

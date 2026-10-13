@@ -1,0 +1,59 @@
+name: S3 SSE-C Integration Tests
+
+on:
+  push:
+    branches: [main]
+    paths: ['src-tauri/**', '.github/workflows/test-sse-c.yml']
+  pull_request:
+    branches: [main]
+    paths: ['src-tauri/**', '.github/workflows/test-sse-c.yml']
+
+permissions:
+  contents: read
+
+jobs:
+  sse-c:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf libglib2.0-dev libgtk-3-dev libjavascriptcoregtk-4.1-dev libsoup-3.0-dev
+      - name: Start TLS MinIO with a test-only CA
+        run: |
+          CERTS="$RUNNER_TEMP/sse-c-certs"
+          mkdir -p "$CERTS"
+          openssl req -x509 -newkey rsa:2048 -nodes -keyout "$CERTS/ca.key" -out "$CERTS/ca.crt" -days 1 -subj '/CN=Furman SSE-C test CA'
+          openssl req -new -newkey rsa:2048 -nodes -keyout "$CERTS/private.key" -out "$CERTS/server.csr" -subj '/CN=localhost'
+          cat > "$CERTS/extensions.cnf" <<'EOF'
+          basicConstraints = critical, CA:false
+          keyUsage = critical, digitalSignature, keyEncipherment
+          extendedKeyUsage = serverAuth
+          subjectAltName = DNS:localhost, IP:127.0.0.1
+          EOF
+          openssl x509 -req -in "$CERTS/server.csr" -CA "$CERTS/ca.crt" -CAkey "$CERTS/ca.key" -CAcreateserial -out "$CERTS/public.crt" -days 1 -extfile "$CERTS/extensions.cnf"
+          docker create --name sse-c-minio -p 19443:9000 -e MINIO_ROOT_USER=minioadmin -e MINIO_ROOT_PASSWORD=minioadmin ghcr.io/coollabsio/minio:RELEASE.2025-10-15T17-29-55Z server /data --certs-dir /certs
+          docker cp "$CERTS" sse-c-minio:/certs
+          docker start sse-c-minio
+          for attempt in $(seq 1 30); do
+            if curl --cacert "$CERTS/ca.crt" -fsS https://localhost:19443/minio/health/live; then
+              break
+            fi
+            echo "Waiting for TLS MinIO ($attempt/30)"
+            sleep 1
+          done
+          curl --cacert "$CERTS/ca.crt" -fsS https://localhost:19443/minio/health/live
+      - name: Test encrypted operations
+        working-directory: src-tauri
+        env:
+          SSE_C_TEST_ENDPOINT: https://localhost:19443
+          SSE_C_TEST_CA: ${{ runner.temp }}/sse-c-certs/ca.crt
+        run: cargo test --lib --test sse_c_integration -- --test-threads=1
+      - name: Stop TLS MinIO
+        if: always()
+        run: docker rm -f sse-c-minio || true

@@ -96,7 +96,7 @@
             { keys: `${platform.mod}D`, desc: 'Save workspace' },
             { keys: `${platform.mod}J`, desc: 'Toggle transfer panel' },
             { keys: `${platform.mod}Y`, desc: 'Sync directories' },
-            { keys: `${platform.mod}${platform.shift}D`, desc: 'Compare directories' },
+            { keys: `${platform.mod}${platform.shift}D`, desc: 'Compare panes' },
             { keys: `${platform.alt}P`, desc: 'Toggle preview pane' },
             { keys: `${platform.alt}S`, desc: 'Swap panels' },
             { keys: `${platform.mod}${platform.shift}L`, desc: 'Toggle dark / light theme' },

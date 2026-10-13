@@ -23,6 +23,7 @@ export async function s3Connect(
   proxyUrl?: string,
   proxyUsername?: string,
   proxyPassword?: string,
+  sseCustomerKey?: string,
 ): Promise<void> {
   await invoke('s3_connect', {
     id,
@@ -42,6 +43,7 @@ export async function s3Connect(
     proxyUrl: proxyUrl || null,
     proxyUsername: proxyUsername || null,
     proxyPassword: proxyPassword || null,
+    sseCustomerKey: sseCustomerKey ?? null,
   });
 }
 

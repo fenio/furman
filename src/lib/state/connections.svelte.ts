@@ -21,7 +21,7 @@ class ConnectionsState {
 
   addProfile(profile: ConnectionProfile) {
     this.profiles = [...this.profiles, profile];
-    this.persist();
+    return this.persist();
   }
 
   updateProfile(profile: ConnectionProfile) {
@@ -30,7 +30,7 @@ class ConnectionsState {
       this.profiles[idx] = profile;
       this.profiles = [...this.profiles];
     }
-    this.persist();
+    return this.persist();
   }
 
   removeProfile(id: string) {
@@ -46,12 +46,19 @@ class ConnectionsState {
     return await keychainGet(profileId);
   }
 
+  async getSseCustomerKey(profile: S3Profile): Promise<string | undefined> {
+    if (!profile.sseCustomerKeyEnabled) return undefined;
+    const key = await this.getSecret(profile.id + ':sse-c');
+    if (!key) throw new Error('SSE-C key is missing from the keychain. Edit this connection and enter its original encryption key.');
+    return key;
+  }
+
   async deleteSecret(profileId: string): Promise<void> {
     await keychainDelete(profileId);
   }
 
   private persist() {
-    appState.persistConfig();
+    return appState.persistConfig();
   }
 }
 

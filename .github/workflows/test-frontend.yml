@@ -51,5 +51,11 @@ jobs:
       - name: Test S3 version size totals
         run: npm run test:s3-versions
 
+      - name: Test connection and comparison workflows
+        run: npm run test:ui-workflows
+
+      - name: Test independent SSE-C diagnostic
+        run: python3 -B tests/diagnose-sse-c.test.py
+
       - name: Build static frontend
         run: npm run build

@@ -3,6 +3,8 @@ import { cancelFileOperation, pauseFileOperation, copyFiles, moveFiles, deleteFi
 import { s3Download, s3Upload, s3CopyObjects, s3DeleteObjects, s3UploadEncrypted, type EncryptionConfig } from '#lib/services/s3.js';
 import { sftpDownload, sftpUpload, sftpDelete } from '#lib/services/sftp.js';
 import { formatSize } from '#lib/utils/format.js';
+import { appState } from '#lib/state/app.svelte.js';
+import { statusState } from '#lib/state/status.svelte.js';
 
 export type TransferStatus = 'queued' | 'running' | 'paused' | 'completed' | 'failed' | 'cancelled';
 type TransferType = 'copy' | 'move' | 'extract' | 'delete';
@@ -201,6 +203,9 @@ class TransfersState {
     if (!this.hasActive && this.queued.length === 0) {
       this.dialogVisible = false;
     }
+    this.panelVisible = true;
+    statusState.setMessage('Transfer failed: ' + error);
+    if (appState.modal === 'none') appState.showAlert('Transfer failed:\n' + error);
   }
 
   markCancelled(id: string) {

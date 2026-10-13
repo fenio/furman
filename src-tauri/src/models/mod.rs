@@ -160,6 +160,7 @@ pub struct KmsKeyInfo {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct S3ObjectProperties {
+    pub server_side_encryption: Option<String>,
     pub key: String,
     pub size: u64,
     /// Last modified time as milliseconds since Unix epoch.

@@ -217,14 +217,14 @@ export function handleProperties() {
 
 export function _handleS3Connect() {
   const panel = panels.active;
-  appState.showConnect(async (bucket, region, endpoint, profile, accessKey, secretKey, provider, customCapabilities) => {
+  appState.showConnect(async (bucket, region, endpoint, profile, accessKey, secretKey, provider, customCapabilities, roleArn, externalId, sessionName, sessionDurationSecs, useTransferAcceleration, anonymous, webIdentityToken, proxyUrl, proxyUsername, proxyPassword, sseCustomerKey) => {
     const connectionId = `s3-${Date.now()}`;
     const caps = resolveCapabilities({ provider, customCapabilities });
     const info: S3ConnectionInfo = { bucket, region, connectionId, provider, capabilities: caps };
     if (endpoint) info.endpoint = endpoint;
     if (profile) info.profile = profile;
     try {
-      await panel.connectS3(info, endpoint, profile, accessKey, secretKey);
+      await panel.connectS3(info, endpoint, profile, accessKey, secretKey, roleArn, externalId, sessionName, sessionDurationSecs, useTransferAcceleration, anonymous, webIdentityToken, proxyUrl, proxyUsername, proxyPassword, sseCustomerKey);
     } catch (err: unknown) {
       error(String(err));
     }

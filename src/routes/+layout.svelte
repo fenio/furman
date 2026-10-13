@@ -328,18 +328,7 @@
       { id: 'undo', label: 'Undo last operation', shortcut: `${mod}Z`, category: 'File', execute: () => executeUndo() },
 
       // Compare
-      { id: 'compare', label: 'Compare directories', shortcut: `${mod}${shift}D`, category: 'Panel', execute: () => {
-        if (comparisonState.active) {
-          comparisonState.stopComparison();
-        } else {
-          const left = panels.left;
-          const right = panels.right;
-          comparisonState.startComparison(
-            left.path, left.backend, left.s3Connection?.connectionId ?? '',
-            right.path, right.backend, right.s3Connection?.connectionId ?? '',
-          );
-        }
-      }},
+      { id: 'compare', label: 'Compare panes...', shortcut: `${mod}${shift}D`, category: 'Panel', execute: () => { appState.modal = 'compare'; }},
 
       // Quit
       { id: 'quit', label: 'Quit Furman', shortcut: `${mod}Q`, category: 'File', execute: () => handleQuit() },
@@ -710,16 +699,7 @@
         panels.inactive.loadDirectory(active.path);
         break;
       case 'compare':
-        if (comparisonState.active) {
-          comparisonState.stopComparison();
-        } else {
-          const left = panels.left;
-          const right = panels.right;
-          comparisonState.startComparison(
-            left.path, left.backend, left.s3Connection?.connectionId ?? '',
-            right.path, right.backend, right.s3Connection?.connectionId ?? '',
-          );
-        }
+        appState.modal = 'compare';
         break;
       case 'connect':
         if (active.backend === 's3') active.disconnectS3();

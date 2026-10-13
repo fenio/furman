@@ -11,6 +11,7 @@ import { transfersState } from '#lib/state/transfers.svelte.js';
 import { statusState } from '#lib/state/status.svelte.js';
 import { s3SetBandwidthLimit, s3SetMultipartConfig } from '#lib/services/s3.js';
 import type { ViewMode } from '#lib/types/index.js';
+import type { S3ConnectCallback } from '#lib/types/index.js';
 
 export function canSyncBackends(source: string, destination: string): boolean {
   const supported = (backend: string) => backend === 'local' || backend === 's3';
@@ -44,7 +45,7 @@ class AppState {
   startupSound = $state(true);
   showHidden = $state(false);
   calculateDirSizes = $state(true);
-  connectCallback = $state<((bucket: string, region: string, endpoint?: string, profile?: string, accessKey?: string, secretKey?: string, provider?: string, customCapabilities?: S3ProviderCapabilities) => void) | null>(null);
+  connectCallback = $state<S3ConnectCallback | null>(null);
   connectionManagerTab = $state<'saved' | 'connect'>('saved');
   connectionManagerInitialData = $state<Partial<S3Profile> | undefined>(undefined);
   diskUsagePath = $state('');
@@ -283,19 +284,21 @@ class AppState {
     this.modal = 'input';
   }
 
-  showConnect(callback: (bucket: string, region: string, endpoint?: string, profile?: string, accessKey?: string, secretKey?: string, provider?: string, customCapabilities?: S3ProviderCapabilities) => void) {
+  showConnect(callback: S3ConnectCallback) {
     this.connectCallback = callback;
     this.connectionManagerTab = 'connect';
     this.modal = 'connection-manager';
   }
 
   showConnectionManager() {
+    this.connectCallback = null;
     this.connectionManagerTab = 'saved';
     this.connectionManagerInitialData = undefined;
     this.modal = 'connection-manager';
   }
 
   showConnectionManagerSave(initialData: Partial<S3Profile>) {
+    this.connectCallback = null;
     this.connectionManagerTab = 'connect';
     this.connectionManagerInitialData = initialData;
     this.modal = 'connection-manager';
@@ -420,7 +423,7 @@ class AppState {
   }
 
   persistConfig() {
-    saveConfig({
+    return saveConfig({
       theme: this.theme,
       layoutMode: this.layoutMode,
       iconSize: this.iconSize,
