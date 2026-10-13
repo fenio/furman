@@ -1,5 +1,15 @@
 # Changelog
 
+## [0.3.19] - 2026-10-13
+
+### Fixed
+
+- fix: repair S3 connection flows and pane comparisons; add SSE-C support
+
+### Changed
+
+- Update CHANGELOG.md for v0.3.18
+
 ## [0.3.18] - 2026-10-12
 
 ### Changed
