@@ -1,5 +1,29 @@
 # Changelog
 
+## [0.3.20] - 2026-10-14
+
+### Added
+
+- feat: reveal credential fields and inspect comparison file diffs
+
+### Fixed
+
+- fix: allocate encrypted temporary files without salt-derived paths
+- fix: improve S3 property summaries and version history layout
+- fix: unify bucket properties controls and remove nested editor scrolling
+
+### Changed
+
+- Update CHANGELOG.md for v0.3.19
+
+### Dependencies
+
+- 5 dependency update(s) via Renovate
+
+### Other
+
+- chore: refresh compatible npm and Rust dependencies
+
 ## [0.3.19] - 2026-10-13
 
 ### Fixed
