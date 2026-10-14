@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { revealSecret } from '#lib/utils/reveal-secret.js';
   import { untrack } from 'svelte';
   import type { SftpProfile } from '#lib/types/index.js';
 
@@ -185,7 +186,7 @@
     {#if authMethod === 'password'}
       <div class="field">
         <label for="sftp-password">Password</label>
-        <input id="sftp-password" type="password" bind:value={password} placeholder="Enter password" />
+        <input id="sftp-password" type="password" use:revealSecret bind:value={password} placeholder="Enter password" />
       </div>
     {:else if authMethod === 'key'}
       <div class="field">
@@ -194,7 +195,7 @@
       </div>
       <div class="field">
         <label for="sftp-passphrase">Key Passphrase <span class="optional">(optional)</span></label>
-        <input id="sftp-passphrase" type="password" bind:value={keyPassphrase} placeholder="Enter passphrase" />
+        <input id="sftp-passphrase" type="password" use:revealSecret bind:value={keyPassphrase} placeholder="Enter passphrase" />
       </div>
     {/if}
   </div>

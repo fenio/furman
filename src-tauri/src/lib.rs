@@ -1,5 +1,6 @@
 pub mod cloudfront;
 mod commands;
+pub use commands::comparison::{read_s3_file, DiffContent};
 #[cfg(feature = "mcp")]
 pub mod mcp;
 pub mod local;
@@ -236,6 +237,7 @@ pub fn run() {
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
+            commands::comparison::comparison_read_file,
             // directory commands
             commands::directory::list_directory,
             commands::directory::list_directory_streamed,

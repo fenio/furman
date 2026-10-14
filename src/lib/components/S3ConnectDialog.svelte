@@ -1,5 +1,6 @@
 <script lang="ts">
   import { onMount, untrack } from 'svelte';
+  import { revealSecret } from '#lib/utils/reveal-secret.js';
   import { s3CheckCredentials, s3ListBuckets, s3CreateBucket, s3DeleteBucket, oidcStartAuth } from '#lib/services/s3.js';
   import { connectionsState } from '#lib/state/connections.svelte.js';
   import { saveThenConnect } from '#lib/utils/connection-flow.js';
@@ -742,6 +743,7 @@
           Secret Key
           <input
             type="password"
+            use:revealSecret
             class="dialog-input"
             bind:value={secretKey}
             placeholder={isEditing ? 'Leave empty to keep current' : 'secret'}
@@ -882,6 +884,7 @@
               Proxy Password (optional)
               <input
                 type="password"
+                use:revealSecret
                 class="dialog-input"
                 bind:value={proxyPassword}
                 placeholder="Password"
@@ -904,7 +907,7 @@
               <option value="raw">Raw — 32 UTF-8 bytes</option>
             </select>
             <label class="field-label" for="sse-c-key">SSE-C encryption key</label>
-            <input class="dialog-input" id="sse-c-key" type="password" autocomplete="off" spellcheck="false" bind:value={sseCustomerKey} />
+            <input class="dialog-input" id="sse-c-key" type="password" use:revealSecret autocomplete="off" spellcheck="false" bind:value={sseCustomerKey} />
             <p class="field-hint">This connection uses this key for object reads and writes. Use separate profiles for different keys. Copies decrypt using the source key and encrypt using the destination connection's settings.</p>
           {/if}
         </div>

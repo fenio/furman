@@ -287,6 +287,10 @@
 
   function handleContextMenuAction(key: string) {
     contextMenuOpen = false;
+    if (key === 'comparison-diff') {
+      comparisonState.showDiff(side, panel.path, panel.currentEntry);
+      return;
+    }
     const keyMap: Record<string, string> = {
       'open': 'Enter',
       'view': 'F3',
@@ -974,6 +978,7 @@
       isLocalDir={panel.backend === 'local' && !!(panel.currentEntry && panel.currentEntry.is_dir)}
       isFavorite={sidebarState.hasFavorite(panel.currentEntry?.path ?? '')}
       onEmpty={contextMenuOnEmpty}
+      canDiff={!!comparisonState.diffForEntry(side, panel.path, panel.currentEntry)}
     />
   {/if}
 </div>

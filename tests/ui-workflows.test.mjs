@@ -3,6 +3,65 @@ import test from 'node:test';
 import { saveThenConnect } from '../src/lib/utils/connection-flow.ts';
 import { defaultComparisonMode, canComparePanes, parseComparisonExcludes } from '../src/lib/utils/comparison-options.ts';
 import { normalizeSseCustomerKey } from '../src/lib/utils/sse-c.ts';
+import { textDiff, comparisonDiffPair } from '../src/lib/utils/file-diff.ts';
+import { revealSecret } from '../src/lib/utils/reveal-secret.ts';
+
+test('text diffs identify added and removed lines with both line numbers', () => {
+  const rows = textDiff('same\nold\nend\n', 'same\nnew\nend\n');
+  assert.deepEqual(rows.map(row => [row.kind, row.left, row.right, row.text]), [
+    ['same', 1, 1, 'same'], ['removed', 2, null, 'old'], ['added', null, 2, 'new'], ['same', 3, 3, 'end'],
+  ]);
+  assert.deepEqual(textDiff('', ''), []);
+  assert.equal(textDiff('', 'new')[0].noNewline, true);
+  assert.equal(textDiff('a\n', 'a')[1].noNewline, true);
+  assert.throws(() => textDiff('\n'.repeat(10000), ''), /Too many lines/);
+});
+
+test('diff counterparts preserve nested paths and each connection identity', () => {
+  const pair = comparisonDiffPair(['s3://one/prefix/', 's3', 'source-id', 's3://two/other/', 's3', 'dest-id'], 'nested/name.tfstate');
+  assert.equal(pair.left.path, 's3://one/prefix/nested/name.tfstate');
+  assert.equal(pair.right.path, 's3://two/other/nested/name.tfstate');
+  assert.equal(pair.left.connection_id, 'source-id');
+  assert.equal(pair.right.connection_id, 'dest-id');
+  assert.equal(comparisonDiffPair(['/', 'local', '', '/other', 'local', ''], 'a').left.path, '/a');
+});
+
+test('credential eye toggles visibility without altering values or submitting', () => {
+  const previousDocument = globalThis.document;
+  const previousObserver = globalThis.MutationObserver;
+  const created = [];
+  let observed;
+  class Element {
+    type = 'password'; value = '  original-secret  '; disabled = false;
+    style = {}; attributes = {}; events = {}; children = [];
+    before() {} append(child) { this.children.push(child); } remove() {}
+    setAttribute(name, value) { this.attributes[name] = value; }
+    addEventListener(name, callback) { this.events[name] = callback; }
+    removeEventListener(name) { delete this.events[name]; }
+    focus() { this.focused = true; }
+  }
+  globalThis.document = { createElement() { const node = new Element(); created.push(node); return node; } };
+  globalThis.MutationObserver = class { constructor(callback) { observed = callback; } observe() {} disconnect() {} };
+  try {
+    const input = new Element();
+    const action = revealSecret(input);
+    const button = created[1];
+    assert.equal(button.type, 'button');
+    assert.equal(button.attributes['aria-pressed'], 'false');
+    button.events.click();
+    assert.equal(input.type, 'text');
+    assert.equal(input.value, '  original-secret  ');
+    assert.equal(button.attributes['aria-pressed'], 'true');
+    input.disabled = true; observed(); assert.equal(button.disabled, true);
+    action.destroy(); assert.equal(input.type, 'password');
+    const count = created.length;
+    revealSecret(new Element(), false);
+    assert.equal(created.length, count);
+  } finally {
+    globalThis.document = previousDocument;
+    globalThis.MutationObserver = previousObserver;
+  }
+});
 
 test('Save & Connect waits for saving before attempting a connection', async () => {
   const events = [];

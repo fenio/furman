@@ -1,5 +1,6 @@
 <script lang="ts">
   import { comparisonState, type ComparisonFilter } from '#lib/state/comparison.svelte.js';
+  import { panels } from '#lib/state/panels.svelte.js';
 
   interface Props {
     side: 'left' | 'right';
@@ -7,6 +8,8 @@
 
   let { side }: Props = $props();
   const counts = $derived(comparisonState.countsFor(side));
+  const panel = $derived(side === 'left' ? panels.left : panels.right);
+  const canDiff = $derived(!!comparisonState.diffForEntry(side, panel.path, panel.currentEntry));
 
   const filters: { id: ComparisonFilter; label: string; color: string }[] = [
     { id: 'all', label: 'All', color: 'var(--text-secondary)' },
@@ -25,6 +28,7 @@
     <span class="badge yellow">{counts.modified}</span>
     <span class="badge red">{counts.deleted}</span>
     <span class="bar-label">{comparisonState.mode === 'sha256' ? 'SHA-256' : 'Metadata only'}</span>
+    <button class="filter-btn" disabled={!canDiff} title="Read and diff the focused modified file against its counterpart; S3 download charges may apply" onclick={() => comparisonState.showDiff(side, panel.path, panel.currentEntry)}>Show diff</button>
     <button class="filter-btn" title="Read all object contents on both sides; S3 download charges may apply" onclick={() => comparisonState.verifyContents()}>Verify SHA-256</button>
     {#each filters as f (f.id)}
       <button
@@ -110,6 +114,8 @@
     background: var(--bg-hover);
     color: var(--text-primary);
   }
+
+  .filter-btn:disabled { opacity: 0.45; cursor: default; }
 
   .filter-btn.active {
     border-color: var(--filter-color);

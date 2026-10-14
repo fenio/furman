@@ -1,5 +1,6 @@
 pub mod archive;
 pub mod cloudfront;
+pub mod comparison;
 pub mod directory;
 pub mod disk_usage;
 pub mod file;
