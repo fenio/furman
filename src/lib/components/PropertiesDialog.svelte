@@ -553,10 +553,6 @@
     }
   }
 
-  function truncateVid(vid: string): string {
-    return vid.length > 16 ? vid.slice(0, 16) + '\u2026' : vid;
-  }
-
   // ── Bucket-level functions ──────────────────────────────────────────────
 
   async function toggleBucketVersioning() {
@@ -1825,20 +1821,9 @@
         {/if}
       {:else if s3Props}
         <!-- S3 object properties -->
-        <table class="props-table">
+        <table class="props-table s3-object-properties">
           <tbody>
             <tr><td class="prop-label">Key</td><td class="prop-value path">{s3Props.key}</td></tr>
-            <tr><td class="prop-label">Current version size</td><td class="prop-value">{#if versionsLoaded}{formatSize(Number(versionSizes.currentBytes))} ({versionSizes.currentBytes.toLocaleString()} bytes){:else}{formatSize(s3Props.size)} ({s3Props.size.toLocaleString()} bytes){/if}</td></tr>
-            {#if caps.versioning}
-              {#if versionsLoading}
-                <tr><td class="prop-label">Size including history</td><td class="prop-value">Loading version sizes...</td></tr>
-              {:else if versionsError}
-                <tr><td class="prop-label">Size including history</td><td class="prop-value">Unavailable <button class="version-action-btn" title={versionsError} onclick={() => loadVersions(true)}>Retry</button></td></tr>
-              {:else if versionsLoaded}
-                <tr><td class="prop-label">Previous versions size</td><td class="prop-value">{formatSize(Number(versionSizes.previousBytes))} ({versionSizes.previousBytes.toLocaleString()} bytes) — {versionSizes.previousVersionCount} version(s)</td></tr>
-                <tr><td class="prop-label">Total including history</td><td class="prop-value">{formatSize(Number(versionSizes.totalBytes))} ({versionSizes.totalBytes.toLocaleString()} bytes) — {versionSizes.dataVersionCount} stored version(s)</td></tr>
-              {/if}
-            {/if}
             <tr><td class="prop-label">Last Modified</td><td class="prop-value">{formatDate(s3Props.modified, appState.dateFormat)}</td></tr>
             <tr><td class="prop-label">Content Type</td><td class="prop-value">{s3Props.content_type ?? '--'}</td></tr>
             <tr><td class="prop-label">Server-side encryption</td><td class="prop-value">{s3Props.server_side_encryption ?? 'None reported'}</td></tr>
@@ -1848,6 +1833,33 @@
             {/if}
           </tbody>
         </table>
+
+        <div class="object-size-summary" aria-label="Object payload sizes">
+          <div class="size-card">
+            <span class="size-card-label">Current version</span>
+            <strong>{versionsLoaded ? formatSize(Number(versionSizes.currentBytes)) : formatSize(s3Props.size)}</strong>
+            <span class="size-card-detail">{versionsLoaded ? versionSizes.currentBytes.toLocaleString() : s3Props.size.toLocaleString()} bytes</span>
+          </div>
+          {#if caps.versioning && versionsLoaded && !versionsLoading && !versionsError}
+            <div class="size-card">
+              <span class="size-card-label">Previous versions</span>
+              <strong>{formatSize(Number(versionSizes.previousBytes))}</strong>
+              <span class="size-card-detail">{versionSizes.previousBytes.toLocaleString()} bytes</span>
+              <span class="size-card-detail">{versionSizes.previousVersionCount.toLocaleString()} {versionSizes.previousVersionCount === 1 ? 'version' : 'versions'}</span>
+            </div>
+            <div class="size-card size-card-total">
+              <span class="size-card-label">Total including history</span>
+              <strong>{formatSize(Number(versionSizes.totalBytes))}</strong>
+              <span class="size-card-detail">{versionSizes.totalBytes.toLocaleString()} bytes</span>
+              <span class="size-card-detail">{versionSizes.dataVersionCount.toLocaleString()} stored {versionSizes.dataVersionCount === 1 ? 'version' : 'versions'}</span>
+            </div>
+          {/if}
+        </div>
+        {#if caps.versioning && versionsLoading}
+          <div class="size-summary-status" role="status">Loading version-history sizes…</div>
+        {:else if caps.versioning && versionsError}
+          <div class="size-summary-status">Version-history sizes unavailable <button class="version-action-btn" title={versionsError} onclick={() => loadVersions(true)}>Retry</button></div>
+        {/if}
 
         <div class="tab-bar">
           <button class="tab-btn" class:active={objectTab === 'general'} onclick={() => { objectTab = 'general'; }}>General</button>
@@ -2117,7 +2129,7 @@
 
         {#if objectTab === 'versions'}
           {#if caps.versioning}
-            <div class="versions-section">
+            <div class="versions-section object-versions">
               {#if versionsLoading}
                 <div class="loading">Loading versions...</div>
               {:else if versionsError}
@@ -2125,49 +2137,55 @@
               {:else if versions.length === 0}
                 <div class="versions-empty">No version history (versioning may not be enabled on this bucket)</div>
               {:else}
-                <div class="versions-list">
+                <table class="object-versions-table">
+                  <colgroup><col class="vid-column" /><col class="date-column" /><col class="size-column" /><col class="status-column" /><col class="actions-column" /></colgroup>
+                  <thead><tr><th scope="col">Version ID</th><th scope="col">Modified</th><th scope="col" class="numeric">Size</th><th scope="col">Status</th><th scope="col" class="actions-heading">Actions</th></tr></thead>
+                  <tbody>
                   {#each versions as ver (ver.version_id)}
-                    <div class="version-row" class:version-latest={ver.is_latest} class:version-delete-marker={ver.is_delete_marker}>
-                      <div class="version-info">
-                        <span class="version-id mono" title={ver.version_id}>{truncateVid(ver.version_id)}</span>
-                        <span class="version-date">{formatDate(ver.modified, appState.dateFormat)}</span>
-                        {#if !ver.is_delete_marker}
-                          <span class="version-size">{formatSize(ver.size)}</span>
-                        {/if}
+                    <tr class:version-latest={ver.is_latest} class:version-delete-marker={ver.is_delete_marker}>
+                      <td><span class="object-version-id" title={ver.version_id}>{ver.version_id}</span></td>
+                      <td class="version-date">{formatDate(ver.modified, appState.dateFormat)}</td>
+                      <td class="numeric" title={ver.is_delete_marker ? 'Delete marker: no payload' : `${ver.size.toLocaleString()} bytes`}>{ver.is_delete_marker ? '—' : formatSize(ver.size)}</td>
+                      <td><div class="object-version-status">
                         {#if ver.is_latest}
                           <span class="version-badge latest">Latest</span>
                         {/if}
                         {#if ver.is_delete_marker}
                           <span class="version-badge delete-marker">Delete Marker</span>
                         {/if}
-                      </div>
-                      <div class="version-actions">
+                      </div></td>
+                      <td><div class="object-version-actions">
                         {#if !ver.is_delete_marker}
                           <button
                             class="version-action-btn"
                             onclick={() => handleDownloadVersion(ver.version_id)}
                             disabled={versionActionLoading !== null || versionsLoading}
                             title="Download this version"
-                          >DL</button>
+                          >Download</button>
                           {#if !ver.is_latest}
                             <button
                               class="version-action-btn"
                               onclick={() => handleRestoreVersion(ver.version_id)}
                               disabled={versionActionLoading !== null || versionsLoading}
                               title="Restore as current"
-                            >Restore</button>
+                           >Restore</button>
+                          {:else}
+                            <span aria-hidden="true"></span>
                           {/if}
+                        {:else}
+                          <span aria-hidden="true"></span><span aria-hidden="true"></span>
                         {/if}
                         <button
                           class="version-action-btn danger"
                           onclick={() => handleDeleteVersion(ver.version_id)}
                           disabled={versionActionLoading !== null || versionsLoading}
                           title="Delete this version"
-                        >Del</button>
-                      </div>
-                    </div>
+                        >Delete</button>
+                      </div></td>
+                    </tr>
                   {/each}
-                </div>
+                  </tbody>
+                </table>
               {/if}
             </div>
           {/if}
@@ -3109,16 +3127,16 @@
     vertical-align: top;
   }
 
-  .prop-label {
+  .props-table .prop-label {
     color: var(--text-secondary);
     width: 110px;
     white-space: nowrap;
-    padding-right: 12px;
+    padding-right: 20px;
   }
 
   .prop-value {
     color: var(--text-primary);
-    word-break: break-all;
+    overflow-wrap: anywhere;
   }
 
   .prop-value.path {
@@ -3130,6 +3148,33 @@
     font-family: var(--font-mono, monospace);
     font-size: 12px;
   }
+
+  .s3-object-properties { table-layout: fixed; }
+  .s3-object-properties .prop-label { width: 170px; white-space: normal; }
+  .object-size-summary { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 180px), 1fr)); gap: 10px; }
+  .size-card { display: flex; flex-direction: column; gap: 4px; padding: 12px 14px; min-width: 0; background: var(--bg-surface); border: 1px solid var(--border-subtle); border-radius: var(--radius-sm); font-variant-numeric: tabular-nums; }
+  .size-card-label { font-size: 12px; color: var(--text-secondary); }
+  .size-card strong { font-size: 18px; font-weight: 600; }
+  .size-card-detail { font-size: 11px; color: var(--text-secondary); overflow-wrap: anywhere; }
+  .size-card-total { border-color: var(--text-accent); }
+  .size-summary-status { font-size: 12px; color: var(--text-secondary); }
+  .object-versions { padding: 0; overflow: auto; }
+  .object-versions-table { width: 100%; min-width: 680px; table-layout: fixed; border-collapse: separate; border-spacing: 0; font-size: 12px; font-variant-numeric: tabular-nums; }
+  .object-versions-table .date-column { width: 160px; }
+  .object-versions-table .size-column { width: 75px; }
+  .object-versions-table .status-column { width: 110px; }
+  .object-versions-table .actions-column { width: 220px; }
+  .object-versions-table th { position: sticky; top: 0; z-index: 1; background: var(--bg-header); color: var(--text-secondary); text-align: left; font-weight: 500; padding: 9px 10px; border-bottom: 1px solid var(--border-subtle); }
+  .object-versions-table td { padding: 8px 10px; vertical-align: middle; border-bottom: 1px solid var(--border-subtle); }
+  .object-versions-table .numeric { text-align: right; white-space: nowrap; }
+  .object-versions-table .actions-heading { text-align: right; }
+  .object-versions-table tr.version-latest { background: rgba(110, 168, 254, 0.05); }
+  .object-versions-table tbody tr:hover { background: var(--bg-hover); }
+  .object-version-id { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: var(--font-mono, monospace); }
+  .object-version-status { display: flex; flex-wrap: wrap; gap: 4px; }
+  .object-version-actions { display: grid; grid-template-columns: 1.2fr 1fr 0.85fr; gap: 5px; }
+  .object-version-actions .version-action-btn { padding: 5px 6px; font-size: 11px; }
+  @media (max-width: 600px) { .s3-object-properties .prop-label { width: 135px; } }
 
   .section-title {
     font-size: 11px;
@@ -3478,14 +3523,6 @@
     background: var(--bg-hover);
   }
 
-  .version-row.version-latest {
-    background: rgba(110, 168, 254, 0.05);
-  }
-
-  .version-row.version-delete-marker {
-    opacity: 0.6;
-  }
-
   .version-info {
     display: flex;
     align-items: center;
@@ -3500,11 +3537,6 @@
   }
 
   .version-date {
-    color: var(--text-secondary);
-    white-space: nowrap;
-  }
-
-  .version-size {
     color: var(--text-secondary);
     white-space: nowrap;
   }
