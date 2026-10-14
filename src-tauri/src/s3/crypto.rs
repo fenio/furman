@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use std::io::Write;
 use std::path::{Path, PathBuf};
 
 use aes_gcm::aead::{Aead, KeyInit};
@@ -145,6 +146,19 @@ fn derive_key(
 
 // ── Encrypt / Decrypt ────────────────────────────────────────────────────────
 
+fn write_encrypted_temp(ciphertext: &[u8]) -> Result<PathBuf, FmError> {
+    // Standard Base64 can start with '/', turning a joined filename into an
+    // absolute path. Never derive filesystem paths from the encryption salt.
+    // tempfile also creates the file exclusively with private permissions.
+    let mut temporary = tempfile::Builder::new()
+        .prefix("furman-encrypt-")
+        .tempfile()?;
+    temporary.write_all(ciphertext)?;
+    let (_, path) = temporary.keep().map_err(|error| error.error)?;
+    // Existing upload cleanup owns the persisted path after this return.
+    Ok(path)
+}
+
 /// Encrypt a file to a temp file. Returns (temp_path, params).
 pub fn encrypt_file(
     source: &Path,
@@ -187,21 +201,7 @@ pub fn encrypt_file(
         }
     };
 
-    // Write to temp file
-    let filename = source
-        .file_name()
-        .map(|n| n.to_string_lossy().to_string())
-        .unwrap_or_else(|| "encrypted".to_string());
-    let temp_path = std::env::temp_dir().join("furman-encrypt").join(format!(
-        "{}-{}",
-        &BASE64.encode(salt)[..8],
-        filename
-    ));
-
-    if let Some(parent) = temp_path.parent() {
-        std::fs::create_dir_all(parent)?;
-    }
-    std::fs::write(&temp_path, &ciphertext)?;
+    let temp_path = write_encrypted_temp(&ciphertext)?;
 
     let algorithm = match config.algorithm.as_str() {
         "chacha20-poly1305" => "chacha20-poly1305",
@@ -287,7 +287,36 @@ pub fn cleanup_temp_files(files: &[PathBuf], secure: bool) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::io::Write;
+
+    #[test]
+    fn encrypted_temp_files_are_private_unique_and_confined() {
+        let mut paths = std::collections::HashSet::new();
+        // The old salt-derived prefix for these bytes began with '/', causing
+        // Path::join to discard the temp directory. No key/salt bytes now
+        // participate in the filename at all.
+        let payload = [0xff; 32];
+        for _ in 0..128 {
+            let path = write_encrypted_temp(&payload).unwrap();
+            assert_eq!(path.parent(), Some(std::env::temp_dir().as_path()));
+            assert!(path
+                .file_name()
+                .unwrap()
+                .to_string_lossy()
+                .starts_with("furman-encrypt-"));
+            assert!(paths.insert(path.clone()));
+            assert_eq!(std::fs::read(&path).unwrap(), payload);
+            #[cfg(unix)]
+            {
+                use std::os::unix::fs::PermissionsExt;
+                assert_eq!(
+                    std::fs::metadata(&path).unwrap().permissions().mode() & 0o777,
+                    0o600
+                );
+            }
+            cleanup_temp_files(std::slice::from_ref(&path), false);
+            assert!(!path.exists());
+        }
+    }
 
     #[test]
     fn test_roundtrip_aes() {
