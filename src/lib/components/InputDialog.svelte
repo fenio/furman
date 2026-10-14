@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { revealSecret } from '#lib/utils/reveal-secret.js';
   interface Props {
     prompt: string;
     value: string;
@@ -44,6 +45,7 @@
     <div class="dialog-body">
       <input
         type={inputType}
+        use:revealSecret={inputType === 'password'}
         class="dialog-input"
        
         bind:value={inputValue}

@@ -1,4 +1,5 @@
 //! Run against an isolated TLS MinIO endpoint; never disable certificate checks.
+use app_lib::read_s3_file;
 use app_lib::s3::{
     service::{self, S3Service},
     sse_c,
@@ -85,6 +86,55 @@ async fn encrypted_reads_versions_and_rekeyed_copies_work() {
     let properties = service.head_object("folder/file").await.unwrap();
     assert_eq!(properties.size, 6);
     assert_eq!(
+        read_s3_file(&source, &bucket, &format!("s3://{bucket}/folder/file"))
+            .await
+            .unwrap()
+            .text
+            .as_deref(),
+        Some("second")
+    );
+    assert!(
+        read_s3_file(&wrong, &bucket, &format!("s3://{bucket}/folder/file"))
+            .await
+            .is_err()
+    );
+    assert!(
+        read_s3_file(&source, &bucket, "s3://wrong-bucket/folder/file")
+            .await
+            .is_err()
+    );
+    source
+        .put_object()
+        .bucket(&bucket)
+        .key("empty")
+        .body(ByteStream::from_static(b""))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(
+        read_s3_file(&source, &bucket, &format!("s3://{bucket}/empty"))
+            .await
+            .unwrap()
+            .text
+            .as_deref(),
+        Some("")
+    );
+    source
+        .put_object()
+        .bucket(&bucket)
+        .key("binary")
+        .body(ByteStream::from_static(b"\0\xff"))
+        .send()
+        .await
+        .unwrap();
+    assert!(
+        read_s3_file(&source, &bucket, &format!("s3://{bucket}/binary"))
+            .await
+            .unwrap()
+            .text
+            .is_none()
+    );
+    assert_eq!(
         properties.server_side_encryption.as_deref(),
         Some("SSE-C (AES256)")
     );
@@ -159,6 +209,18 @@ async fn encrypted_reads_versions_and_rekeyed_copies_work() {
         .await
         .unwrap();
     assert_eq!(source_hash, dest_hash);
+    assert_eq!(
+        read_s3_file(
+            &destination,
+            &dest_bucket,
+            &format!("s3://{dest_bucket}/copied/file")
+        )
+        .await
+        .unwrap()
+        .text
+        .as_deref(),
+        Some("second")
+    );
     assert!(
         object_sha256(&source, &dest_bucket, "copied/file", 6, None, &cancel)
             .await
@@ -337,7 +399,20 @@ async fn encrypted_reads_versions_and_rekeyed_copies_work() {
         .await
         .unwrap();
     assert_eq!(service.head_object("folder/file").await.unwrap().size, 5);
-    for key in ["folder/file", "large", "plain-src"] {
+    assert!(
+        read_s3_file(&source, &bucket, &format!("s3://{bucket}/large"))
+            .await
+            .is_err()
+    );
+    assert_eq!(
+        read_s3_file(&source, &bucket, &format!("s3://{bucket}/plain-src"))
+            .await
+            .unwrap()
+            .text
+            .as_deref(),
+        Some("plain")
+    );
+    for key in ["folder/file", "large", "plain-src", "empty", "binary"] {
         for version in service.list_object_versions(key).await.unwrap() {
             plain
                 .delete_object()

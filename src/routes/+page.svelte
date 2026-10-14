@@ -26,6 +26,7 @@
   import PropertiesDialog from '#lib/components/PropertiesDialog.svelte';
   import SyncDialog from '#lib/components/SyncDialog.svelte';
   import CompareDialog from '#lib/components/CompareDialog.svelte';
+  import FileDiffDialog from '#lib/components/FileDiffDialog.svelte';
   import { comparisonState } from '#lib/state/comparison.svelte.js';
   import ShortcutsDialog from '#lib/components/ShortcutsDialog.svelte';
   import S3BatchEditDialog from '#lib/components/S3BatchEditDialog.svelte';
@@ -331,6 +332,13 @@
       }}
       onClose={() => appState.closeModal()}
     />
+  {/if}
+
+  {#if appState.modal === 'file-diff' && comparisonState.diffPair}
+    <FileDiffDialog pair={comparisonState.diffPair} onClose={() => {
+      comparisonState.diffPair = null;
+      appState.closeModal();
+    }} />
   {/if}
 
   {#if appState.modal === 'connection-manager'}

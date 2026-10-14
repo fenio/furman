@@ -4,6 +4,7 @@ import { statusState } from '#lib/state/status.svelte.js';
 import { appState } from '#lib/state/app.svelte.js';
 import { SvelteMap, SvelteSet } from 'svelte/reactivity';
 import { canComparePanes, type ComparisonMode } from '#lib/utils/comparison-options.js';
+import { comparisonDiffPair, type DiffPair } from '#lib/utils/file-diff.js';
 
 export type ComparisonStatus = 'new' | 'modified' | 'deleted' | 'same';
 export type ComparisonFilter = 'all' | 'new' | 'modified' | 'deleted';
@@ -12,6 +13,7 @@ export type ComparisonSide = 'left' | 'right';
 class ComparisonState {
   active = $state(false);
   scanning = $state(false);
+  diffPair = $state<DiffPair | null>(null);
   mode = $state<ComparisonMode>('size_mtime');
   private lastExcludes: string[] = [];
   private lastComparison: [string, PanelBackend, string, string, PanelBackend, string] | null = null;
@@ -186,6 +188,20 @@ class ComparisonState {
       if (directoryStatuses.has(relativePath)) return 'modified';
     }
     return undefined;
+  }
+
+  diffForEntry(side: ComparisonSide, panelPath: string, entry: FileEntry | null): DiffPair | null {
+    if (!entry || entry.is_dir || this.scanning || !this.lastComparison
+        || this.statusForEntry(side, panelPath, entry) !== 'modified') return null;
+    const relative = this.entryRelativePath(side, panelPath, entry.name);
+    return relative === null ? null : comparisonDiffPair(this.lastComparison, relative);
+  }
+
+  showDiff(side: ComparisonSide, panelPath: string, entry: FileEntry | null) {
+    const pair = this.diffForEntry(side, panelPath, entry);
+    if (!pair) return;
+    this.diffPair = pair;
+    appState.modal = 'file-diff';
   }
 
   matchesFilter(side: ComparisonSide, panelPath: string, entry: FileEntry): boolean {

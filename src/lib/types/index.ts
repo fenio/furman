@@ -65,6 +65,7 @@ export type ModalType =
   | 'volume-selector'
   | 'connection-manager'
   | 'compare'
+  | 'file-diff'
   | 'overwrite'
   | 'search'
   | 'sync'

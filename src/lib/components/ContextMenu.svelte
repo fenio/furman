@@ -14,9 +14,10 @@
     isLocalDir?: boolean;
     isFavorite?: boolean;
     onEmpty?: boolean;
+    canDiff?: boolean;
   }
 
-  let { x, y, onClose, onAction, isS3 = false, isFile = false, isArchive: _isArchive = false, isLocalDir = false, isFavorite = false, onEmpty = false }: Props = $props();
+  let { x, y, onClose, onAction, isS3 = false, isFile = false, isArchive: _isArchive = false, isLocalDir = false, isFavorite = false, onEmpty = false, canDiff = false }: Props = $props();
 
   let menuEl: HTMLDivElement | undefined = $state(undefined);
   let adjustX = $state(0);
@@ -86,6 +87,9 @@
         Edit
         <span class="menu-shortcut">F4</span>
       </button>
+      {#if canDiff}
+        <button class="menu-row" role="menuitem" onclick={() => act('comparison-diff')}>Show diff with other pane</button>
+      {/if}
 
       <div class="menu-divider"></div>
 

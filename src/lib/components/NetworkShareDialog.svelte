@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { revealSecret } from '#lib/utils/reveal-secret.js';
   interface Props {
     onConnect: (protocol: 'smb' | 'nfs', host: string, share: string, username?: string, password?: string, domain?: string) => void;
     onCancel: () => void;
@@ -97,7 +98,7 @@
       </div>
       <div class="field">
         <label for="share-password">Password <span class="optional">(optional)</span></label>
-        <input id="share-password" type="password" bind:value={password} placeholder="Enter password" />
+        <input id="share-password" type="password" use:revealSecret bind:value={password} placeholder="Enter password" />
       </div>
     {:else}
       <div class="hint-msg">
