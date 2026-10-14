@@ -2239,8 +2239,8 @@
             {#if bucketVersioningLoading}
               <div class="loading">Loading...</div>
             {:else if bucketVersioning}
-              <div class="sc-row">
-                <span class="meta-label">Status: <strong>{bucketVersioning.status}</strong></span>
+              <div class="sc-row bucket-setting-row">
+                <span class="meta-label">Status</span><strong class="bucket-setting-value">{bucketVersioning.status}</strong>
                 <button
                   class="dialog-btn apply-btn"
                   onclick={toggleBucketVersioning}
@@ -2249,8 +2249,8 @@
                   {applyingVersioning ? 'Applying...' : bucketVersioning.status === 'Enabled' ? 'Suspend' : 'Enable'}
                 </button>
               </div>
-              <div class="sc-row">
-                <span class="meta-label">MFA Delete: <strong>{bucketVersioning.mfa_delete === 'Enabled' ? 'Enabled' : 'Disabled'}</strong></span>
+              <div class="sc-row bucket-setting-row">
+                <span class="meta-label">MFA Delete</span><strong class="bucket-setting-value">{bucketVersioning.mfa_delete === 'Enabled' ? 'Enabled' : 'Disabled'}</strong>
                 {#if bucketVersioning.status === 'Enabled' || bucketVersioning.mfa_delete === 'Enabled'}
                   <button
                     class="dialog-btn apply-btn"
@@ -2811,7 +2811,7 @@
                       <div class="lifecycle-rule-header">
                         <span class="lifecycle-rule-id">Rule {i + 1}</span>
                         <div class="lifecycle-rule-actions">
-                          <button class="version-action-btn danger" onclick={() => removeCorsRule(i)} title="Remove rule">&times;</button>
+                          <button class="version-action-btn danger cors-remove-btn" onclick={() => removeCorsRule(i)} title="Remove rule" aria-label={`Remove CORS rule ${i + 1}`}>&times;</button>
                         </div>
                       </div>
                       <div class="lifecycle-rule-body">
@@ -2828,16 +2828,15 @@
                             rows="2"
                           ></textarea>
                         </label>
-                        <div class="tag-header">
-                          <span class="meta-label">Allowed Methods</span>
-                        </div>
-                        <div class="cors-methods">
+                        <div class="meta-field">
+                          <span class="meta-label" id={`cors-methods-label-${i}`}>Allowed Methods</span>
+                          <div class="cors-methods" role="group" aria-labelledby={`cors-methods-label-${i}`}>
                           {#each corsMethods as method (method)}
-                            <label class="rwx-checkbox" class:checked={rule.allowed_methods.includes(method)}>
-                              <input type="checkbox" checked={rule.allowed_methods.includes(method)} onchange={() => toggleCorsMethod(i, method)} />
+                            <button type="button" class="cors-method" class:checked={rule.allowed_methods.includes(method)} aria-pressed={rule.allowed_methods.includes(method)} onclick={() => toggleCorsMethod(i, method)}>
                               {method}
-                            </label>
+                            </button>
                           {/each}
+                          </div>
                         </div>
                         <label class="meta-field">
                           <span class="meta-label">Allowed Headers</span>
@@ -2889,7 +2888,7 @@
                   {#if corsRules.length === 0}
                     <div class="versions-empty">No CORS rules</div>
                   {/if}
-                  <div class="tag-actions">
+                  <div class="tag-actions cors-rule-toolbar">
                     <button class="version-action-btn" onclick={addCorsRule}>+ Add Rule</button>
                     {#if corsDirty}
                       <button class="dialog-btn apply-btn" onclick={saveCorsRules} disabled={savingCors}>
@@ -2972,7 +2971,7 @@
                       {/each}
                     </div>
                   {/if}
-                  <div class="meta-row" style="margin-top: 8px;">
+                  <div class="meta-row acl-controls">
                     <span class="meta-label">Set Canned ACL</span>
                     <select class="meta-input" bind:value={selectedCannedAcl}>
                       <option value="">-- Select --</option>
@@ -2981,11 +2980,11 @@
                       <option value="public-read-write">Public Read/Write</option>
                       <option value="authenticated-read">Authenticated Read</option>
                     </select>
-                  </div>
-                  <div class="tag-actions">
                     <button class="dialog-btn apply-btn" onclick={saveAcl} disabled={!selectedCannedAcl || savingAcl}>
                       {savingAcl ? 'Applying...' : 'Apply ACL'}
                     </button>
+                  </div>
+                  <div class="tag-actions">
                     {#if aclMessage}
                       <span class="sc-message" class:sc-error={aclMessage.startsWith('Error')}>{aclMessage}</span>
                     {/if}
@@ -3103,6 +3102,48 @@
     flex-direction: column;
     gap: 12px;
     padding-top: 4px;
+  }
+
+  /* Bucket tabs own the scroll area; editors must not create 300px scroll boxes. */
+  .tab-content > .versions-section { max-height: none; overflow: visible; flex: 0 0 auto; padding: 12px; }
+  .tab-content > .section-title { flex-shrink: 0; }
+  .tab-content .tag-editor { gap: 12px; padding: 0; }
+  .tab-content .lifecycle-rule-body { display: flex; flex-direction: column; gap: 8px; margin-top: 8px; padding-top: 8px; }
+  .tab-content .meta-field, .tab-content .meta-row { display: grid; grid-template-columns: 140px minmax(0, 1fr); align-items: center; gap: 10px; }
+  .tab-content .meta-label { min-width: 0; white-space: normal; font-size: 12px; }
+  .tab-content .meta-input, .tab-content .cors-textarea, .tab-content .policy-editor, .tab-content .sc-select, .tab-content .lifecycle-days-input {
+    box-sizing: border-box; min-width: 0; min-height: 28px; font-size: 12px; line-height: 1.4; padding: 4px 8px;
+  }
+  .tab-content .meta-input, .tab-content .cors-textarea { width: 100%; }
+  .tab-content .lifecycle-days-input { width: 100px; font-family: inherit; }
+  .tab-content .dialog-btn, .tab-content .version-action-btn {
+    box-sizing: border-box; min-height: 28px; padding: 4px 10px; font-size: 12px; line-height: 1.4; white-space: nowrap; border-radius: var(--radius-sm);
+  }
+  .tab-content .apply-btn { align-self: auto; background: rgba(110, 168, 254, 0.15); border-color: var(--border-active); color: var(--text-accent); }
+  .tab-content .sc-row, .tab-content .tag-actions { flex-wrap: wrap; gap: 10px; }
+  .tab-content .bucket-setting-row { display: grid; grid-template-columns: 140px minmax(100px, 1fr) 100px; max-width: 520px; }
+  .bucket-setting-value { font-size: 12px; color: var(--text-primary); font-weight: 500; }
+  .tab-content .acl-owner { display: grid; grid-template-columns: 140px minmax(0, 1fr); gap: 10px; }
+  .acl-owner-name, .acl-grantee { min-width: 0; overflow-wrap: anywhere; }
+  .tab-content .acl-controls { grid-template-columns: 140px minmax(0, 1fr) auto; margin-top: 8px; }
+  .tab-content .version-row { padding: 8px 0; gap: 12px; font-size: 12px; }
+  .tab-content .acl-grantee { font-size: 12px; }
+  .tab-content .version-badge { font-size: 10px; padding: 2px 6px; }
+  .tab-content .cors-methods { gap: 6px; padding: 0; }
+  .cors-method {
+    min-height: 28px; padding: 4px 9px; font: inherit; font-size: 12px; line-height: 1.4; font-weight: 500;
+    color: var(--text-secondary); border: 1px solid var(--border-subtle); border-radius: var(--radius-sm); background: var(--bg-surface); cursor: pointer;
+  }
+  .cors-method.checked { color: var(--text-accent); border-color: var(--border-active); background: rgba(110, 168, 254, 0.1); }
+  .cors-method:hover { background: var(--bg-hover); }
+  .cors-method:focus-visible { outline: 2px solid var(--text-accent); outline-offset: 2px; }
+  .tab-content .cors-remove-btn { width: 28px; padding: 0; }
+  .tab-content .cors-rule-toolbar { position: sticky; bottom: 0; z-index: 2; background: var(--dialog-bg); border-top: 1px solid var(--border-subtle); padding: 10px 0 0; }
+  @media (max-width: 600px) {
+    .tab-content .meta-field, .tab-content .meta-row, .tab-content .acl-owner { grid-template-columns: 1fr; gap: 6px; }
+    .tab-content .bucket-setting-row { grid-template-columns: 100px minmax(0, 1fr) auto; }
+    .tab-content .acl-controls { grid-template-columns: 1fr auto; }
+    .acl-controls .meta-label { grid-column: 1 / -1; }
   }
 
   .loading, .error {
