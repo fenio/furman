@@ -16,7 +16,12 @@ where
         SdkError::ServiceError(_) => "The S3 service rejected the request.",
         _ => "The S3 request failed.",
     };
-    let mut details = vec![format!("{operation}: {reason}")];
+    // Provider HTTP errors (including Linode/Akamai AccessDenied/ExpiredToken)
+    // are never reinterpreted as an AWS SSO session problem.
+    let sso_hint = if error.raw_response().is_none() && error.as_service_error().is_none() {
+        super::aws_profiles::sso_credential_hint(error)
+    } else { None };
+    let mut details = vec![format!("{operation}: {}", sso_hint.unwrap_or(reason))];
     // Recognize our own static signing safety failure without dumping arbitrary
     // SDK source chains, request headers, credentials or transport Debug values.
     let mut source: Option<&(dyn std::error::Error + 'static)> = Some(error);

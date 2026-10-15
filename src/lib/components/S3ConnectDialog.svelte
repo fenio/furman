@@ -1,5 +1,7 @@
 <script lang="ts">
   import ErrorNotice from './ErrorNotice.svelte';
+  import AwsProfileTools from './AwsProfileTools.svelte';
+  import { showAwsProfileTools, allowSsoLogin } from '#lib/utils/aws-sso.js';
   import { errorText } from '#lib/utils/error-report.js';
   import { onMount, untrack } from 'svelte';
   import { revealSecret } from '#lib/utils/reveal-secret.js';
@@ -217,7 +219,18 @@
     }
   }
 
+  let credentialSelectionRevision = 0;
+
+  function useSharedProfile(selected: string) {
+    credentialSelectionRevision++;
+    profile = selected;
+    accessKey = '';
+    secretKey = '';
+    useDefaultCreds = true;
+  }
+
   onMount(async () => {
+    const credentialRevision = credentialSelectionRevision;
     try {
       hasDefaultCreds = await s3CheckCredentials();
     } catch {
@@ -229,7 +242,7 @@
     if (init?.credentialType === 'keychain' && init.id) {
       try {
         const secret = await connectionsState.getSecret(init.id);
-        if (secret) secretKey = secret;
+        if (secret && credentialSelectionRevision === credentialRevision && accessKey === init.accessKeyId) secretKey = secret;
       } catch { /* ignore — user can re-enter manually */ }
     }
     // Load proxy password from keychain when editing
@@ -474,6 +487,8 @@
   }
 
   async function handleKeydown(e: KeyboardEvent) {
+    // Enter activates the focused SSO control, never the parent Connect action.
+    if (e.key === 'Enter' && (e.target as HTMLElement | null)?.closest('[data-aws-profile-tools]')) return;
     if (e.key === 'Enter') {
       e.preventDefault();
       e.stopPropagation();
@@ -717,8 +732,13 @@
             placeholder="default"
             disabled={useAnonymous}
           />
-          <span class="field-hint">SSO profiles work if you've run `aws sso login`</span>
+          <span class="field-hint">Uses the AWS SDK shared profile/credential chain. Manual access keys take precedence when supplied.</span>
         </label>
+        {#if showAwsProfileTools(selectedProvider, endpoint, useAnonymous, useOidc)}
+          <AwsProfileTools {profile} allowLogin={allowSsoLogin(accessKey, secretKey)}
+            onUseProfile={useSharedProfile}
+            onUseRegion={(selected) => { region = selected; selectedRegionId = '_custom'; }} />
+        {/if}
 
         {#if !checking && hasDefaultCreds}
           <div class="creds-toggle">

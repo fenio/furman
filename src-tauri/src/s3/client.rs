@@ -130,7 +130,7 @@ pub async fn build_s3_client(
         let resp = req
             .send()
             .await
-            .map_err(|e| s3err(format!("AssumeRoleWithWebIdentity failed: {e}")))?;
+            .map_err(|e| super::errors::s3_sdk_error("AssumeRoleWithWebIdentity", &e))?;
         let creds = resp
             .credentials()
             .ok_or_else(|| s3err("No credentials returned from AssumeRoleWithWebIdentity"))?;
@@ -172,7 +172,7 @@ pub async fn build_s3_client(
         let assume_resp = assume_req
             .send()
             .await
-            .map_err(|e| s3err(format!("AssumeRole failed: {e}")))?;
+            .map_err(|e| super::errors::s3_sdk_error("AssumeRole", &e))?;
 
         let sts_creds = assume_resp
             .credentials()

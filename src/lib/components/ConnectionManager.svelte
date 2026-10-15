@@ -1,5 +1,7 @@
 <script lang="ts">
   import ErrorNotice from './ErrorNotice.svelte';
+  import AwsProfileTools from './AwsProfileTools.svelte';
+  import { showAwsProfileTools, allowSsoLogin, isSsoSessionError } from '#lib/utils/aws-sso.js';
   import { errorText } from '#lib/utils/error-report.js';
   import { untrack } from 'svelte';
   import { panels } from '#lib/state/panels.svelte.js';
@@ -32,9 +34,11 @@
     initialTab === 'connect' ? { mode: 'new', protocol: 's3' } : { mode: 'saved' }
   ));
   let connectError = $state('');
+  let ssoRecoveryProfile = $state('');
   let dialogKey = $state(0);
 
   function handleEdit(profile: ConnectionProfile) {
+    ssoRecoveryProfile = '';
     if (profile.type === 's3') {
       selected = { mode: 'edit', profile };
       dialogKey++;
@@ -87,6 +91,7 @@
     sseCustomerKey?: string,
   ) {
     connectError = '';
+    ssoRecoveryProfile = showAwsProfileTools(provider, endpoint, anonymous, !!webIdentityToken) && allowSsoLogin(accessKey, secretKey) ? profile ?? '' : '';
     const panel = panels.active;
     const connectionId = `s3-${Date.now()}`;
     const caps = resolveCapabilities({ provider, customCapabilities });
@@ -112,6 +117,7 @@
     keyPassphrase?: string,
     agentSocket?: string,
   ) {
+    ssoRecoveryProfile = '';
     connectError = '';
     const panel = panels.active;
     const connectionId = `sftp-${Date.now()}`;
@@ -133,6 +139,7 @@
     password?: string,
     domain?: string,
   ) {
+    ssoRecoveryProfile = '';
     connectError = '';
     const panel = panels.active;
     try {
@@ -163,6 +170,7 @@
   }
 
   async function handleConnectFromProfile(p: ConnectionProfile) {
+    ssoRecoveryProfile = '';
     if (p.type === 'sftp') {
       connectError = '';
       let password: string | undefined;
@@ -399,6 +407,9 @@
       <div class="manager-main">
         {#if connectError}
           <div class="error-msg"><ErrorNotice error={connectError} context="Connection failed" /></div>
+          {#if selected.mode === 'saved' && ssoRecoveryProfile && isSsoSessionError(connectError)}
+            <AwsProfileTools profile={ssoRecoveryProfile} />
+          {/if}
         {/if}
         {#if selected.mode === 'saved'}
           <div class="main-body">

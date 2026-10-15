@@ -1,4 +1,5 @@
 pub mod archive;
+pub mod aws;
 pub mod cloudfront;
 pub mod comparison;
 pub mod directory;
