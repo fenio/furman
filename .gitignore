@@ -1,5 +1,9 @@
 node_modules
 
+# Python bytecode caches
+__pycache__/
+*.py[cod]
+
 # Output
 .output
 .vercel
