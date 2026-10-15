@@ -63,3 +63,6 @@ Pinned source/destination identities, saved runnable jobs, automatic reconnect,
 background execution, schedules, persistent run history, import/export and
 stored scan budgets are not included. Those require a separate design and PR;
 no scheduling timer or startup work is installed here.
+
+The next step is the [proposed pinned manual-job design](pinned-sync-jobs-design.md),
+not a change to the shipped options-preset contract.
