@@ -1,4 +1,6 @@
 <script lang="ts">
+  import ErrorNotice from './ErrorNotice.svelte';
+  import { errorText } from '#lib/utils/error-report.js';
   import { untrack } from 'svelte';
   import { panels } from '#lib/state/panels.svelte.js';
   import { appState } from '#lib/state/app.svelte.js';
@@ -95,7 +97,7 @@
       await panel.connectS3(info, endpoint, profile, accessKey, secretKey, roleArn, externalId, sessionName, sessionDurationSecs, useTransferAcceleration, anonymous, webIdentityToken, proxyUrl, proxyUsername, proxyPassword, sseCustomerKey);
       onClose();
     } catch (err: unknown) {
-      connectError = err instanceof Error ? err.message : String(err);
+      connectError = errorText(err);
       error(String(err));
     }
   }
@@ -118,7 +120,7 @@
       await panel.connectSftp(info, password, keyPath, keyPassphrase, agentSocket);
       onClose();
     } catch (err: unknown) {
-      connectError = err instanceof Error ? err.message : String(err);
+      connectError = errorText(err);
       error(String(err));
     }
   }
@@ -137,7 +139,7 @@
       await panel.mountShare(protocol, host, share, username, password, domain);
       onClose();
     } catch (err: unknown) {
-      connectError = err instanceof Error ? err.message : String(err);
+      connectError = errorText(err);
       error(String(err));
     }
   }
@@ -194,7 +196,7 @@
     try {
       sseCustomerKey = await connectionsState.getSseCustomerKey(p);
     } catch (err: unknown) {
-      connectError = String(err);
+      connectError = errorText(err);
       return;
     }
 
@@ -396,7 +398,7 @@
 
       <div class="manager-main">
         {#if connectError}
-          <div class="error-msg" role="alert">{connectError}</div>
+          <div class="error-msg"><ErrorNotice error={connectError} context="Connection failed" /></div>
         {/if}
         {#if selected.mode === 'saved'}
           <div class="main-body">

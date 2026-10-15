@@ -1,4 +1,5 @@
 <script lang="ts">
+  import ErrorNotice from './ErrorNotice.svelte';
   import { onMount } from 'svelte';
   import {
     cfListDistributions, cfGetDistribution, cfCreateDistribution,
@@ -354,7 +355,7 @@
   {#if loading}
     <div class="loading">Loading distributions...</div>
   {:else if error}
-    <div class="error">{error}</div>
+    <div class="error"><ErrorNotice {error} context="Could not load CloudFront configuration" /></div>
   {:else}
     {#if distributions.length === 0}
       <div class="cf-empty">No CloudFront distributions found for this bucket.</div>

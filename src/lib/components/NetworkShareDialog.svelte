@@ -1,4 +1,5 @@
 <script lang="ts">
+  import ErrorNotice from './ErrorNotice.svelte';
   import { revealSecret } from '#lib/utils/reveal-secret.js';
   interface Props {
     onConnect: (protocol: 'smb' | 'nfs', host: string, share: string, username?: string, password?: string, domain?: string) => void;
@@ -57,7 +58,7 @@
     </div>
 
     {#if connectError}
-      <div class="error-msg">{connectError}</div>
+      <div class="error-msg"><ErrorNotice error={connectError} context="Connection failed" /></div>
     {/if}
 
     <div class="field">

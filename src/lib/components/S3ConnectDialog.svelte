@@ -1,4 +1,6 @@
 <script lang="ts">
+  import ErrorNotice from './ErrorNotice.svelte';
+  import { errorText } from '#lib/utils/error-report.js';
   import { onMount, untrack } from 'svelte';
   import { revealSecret } from '#lib/utils/reveal-secret.js';
   import { s3CheckCredentials, s3ListBuckets, s3CreateBucket, s3DeleteBucket, oidcStartAuth } from '#lib/services/s3.js';
@@ -287,7 +289,7 @@
     if (!bucket.trim()) return;
     let key: string | undefined;
     try { key = encryptionKey(); }
-    catch (err: unknown) { saveError = String(err); return; }
+    catch (err: unknown) { saveError = errorText(err); return; }
     const [pUrl, pUser, pPass] = currentProxyArgs();
     if (useOidc) {
       if (!oidcIssuerUrl.trim() || !oidcClientId.trim() || !roleArn.trim()) return;
@@ -311,7 +313,7 @@
           pUrl, pUser, pPass, key,
         );
       } catch (e: unknown) {
-        oidcError = e instanceof Error ? e.message : String(e);
+        oidcError = errorText(e);
       } finally {
         oidcAuthenticating = false;
       }
@@ -358,7 +360,7 @@
     try {
       await saveThenConnect(saveProfile, handleConnect);
     } catch (err: unknown) {
-      saveError = 'Save & Connect failed: ' + String(err);
+      saveError = 'Save & Connect failed: ' + errorText(err);
     } finally {
       saving = false;
     }
@@ -371,7 +373,7 @@
     try {
       await saveThenConnect(saveProfile, onCancel);
     } catch (err: unknown) {
-      saveError = 'Could not save connection: ' + String(err);
+      saveError = 'Could not save connection: ' + errorText(err);
     } finally {
       saving = false;
     }
@@ -388,7 +390,7 @@
       );
       showBucketList = true;
     } catch (e: unknown) {
-      browseError = e instanceof Error ? e.message : String(e);
+      browseError = errorText(e);
       showBucketList = false;
     } finally {
       browsing = false;
@@ -448,7 +450,7 @@
       newBucketName = '';
       showCreateForm = false;
     } catch (e: unknown) {
-      createError = e instanceof Error ? e.message : String(e);
+      createError = errorText(e);
     } finally {
       creatingBucket = false;
     }
@@ -465,7 +467,7 @@
       buckets = buckets.filter(b => b.name !== bucketName);
       if (bucket === bucketName) bucket = '';
     } catch (e: unknown) {
-      browseError = e instanceof Error ? e.message : String(e);
+      browseError = errorText(e);
     } finally {
       deletingBucket = null;
     }
@@ -621,7 +623,7 @@
               <button class="dialog-btn" onclick={() => { showCreateForm = false; createError = ''; }}>Cancel</button>
             </div>
             {#if createError}
-              <span class="browse-error">{createError}</span>
+              <div class="browse-error"><ErrorNotice error={createError} context="Could not create bucket" /></div>
             {/if}
           {:else}
             <button class="dialog-btn create-trigger" onclick={() => { showCreateForm = true; createError = ''; }}>
@@ -630,7 +632,7 @@
           {/if}
         {/if}
         {#if browseError}
-          <span class="browse-error">{browseError}</span>
+          <div class="browse-error"><ErrorNotice error={browseError} context="Could not list buckets" /></div>
         {/if}
       </div>
 
@@ -698,7 +700,7 @@
           </select>
         </label>
         {#if oidcError}
-          <span class="browse-error">{oidcError}</span>
+          <div class="browse-error"><ErrorNotice error={oidcError} context="Sign-in failed" /></div>
         {/if}
         {#if oidcAuthenticating}
           <span class="field-hint">Waiting for browser authentication...</span>
@@ -992,7 +994,7 @@
 {/snippet}
 
 {#snippet formButtons()}
-    {#if saveError}<div class="browse-error" role="alert">{saveError}</div>{/if}
+    {#if saveError}<div class="browse-error"><ErrorNotice error={saveError} context="Could not save or connect" /></div>{/if}
     <div class="dialog-footer">
       {#if saveMode}
         <button class="dialog-btn primary" onclick={handleSaveAndConnect} disabled={!bucket.trim() || !name.trim() || oidcAuthenticating || saving}>

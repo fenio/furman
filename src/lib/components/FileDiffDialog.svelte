@@ -1,4 +1,5 @@
 <script lang="ts">
+  import ErrorNotice from './ErrorNotice.svelte';
   import { onMount } from 'svelte';
   import { invoke } from '@tauri-apps/api/core';
   import { textDiff, type DiffPair, type DiffLine } from '#lib/utils/file-diff.js';
@@ -34,7 +35,7 @@
     <div class="paths"><div><strong>− Left:</strong> {pair.left.path}</div><div><strong>+ Right:</strong> {pair.right.path}</div></div>
     <p class="notice">Read-only, live file contents—not a snapshot of the earlier scan. UTF-8 text up to 512 KiB per side. S3 reads may incur download charges.</p>
     {#if loading}<p role="status">Reading both files…</p>
-    {:else if error}<p role="alert">{error}</p>
+    {:else if error}<ErrorNotice {error} context="Could not compare files" />
     {:else if binary}<p>Binary or non-UTF-8 file detected. Text diff is unavailable; download the files to compare externally.</p>
     {:else if rows.every(row => row.kind === 'same')}<p>Contents now match. Earlier metadata or contents may have differed.</p>
     {:else}

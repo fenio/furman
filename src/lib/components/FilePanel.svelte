@@ -1,4 +1,5 @@
 <script lang="ts">
+  import ErrorNotice from './ErrorNotice.svelte';
   import { panels, type PanelData } from '#lib/state/panels.svelte.js';
   import type { SortField, ColumnId } from '#lib/types/index.js';
   import { SvelteSet } from 'svelte/reactivity';
@@ -854,7 +855,7 @@
     {#if panel.loading}
       <div class="file-list"><div class="loading-msg">Loading...</div></div>
     {:else if panel.error}
-      <div class="file-list"><div class="error-msg">{panel.error}</div></div>
+      <div class="file-list"><div class="error-msg"><ErrorNotice error={panel.error} context="Could not list folder" /></div></div>
     {:else}
       <ColumnView
         {panel}
@@ -880,7 +881,7 @@
     {#if panel.loading}
       <div class="loading-msg">Loading...</div>
     {:else if panel.error}
-      <div class="error-msg">{panel.error}</div>
+      <div class="error-msg"><ErrorNotice error={panel.error} context="Could not list folder" /></div>
     {:else if panel.viewMode === 'icon'}
       <!-- Virtualized icon grid -->
       <div style="height: {iconTotalHeight}px; position: relative;">
@@ -1415,6 +1416,9 @@
 
   .error-msg {
     color: var(--error-color);
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+    user-select: text;
   }
 
   .panel-footer {

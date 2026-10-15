@@ -25,6 +25,7 @@ use super::helpers::{
 };
 
 use super::crypto::EncryptionConfig;
+use super::errors::s3_sdk_error;
 
 // ── S3Bucket model ──────────────────────────────────────────────────────────
 
@@ -55,7 +56,7 @@ pub async fn list_buckets(client: &S3Client) -> Result<Vec<S3Bucket>, FmError> {
         .list_buckets()
         .send()
         .await
-        .map_err(|e| s3err(format!("Could not list buckets: {e}")))?;
+        .map_err(|e| s3_sdk_error("ListBuckets", &e))?;
 
     let buckets = resp
         .buckets()
@@ -87,7 +88,7 @@ pub async fn create_bucket(client: &S3Client, name: &str, region: &str) -> Resul
 
     req.send()
         .await
-        .map_err(|e| s3err(format!("Could not create bucket '{name}': {e}")))?;
+        .map_err(|e| s3_sdk_error("CreateBucket", &e))?;
 
     Ok(())
 }
@@ -99,7 +100,7 @@ pub async fn delete_bucket(client: &S3Client, name: &str) -> Result<(), FmError>
         .bucket(name)
         .send()
         .await
-        .map_err(|e| s3err(format!("Could not delete bucket '{name}': {e}")))?;
+        .map_err(|e| s3_sdk_error("DeleteBucket", &e))?;
 
     Ok(())
 }
@@ -152,6 +153,7 @@ impl S3Service {
         // Paginated listing with delimiter
         let mut continuation_token: Option<String> = None;
         let mut total_size: u64 = 0;
+        let mut page = 1;
 
         loop {
             let mut req = self
@@ -165,7 +167,10 @@ impl S3Service {
                 req = req.continuation_token(token);
             }
 
-            let resp = req.send().await.map_err(|e| s3err(e.to_string()))?;
+            let resp = req.send().await.map_err(|e| {
+                s3_sdk_error(&format!("ListObjectsV2 (bucket listing, page {page})"), &e)
+            })?;
+            page += 1;
 
             // Common prefixes → directories
             for cp in resp.common_prefixes() {
@@ -646,7 +651,7 @@ impl S3Service {
                         req = req.metadata(mk, mv);
                     }
                 }
-                req.send().await.map_err(|e| s3err(e.to_string()))?;
+                req.send().await.map_err(|e| s3_sdk_error("Upload object", &e))?;
 
                 throttle(size).await;
                 bytes_done += size;
@@ -848,7 +853,7 @@ impl S3Service {
                 for (mk, mv) in &metadata {
                     req = req.metadata(mk, mv);
                 }
-                let r = req.send().await.map_err(|e| s3err(e.to_string()));
+                let r = req.send().await.map_err(|e| s3_sdk_error("Upload encrypted object", &e));
                 if r.is_ok() {
                     throttle(size).await;
                     bytes_done += std::fs::metadata(local_path).map(|m| m.len()).unwrap_or(0);
@@ -899,7 +904,7 @@ impl S3Service {
             .key(&actual_key)
             .send()
             .await
-            .map_err(|e| s3err(e.to_string()))?;
+            .map_err(|e| s3_sdk_error("Check object encryption", &e))?;
 
         let meta: HashMap<String, String> = head.metadata().cloned().unwrap_or_default();
         Ok(super::crypto::EncryptionParams::is_encrypted(&meta))
@@ -975,7 +980,7 @@ impl S3Service {
                     .key(&key)
                     .send()
                     .await
-                    .map_err(|e| s3err(e.to_string()))?;
+                    .map_err(|e| s3_sdk_error("Read copy source metadata", &e))?;
                 let size = head.content_length().unwrap_or(0) as u64;
                 let dest =
                     super::verification::destination_key(&key, &key, source_prefix, dest_prefix)?;
@@ -1058,7 +1063,7 @@ impl S3Service {
                     .key(key)
                     .send()
                     .await
-                    .map_err(|e| s3err(e.to_string()))?;
+                    .map_err(|e| s3_sdk_error("Read copy source metadata", &e))?;
                 Some(
                     super::verification::object_sha256(
                         src_client,
@@ -1305,7 +1310,12 @@ impl S3Service {
                 .delete(delete)
                 .send()
                 .await
-                .map_err(|e| s3err(e.to_string()))?;
+                .map_err(|e| {
+                    s3_sdk_error(
+                        &format!("DeleteObjects ({files_done} of {files_total} objects completed; failed batch outcome unknown)"),
+                        &e,
+                    )
+                })?;
 
             let deleted = resp.deleted();
             let errors = resp.errors();
@@ -1319,8 +1329,9 @@ impl S3Service {
                     .iter()
                     .map(|e| {
                         format!(
-                            "{}: {}",
+                            "{}: {}: {}",
                             e.key().unwrap_or("?"),
+                            e.code().unwrap_or("Unknown"),
                             e.message().unwrap_or("unknown error")
                         )
                     })
@@ -1361,7 +1372,7 @@ impl S3Service {
             .max_keys(1)
             .send()
             .await
-            .map_err(|e| s3err(e.to_string()))?;
+            .map_err(|e| s3_sdk_error("ListObjectsV2 (check folder)", &e))?;
 
         if !check.contents().is_empty() || !check.common_prefixes().is_empty() {
             return Err(FmError::AlreadyExists(folder_key));
@@ -1375,7 +1386,7 @@ impl S3Service {
             .body(aws_sdk_s3::primitives::ByteStream::from_static(b""))
             .send()
             .await
-            .map_err(|e| s3err(e.to_string()))?;
+            .map_err(|e| s3_sdk_error("Create folder", &e))?;
 
         Ok(())
     }
@@ -1426,7 +1437,7 @@ impl S3Service {
             .key(key)
             .send()
             .await
-            .map_err(|e| s3err(e.to_string()))?;
+            .map_err(|e| s3_sdk_error("Read rename source metadata", &e))?;
         let object_size = src_head.content_length().unwrap_or(0) as u64;
 
         copy_single_or_multipart(
@@ -1447,7 +1458,7 @@ impl S3Service {
             .key(key)
             .send()
             .await
-            .map_err(|e| s3err(e.to_string()))?;
+            .map_err(|e| s3_sdk_error("Delete original after rename", &e))?;
 
         Ok(())
     }
@@ -1469,7 +1480,7 @@ impl S3Service {
             .max_keys(1)
             .send()
             .await
-            .map_err(|e| s3err(e.to_string()))?;
+            .map_err(|e| s3_sdk_error("ListObjectsV2 (check rename destination)", &e))?;
 
         if !check.contents().is_empty() {
             return Err(FmError::AlreadyExists(new_prefix));
@@ -1523,7 +1534,7 @@ impl S3Service {
                 .delete(delete)
                 .send()
                 .await
-                .map_err(|e| s3err(e.to_string()))?;
+                .map_err(|e| s3_sdk_error("Delete originals after folder rename", &e))?;
 
             let errors = resp.errors();
             if !errors.is_empty() {
@@ -1560,6 +1571,7 @@ impl S3Service {
         let mut continuation_token: Option<String> = None;
         let mut total_found: u32 = 0;
         let mut streamed: u32 = 0;
+        let mut page = 1;
         const MAX_STREAMED: u32 = 1000;
 
         loop {
@@ -1581,7 +1593,11 @@ impl S3Service {
                 req = req.continuation_token(token);
             }
 
-            let resp = req.send().await.map_err(|e| s3err(e.to_string()))?;
+            let resp = req
+                .send()
+                .await
+                .map_err(|e| s3_sdk_error(&format!("ListObjectsV2 (search, page {page})"), &e))?;
+            page += 1;
 
             for obj in resp.contents() {
                 if cancel.load(Ordering::Relaxed) {
@@ -1655,7 +1671,7 @@ impl S3Service {
             .key(&stripped_key)
             .send()
             .await
-            .map_err(|e| s3err(e.to_string()))?;
+            .map_err(|e| s3_sdk_error("Read preview metadata", &e))?;
 
         let size = head.content_length().unwrap_or(0) as u64;
         if size > PREVIEW_MAX_SIZE {
@@ -1679,7 +1695,7 @@ impl S3Service {
                 .key(&stripped_key)
                 .send()
                 .await
-                .map_err(|e| s3err(e.to_string()))?;
+                .map_err(|e| s3_sdk_error("Download preview", &e))?;
 
             let obj_metadata: HashMap<String, String> =
                 resp.metadata().cloned().unwrap_or_default();
@@ -1724,7 +1740,7 @@ impl S3Service {
             .body(content.as_bytes().to_vec().into())
             .send()
             .await
-            .map_err(|e| s3err(e.to_string()))?;
+            .map_err(|e| s3_sdk_error("Save object text", &e))?;
 
         Ok(())
     }
@@ -1743,7 +1759,7 @@ impl S3Service {
             .key(&actual_key)
             .send()
             .await
-            .map_err(|e| s3err(e.to_string()))?;
+            .map_err(|e| s3_sdk_error("Read storage class metadata", &e))?;
 
         let size = head.content_length().unwrap_or(0) as u64;
         if size > COPY_MULTIPART_THRESHOLD {
@@ -1765,7 +1781,7 @@ impl S3Service {
             .metadata_directive(aws_sdk_s3::types::MetadataDirective::Copy)
             .send()
             .await
-            .map_err(|e| s3err(e.to_string()))?;
+            .map_err(|e| s3_sdk_error("Change storage class", &e))?;
 
         Ok(())
     }
@@ -1827,7 +1843,7 @@ impl S3Service {
             .restore_request(restore_request)
             .send()
             .await
-            .map_err(|e| s3err(e.to_string()))?;
+            .map_err(|e| s3_sdk_error("Restore archived object", &e))?;
 
         Ok(())
     }
@@ -1855,7 +1871,7 @@ impl S3Service {
                 req = req.version_id_marker(vm);
             }
 
-            let resp = req.send().await.map_err(|e| s3err(e.to_string()))?;
+            let resp = req.send().await.map_err(|e| s3_sdk_error("List object versions", &e))?;
 
             for v in resp.versions() {
                 let vkey = v.key().unwrap_or_default();
@@ -1923,7 +1939,7 @@ impl S3Service {
             .version_id(version_id)
             .send()
             .await
-            .map_err(|e| s3err(e.to_string()))?;
+            .map_err(|e| s3_sdk_error("Download object version", &e))?;
 
         let body = resp
             .body
@@ -1961,7 +1977,7 @@ impl S3Service {
             .copy_source(&copy_source)
             .send()
             .await
-            .map_err(|e| s3err(e.to_string()))?;
+            .map_err(|e| s3_sdk_error("Restore object version", &e))?;
 
         Ok(())
     }
@@ -1986,7 +2002,7 @@ impl S3Service {
             req = req.mfa(val);
         }
 
-        req.send().await.map_err(|e| s3err(e.to_string()))?;
+        req.send().await.map_err(|e| s3_sdk_error("Delete object version", &e))?;
 
         Ok(())
     }
@@ -2027,7 +2043,7 @@ impl S3Service {
             .bucket(&self.bucket)
             .send()
             .await
-            .map_err(|e| s3err(e.to_string()))?;
+            .map_err(|e| s3_sdk_error("Get bucket versioning", &e))?;
 
         let status = match resp.status() {
             Some(s) => s.as_str().to_string(),
@@ -2074,7 +2090,7 @@ impl S3Service {
             req = req.mfa(val);
         }
 
-        req.send().await.map_err(|e| s3err(e.to_string()))?;
+        req.send().await.map_err(|e| s3_sdk_error("Set bucket versioning", &e))?;
 
         Ok(())
     }
@@ -2124,7 +2140,7 @@ impl S3Service {
                 {
                     Ok(S3BucketEncryption { rules: vec![] })
                 } else {
-                    Err(s3err(err_str))
+                    Err(s3_sdk_error("Get bucket encryption", &e))
                 }
             }
         }
@@ -2143,7 +2159,7 @@ impl S3Service {
             .key(&actual_key)
             .send()
             .await
-            .map_err(|e| s3err(e.to_string()))?;
+            .map_err(|e| s3_sdk_error("Read object metadata", &e))?;
 
         let custom: HashMap<String, String> = head
             .metadata()
@@ -2183,7 +2199,7 @@ impl S3Service {
             .key(&actual_key)
             .send()
             .await
-            .map_err(|e| s3err(e.to_string()))?;
+            .map_err(|e| s3_sdk_error("Read metadata before update", &e))?;
 
         let size = head.content_length().unwrap_or(0) as u64;
         if size > COPY_MULTIPART_THRESHOLD {
@@ -2220,7 +2236,7 @@ impl S3Service {
             req = req.metadata(k, v);
         }
 
-        req.send().await.map_err(|e| s3err(e.to_string()))?;
+        req.send().await.map_err(|e| s3_sdk_error("Update object metadata", &e))?;
 
         Ok(())
     }
@@ -2260,7 +2276,7 @@ impl S3Service {
                 {
                     Ok(vec![])
                 } else {
-                    Err(s3err(err_str))
+                    Err(s3_sdk_error("Get object tags", &e))
                 }
             }
         }
@@ -2298,7 +2314,7 @@ impl S3Service {
             .tagging(tagging)
             .send()
             .await
-            .map_err(|e| s3err(e.to_string()))?;
+            .map_err(|e| s3_sdk_error("Set object tags", &e))?;
 
         Ok(())
     }
@@ -2333,7 +2349,7 @@ impl S3Service {
                 {
                     Ok(vec![])
                 } else {
-                    Err(s3err(err_str))
+                    Err(s3_sdk_error("Get bucket tags", &e))
                 }
             }
         }
@@ -2368,7 +2384,7 @@ impl S3Service {
             .tagging(tagging)
             .send()
             .await
-            .map_err(|e| s3err(e.to_string()))?;
+            .map_err(|e| s3_sdk_error("Set bucket tags", &e))?;
 
         Ok(())
     }
@@ -2397,7 +2413,7 @@ impl S3Service {
                 req = req.upload_id_marker(um);
             }
 
-            let resp = req.send().await.map_err(|e| s3err(e.to_string()))?;
+            let resp = req.send().await.map_err(|e| s3_sdk_error("List multipart uploads", &e))?;
 
             for upload in resp.uploads() {
                 let key = upload.key().unwrap_or_default().to_string();
@@ -2436,7 +2452,7 @@ impl S3Service {
             .upload_id(upload_id)
             .send()
             .await
-            .map_err(|e| s3err(e.to_string()))?;
+            .map_err(|e| s3_sdk_error("Abort multipart upload", &e))?;
 
         Ok(())
     }
@@ -2532,7 +2548,7 @@ impl S3Service {
                 {
                     Ok(vec![])
                 } else {
-                    Err(s3err(err_str))
+                    Err(s3_sdk_error("Get bucket lifecycle", &e))
                 }
             }
         }
@@ -2546,7 +2562,7 @@ impl S3Service {
                 .bucket(&self.bucket)
                 .send()
                 .await
-                .map_err(|e| s3err(e.to_string()))?;
+                .map_err(|e| s3_sdk_error("Remove bucket lifecycle", &e))?;
             return Ok(());
         }
 
@@ -2631,7 +2647,7 @@ impl S3Service {
             .lifecycle_configuration(config)
             .send()
             .await
-            .map_err(|e| s3err(e.to_string()))?;
+            .map_err(|e| s3_sdk_error("Set bucket lifecycle", &e))?;
 
         Ok(())
     }
@@ -2671,7 +2687,7 @@ impl S3Service {
                 {
                     Ok(vec![])
                 } else {
-                    Err(s3err(err_str))
+                    Err(s3_sdk_error("Get bucket CORS", &e))
                 }
             }
         }
@@ -2685,7 +2701,7 @@ impl S3Service {
                 .bucket(&self.bucket)
                 .send()
                 .await
-                .map_err(|e| s3err(e.to_string()))?;
+                .map_err(|e| s3_sdk_error("Remove bucket CORS", &e))?;
             return Ok(());
         }
 
@@ -2715,7 +2731,7 @@ impl S3Service {
             .cors_configuration(config)
             .send()
             .await
-            .map_err(|e| s3err(e.to_string()))?;
+            .map_err(|e| s3_sdk_error("Set bucket CORS", &e))?;
 
         Ok(())
     }
@@ -2763,7 +2779,7 @@ impl S3Service {
                         restrict_public_buckets: false,
                     })
                 } else {
-                    Err(s3err(err_str))
+                    Err(s3_sdk_error("Get public access block", &e))
                 }
             }
         }
@@ -2787,7 +2803,7 @@ impl S3Service {
             .public_access_block_configuration(sdk_config)
             .send()
             .await
-            .map_err(|e| s3err(e.to_string()))?;
+            .map_err(|e| s3_sdk_error("Set public access block", &e))?;
 
         Ok(())
     }
@@ -2814,7 +2830,7 @@ impl S3Service {
                 {
                     Ok(String::new())
                 } else {
-                    Err(s3err(err_str))
+                    Err(s3_sdk_error("Get bucket policy", &e))
                 }
             }
         }
@@ -2828,7 +2844,7 @@ impl S3Service {
                 .bucket(&self.bucket)
                 .send()
                 .await
-                .map_err(|e| s3err(e.to_string()))?;
+                .map_err(|e| s3_sdk_error("Remove bucket policy", &e))?;
             return Ok(());
         }
 
@@ -2842,7 +2858,7 @@ impl S3Service {
             .policy(policy)
             .send()
             .await
-            .map_err(|e| s3err(e.to_string()))?;
+            .map_err(|e| s3_sdk_error("Set bucket policy", &e))?;
 
         Ok(())
     }
@@ -2857,7 +2873,7 @@ impl S3Service {
             .bucket(&self.bucket)
             .send()
             .await
-            .map_err(|e| s3err(e.to_string()))?;
+            .map_err(|e| s3_sdk_error("Get bucket ACL", &e))?;
 
         let owner_id = resp
             .owner()
@@ -2928,7 +2944,7 @@ impl S3Service {
             .acl(canned)
             .send()
             .await
-            .map_err(|e| s3err(e.to_string()))?;
+            .map_err(|e| s3_sdk_error("Set bucket ACL", &e))?;
         Ok(())
     }
 
@@ -2969,7 +2985,7 @@ impl S3Service {
                         error_document: None,
                     })
                 } else {
-                    Err(s3err(err_str))
+                    Err(s3_sdk_error("Get bucket website", &e))
                 }
             }
         }
@@ -2983,7 +2999,7 @@ impl S3Service {
                 .bucket(&self.bucket)
                 .send()
                 .await
-                .map_err(|e| s3err(e.to_string()))?;
+                .map_err(|e| s3_sdk_error("Remove bucket website", &e))?;
             return Ok(());
         }
 
@@ -3013,7 +3029,7 @@ impl S3Service {
             .website_configuration(website_config)
             .send()
             .await
-            .map_err(|e| s3err(e.to_string()))?;
+            .map_err(|e| s3_sdk_error("Set bucket website", &e))?;
 
         Ok(())
     }
@@ -3028,7 +3044,7 @@ impl S3Service {
             .bucket(&self.bucket)
             .send()
             .await
-            .map_err(|e| s3err(e.to_string()))?;
+            .map_err(|e| s3_sdk_error("Get request payment", &e))?;
 
         Ok(resp.payer() == Some(&aws_sdk_s3::types::Payer::Requester))
     }
@@ -3052,7 +3068,7 @@ impl S3Service {
             .request_payment_configuration(config)
             .send()
             .await
-            .map_err(|e| s3err(e.to_string()))?;
+            .map_err(|e| s3_sdk_error("Set request payment", &e))?;
 
         Ok(())
     }
@@ -3090,7 +3106,7 @@ impl S3Service {
                         object_ownership: "BucketOwnerEnforced".to_string(),
                     })
                 } else {
-                    Err(s3err(err_str))
+                    Err(s3_sdk_error("Get bucket ownership", &e))
                 }
             }
         }
@@ -3123,7 +3139,7 @@ impl S3Service {
             .ownership_controls(controls)
             .send()
             .await
-            .map_err(|e| s3err(e.to_string()))?;
+            .map_err(|e| s3_sdk_error("Set bucket ownership", &e))?;
 
         Ok(())
     }
@@ -3138,7 +3154,7 @@ impl S3Service {
             .bucket(&self.bucket)
             .send()
             .await
-            .map_err(|e| s3err(e.to_string()))?;
+            .map_err(|e| s3_sdk_error("Get bucket logging", &e))?;
 
         if let Some(le) = resp.logging_enabled() {
             let tb = le.target_bucket().to_string();
@@ -3186,7 +3202,7 @@ impl S3Service {
             .bucket_logging_status(status)
             .send()
             .await
-            .map_err(|e| s3err(e.to_string()))?;
+            .map_err(|e| s3_sdk_error("Set bucket logging", &e))?;
 
         Ok(())
     }
@@ -3238,7 +3254,7 @@ impl S3Service {
             .server_side_encryption_configuration(config)
             .send()
             .await
-            .map_err(|e| s3err(e.to_string()))?;
+            .map_err(|e| s3_sdk_error("Set bucket encryption", &e))?;
 
         Ok(())
     }
@@ -3296,7 +3312,7 @@ impl S3Service {
                         default_retention_years: None,
                     })
                 } else {
-                    Err(s3err(err_str))
+                    Err(s3_sdk_error("Get object lock configuration", &e))
                 }
             }
         }
@@ -3346,7 +3362,7 @@ impl S3Service {
             .object_lock_configuration(config)
             .send()
             .await
-            .map_err(|e| s3err(e.to_string()))?;
+            .map_err(|e| s3_sdk_error("Set object lock configuration", &e))?;
 
         Ok(())
     }
@@ -3393,7 +3409,7 @@ impl S3Service {
                         retain_until_date: None,
                     })
                 } else {
-                    Err(s3err(err_str))
+                    Err(s3_sdk_error("Get object retention", &e))
                 }
             }
         }
@@ -3437,7 +3453,7 @@ impl S3Service {
             req = req.bypass_governance_retention(true);
         }
 
-        req.send().await.map_err(|e| s3err(e.to_string()))?;
+        req.send().await.map_err(|e| s3_sdk_error("Set object retention", &e))?;
 
         Ok(())
     }
@@ -3476,7 +3492,7 @@ impl S3Service {
                         status: "OFF".to_string(),
                     })
                 } else {
-                    Err(s3err(err_str))
+                    Err(s3_sdk_error("Get object legal hold", &e))
                 }
             }
         }
@@ -3503,7 +3519,7 @@ impl S3Service {
             .legal_hold(legal_hold)
             .send()
             .await
-            .map_err(|e| s3err(e.to_string()))?;
+            .map_err(|e| s3_sdk_error("Set object legal hold", &e))?;
 
         Ok(())
     }
@@ -3778,7 +3794,7 @@ impl S3Service {
                     {
                         return Ok(vec![]);
                     }
-                    return Err(s3err(err_str));
+                    return Err(s3_sdk_error("List inventory configurations", &e));
                 }
             }
         }
@@ -3861,7 +3877,7 @@ impl S3Service {
             .inventory_configuration(sdk_config)
             .send()
             .await
-            .map_err(|e| s3err(format!("Failed to put inventory configuration: {e}")))?;
+            .map_err(|e| s3_sdk_error("Set inventory configuration", &e))?;
 
         Ok(())
     }
@@ -3874,7 +3890,7 @@ impl S3Service {
             .id(config_id)
             .send()
             .await
-            .map_err(|e| s3err(format!("Failed to delete inventory configuration: {e}")))?;
+            .map_err(|e| s3_sdk_error("Delete inventory configuration", &e))?;
 
         Ok(())
     }
@@ -3968,7 +3984,7 @@ impl S3Service {
                 {
                     return Ok(None);
                 }
-                Err(s3err(err_str))
+                Err(s3_sdk_error("Get replication configuration", &e))
             }
         }
     }
@@ -4054,7 +4070,7 @@ impl S3Service {
             .replication_configuration(sdk_config)
             .send()
             .await
-            .map_err(|e| s3err(format!("Failed to put replication configuration: {e}")))?;
+            .map_err(|e| s3_sdk_error("Set replication configuration", &e))?;
 
         Ok(())
     }
@@ -4066,7 +4082,7 @@ impl S3Service {
             .bucket(&self.bucket)
             .send()
             .await
-            .map_err(|e| s3err(format!("Failed to delete replication configuration: {e}")))?;
+            .map_err(|e| s3_sdk_error("Delete replication configuration", &e))?;
 
         Ok(())
     }
@@ -4083,7 +4099,7 @@ impl S3Service {
             .bucket(&self.bucket)
             .send()
             .await
-            .map_err(|e| s3err(format!("Failed to get notification configuration: {e}")))?;
+            .map_err(|e| s3_sdk_error("Get notification configuration", &e))?;
 
         let mut rules = Vec::new();
 
@@ -4233,7 +4249,7 @@ impl S3Service {
             .notification_configuration(notif_config)
             .send()
             .await
-            .map_err(|e| s3err(format!("Failed to put notification configuration: {e}")))?;
+            .map_err(|e| s3_sdk_error("Set notification configuration", &e))?;
 
         Ok(())
     }

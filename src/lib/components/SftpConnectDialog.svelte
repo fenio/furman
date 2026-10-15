@@ -1,4 +1,6 @@
 <script lang="ts">
+  import ErrorNotice from './ErrorNotice.svelte';
+  import { errorText } from '#lib/utils/error-report.js';
   import { revealSecret } from '#lib/utils/reveal-secret.js';
   import { untrack } from 'svelte';
   import type { SftpProfile } from '#lib/types/index.js';
@@ -51,7 +53,7 @@
         authMethod === 'agent' && agentSocket ? agentSocket : undefined,
       );
     } catch (err: unknown) {
-      connectError = err instanceof Error ? err.message : String(err);
+      connectError = errorText(err);
     } finally {
       connecting = false;
     }
@@ -87,7 +89,7 @@
         authMethod === 'agent' && agentSocket ? agentSocket : undefined,
       );
     } catch (err: unknown) {
-      connectError = err instanceof Error ? err.message : String(err);
+      connectError = errorText(err);
     } finally {
       connecting = false;
     }
@@ -131,7 +133,7 @@
     </div>
 
     {#if connectError}
-      <div class="error-msg">{connectError}</div>
+      <div class="error-msg"><ErrorNotice error={connectError} context="Connection failed" /></div>
     {/if}
 
     {#if saveMode}

@@ -1,4 +1,5 @@
 <script lang="ts">
+  import ErrorNotice from './ErrorNotice.svelte';
   import { transfersState } from '#lib/state/transfers.svelte.js';
   import type { TransferStatus } from '#lib/state/transfers.svelte.js';
   import { formatSize, formatSpeed, formatEta } from '#lib/utils/format.js';
@@ -57,7 +58,7 @@
       return `${typeLabel(t.type)} cancelled`;
     }
     if (t.status === 'failed') {
-      return `${typeLabel(t.type)} failed: ${t.error ?? 'unknown error'}`;
+      return `${typeLabel(t.type)} failed`;
     }
     if (t.status === 'paused') {
       return `${typeLabel(t.type)} paused — ${count} item(s)${toDest}`;
@@ -138,6 +139,9 @@
         <div class="transfer-label" title={t.sources.join(', ')}>
           {transferLabel(t)}
         </div>
+        {#if t.status === 'failed'}
+          <ErrorNotice error={t.error} />
+        {/if}
         {#if t.status === 'running' && (!t.progress || t.progress.bytes_total === 0)}
           <div class="transfer-stats">
             <span class="queued-label">{t.progress?.current_file || 'Scanning...'}</span>
