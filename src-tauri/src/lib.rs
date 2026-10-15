@@ -281,6 +281,8 @@ pub fn run() {
             commands::terminal::terminal_resize,
             commands::terminal::terminal_close,
             // s3 commands
+            commands::s3::s3_activity_snapshot,
+            commands::s3::s3_activity_clear,
             commands::s3::s3_connect,
             commands::s3::s3_check_credentials,
             commands::s3::s3_list_buckets,

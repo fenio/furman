@@ -856,6 +856,7 @@
       onCancel={() => panel.cancelS3Listing()}
       onRetry={() => panel.retryS3Listing()}
       onRefresh={() => { void panel.loadDirectory(panel.path); }}
+      onActivity={() => { appState.modal = 's3-activity'; }}
     />
   {/if}
 

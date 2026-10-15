@@ -1,4 +1,5 @@
 pub mod client;
+pub mod activity;
 pub mod crypto;
 pub mod errors;
 pub mod helpers;

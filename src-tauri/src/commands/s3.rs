@@ -28,6 +28,12 @@ fn get_service(state: &State<'_, S3State>, id: &str) -> Result<S3Service, FmErro
 
 // ── Commands ────────────────────────────────────────────────────────────────
 
+#[tauri::command]
+pub fn s3_activity_snapshot() -> s3::activity::ActivitySnapshot { s3::activity::snapshot() }
+
+#[tauri::command]
+pub fn s3_activity_clear() { s3::activity::clear(); }
+
 fn write_endpoint(state: &S3State, id: &str) -> Result<s3::writes::WriteEndpoint, FmError> {
     let map = state.0.lock().map_err(|e| s3err(e.to_string()))?;
     let connection = map.get(id).ok_or_else(|| s3err("S3 connection not found"))?;

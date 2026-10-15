@@ -9,6 +9,11 @@ export interface ListingProgress {
   updatedAt: number;
   pending: boolean;
   error: string | null;
+  source?: 'network' | 'cache';
+  cachedAt?: number;
+  fetchedAt?: number;
+  cacheRevision?: number;
+  cacheStored?: boolean;
 }
 
 interface Item { path: string; name: string }
