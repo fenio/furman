@@ -22,7 +22,7 @@ async function scriptFixture(file, fixture, exports, dependencies = {}) {
   const key = `presetsFixture${sequence++}`; globalThis[key] = fixture;
   const mock = body => data(body.replaceAll('FIXTURE', `globalThis[${JSON.stringify(key)}]`));
   const shared = {
-    'svelte': mock('export const onMount=callback=>FIXTURE.mounts.push(callback);export const onDestroy=callback=>FIXTURE.destroys.push(callback);'),
+    'svelte': mock('export const onMount=callback=>FIXTURE.mounts.push(callback);export const onDestroy=callback=>FIXTURE.destroys.push(callback);export const untrack=callback=>callback();'),
     '#lib/services/comparison-presets.js': mock('export const loadComparisonPresets=(...args)=>FIXTURE.load(...args);export const saveComparisonPresets=(...args)=>FIXTURE.save(...args);'),
     '#lib/utils/comparison-options.js': new URL('../src/lib/utils/comparison-options.ts', import.meta.url).href,
     '#lib/utils/scan.js': new URL('../src/lib/utils/scan.ts', import.meta.url).href,
@@ -92,7 +92,7 @@ test('actual Sync controller requires explicit fresh complete comparison after p
   const entry = { type: 'Entry', relative_path: 'nested/file', status: 'new', source_size: 1, dest_size: 0 };
   try {
     for (const mount of fixture.mounts) mount(); assert.equal(scans.length, 0); h.handleSync(); assert.equal(syncs.length, 0);
-    h.handleKeydown({ key: 'Enter', target: { closest: selector => selector === '[data-comparison-presets]' ? null : {} }, preventDefault() { throw new Error('Focused Compare button must keep its native activation'); } });
+    h.handleKeydown({ key: 'Enter', target: { closest: selector => selector.includes('data-comparison-presets') ? null : {} }, preventDefault() { throw new Error('Focused Compare button must keep its native activation'); } });
     h.startScan(); assert.equal(scans.length, 1); const oldEvent = scans[0][9];
     oldEvent(entry); oldEvent({ type: 'Done', new_count: 1, modified: 0, deleted: 0 }); assert.equal(h.state.scanComplete, true);
     h.applyPreset('sha256', []); assert.equal(scans.length, 1); assert.equal(cancellations.length, 1); assert.equal(h.state.scanComplete, false); assert.equal(h.state.selected.length, 0);
@@ -126,11 +126,13 @@ test('both actual dialogs render shared options-only presets and explicit roots'
     '#lib/utils/error-report.js': new URL('../src/lib/utils/error-report.ts', import.meta.url).href,
     '#lib/utils/format.js': new URL('../src/lib/utils/format.ts', import.meta.url).href,
     '#lib/services/comparison-presets.js': data('export const loadComparisonPresets=async()=>{throw new Error("No automatic SSR IO");};export const saveComparisonPresets=async()=>{throw new Error("No auto save");};'),
+    '#lib/services/saved-jobs.js': data('export const listSavedJobs=async()=>{throw new Error("No automatic SSR IO");};export const saveJobDefinition=async()=>{};export const deleteJobDefinition=async()=>{};'),
     '#lib/state/app.svelte.js': data('export const appState={syncExcludePatterns:"*.tmp",s3ScanLimits:{max_objects:100000,max_requests:1000,max_seconds:300}};'),
     '#lib/services/tauri.js': data('export const syncDiff=async()=>{throw new Error("No automatic scan");};export const cancelSync=async()=>{};'),
   };
   const component = file => data(imports(compile(source(file), { generate: 'server', filename: file }).js.code, dependencies));
   dependencies['./ErrorNotice.svelte'] = component('ErrorNotice.svelte'); dependencies['./ComparisonPresets.svelte'] = component('ComparisonPresets.svelte'); dependencies['./ScanStatus.svelte'] = component('ScanStatus.svelte');
+  dependencies['./SavedSyncJobs.svelte'] = component('SavedSyncJobs.svelte');
   const { default: Compare } = await import(component('CompareDialog.svelte'));
   const comparison = render(Compare, { props: { leftPath: 's3://left/root/', rightPath: 's3://right/dest/', leftBackend: 's3', rightBackend: 's3', onCompare() {}, onClose() {} } }).body;
   assert.ok(comparison.includes('data-comparison-presets')); assert.ok(comparison.includes('s3://left/root/')); assert.ok(comparison.includes('s3://right/dest/'));

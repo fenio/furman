@@ -1,4 +1,5 @@
 <script lang="ts">
+  import ErrorNotice from './ErrorNotice.svelte';
   interface Props {
     message: string;
     onConfirm: () => void;
@@ -17,6 +18,7 @@
   });
 
   function handleKeydown(e: KeyboardEvent) {
+    if (e.key !== 'Escape' && (e.target as HTMLElement | null)?.closest('button, input, select, textarea, summary')) return;
     if (e.key === 'Enter') {
       e.preventDefault();
       e.stopPropagation();
@@ -40,7 +42,7 @@
   <div class="dialog-box">
     <div class="dialog-title">{alertOnly ? 'Error' : 'Confirm'}</div>
     <div class="dialog-body">
-      <p class="dialog-message">{message}</p>
+      {#if alertOnly}<ErrorNotice error={message} context="Operation failed" />{:else}<p class="dialog-message">{message}</p>{/if}
       <div class="dialog-buttons">
         {#if alertOnly}
           <button class="dialog-btn primary" onclick={onCancel}>OK</button>

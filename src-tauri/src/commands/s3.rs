@@ -213,13 +213,7 @@ pub async fn s3_connect(
             .map_err(|e| s3::errors::s3_sdk_error("Connect: HeadBucket", &e))?;
     }
 
-    let conn = s3::S3Connection {
-        client,
-        bucket,
-        region,
-        sdk_config,
-        account_id: None,
-    };
+    let conn = s3::S3Connection::new(client, bucket, region, sdk_config);
 
     let mut map = state.0.lock().map_err(|e| s3err(e.to_string()))?;
     map.insert(id, conn);

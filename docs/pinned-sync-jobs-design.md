@@ -1,9 +1,13 @@
 # Pinned, manually launched sync jobs — design proposal
 
-**Status: proposed, not implemented.** This document is the review gate between
+**Status: design merged in [#362](https://github.com/fenio/furman/pull/362);
+definition-only foundation is now being implemented.** See the
+[foundation contract](saved-job-foundation.md) for its exact scope and remaining
+live-binding gates. The run protocol and execution guarantees below are still
+unimplemented. This document is the review gate between
 the [shipped options presets](comparison-presets.md) and runnable jobs. It adds
 no commands, execution paths, automatic connections, timers or migrations.
-Merging this document does not enable jobs or scheduling.
+Merging this document does not enable runnable jobs or scheduling.
 
 ## Goal and first implementation scope
 
