@@ -35,6 +35,13 @@ pub struct S3Bucket {
     pub created: i64, // epoch ms, 0 if unknown
 }
 
+#[derive(Debug, serde::Serialize)]
+pub struct S3ListingPage {
+    pub entries: Vec<FileEntry>,
+    pub total_size: u64,
+    pub next_token: Option<String>,
+}
+
 // ── Standalone functions (no bucket context) ────────────────────────────────
 
 /// Check whether the default AWS credential chain has valid credentials.
@@ -121,6 +128,38 @@ impl S3Service {
 
     /// List objects in the bucket at the given prefix, returning a DirListing.
     pub async fn list_objects(&self, prefix: &str) -> Result<DirListing, FmError> {
+        let mut entries = Vec::new();
+        let mut total_size = 0;
+        let mut token = None;
+        let mut seen = HashSet::new();
+        loop {
+            let page = self
+                .list_objects_page(prefix, token.as_deref())
+                .await
+                .map_err(|error| s3err(format!("Listing page {} failed: {error}", seen.len() + 1)))?;
+            entries.extend(page.entries);
+            total_size += page.total_size;
+            match page.next_token {
+                Some(next) if seen.insert(next.clone()) => token = Some(next),
+                Some(_) => return Err(s3err("Listing repeated its continuation token")),
+                None => break,
+            }
+        }
+        Ok(DirListing {
+            path: s3_path(&self.bucket, prefix),
+            entries,
+            total_size,
+            free_space: 0,
+        })
+    }
+
+    /// One delimiter-based page for progressive browsing. Mutating workflows
+    /// continue to use complete backend enumerations, never a panel's partial list.
+    pub async fn list_objects_page(
+        &self,
+        prefix: &str,
+        continuation_token: Option<&str>,
+    ) -> Result<S3ListingPage, FmError> {
         let mut entries: Vec<FileEntry> = Vec::new();
 
         // Add ".." entry to navigate up
@@ -134,134 +173,135 @@ impl S3Service {
             }
         };
 
-        entries.push(FileEntry {
-            name: "..".to_string(),
-            path: s3_path(&self.bucket, &parent_prefix),
-            size: 0,
-            is_dir: true,
-            is_symlink: false,
-            symlink_target: None,
-            modified: 0,
-            permissions: 0,
-            owner: String::new(),
-            group: String::new(),
-            extension: None,
-            git_status: None,
-            storage_class: None,
-        });
-
-        // Paginated listing with delimiter
-        let mut continuation_token: Option<String> = None;
-        let mut total_size: u64 = 0;
-        let mut page = 1;
-
-        loop {
-            let mut req = self
-                .client
-                .list_objects_v2()
-                .bucket(&self.bucket)
-                .delimiter("/")
-                .prefix(prefix);
-
-            if let Some(token) = &continuation_token {
-                req = req.continuation_token(token);
-            }
-
-            let resp = req.send().await.map_err(|e| {
-                s3_sdk_error(&format!("ListObjectsV2 (bucket listing, page {page})"), &e)
-            })?;
-            page += 1;
-
-            // Common prefixes → directories
-            for cp in resp.common_prefixes() {
-                let pfx: &str = match cp.prefix() {
-                    Some(p) => p,
-                    None => continue,
-                };
-                let name = pfx
-                    .strip_prefix(prefix)
-                    .unwrap_or(pfx)
-                    .trim_end_matches('/')
-                    .to_string();
-                if name.is_empty() {
-                    continue;
-                }
-                entries.push(FileEntry {
-                    name,
-                    path: s3_path(&self.bucket, pfx),
-                    size: 0,
-                    is_dir: true,
-                    is_symlink: false,
-                    symlink_target: None,
-                    modified: 0,
-                    permissions: 0,
-                    owner: String::new(),
-                    group: String::new(),
-                    extension: None,
-                    git_status: None,
-                    storage_class: None,
-                });
-            }
-
-            // Objects → files
-            for obj in resp.contents() {
-                let key: &str = match obj.key() {
-                    Some(k) => k,
-                    None => continue,
-                };
-                // Skip the prefix itself (some S3 implementations return it)
-                if key == prefix {
-                    continue;
-                }
-                let name = key.strip_prefix(prefix).unwrap_or(key).to_string();
-                if name.is_empty() || name.ends_with('/') {
-                    continue;
-                }
-                let size = obj.size().unwrap_or(0) as u64;
-                total_size += size;
-                let modified = obj
-                    .last_modified()
-                    .and_then(|t| t.to_millis().ok())
-                    .unwrap_or(0);
-                let extension = if name.contains('.') {
-                    name.rsplit('.')
-                        .next()
-                        .map(std::string::ToString::to_string)
-                } else {
-                    None
-                };
-
-                entries.push(FileEntry {
-                    name,
-                    path: s3_path(&self.bucket, key),
-                    size,
-                    is_dir: false,
-                    is_symlink: false,
-                    symlink_target: None,
-                    modified,
-                    permissions: 0,
-                    owner: String::new(),
-                    group: String::new(),
-                    extension,
-                    git_status: None,
-                    storage_class: obj.storage_class().map(|s| s.as_str().to_string()),
-                });
-            }
-
-            if resp.is_truncated() == Some(true) {
-                continuation_token = resp
-                    .next_continuation_token()
-                    .map(std::string::ToString::to_string);
-            } else {
-                break;
-            }
+        if continuation_token.is_none() {
+            entries.push(FileEntry {
+                name: "..".to_string(),
+                path: s3_path(&self.bucket, &parent_prefix),
+                size: 0,
+                is_dir: true,
+                is_symlink: false,
+                symlink_target: None,
+                modified: 0,
+                permissions: 0,
+                owner: String::new(),
+                group: String::new(),
+                extension: None,
+                git_status: None,
+                storage_class: None,
+            });
         }
 
-        Ok(DirListing {
-            path: s3_path(&self.bucket, prefix),
+        // Paginated listing with delimiter
+        let mut total_size: u64 = 0;
+
+        let mut req = self
+            .client
+            .list_objects_v2()
+            .bucket(&self.bucket)
+            .delimiter("/")
+            .max_keys(1000)
+            .prefix(prefix);
+
+        if let Some(token) = continuation_token {
+            req = req.continuation_token(token);
+        }
+
+        let resp = req
+            .send()
+            .await
+            .map_err(|e| s3_sdk_error("ListObjectsV2 (bucket listing)", &e))?;
+
+        // Common prefixes → directories
+        for cp in resp.common_prefixes() {
+            let pfx: &str = match cp.prefix() {
+                Some(p) => p,
+                None => continue,
+            };
+            let name = pfx
+                .strip_prefix(prefix)
+                .unwrap_or(pfx)
+                .trim_end_matches('/')
+                .to_string();
+            if name.is_empty() {
+                continue;
+            }
+            entries.push(FileEntry {
+                name,
+                path: s3_path(&self.bucket, pfx),
+                size: 0,
+                is_dir: true,
+                is_symlink: false,
+                symlink_target: None,
+                modified: 0,
+                permissions: 0,
+                owner: String::new(),
+                group: String::new(),
+                extension: None,
+                git_status: None,
+                storage_class: None,
+            });
+        }
+
+        // Objects → files
+        for obj in resp.contents() {
+            let key: &str = match obj.key() {
+                Some(k) => k,
+                None => continue,
+            };
+            // Skip the prefix itself (some S3 implementations return it)
+            if key == prefix {
+                continue;
+            }
+            let name = key.strip_prefix(prefix).unwrap_or(key).to_string();
+            if name.is_empty() || name.ends_with('/') {
+                continue;
+            }
+            let size = obj.size().unwrap_or(0) as u64;
+            total_size += size;
+            let modified = obj
+                .last_modified()
+                .and_then(|t| t.to_millis().ok())
+                .unwrap_or(0);
+            let extension = if name.contains('.') {
+                name.rsplit('.').next().map(std::string::ToString::to_string)
+            } else {
+                None
+            };
+
+            entries.push(FileEntry {
+                name,
+                path: s3_path(&self.bucket, key),
+                size,
+                is_dir: false,
+                is_symlink: false,
+                symlink_target: None,
+                modified,
+                permissions: 0,
+                owner: String::new(),
+                group: String::new(),
+                extension,
+                git_status: None,
+                storage_class: obj.storage_class().map(|s| s.as_str().to_string()),
+            });
+        }
+
+        let next_token = if resp.is_truncated() == Some(true) {
+            let next = resp
+                .next_continuation_token()
+                .filter(|token| !token.is_empty())
+                .ok_or_else(|| s3err("Incomplete listing: missing continuation token"))?;
+            if Some(next) == continuation_token {
+                return Err(s3err("Incomplete listing: repeated continuation token"));
+            }
+            Some(next.to_owned())
+        } else {
+            None
+        };
+
+        Ok(S3ListingPage {
             entries,
             total_size,
-            free_space: 0,
+            next_token,
         })
     }
 

@@ -1,5 +1,6 @@
 <script lang="ts">
   import ErrorNotice from './ErrorNotice.svelte';
+  import S3ListingStatus from './S3ListingStatus.svelte';
   import { panels, type PanelData } from '#lib/state/panels.svelte.js';
   import type { SortField, ColumnId } from '#lib/types/index.js';
   import { SvelteSet } from 'svelte/reactivity';
@@ -849,6 +850,15 @@
   </div>
   {/if}
 
+  {#if isS3 && panel.s3ListingProgress}
+    <S3ListingStatus
+      progress={panel.s3ListingProgress}
+      onCancel={() => panel.cancelS3Listing()}
+      onRetry={() => panel.retryS3Listing()}
+      onRefresh={() => { void panel.loadDirectory(panel.path); }}
+    />
+  {/if}
+
   <!-- File list -->
   <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
   {#if panel.viewMode === 'column'}
@@ -953,7 +963,7 @@
   <!-- Footer: selection info, git status, free space -->
   <div class="panel-footer">
     {#if panel.selectedCount > 0}
-      <span>{panel.selectedCount} selected ({formatSize(panel.selectedSize)})</span>
+      <span>{panel.selectedCount} selected{isS3 && panel.s3ListingProgress?.status !== 'complete' ? ' (loaded items only)' : ''} ({formatSize(panel.selectedSize)})</span>
     {:else if panel.currentEntry}
       <span>
         {panel.currentEntry.name}

@@ -166,6 +166,18 @@ pub async fn s3_list_objects(
 }
 
 #[tauri::command]
+pub async fn s3_list_objects_page(
+    state: State<'_, S3State>,
+    id: String,
+    prefix: String,
+    continuation_token: Option<String>,
+) -> Result<s3::service::S3ListingPage, FmError> {
+    get_service(&state, &id)?
+        .list_objects_page(&prefix, continuation_token.as_deref())
+        .await
+}
+
+#[tauri::command]
 pub async fn s3_download(
     state: State<'_, S3State>,
     file_op_state: State<'_, FileOpState>,

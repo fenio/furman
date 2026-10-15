@@ -21,6 +21,12 @@ export interface DirListing {
   free_space: number;
 }
 
+export interface S3ListingPage {
+  entries: FileEntry[];
+  total_size: number;
+  next_token: string | null;
+}
+
 export interface VolumeInfo {
   name: string;
   mount_point: string;

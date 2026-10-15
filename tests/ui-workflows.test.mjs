@@ -10,12 +10,44 @@ import { readFileSync } from 'node:fs';
 import { compile } from 'svelte/compiler';
 import { render } from 'svelte/server';
 
+function serverComponent(file, dependencies = {}) {
+  const source = readFileSync(new URL(`../src/lib/components/${file}`, import.meta.url), 'utf8');
+  const code = compile(source, { generate: 'server', filename: file }).js.code
+    .replace(/from (['"])([^'"]+)\1/g, (_, quote, name) => {
+      const resolved = dependencies[name] ?? (name.startsWith('svelte')
+        ? import.meta.resolve(name)
+        : name === '#lib/utils/error-report.js' ? new URL('../src/lib/utils/error-report.ts', import.meta.url).href : null);
+      assert.ok(resolved, `Unmapped component import: ${name}`);
+      return `from ${JSON.stringify(resolved)}`;
+    });
+  return `data:text/javascript;base64,${Buffer.from(code).toString('base64')}`;
+}
+
+test('listing status distinguishes incomplete, failed, cancelled, and complete scopes', async () => {
+  const { default: Status } = await import(serverComponent('S3ListingStatus.svelte', {
+    './ErrorNotice.svelte': serverComponent('ErrorNotice.svelte'),
+  }));
+  const progress = { status: 'loading', items: 10, pages: 1, requests: 2, elapsedMs: 2000, updatedAt: Date.now(), pending: true, error: null };
+  const html = state => render(Status, { props: { progress: { ...progress, ...state }, onCancel() {}, onRetry() {}, onRefresh() {} } }).body;
+  const loading = html({});
+  assert.ok(loading.includes('loaded items'));
+  assert.ok(loading.includes('all their children'));
+  assert.ok(loading.includes('Cancel'));
+  const cancelled = html({ status: 'cancelled' });
+  assert.ok(cancelled.includes('Incomplete'));
+  assert.ok(cancelled.includes('Continue'));
+  assert.ok(cancelled.includes('disabled'));
+  assert.ok(cancelled.includes('result will be discarded'));
+  const failed = html({ status: 'error', pending: false, error: 'Listing page 2 failed\nHTTP 502' });
+  assert.ok(failed.includes('Retry page'));
+  assert.ok(failed.includes('HTTP 502'));
+  const complete = html({ status: 'complete', pending: false });
+  assert.ok(complete.includes('Complete'));
+  assert.ok(!complete.includes('loaded items'));
+});
+
 test('error notices render escaped diagnostics with details closed initially', async () => {
-  const source = readFileSync(new URL('../src/lib/components/ErrorNotice.svelte', import.meta.url), 'utf8');
-  const compiled = compile(source, { generate: 'server', filename: 'ErrorNotice.svelte' }).js.code
-    .replaceAll('svelte/internal/server', import.meta.resolve('svelte/internal/server'))
-    .replaceAll('#lib/utils/error-report.js', new URL('../src/lib/utils/error-report.ts', import.meta.url).href);
-  const { default: ErrorNotice } = await import(`data:text/javascript;base64,${Buffer.from(compiled).toString('base64')}`);
+  const { default: ErrorNotice } = await import(serverComponent('ErrorNotice.svelte'));
   const short = render(ErrorNotice, { props: { error: 'Permission denied' } }).body;
   assert.ok(short.includes('Permission denied'));
   assert.ok(!short.includes('<details'));
