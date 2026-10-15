@@ -94,6 +94,7 @@ pub struct WritePreviewEntry {
 
 #[derive(Serialize)]
 pub struct WritePreview {
+    pub guard_supported: bool,
     pub id: String,
     pub bucket: String,
     pub total: usize,
@@ -141,6 +142,7 @@ impl WriteState {
 impl WritePlan {
     pub fn preview(&self) -> WritePreview {
         WritePreview {
+            guard_supported: super::compat::conditional_writes_supported(&self.destination.client),
             id: self.id.clone(),
             bucket: self.destination.bucket.clone(),
             total: self.items.len(),
@@ -482,7 +484,7 @@ fn cancellable<'a, T: 'a>(
     }
 }
 
-fn write_error<E: aws_sdk_s3::error::ProvideErrorMetadata>(
+fn write_error<E: aws_sdk_s3::error::ProvideErrorMetadata + std::error::Error + 'static>(
     operation: &str,
     error: &SdkError<E>,
 ) -> FmError {
@@ -702,6 +704,9 @@ impl WritePlan {
     ) -> Result<WriteResult, FmError> {
         use sha2::{Digest, Sha256};
         use tokio::io::AsyncWriteExt;
+        if policy != WritePolicy::Overwrite {
+            super::compat::check_conditional_writes(&self.destination.client)?;
+        }
         if self.created.elapsed() >= Duration::from_secs(900) {
             return Err(invalid("Write preview expired; prepare it again"));
         }

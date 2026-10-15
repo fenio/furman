@@ -85,6 +85,7 @@
     {/if}
     {#if failure}<ErrorNotice error={failure} context="Write preview failed" />{/if}
     {#if preview}
+      {#if !preview.guard_supported}<p>This provider/credential configuration is conservatively blocked due to known Garage condition failures. Guarded writes are disabled; only separately acknowledged unguarded overwrite is available.</p>{/if}
       <p>{preview.total} objects · {formatSize(preview.bytes)} · {preview.existing} already exist</p>
       {#if preview.relay}<p>S3 sources are conditionally read and staged locally, one object at a time. This needs temporary disk space and incurs download/upload costs. SSE-C keys remain connection-local.</p>{/if}
       <details><summary>Source → destination (first 50)</summary>
@@ -99,7 +100,7 @@
         </select>
       </label>
       <p>Missing objects use If-None-Match: *. Conditional replacements use the preview ETag as an opaque validator, not a content hash. Unsupported conditions fail without an unguarded fallback.</p>
-      {#if invalidPolicy}<p>Choose another policy: existing objects prevent create-only, and objects without ETags prevent conditional replacement.</p>{/if}
+      {#if invalidPolicy}<p>This policy is unavailable for this preview: existing objects, missing ETags, or unsupported provider conditions require another policy.</p>{/if}
       {#if needsApproval}<label><input type="checkbox" bind:checked={approved} /> I explicitly approve replacing existing content{policy === 'overwrite' ? ', including changes made after this preview' : ' only if unchanged since this preview'}.</label>{/if}
       <p>Writes are not atomic as a group. Cancellation or failure may leave completed objects; inspect the destination and create a fresh preview before retrying. Moves, metadata edits, and legacy writes are outside this protection.</p>
     {/if}

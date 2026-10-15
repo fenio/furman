@@ -1,10 +1,124 @@
 //! Explicit transport compatibility, never error-driven unguarded write retries.
+use aws_sdk_s3::config::Intercept;
 use aws_sdk_s3::{
     config::RequestChecksumCalculation,
     error::{ProvideErrorMetadata, SdkError},
     types::ChecksumAlgorithm,
     Client,
 };
+use aws_smithy_runtime_api::{
+    box_error::BoxError,
+    client::{
+        interceptors::context::BeforeTransmitInterceptorContextMut, orchestrator::Metadata,
+        runtime_components::RuntimeComponents,
+    },
+};
+use aws_smithy_types::config_bag::ConfigBag;
+
+const UNSAFE_CONDITIONS: &str = "FurmanUnenforcedConditions";
+pub const CONDITION_ERROR: &str = "Conditional destination writes are disabled for this Garage/provider configuration: tested Garage v1.1.0 ignores conditions, and matching key-ID formats are conservatively blocked. No unconditional fallback was used. Content transfers require separately approved unguarded overwrite; metadata edits cannot be safely applied.";
+
+/// Garage's public key-ID format is GK + 24 hexadecimal characters. Never store
+/// or log the value. This is a conservative safety gate, not provider identity
+/// verification: a matching ID on another provider may also be blocked.
+pub fn garage_key_id(value: &str) -> bool {
+    value.len() == 26
+        && value.starts_with("GK")
+        && value[2..].bytes().all(|byte| byte.is_ascii_hexdigit())
+}
+
+#[derive(Debug)]
+struct ConditionSafety {
+    blocked: bool,
+}
+impl Intercept for ConditionSafety {
+    fn name(&self) -> &'static str {
+        if self.blocked {
+            UNSAFE_CONDITIONS
+        } else {
+            "FurmanProviderConditions"
+        }
+    }
+    fn modify_before_transmit(
+        &self,
+        context: &mut BeforeTransmitInterceptorContextMut<'_>,
+        _runtime: &RuntimeComponents,
+        config: &mut ConfigBag,
+    ) -> Result<(), BoxError> {
+        let operation = config
+            .load::<Metadata>()
+            .map(|metadata| metadata.name())
+            .unwrap_or("");
+        if !matches!(
+            operation,
+            "PutObject" | "CopyObject" | "CompleteMultipartUpload"
+        ) {
+            return Ok(());
+        }
+        let headers = context.request().headers();
+        if headers.get("if-match").is_none() && headers.get("if-none-match").is_none() {
+            return Ok(());
+        }
+        // The signing backstop also covers keys resolved from shared profiles or
+        // credential chains, without asking for credentials during read-only preview.
+        // Inspect only the key-ID format, never copy/log authorization or signatures.
+        let garage_credentials = headers
+            .get("authorization")
+            .and_then(|header| {
+                header
+                    .split_whitespace()
+                    .find_map(|part| part.strip_prefix("Credential="))
+            })
+            .and_then(|scope| scope.split('/').next())
+            .is_some_and(garage_key_id);
+        if self.blocked || garage_credentials {
+            return Err(CONDITION_ERROR.into());
+        }
+        Ok(())
+    }
+}
+
+pub fn configure_conditions(
+    client: Client,
+    provider: Option<&str>,
+    access_key: Option<&str>,
+) -> Client {
+    let blocked = provider.is_some_and(|provider| provider == "garage")
+        || access_key.is_some_and(garage_key_id);
+    if (!blocked
+        && client.config().interceptors().any(|interceptor| {
+            matches!(
+                interceptor.name(),
+                UNSAFE_CONDITIONS | "FurmanProviderConditions"
+            )
+        }))
+        || !conditional_writes_supported(&client)
+    {
+        return client;
+    }
+    Client::from_conf(
+        client
+            .config()
+            .to_builder()
+            .interceptor(ConditionSafety { blocked })
+            .build(),
+    )
+}
+
+pub fn conditional_writes_supported(client: &Client) -> bool {
+    !client
+        .config()
+        .interceptors()
+        .any(|interceptor| interceptor.name() == UNSAFE_CONDITIONS)
+}
+
+pub fn check_conditional_writes(client: &Client) -> Result<(), crate::models::FmError> {
+    if conditional_writes_supported(client) {
+        Ok(())
+    } else {
+        Err(crate::models::FmError::S3(CONDITION_ERROR.into()))
+    }
+}
 
 pub fn upload_checksum(client: &Client) -> Option<ChecksumAlgorithm> {
     if matches!(

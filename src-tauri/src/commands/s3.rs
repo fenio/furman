@@ -167,6 +167,7 @@ pub async fn s3_connect(
     proxy_username: Option<String>,
     proxy_password: Option<String>,
     sse_customer_key: Option<String>,
+    provider: Option<String>,
 ) -> Result<(), FmError> {
     if sse_customer_key.is_some() && endpoint.as_deref().is_some_and(|endpoint| !endpoint.starts_with("https://")) {
         return Err(s3err("SSE-C requires an HTTPS endpoint; encryption keys will not be sent over HTTP"));
@@ -191,6 +192,7 @@ pub async fn s3_connect(
     )
     .await?;
 
+    let client = s3::compat::configure_conditions(client, provider.as_deref(), None);
     let client = s3::sse_c::configure(client, sse_customer_key.as_deref().map(String::as_str))?;
 
     // Validate bucket access — public buckets often deny HeadBucket, so use ListObjectsV2

@@ -64,6 +64,8 @@ creation response may leave an unknown incomplete upload. Inspect the bucket's
 incomplete uploads after uncertain outcomes.
 
 These guarantees rely on providers correctly enforcing S3 condition headers.
+Known unsupported Garage configurations are now blocked by a native safety gate;
+see [provider restrictions](s3-metadata-compatibility.md#known-unsupported-destination-conditions).
 Furman does not probe with scratch writes during read-only preview and cannot
 prove that an arbitrary provider will not silently ignore protocol semantics.
 Provider integration tests exercise conflicting creates/replacements; mocked

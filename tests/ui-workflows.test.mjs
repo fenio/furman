@@ -24,6 +24,10 @@ test('guarded writes require fresh previews and explicit replacement approval', 
   assert.equal(writeNeedsApproval('replace_unchanged', 1), true);
   assert.equal(writeNeedsApproval('replace_unchanged', 0), false);
   assert.equal(writeNeedsApproval('skip_existing', 1), false);
+  for (const policy of ['create_only', 'skip_existing', 'replace_unchanged']) {
+    assert.equal(validWritePolicy(policy, { existing: 0, unguardable: 0, guard_supported: false }), false);
+  }
+  assert.equal(validWritePolicy('overwrite', { existing: 0, unguardable: 0, guard_supported: false }), true);
 });
 
 test('Sync write previews preserve nested paths, exclusions, hashes, and missing expectations', () => {

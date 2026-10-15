@@ -79,6 +79,29 @@ This is conservative media-type validation, not a full RFC MIME parser.
 
 ## Upload checksums
 
+### Known unsupported destination conditions
+
+The Garage v1.1.0 conformance job revealed that conditional PUT/completion writes
+silently overwrite conflicts once optional CRC32C is omitted. Previous runs were
+rejecting the unsupported checksum before exercising those conditions; they did
+not establish conditional-write support. Furman now blocks guarded destination
+writes and conditional metadata edits for Garage profiles and Garage-format
+manual key IDs. The guard-preview UI marks this limitation; only separately
+acknowledged, explicitly unguarded content overwrite remains available.
+
+A signing-stage backstop also recognizes Garage-format IDs resolved from shared
+profiles/credential chains and rejects conditioned PUT/Copy/completion requests
+before transmission. It inspects only the public ID format, does not store/log
+authorization or signatures, and does not resolve identities during read-only
+preview. Such dynamically resolved identities may only be recognized at execution.
+The conservative gate currently covers all Garage selections and GK + 24 hex
+IDs; it can block newer Garage deployments or another provider using that format
+until a tested capability/version policy is available. Browsing and explicitly
+unguarded legacy writes remain available. Arbitrary providers/proxies can still
+misrepresent protocol semantics: this is not universal capability verification.
+
+### Transport policy
+
 Configured custom endpoints use SDK RequestChecksumCalculation::WhenRequired,
 including endpoints inherited from shared SDK configuration. Payload upload
 builders do not explicitly demand optional CRC32C in that mode. Default AWS

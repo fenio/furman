@@ -518,3 +518,116 @@ async fn an_ambiguous_delete_is_not_retried_into_an_unsupported_response() {
     assert!(error.contains("HTTP 500"), "{error}");
     assert_eq!(http.actual_requests().count(), 1);
 }
+
+#[tokio::test]
+async fn known_garage_profiles_reject_conditional_edits_before_requests() {
+    let (mut service, http) = service(&[]);
+    service.client = compat::configure_conditions(service.client, Some("garage"), None);
+    assert!(!compat::conditional_writes_supported(&service.client));
+    let error = service
+        .put_object_metadata("key", Some("text/plain"), None, None, None, &HashMap::new())
+        .await
+        .err()
+        .unwrap()
+        .to_string();
+    assert!(error.contains("Conditional destination writes are disabled"));
+    assert_eq!(http.actual_requests().count(), 0);
+    let cloned = Client::from_conf(
+        service
+            .client
+            .config()
+            .to_builder()
+            .retry_config(RetryConfig::disabled())
+            .build(),
+    );
+    assert!(!compat::conditional_writes_supported(&cloned));
+}
+
+#[tokio::test]
+async fn signing_backstop_blocks_profile_resolved_garage_keys_without_exposing_them() {
+    let (service, http) = service(&[(200, &[], "")]);
+    let key_id = "GK0123456789abcdef01234567";
+    let client = Client::from_conf(
+        service
+            .client
+            .config()
+            .to_builder()
+            .credentials_provider(aws_credential_types::Credentials::new(
+                key_id,
+                "SECRET",
+                None,
+                None,
+                "test-resolved-profile",
+            ))
+            .build(),
+    );
+    let client = compat::configure_conditions(client, None, None);
+    // The identity is intentionally not resolved during preview. The signed
+    // request backstop must stop it before any target object can be mutated.
+    assert!(compat::conditional_writes_supported(&client));
+    let error = client
+        .put_object()
+        .bucket("bucket")
+        .key("key")
+        .if_none_match("*")
+        .body(aws_sdk_s3::primitives::ByteStream::from_static(b"payload"))
+        .send()
+        .await
+        .err()
+        .unwrap();
+    let message = super::errors::s3_sdk_error("Guarded PUT", &error).to_string();
+    assert!(
+        message.contains("Conditional destination writes are disabled"),
+        "{message}"
+    );
+    assert!(!message.contains(key_id));
+    assert!(!message.contains("SECRET"));
+    assert_eq!(http.actual_requests().count(), 0);
+    assert!(client
+        .copy_object()
+        .bucket("bucket")
+        .key("key")
+        .copy_source("bucket/source")
+        .if_match("opaque")
+        .send()
+        .await
+        .is_err());
+    assert!(client
+        .complete_multipart_upload()
+        .bucket("bucket")
+        .key("key")
+        .upload_id("upload")
+        .if_match("opaque")
+        .multipart_upload(aws_sdk_s3::types::CompletedMultipartUpload::builder().build())
+        .send()
+        .await
+        .is_err());
+    assert_eq!(http.actual_requests().count(), 0);
+    // Explicitly unguarded operations are not silently reinterpreted as guarded.
+    client
+        .put_object()
+        .bucket("bucket")
+        .key("key")
+        .body(aws_sdk_s3::primitives::ByteStream::from_static(b"payload"))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(http.actual_requests().count(), 1);
+}
+
+#[test]
+fn garage_key_format_gate_is_conservative_and_does_not_capture_values() {
+    assert!(compat::garage_key_id("GK0123456789abcdef01234567"));
+    for value in [
+        "GK",
+        "AKIA0123456789ABCDEF",
+        "GK0123456789abcdef0123456Z",
+        "é0123456789abcdef01234567",
+    ] {
+        assert!(!compat::garage_key_id(value));
+    }
+    let (service, _) = service(&[]);
+    let client =
+        compat::configure_conditions(service.client, None, Some("GK0123456789abcdef01234567"));
+    assert!(!compat::conditional_writes_supported(&client));
+}

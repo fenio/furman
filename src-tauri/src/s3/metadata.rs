@@ -193,6 +193,7 @@ pub async fn update(
     expected_revision: Option<&str>,
 ) -> Result<(), FmError> {
     super::compat::validate_content_type(content_type)?;
+    super::compat::check_conditional_writes(client)?;
     let head = client
         .head_object()
         .bucket(bucket)
