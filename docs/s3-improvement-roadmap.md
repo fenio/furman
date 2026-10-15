@@ -29,11 +29,14 @@ separate PR, with provider-specific behavior and safety tested explicitly.
 6. **AWS SSO usability — merged in [#360](https://github.com/fenio/furman/pull/360).** Profile discovery, clear expired-session states, and an
     explicit AWS CLI v2 sign-in action without storing SSO tokens ourselves.
     See [the SSO usability contract](s3-aws-sso.md).
-7. **Saved jobs, then opt-in scheduling — options presets in the current PR.** Start with reusable comparison/sync
+7. **Saved jobs, then opt-in scheduling — options presets merged in [#361](https://github.com/fenio/furman/pull/361); pinned-job design in the current PR.** Start with reusable comparison/sync
    presets (method and explicit exclusions only; no stored identities or approval).
    See [the options-preset contract](comparison-presets.md).
-   Later add pinned destinations, fresh comparisons, persistent outcomes,
-   failure pauses, and explicit approval; never silently schedule uploads.
+   Review [the proposed pinned manual-job design](pinned-sync-jobs-design.md)
+   before implementing native identity binding, fresh comparison ownership,
+   guarded execution, persistent outcomes and review pauses. Runnable jobs are
+   not implemented yet. Scheduling remains a separate future proposal; never
+   silently schedule uploads.
 
 Retain Svelte, the dual-pane workflow, SHA-256 verification, SSE-C support, and
 keychain-backed secrets. Do not copy Brows3's plaintext secret-storage fallback
