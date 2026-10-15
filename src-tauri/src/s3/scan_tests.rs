@@ -19,6 +19,53 @@ fn limits(objects: u64, requests: u64) -> ScanLimits {
 }
 
 #[test]
+fn scan_wrappers_do_not_embed_large_child_futures() {
+    fn large_future() -> impl std::future::Future<Output = Result<(), FmError>> {
+        let payload = [0u8; 64 * 1024];
+        async move {
+            let result = std::future::pending::<Result<(), FmError>>().await;
+            std::hint::black_box(payload);
+            result
+        }
+    }
+    let budget = ScanBudget::new();
+    let cancel = AtomicBool::new(false);
+    let waiting = budget.wait(&cancel, large_future());
+    let requesting = budget.request(&cancel, large_future());
+    assert!(
+        std::mem::size_of_val(&waiting) < 1024,
+        "wait future is {} bytes",
+        std::mem::size_of_val(&waiting)
+    );
+    assert!(
+        std::mem::size_of_val(&requesting) < 1024,
+        "request future is {} bytes",
+        std::mem::size_of_val(&requesting)
+    );
+}
+
+#[test]
+fn concurrent_budget_reservations_do_not_overshoot_the_limit() {
+    let budget = Arc::new(ScanBudget::with_limits(limits(101, 1000)));
+    let accepted = Arc::new(std::sync::atomic::AtomicU64::new(0));
+    std::thread::scope(|scope| {
+        for _ in 0..8 {
+            let budget = budget.clone();
+            let accepted = accepted.clone();
+            scope.spawn(move || {
+                for _ in 0..100 {
+                    if budget.object(&AtomicBool::new(false)).is_ok() {
+                        accepted.fetch_add(1, Ordering::Relaxed);
+                    }
+                }
+            });
+        }
+    });
+    assert_eq!(accepted.load(Ordering::Relaxed), 101);
+    assert_eq!(budget.progress().scanned, 101);
+}
+
+#[test]
 fn invalid_limits_cannot_disable_safeguards() {
     for value in [0, 10_000_001] {
         assert!(set_limits(ScanLimits {

@@ -996,7 +996,7 @@ async fn test_search_objects() {
 
     let events = results.into_inner().unwrap();
 
-    // Should have found "hello.txt" and "hello_world.txt" plus a Done event
+    // Results retain their payloads; terminal scan status is now explicit.
     let result_events: Vec<_> = events
         .iter()
         .filter(|e| matches!(e, app_lib::models::SearchEvent::Result(_)))
@@ -1007,13 +1007,47 @@ async fn test_search_objects() {
         2,
         "Should find 2 results matching 'hello'"
     );
+    let mut names: Vec<_> = result_events
+        .iter()
+        .filter_map(|event| match event {
+            app_lib::models::SearchEvent::Result(result) => Some(result.name.as_str()),
+            _ => None,
+        })
+        .collect();
+    names.sort_unstable();
+    assert_eq!(names, ["hello.txt", "hello_world.txt"]);
 
-    // Should have a Done event
+    // Require one exhaustive completion, not merely an arbitrary terminal event.
     let done_events: Vec<_> = events
         .iter()
-        .filter(|e| matches!(e, app_lib::models::SearchEvent::Done(_)))
+        .filter_map(|event| match event {
+            app_lib::models::SearchEvent::ScanFinished {
+                outcome,
+                progress,
+                message,
+            } => {
+                assert_eq!(*outcome, app_lib::s3::scan::ScanOutcome::Complete);
+                assert!(message.is_none());
+                Some(progress)
+            }
+            _ => None,
+        })
         .collect();
     assert_eq!(done_events.len(), 1);
+    // Some compatible providers may also return directory-marker objects.
+    assert!(done_events[0].scanned >= 4);
+    assert_eq!(done_events[0].matched, 2);
+    assert!(done_events[0].requests >= 1);
+    assert!(events
+        .iter()
+        .any(|event| matches!(event, app_lib::models::SearchEvent::ScanProgress { .. })));
+    assert!(matches!(
+        events.last(),
+        Some(app_lib::models::SearchEvent::ScanFinished { .. })
+    ));
+    assert!(!events
+        .iter()
+        .any(|event| matches!(event, app_lib::models::SearchEvent::Done(_))));
 
     ctx.cleanup().await;
 }

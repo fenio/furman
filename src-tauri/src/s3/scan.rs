@@ -135,11 +135,9 @@ impl ScanBudget {
 
     pub fn object(&self, cancel: &AtomicBool) -> Result<(), FmError> {
         self.check(cancel)?;
-        self.scanned
-            .fetch_update(Ordering::Relaxed, Ordering::Relaxed, |n| {
-                (n < self.limits.max_objects).then_some(n + 1)
-            })
-            .map_err(|_| self.limited(format!("{}-object budget", self.limits.max_objects)))?;
+        if !increment_bounded(&self.scanned, self.limits.max_objects) {
+            return Err(self.limited(format!("{}-object budget", self.limits.max_objects)));
+        }
         Ok(())
     }
 
@@ -155,39 +153,47 @@ impl ScanBudget {
     }
 
     /// Cancellation/deadline also apply while waiting for a stalled request/body.
-    pub async fn wait<T>(
-        &self,
-        cancel: &AtomicBool,
-        future: impl Future<Output = Result<T, FmError>>,
-    ) -> Result<T, FmError> {
-        self.check(cancel)?;
-        tokio::select! {
-            result = tokio::time::timeout_at(self.started + Duration::from_secs(self.limits.max_seconds), future) => {
-                let value = result.map_err(|_| self.limited(format!("{}-second deadline", self.limits.max_seconds)))??;
-                self.check(cancel)?;
-                Ok(value)
-            },
-            _ = async {
-                loop {
-                    if cancel.load(Ordering::Relaxed) { break; }
-                    tokio::time::sleep(Duration::from_millis(50)).await;
-                }
-            } => Err(FmError::ScanCancelled),
+    pub fn wait<'a, T: 'a>(
+        &'a self,
+        cancel: &'a AtomicBool,
+        future: impl Future<Output = Result<T, FmError>> + 'a,
+    ) -> impl Future<Output = Result<T, FmError>> + 'a {
+        // Box before constructing the wrapper future. Boxing inside an async fn
+        // still embeds its unpolled input in the parent frame. AWS SDK futures
+        // are large enough for nested request/timeout/select wrappers to overflow
+        // the standard 2 MiB worker stack in debug builds.
+        let future = Box::pin(future);
+        async move {
+            self.check(cancel)?;
+            tokio::select! {
+                result = tokio::time::timeout_at(self.started + Duration::from_secs(self.limits.max_seconds), future) => {
+                    let value = result.map_err(|_| self.limited(format!("{}-second deadline", self.limits.max_seconds)))??;
+                    self.check(cancel)?;
+                    Ok(value)
+                },
+                _ = async {
+                    loop {
+                        if cancel.load(Ordering::Relaxed) { break; }
+                        tokio::time::sleep(Duration::from_millis(50)).await;
+                    }
+                } => Err(FmError::ScanCancelled),
+            }
         }
     }
 
-    pub async fn request<T>(
-        &self,
-        cancel: &AtomicBool,
-        future: impl Future<Output = Result<T, FmError>>,
-    ) -> Result<T, FmError> {
-        self.check(cancel)?;
-        self.requests
-            .fetch_update(Ordering::Relaxed, Ordering::Relaxed, |n| {
-                (n < self.limits.max_requests).then_some(n + 1)
-            })
-            .map_err(|_| self.limited(format!("{}-request budget", self.limits.max_requests)))?;
-        self.wait(cancel, future).await
+    pub fn request<'a, T: 'a>(
+        &'a self,
+        cancel: &'a AtomicBool,
+        future: impl Future<Output = Result<T, FmError>> + 'a,
+    ) -> impl Future<Output = Result<T, FmError>> + 'a {
+        let future = Box::pin(future);
+        async move {
+            self.check(cancel)?;
+            if !increment_bounded(&self.requests, self.limits.max_requests) {
+                return Err(self.limited(format!("{}-request budget", self.limits.max_requests)));
+            }
+            self.wait(cancel, future).await
+        }
     }
 
     pub fn transfer_progress(&self, id: &str, on_progress: &(dyn Fn(ProgressEvent) + Send + Sync)) {
@@ -206,6 +212,24 @@ impl ScanBudget {
             ),
         });
     }
+}
+
+// Keep the declared Rust 1.94.1 MSRV without using the newer try_update API or
+// emitting fetch_update deprecation warnings on current CI toolchains.
+fn increment_bounded(counter: &AtomicU64, limit: u64) -> bool {
+    let mut current = counter.load(Ordering::Relaxed);
+    while current < limit {
+        match counter.compare_exchange_weak(
+            current,
+            current + 1,
+            Ordering::Relaxed,
+            Ordering::Relaxed,
+        ) {
+            Ok(_) => return true,
+            Err(actual) => current = actual,
+        }
+    }
+    false
 }
 
 /// The callback returns true to stop at the search result limit. A stop is only
