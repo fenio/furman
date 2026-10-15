@@ -394,6 +394,21 @@ async fn encrypted_reads_versions_and_rekeyed_copies_work() {
         .unwrap()
     );
 
+    // Guarded GET/PUT relay must preserve independently keyed SSE-C clients,
+    // including their interceptors after disabling automatic write retries.
+    for key in ["folder/file", "large"] {
+        use app_lib::s3::writes::{prepare, WriteEndpoint, WritePolicy, WriteSelection};
+        use std::sync::Arc;
+        let plan = prepare(
+            Some(WriteEndpoint { client: source.clone(), bucket: bucket.clone(), id: "source".into() }),
+            WriteEndpoint { client: destination.clone(), bucket: dest_bucket.clone(), id: "destination".into() },
+            vec![WriteSelection { path: key.into(), destination_key: None, expected_sha256: None, expected_source_etag: None, expected_destination: None, expected_destination_sha256: None }],
+            "guarded/".into(), Arc::new(AtomicBool::new(false)), Arc::new(|_| {}),
+        ).await.unwrap();
+        plan.execute(WritePolicy::CreateOnly, false, true, "guarded-sse", Arc::new(AtomicBool::new(false)), &|_| {}).await.unwrap();
+        assert!(plain.get_object().bucket(&dest_bucket).key(format!("guarded/{}", key.rsplit('/').next().unwrap())).send().await.is_err());
+    }
+
     service
         .restore_version("folder/file", &old.version_id)
         .await
@@ -424,7 +439,7 @@ async fn encrypted_reads_versions_and_rekeyed_copies_work() {
                 .unwrap();
         }
     }
-    for key in ["copied/file", "large", "plain/file", "encrypted/plain-src"] {
+    for key in ["copied/file", "large", "plain/file", "encrypted/plain-src", "guarded/file", "guarded/large"] {
         plain
             .delete_object()
             .bucket(&dest_bucket)

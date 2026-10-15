@@ -3,9 +3,11 @@ import { appState, canSyncBackends } from '#lib/state/app.svelte.js';
 import { statusState } from '#lib/state/status.svelte.js';
 import { transfersState } from '#lib/state/transfers.svelte.js';
 import { copyFiles, deleteFiles } from '#lib/services/tauri.js';
-import { s3Download, s3Upload, s3CopyObjects, s3DeleteObjects } from '#lib/services/s3.js';
+import { s3Download, s3DeleteObjects } from '#lib/services/s3.js';
 import { error } from '#lib/services/log.js';
 import type { ProgressEvent, SyncEntry, TransferCheckpoint } from '#lib/types/index.js';
+import { requestGuardedWrite } from '#lib/state/guarded-writes.svelte.js';
+import { syncWriteSelections } from '#lib/utils/guarded-writes.js';
 
 export function executeSyncTransfer(detail: {
   entries: SyncEntry[];
@@ -24,6 +26,17 @@ export function executeSyncTransfer(detail: {
 
   const toCopy = entries.filter((e) => e.status === 'new' || e.status === 'modified');
   const toDelete = entries.filter((e) => e.status === 'deleted');
+
+  if (toCopy.length > 0 && destBackend === 's3' && (sourceBackend === 'local' || sourceBackend === 's3')) {
+    const prefix = s3PathToPrefix(destPath, '');
+    requestGuardedWrite({
+      sourceId: sourceBackend === 's3' ? sourceS3Id : null,
+      destinationId: destS3Id, destination: destPath, prefix, verify: true,
+      selections: syncWriteSelections(toCopy, sourcePath, prefix),
+      onComplete: toDelete.length ? () => executeSyncDeletes(toDelete, destBackend, destPath, destS3Id) : undefined,
+    });
+    return;
+  }
 
   if (toCopy.length > 0) {
     const opId = 'sync-' + Date.now() + '-' + Math.random().toString(36).slice(2, 6);
@@ -46,13 +59,6 @@ export function executeSyncTransfer(detail: {
           result = await copyFiles(opId, copySourcePaths, destPath, onProgress);
         } else if (sourceBackend === 's3' && destBackend === 'local') {
           result = await s3Download(sourceS3Id, opId, copySourcePaths, destPath, onProgress);
-        } else if (sourceBackend === 'local' && destBackend === 's3') {
-          const prefix = s3PathToPrefix(destPath, '');
-          result = await s3Upload(destS3Id, opId, copySourcePaths, prefix, onProgress);
-        } else if (sourceBackend === 's3' && destBackend === 's3') {
-          const destPrefix = s3PathToPrefix(destPath, '');
-          const sourcePrefix = s3PathToPrefix(sourcePath, '');
-          result = await s3CopyObjects(sourceS3Id, opId, copySourcePaths, destS3Id, destPrefix, onProgress, null, sourcePrefix, true);
         } else {
           throw new Error(`Unsupported sync: ${sourceBackend} -> ${destBackend}`);
         }

@@ -10,6 +10,41 @@ import { readFileSync } from 'node:fs';
 import { compile } from 'svelte/compiler';
 import { render } from 'svelte/server';
 import { DEFAULT_SCAN_LIMITS, validScanLimits, scanLimitsFromConfig, scanSummary, canUseScan } from '../src/lib/utils/scan.ts';
+import { validWritePolicy, writeNeedsApproval, syncWriteSelections } from '../src/lib/utils/guarded-writes.ts';
+
+test('guarded writes require fresh previews and explicit replacement approval', () => {
+  for (const policy of ['create_only', 'skip_existing', 'replace_unchanged', 'overwrite']) {
+    assert.equal(validWritePolicy(policy, null), false);
+    assert.equal(validWritePolicy(policy, { existing: 0, unguardable: 0 }), true);
+  }
+  assert.equal(validWritePolicy('create_only', { existing: 1, unguardable: 0 }), false);
+  assert.equal(validWritePolicy('replace_unchanged', { existing: 1, unguardable: 1 }), false);
+  assert.equal(validWritePolicy('skip_existing', { existing: 1, unguardable: 1 }), true);
+  assert.equal(writeNeedsApproval('overwrite', 0), true);
+  assert.equal(writeNeedsApproval('replace_unchanged', 1), true);
+  assert.equal(writeNeedsApproval('replace_unchanged', 0), false);
+  assert.equal(writeNeedsApproval('skip_existing', 1), false);
+});
+
+test('Sync write previews preserve nested paths, exclusions, hashes, and missing expectations', () => {
+  const hash = 'a'.repeat(64);
+  const selections = syncWriteSelections([
+    { relative_path: 'nested/file', status: 'new', source_etag: hash, dest_etag: '' },
+    { relative_path: 'other/file', status: 'modified', source_etag: hash, dest_etag: hash },
+    { relative_path: 'deleted', status: 'deleted', source_etag: '', dest_etag: hash },
+    { relative_path: 'metadata-only', status: 'modified', source_etag: '', dest_etag: '' },
+  ], 's3://bucket/src', 'target/');
+  assert.equal(selections.length, 3);
+  assert.equal(selections[0].path, 's3://bucket/src/nested/file');
+  assert.equal(selections[0].destination_key, 'target/nested/file');
+  assert.deepEqual(selections[0].expected_destination, { type: 'missing' });
+  assert.equal(selections[1].destination_key, 'target/other/file');
+  assert.equal(selections[1].expected_sha256, hash);
+  assert.equal(selections[1].expected_destination_sha256, hash);
+  assert.equal(selections[1].expected_source_etag, undefined);
+  assert.equal(selections[2].expected_sha256, undefined);
+  assert.ok(!selections.some((selection) => selection.path.endsWith('/deleted')));
+});
 
 test('scan limits reject disabled, fractional, and excessive budgets and migrate old configs safely', () => {
   assert.equal(validScanLimits(DEFAULT_SCAN_LIMITS), true);

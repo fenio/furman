@@ -309,6 +309,7 @@ class TransfersState {
   }
 
   canPause(t: Transfer): boolean {
+    if (t.id.startsWith('guarded-write-')) return false;
     return (t.type === 'copy' || t.type === 'move') && !t.id.startsWith('sync-') && t.phase !== 'delete-source';
   }
 

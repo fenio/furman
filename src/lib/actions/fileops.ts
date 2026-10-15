@@ -9,6 +9,7 @@ import { checkConflicts, deleteFilesUndoable, renameFile, createDirectory } from
 import { s3RenameObject, s3CreateFolder, s3IsObjectEncrypted, type EncryptionConfig } from '#lib/services/s3.js';
 import { sftpRename, sftpCreateFolder } from '#lib/services/sftp.js';
 import { error } from '#lib/services/log.js';
+import { requestGuardedWrite } from '#lib/state/guarded-writes.svelte.js';
 
 // ── Encryption helpers ──────────────────────────────────────────────────────
 
@@ -130,6 +131,16 @@ export function executeCopy(
   const opId = 'file-op-' + Date.now() + '-' + Math.random().toString(36).slice(2, 6);
   const transferType = srcBackend === 'archive' ? 'extract' as const : 'copy' as const;
 
+  if (destBackend === 's3' && (srcBackend === 'local' || srcBackend === 's3') && !encryptionPassword && inactive.s3Connection) {
+    requestGuardedWrite({
+      sourceId: srcBackend === 's3' ? active.s3Connection?.connectionId ?? null : null,
+      destinationId: inactive.s3Connection.connectionId,
+      selections: sources.map((path) => ({ path })),
+      prefix: s3PathToPrefix(dest, inactive.s3Connection.bucket), destination: dest, verify: false,
+    });
+    return;
+  }
+
   if (srcBackend === 'archive' && destBackend === 'local') {
     const archivePath = active.archiveInfo!.archivePath;
     const internalPaths = sources.map((s) => {
@@ -227,7 +238,7 @@ export async function handleCopy() {
           withConflictCheck(sources, dest, destBackend, (finalSources) =>
             executeCopy(finalSources, dest, srcBackend, destBackend, pw, config),
           );
-        });
+        }, 'Encryption password (legacy upload; S3 destination write guards do not apply):');
         return;
       }
     }
@@ -256,6 +267,10 @@ export async function handleCopy() {
       }
     }
 
+    if (destBackend === 's3' && (srcBackend === 'local' || srcBackend === 's3')) {
+      executeCopy(sources, dest, srcBackend, destBackend);
+      return;
+    }
     withConflictCheck(sources, dest, destBackend, (finalSources) =>
       executeCopy(finalSources, dest, srcBackend, destBackend),
     );

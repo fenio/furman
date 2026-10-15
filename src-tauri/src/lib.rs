@@ -67,6 +67,7 @@ pub fn run() {
         .manage(WatcherState(Mutex::new(HashMap::new())))
         .manage(TerminalState(Mutex::new(HashMap::new())))
         .manage(S3State(Mutex::new(HashMap::new())))
+        .manage(s3::writes::WriteState::default())
         .manage(SftpState::default())
         .manage(SearchState(Mutex::new(HashMap::new())))
         .manage(FileOpState(Mutex::new(HashMap::new())))
@@ -289,6 +290,9 @@ pub fn run() {
             commands::s3::s3_set_scan_limits,
             commands::s3::s3_download,
             commands::s3::s3_upload,
+            commands::s3::s3_prepare_write,
+            commands::s3::s3_execute_write,
+            commands::s3::s3_discard_write,
             commands::s3::s3_copy_objects,
             commands::s3::s3_delete_objects,
             commands::s3::s3_head_object,

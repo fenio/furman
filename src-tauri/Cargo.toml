@@ -28,7 +28,7 @@ trash = "5"
 
 portable-pty = "0.9"
 
-nix = { version = "0.31", features = ["fs", "user"] }
+nix = { version = "0.31", features = ["fs", "user", "dir"] }
 chrono = { version = "0.4", features = ["serde"] }
 dirs = "7"
 
