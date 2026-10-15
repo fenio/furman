@@ -4,7 +4,8 @@ import { SvelteSet } from 'svelte/reactivity';
 import { errorText } from '#lib/utils/error-report.js';
 import { sortEntries } from '#lib/utils/sort.js';
 import { listDirectory, listDirectoryStreamed, listArchive, watchDirectory, unwatchDirectory, getGitRepoInfo, getDirectorySize, cleanupTempPath } from '#lib/services/tauri.js';
-import { s3Connect, s3Disconnect, s3ListObjects, s3IsObjectEncrypted } from '#lib/services/s3.js';
+import { s3Connect, s3Disconnect, s3ListObjectsPage, s3IsObjectEncrypted } from '#lib/services/s3.js';
+import { ProgressiveListing, listingPosition, type ListingProgress } from '#lib/utils/progressive-listing.js';
 import { sftpConnect, sftpDisconnect, sftpListObjects } from '#lib/services/sftp.js';
 import { mountNetworkShare } from '#lib/services/mount.js';
 import { appState } from '#lib/state/app.svelte.js';
@@ -37,6 +38,8 @@ export class PanelData {
   filterInput = $state('');
   /** True once a streamed listing has finished (entries are sorted). */
   streamComplete = $state(true);
+  s3ListingProgress = $state.raw<ListingProgress | null>(null);
+  private s3ListingSession: ProgressiveListing<FileEntry> | null = null;
   private filterDebounceTimer: ReturnType<typeof setTimeout> | null = null;
   loading = $state(false);
   error = $state<string | null>(null);
@@ -56,7 +59,7 @@ export class PanelData {
   canGoForward = $derived(this.historyIndex < this.history.length - 1);
 
   sortedEntries = $derived(
-    this.streamComplete
+    this.backend === 's3' || this.streamComplete
       ? sortEntries(this.entries, this.sortField, this.sortDirection)
       : this.entries
   );
@@ -244,6 +247,7 @@ export class PanelData {
   }
 
   async loadDirectory(path: string, focusName?: string) {
+    this.disposeS3Listing();
     this.clearFilter();
     this.dirSizeCache = {};
     this.dirSizePending.clear();
@@ -266,6 +270,10 @@ export class PanelData {
 
     this.loading = true;
     this.error = null;
+    if (this.backend === 's3' && this.s3Connection) {
+      this.loadS3Directory(path, focusName);
+      return;
+    }
     try {
       let listing;
       if (this.backend === 'archive' && this.archiveInfo) {
@@ -273,10 +281,6 @@ export class PanelData {
         const internalPath = parseArchiveInternalPath(path);
         listing = await listArchive(this.archiveInfo.archivePath, internalPath);
         this.archiveInfo.internalPath = internalPath;
-      } else if (this.backend === 's3' && this.s3Connection) {
-        // Extract prefix from s3://bucket/prefix path
-        const prefix = s3PathToPrefix(path, this.s3Connection.bucket);
-        listing = await s3ListObjects(this.s3Connection.connectionId, prefix);
       } else if (this.backend === 'sftp' && this.sftpConnection) {
         listing = await sftpListObjects(this.sftpConnection.connectionId, path);
       } else {
@@ -310,6 +314,67 @@ export class PanelData {
     }
     this.navigatingHistory = false;
     this.startWatching();
+  }
+
+  /** Stop publishing old pages before changing path, connection, or tab. */
+  disposeS3Listing() {
+    this.s3ListingSession?.dispose();
+    this.s3ListingSession = null;
+    this.s3ListingProgress = null;
+  }
+
+  cancelS3Listing() {
+    this.s3ListingSession?.cancel();
+  }
+
+  retryS3Listing() {
+    void this.s3ListingSession?.start();
+  }
+
+  private loadS3Directory(path: string, focusName?: string) {
+    const connection = this.s3Connection!;
+    const prefix = s3PathToPrefix(path, connection.bucket);
+    const navigatingHistory = this.navigatingHistory;
+    this.navigatingHistory = false;
+    this.path = path;
+    this.entries = [];
+    this.freeSpace = 0;
+    this.gitInfo = null;
+    this.cursorIndex = 0;
+    this.selectionAnchor = 0;
+    this.selectedPaths = new SvelteSet();
+    this.streamComplete = false;
+    let firstPage = true;
+    let pendingFocus = focusName;
+    this.s3ListingSession = new ProgressiveListing<FileEntry>(
+      token => s3ListObjectsPage(connection.connectionId, prefix, token),
+      entries => {
+        // Sorting is over loaded entries only. Preserve cursor/selection anchors
+        // by identity when newly arriving items change their sorted positions.
+        const cursorPath = this.currentEntry?.path;
+        const anchorPath = this.filteredSortedEntries[this.selectionAnchor]?.path;
+        if (!firstPage && (this.currentEntry?.name !== '..' || this.selectedPaths.size > 0)) pendingFocus = undefined;
+        this.entries = [...this.entries, ...entries];
+        const position = listingPosition(this.filteredSortedEntries, cursorPath, anchorPath, pendingFocus);
+        this.cursorIndex = position.cursorIndex;
+        this.selectionAnchor = position.selectionAnchor;
+        if (position.focused) pendingFocus = undefined;
+        if (firstPage) {
+          if (!navigatingHistory) {
+            this.history = [...this.history.slice(0, this.historyIndex + 1), path];
+            this.historyIndex = this.history.length - 1;
+          }
+          firstPage = false;
+        }
+      },
+      progress => {
+        this.s3ListingProgress = progress;
+        this.loading = progress.pages === 0 && progress.status === 'loading';
+        this.streamComplete = progress.status === 'complete';
+      },
+    );
+    // Navigation/connect completes without waiting for every remote page.
+    void this.s3ListingSession.start();
   }
 
   /** Load a local directory using streamed listing for progressive rendering. */
@@ -404,6 +469,7 @@ export class PanelData {
   }
 
   async enterArchive(archivePath: string, remoteOrigin?: ArchiveInfo['remoteOrigin']) {
+    this.disposeS3Listing();
     if (comparisonState.active) comparisonState.stopComparison();
     this.releaseTemporaryArchive();
     this.clearHistory();
@@ -446,6 +512,7 @@ export class PanelData {
   }
 
   async connectS3(info: S3ConnectionInfo, endpoint?: string, profile?: string, accessKey?: string, secretKey?: string, roleArn?: string, externalId?: string, sessionName?: string, sessionDurationSecs?: number, useTransferAcceleration?: boolean, anonymous?: boolean, webIdentityToken?: string, proxyUrl?: string, proxyUsername?: string, proxyPassword?: string, sseCustomerKey?: string) {
+    this.disposeS3Listing();
     if (comparisonState.active) comparisonState.stopComparison();
     this.clearHistory();
     this.loading = true;
@@ -470,6 +537,7 @@ export class PanelData {
   }
 
   async disconnectS3(homePath?: string) {
+    this.disposeS3Listing();
     if (comparisonState.active) comparisonState.stopComparison();
     this.releaseTemporaryArchive();
     this.clearHistory();
@@ -487,6 +555,7 @@ export class PanelData {
   }
 
   async connectSftp(info: SftpConnectionInfo, password?: string, keyPath?: string, keyPassphrase?: string, agentSocket?: string) {
+    this.disposeS3Listing();
     if (comparisonState.active) comparisonState.stopComparison();
     this.clearHistory();
     this.loading = true;
@@ -506,6 +575,7 @@ export class PanelData {
   /// Mount an SMB/NFS share through the OS and navigate this panel to it as a
   /// local folder. Throws on failure so the caller can surface the error.
   async mountShare(protocol: 'smb' | 'nfs', host: string, share: string, username?: string, password?: string, domain?: string) {
+    this.disposeS3Listing();
     if (comparisonState.active) comparisonState.stopComparison();
     this.loading = true;
     this.error = null;
@@ -743,6 +813,7 @@ class PanelsState {
     const activeIndex = side === 'left' ? this.leftActiveTab : this.rightActiveTab;
     if (comparisonState.active && index === activeIndex) comparisonState.stopComparison();
     const tab = tabs[index];
+    tab.disposeS3Listing();
     tab.stopWatching();
     if (tab.archiveInfo?.temporaryPath) {
       cleanupTempPath(tab.archiveInfo.temporaryPath).catch(() => {});

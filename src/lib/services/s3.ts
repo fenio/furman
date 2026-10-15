@@ -1,4 +1,5 @@
 import { invoke, Channel } from '@tauri-apps/api/core';
+import type { S3ListingPage } from '#lib/types/index.js';
 import type { DirListing, KmsKeyInfo, ProgressEvent, S3AccessPoint, S3AccessPointDetail, S3Bucket, S3BucketAcl, S3BucketEncryption, S3BucketVersioning, S3CorsRule, S3InventoryConfiguration, S3LifecycleRule, S3MultipartUpload, S3NotificationConfiguration, S3ObjectLegalHold, S3ObjectLockConfig, S3ObjectMetadata, S3ObjectProperties, S3ObjectRetention, S3ObjectVersion, S3PublicAccessBlock, S3ReplicationConfiguration, S3Tag, SearchEvent, TransferCheckpoint } from '#lib/types/index.js';
 
 export async function s3CheckCredentials(): Promise<boolean> {
@@ -88,6 +89,10 @@ export async function s3ListObjects(
   prefix: string
 ): Promise<DirListing> {
   return await invoke<DirListing>('s3_list_objects', { id, prefix });
+}
+
+export async function s3ListObjectsPage(id: string, prefix: string, continuationToken: string | null): Promise<S3ListingPage> {
+  return await invoke<S3ListingPage>('s3_list_objects_page', { id, prefix, continuationToken });
 }
 
 export async function s3Download(

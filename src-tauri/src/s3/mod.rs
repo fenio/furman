@@ -6,6 +6,9 @@ pub mod service;
 pub mod sse_c;
 pub mod verification;
 
+#[cfg(test)]
+mod listing_tests;
+
 pub use client::{build_s3_client, S3Connection, S3State};
 pub use helpers::{
     collect_local_files, copy_object_multipart, copy_single_or_multipart, list_all_objects,
