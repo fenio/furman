@@ -486,11 +486,20 @@ pub async fn s3_search_objects(
         map.insert(search_id.clone(), cancel_flag.clone());
     }
 
-    service
+    let result = service
         .search_objects(&prefix, &query, use_regex, &cancel_flag, &|evt| {
             let _ = channel.send(evt);
         })
-        .await
+        .await;
+    if let Ok(mut map) = search_state.0.lock() {
+        map.remove(&search_id);
+    }
+    result
+}
+
+#[tauri::command]
+pub fn s3_set_scan_limits(limits: s3::scan::ScanLimits) -> Result<(), FmError> {
+    s3::scan::set_limits(limits)
 }
 
 #[tauri::command]

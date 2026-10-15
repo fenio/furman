@@ -1,16 +1,17 @@
 # S3 improvement roadmap
 
-Agreed follow-up order from the Brows3 review. These are future work, not claims
-that the features are already implemented. Keep each substantial change in a
+Agreed follow-up order from the Brows3 review. Statuses distinguish merged,
+current, and future work. Keep each substantial change in a
 separate PR, with provider-specific behavior and safety tested explicitly.
 
-1. **Progressive listings — current PR.** Page-based S3 browsing, immediate first
+1. **Progressive listings — merged in [#355](https://github.com/fenio/furman/pull/355).** Page-based S3 browsing, immediate first
    results, partial/complete status, Cancel/Continue/Retry, stale-navigation
    protection, and explicit loaded-only sorting/filtering/selection semantics.
-2. **Scan safeguards.** Configurable object/request/time budgets for recursive
+2. **Scan safeguards — current PR.** Configurable object/request/time budgets for recursive
    search and enumeration; scanned/matched counts; complete/cancelled/limited
    outcomes; no destructive work from incomplete preflight. Show bytes read and
    potential transfer costs for SHA-256 comparison. Harden all cursor handling.
+   See [the implemented contract](s3-scan-safeguards.md).
 3. **Guarded writes.** Create-only and replace-if-unchanged policies for PUT and
    multipart completion, approved local snapshots, explicit overwrite approval,
    and fail-closed behavior on providers without the needed conditional writes.
@@ -49,6 +50,7 @@ or assume its documented next-release features are already released.
   to settle. Navigation/closing a tab detaches old results immediately.
 - LIST calls count app-level page requests, including retries initiated by the
   user, not individual SDK wire attempts. Pages count accepted successful pages.
-- No cache, automatic retry loop, scan budget, or global timeout policy is added
-  here. Loaded entries still consume memory proportional to the listed prefix;
-  bounded scans/caching remain separate follow-ups.
+- Progressive pane browsing itself has no cache, automatic retry loop, or
+  recursive-scan cap. Loaded entries still consume memory proportional to the
+  listed prefix. The separate [scan budgets](s3-scan-safeguards.md) apply to
+  recursive work and complete-list APIs; bounded caching remains future work.

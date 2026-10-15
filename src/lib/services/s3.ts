@@ -1,5 +1,10 @@
 import { invoke, Channel } from '@tauri-apps/api/core';
 import type { S3ListingPage } from '#lib/types/index.js';
+import type { ScanLimits } from '#lib/types/index.js';
+
+export async function s3SetScanLimits(limits: ScanLimits): Promise<void> {
+  await invoke('s3_set_scan_limits', { limits });
+}
 import type { DirListing, KmsKeyInfo, ProgressEvent, S3AccessPoint, S3AccessPointDetail, S3Bucket, S3BucketAcl, S3BucketEncryption, S3BucketVersioning, S3CorsRule, S3InventoryConfiguration, S3LifecycleRule, S3MultipartUpload, S3NotificationConfiguration, S3ObjectLegalHold, S3ObjectLockConfig, S3ObjectMetadata, S3ObjectProperties, S3ObjectRetention, S3ObjectVersion, S3PublicAccessBlock, S3ReplicationConfiguration, S3Tag, SearchEvent, TransferCheckpoint } from '#lib/types/index.js';
 
 export async function s3CheckCredentials(): Promise<boolean> {

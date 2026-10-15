@@ -286,6 +286,7 @@ pub fn run() {
             commands::s3::s3_disconnect,
             commands::s3::s3_list_objects,
             commands::s3::s3_list_objects_page,
+            commands::s3::s3_set_scan_limits,
             commands::s3::s3_download,
             commands::s3::s3_upload,
             commands::s3::s3_copy_objects,

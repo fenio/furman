@@ -270,6 +270,23 @@
         </label>
         <span class="pref-hint">Overwrite encrypted temp files with zeros before deleting</span>
 
+        <div class="section-title">Scan limits</div>
+        <p class="pref-hint">Per S3 search, local/S3 comparison (both sides combined), or S3 transfer preflight. Changes affect new scans only. Limits never authorize partial sync/delete results.</p>
+        {#each [
+          { key: 'max_objects', label: 'Entries scanned', max: 10000000 },
+          { key: 'max_requests', label: 'S3 API calls', max: 1000000 },
+          { key: 'max_seconds', label: 'Deadline (seconds)', max: 86400 },
+          { key: 'max_results', label: 'Search results', max: 10000 },
+        ] as field (field.key)}
+          <label class="pref-row">
+            <span class="pref-label">{field.label} (1–{field.max.toLocaleString()})</span>
+            <input class="pref-input" type="number" min="1" max={field.max} step="1"
+              value={appState.s3ScanLimits[field.key as keyof typeof appState.s3ScanLimits]}
+              onchange={(event) => { void appState.setS3ScanLimit(field.key as keyof typeof appState.s3ScanLimits, Number(event.currentTarget.value)); }} />
+          </label>
+        {/each}
+        <p class="pref-hint">API calls count app-level LIST/GET/HEAD invocations, not SDK retries. SHA-256 reads included content; S3 request and download/egress charges may apply. Larger limits can consume substantial time and memory.</p>
+
         <div class="section-title">SFTP</div>
 
         <div class="pref-row">

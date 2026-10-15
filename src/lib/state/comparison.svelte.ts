@@ -5,6 +5,8 @@ import { appState } from '#lib/state/app.svelte.js';
 import { SvelteMap, SvelteSet } from 'svelte/reactivity';
 import { canComparePanes, type ComparisonMode } from '#lib/utils/comparison-options.js';
 import { comparisonDiffPair, type DiffPair } from '#lib/utils/file-diff.js';
+import type { ScanOutcome, ScanProgress } from '#lib/types/index.js';
+import { errorText } from '#lib/utils/error-report.js';
 
 export type ComparisonStatus = 'new' | 'modified' | 'deleted' | 'same';
 export type ComparisonFilter = 'all' | 'new' | 'modified' | 'deleted';
@@ -13,6 +15,9 @@ export type ComparisonSide = 'left' | 'right';
 class ComparisonState {
   active = $state(false);
   scanning = $state(false);
+  scanProgress = $state<ScanProgress | null>(null);
+  outcome = $state<ScanOutcome | undefined>(undefined);
+  scanMessage = $state('');
   diffPair = $state<DiffPair | null>(null);
   mode = $state<ComparisonMode>('size_mtime');
   private lastExcludes: string[] = [];
@@ -65,6 +70,9 @@ class ComparisonState {
     this.lastExcludes = [...excludePatterns];
     this.active = true;
     this.scanning = true;
+    this.scanProgress = null;
+    this.outcome = undefined;
+    this.scanMessage = '';
     this.filter = 'all';
     this.filterSide = 'left';
     this.leftStatuses = new SvelteMap();
@@ -111,6 +119,17 @@ class ComparisonState {
             }
             // Batch reactivity: debounce map reassignment instead of per-entry
             this.scheduleFlush();
+          } else if (event.type === 'ScanProgress') {
+            this.scanProgress = event.progress;
+          } else if (event.type === 'ScanStopped') {
+            this.scanProgress = event.progress;
+            this.outcome = event.outcome;
+            this.scanMessage = event.message;
+            this.leftStatuses.clear();
+            this.rightStatuses.clear();
+            this.flushNow();
+            this.scanning = false;
+            this.syncId = '';
           } else if (event.type === 'Done') {
             this.flushNow();
             this.counts = {
@@ -119,19 +138,21 @@ class ComparisonState {
               deleted: event.deleted ?? 0,
             };
             this.scanning = false;
+            this.outcome = 'complete';
             this.syncId = '';
           }
         },
       );
     } catch (err: unknown) {
       if (this.syncId !== syncId) return;
-      const msg = String(err);
-      this.stopComparison();
-      if (!msg.includes('cancelled')) {
-        appState.showAlert('Comparison failed: ' + msg);
-      }
+      this.scanMessage = errorText(err);
+      this.outcome = 'failed';
+      this.leftStatuses.clear();
+      this.rightStatuses.clear();
+      this.flushNow();
       this.scanning = false;
-      this.syncId = '';
+      // Keep the id until the terminal channel event (if still queued) can
+      // distinguish a limited/cancelled scan from a generic invoke failure.
     }
   }
 
@@ -141,6 +162,23 @@ class ComparisonState {
     }
   }
 
+  retryComparison() {
+    if (this.lastComparison) {
+      return this.startComparison(...this.lastComparison, this.mode, this.lastExcludes);
+    }
+  }
+
+  cancelScan() {
+    if (this.syncId) cancelSync(this.syncId).catch(() => {});
+    this.syncId = '';
+    this.scanning = false;
+    this.outcome = 'cancelled';
+    this.scanMessage = 'Scan cancelled. Rescan before using comparison results.';
+    this.leftStatuses.clear();
+    this.rightStatuses.clear();
+    this.flushNow();
+  }
+
   stopComparison() {
     if (this.syncId) {
       cancelSync(this.syncId).catch(() => {});
@@ -148,6 +186,9 @@ class ComparisonState {
     }
     this.active = false;
     this.scanning = false;
+    this.scanProgress = null;
+    this.outcome = undefined;
+    this.scanMessage = '';
     this.leftStatuses = new SvelteMap();
     this.rightStatuses = new SvelteMap();
     this.leftDirectoryStatuses = new SvelteMap();

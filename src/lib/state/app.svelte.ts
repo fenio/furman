@@ -9,7 +9,9 @@ import { s3BookmarksState } from '#lib/state/s3bookmarks.svelte.js';
 import { sftpBookmarksState } from '#lib/state/sftpbookmarks.svelte.js';
 import { transfersState } from '#lib/state/transfers.svelte.js';
 import { statusState } from '#lib/state/status.svelte.js';
-import { s3SetBandwidthLimit, s3SetMultipartConfig } from '#lib/services/s3.js';
+import { s3SetBandwidthLimit, s3SetMultipartConfig, s3SetScanLimits } from '#lib/services/s3.js';
+import type { ScanLimits } from '#lib/types/index.js';
+import { DEFAULT_SCAN_LIMITS, scanLimitsFromConfig, validScanLimits } from '#lib/utils/scan.js';
 import type { ViewMode } from '#lib/types/index.js';
 import type { S3ConnectCallback } from '#lib/types/index.js';
 
@@ -95,6 +97,21 @@ class AppState {
   multipartThreshold = $state(8388608);
   multipartPartSize = $state(8388608);
   concurrentParts = $state(4);
+  s3ScanLimits = $state<ScanLimits>({ ...DEFAULT_SCAN_LIMITS });
+  private scanLimitsPending: Promise<void> = Promise.resolve();
+
+  setS3ScanLimit(key: keyof ScanLimits, value: number): Promise<void> {
+    this.scanLimitsPending = this.scanLimitsPending.then(async () => {
+      const limits = { ...this.s3ScanLimits, [key]: value };
+      if (!validScanLimits(limits)) { this.showAlert('Invalid scan limits. Use positive whole numbers within the displayed ranges.'); return; }
+      try {
+        await s3SetScanLimits(limits);
+        this.s3ScanLimits = limits;
+        await this.persistConfig();
+      } catch (error) { this.showAlert('Could not apply or save scan limits: ' + String(error)); }
+    });
+    return this.scanLimitsPending;
+  }
   /** Max remote file size (bytes) to download without confirmation. 0 = always ask, -1 = never ask. */
   remoteDownloadLimit = $state(104857600);
   sftpInactivityTimeout = $state(300);
@@ -405,6 +422,7 @@ class AppState {
     this.multipartThreshold = config.multipartThreshold ?? 8388608;
     this.multipartPartSize = config.multipartPartSize ?? 8388608;
     this.concurrentParts = config.concurrentParts ?? 4;
+    this.s3ScanLimits = scanLimitsFromConfig(config.s3ScanLimits);
     this.remoteDownloadLimit = config.remoteDownloadLimit ?? 104857600;
     this.sftpInactivityTimeout = config.sftpInactivityTimeout ?? 300;
     this.sftpKeepaliveInterval = config.sftpKeepaliveInterval ?? 30;
@@ -414,6 +432,7 @@ class AppState {
     this.terminalScrollback = config.terminalScrollback ?? 5000;
     s3SetBandwidthLimit(transfersState.bandwidthLimit).catch(() => {});
     s3SetMultipartConfig(this.multipartThreshold, this.multipartPartSize, this.concurrentParts).catch(() => {});
+    this.scanLimitsPending = s3SetScanLimits(this.s3ScanLimits).catch(error => this.showAlert('Could not apply saved scan limits; backend defaults remain active: ' + String(error)));
   }
 
   toggleTheme() {
@@ -452,6 +471,7 @@ class AppState {
       multipartThreshold: this.multipartThreshold,
       multipartPartSize: this.multipartPartSize,
       concurrentParts: this.concurrentParts,
+      s3ScanLimits: { ...this.s3ScanLimits },
       remoteDownloadLimit: this.remoteDownloadLimit,
       sftpInactivityTimeout: this.sftpInactivityTimeout,
       sftpKeepaliveInterval: this.sftpKeepaliveInterval,

@@ -14,18 +14,19 @@ use crate::models::{
     S3InventoryDestination, S3LifecycleRule, S3LifecycleTransition, S3MultipartUpload,
     S3NotificationConfiguration, S3NotificationRule, S3ObjectLegalHold, S3ObjectLockConfig,
     S3ObjectMetadata, S3ObjectProperties, S3ObjectRetention, S3ObjectVersion, S3PublicAccessBlock,
-    S3ReplicationConfiguration, S3ReplicationDestination, S3ReplicationRule, S3Tag, SearchDone,
+    S3ReplicationConfiguration, S3ReplicationDestination, S3ReplicationRule, S3Tag,
     SearchEvent, SearchResult, TransferCheckpoint,
 };
 
 use super::helpers::{
-    collect_local_files, copy_single_or_multipart, get_multipart_threshold, list_all_objects,
+    collect_local_files, copy_single_or_multipart, get_multipart_threshold, list_all_objects_bounded,
     s3_path, s3err, strip_s3_prefix, throttle, upload_file_multipart, COPY_MULTIPART_THRESHOLD,
     PREVIEW_MAX_SIZE,
 };
 
 use super::crypto::EncryptionConfig;
 use super::errors::s3_sdk_error;
+use super::scan::{self, ScanBudget};
 
 // ── S3Bucket model ──────────────────────────────────────────────────────────
 
@@ -128,15 +129,23 @@ impl S3Service {
 
     /// List objects in the bucket at the given prefix, returning a DirListing.
     pub async fn list_objects(&self, prefix: &str) -> Result<DirListing, FmError> {
+        let budget = ScanBudget::new();
+        let cancel = AtomicBool::new(false);
         let mut entries = Vec::new();
         let mut total_size = 0;
         let mut token = None;
         let mut seen = HashSet::new();
         loop {
-            let page = self
-                .list_objects_page(prefix, token.as_deref())
+            let page = budget
+                .request(&cancel, self.list_objects_page(prefix, token.as_deref()))
                 .await
-                .map_err(|error| s3err(format!("Listing page {} failed: {error}", seen.len() + 1)))?;
+                .map_err(|error| match error {
+                    FmError::ScanLimited(_) | FmError::ScanCancelled => error,
+                    _ => s3err(format!("Listing page {} failed: {error}", seen.len() + 1)),
+                })?;
+            for entry in &page.entries {
+                if entry.name != ".." { budget.object(&cancel)?; }
+            }
             entries.extend(page.entries);
             total_size += page.total_size;
             match page.next_token {
@@ -345,22 +354,26 @@ impl S3Service {
     ) -> Result<Option<TransferCheckpoint>, FmError> {
         use aws_sdk_s3::error::ProvideErrorMetadata;
         let dest = PathBuf::from(destination);
+        let budget = ScanBudget::new();
 
         // Resolve actual keys: for prefix keys (dirs), list all children
         let mut resolved: Vec<(String, u64)> = Vec::new();
         for raw_key in keys {
             let key = strip_s3_prefix(raw_key, &self.bucket);
             if key.ends_with('/') {
-                let children = list_all_objects(&self.client, &self.bucket, &key).await?;
+                let children = list_all_objects_bounded(&self.client, &self.bucket, &key, &budget, cancel,
+                    &|_| budget.transfer_progress(op_id, on_progress)).await?;
                 for (k, size, _) in children {
                     resolved.push((k, size));
                 }
             } else {
-                let size = self.head_object(&key).await?.size;
+                budget.object(cancel)?;
+                let size = budget.request(cancel, self.head_object(&key)).await?.size;
                 resolved.push((key, size));
             }
         }
 
+        budget.check(cancel)?;
         let mut files_total = resolved.len() as u32;
         let mut bytes_total: u64 = resolved.iter().map(|(_, s)| *s).sum();
         let mut bytes_done = checkpoint.map_or(0, |c| c.bytes_done);
@@ -1002,25 +1015,30 @@ impl S3Service {
         same_server: bool,
     ) -> Result<Option<TransferCheckpoint>, FmError> {
         let mut resolved: Vec<(String, u64, String)> = Vec::new();
+        let budget = ScanBudget::new();
         let mut destinations = std::collections::HashMap::new();
         for raw_key in src_keys {
             super::verification::check_cancelled(cancel)?;
             let key = strip_s3_prefix(raw_key, src_bucket);
             if key.ends_with('/') {
-                let children = list_all_objects(src_client, src_bucket, &key).await?;
+                let children = list_all_objects_bounded(src_client, src_bucket, &key, &budget, cancel,
+                    &|_| budget.transfer_progress(op_id, on_progress)).await?;
                 for (k, size, _) in children {
                     let dest =
                         super::verification::destination_key(&k, &key, source_prefix, dest_prefix)?;
                     resolved.push((k, size, dest));
                 }
             } else {
-                let head = src_client
-                    .head_object()
-                    .bucket(src_bucket)
-                    .key(&key)
-                    .send()
-                    .await
-                    .map_err(|e| s3_sdk_error("Read copy source metadata", &e))?;
+                budget.object(cancel)?;
+                let head = budget.request(cancel, async {
+                    src_client
+                        .head_object()
+                        .bucket(src_bucket)
+                        .key(&key)
+                        .send()
+                        .await
+                        .map_err(|e| s3_sdk_error("Read copy source metadata", &e))
+                }).await?;
                 let size = head.content_length().unwrap_or(0) as u64;
                 let dest =
                     super::verification::destination_key(&key, &key, source_prefix, dest_prefix)?;
@@ -1057,6 +1075,7 @@ impl S3Service {
         }
         let mut seen = HashSet::new();
         resolved.retain(|(key, _, _)| seen.insert(key.clone()));
+        budget.check(cancel)?;
 
         let mut files_total = resolved.len() as u32;
         let mut bytes_total: u64 = resolved.iter().map(|(_, s, _)| *s).sum();
@@ -1290,6 +1309,7 @@ impl S3Service {
         on_progress: &(dyn Fn(ProgressEvent) + Send + Sync),
     ) -> Result<(), FmError> {
         let mut to_delete: Vec<(String, u64)> = Vec::new();
+        let budget = ScanBudget::new();
         for raw_key in keys {
             let key = strip_s3_prefix(raw_key, &self.bucket);
             log::info!("delete_objects: raw={raw_key} stripped={key}");
@@ -1302,21 +1322,24 @@ impl S3Service {
                     files_done: 0,
                     files_total: 0,
                 });
-                let children = list_all_objects(&self.client, &self.bucket, &key).await?;
+                let children = list_all_objects_bounded(&self.client, &self.bucket, &key, &budget, cancel,
+                    &|_| budget.transfer_progress(op_id, on_progress)).await?;
                 for (k, size, _) in children {
                     to_delete.push((k, size));
                 }
             } else {
+                budget.object(cancel)?;
                 to_delete.push((key, 0));
             }
             if cancel.load(Ordering::Relaxed) {
                 return Err(FmError::Other("Operation cancelled".into()));
             }
         }
+        budget.check(cancel)?;
         if to_delete.is_empty() {
             return Err(s3err("No objects to delete"));
         }
-        log::info!("delete_objects: batch={to_delete:?}");
+        log::info!("delete_objects: preflight complete, {} objects", to_delete.len());
 
         let files_total = u32::try_from(to_delete.len()).unwrap_or(u32::MAX);
         let bytes_total: u64 = to_delete.iter().map(|(_, size)| size).sum();
@@ -1505,6 +1528,8 @@ impl S3Service {
 
     /// Rename an S3 prefix (folder) by copying all children to the new prefix, then deleting originals.
     async fn rename_prefix(&self, old_prefix: &str, new_name: &str) -> Result<(), FmError> {
+        let budget = ScanBudget::new();
+        let cancel = AtomicBool::new(false);
         let trimmed = old_prefix.trim_end_matches('/');
         let new_prefix = match trimmed.rfind('/') {
             Some(pos) => format!("{}/{}/", &trimmed[..pos], new_name),
@@ -1512,22 +1537,24 @@ impl S3Service {
         };
 
         // Check target prefix is empty
-        let check = self
-            .client
-            .list_objects_v2()
-            .bucket(&self.bucket)
-            .prefix(&new_prefix)
-            .max_keys(1)
-            .send()
-            .await
-            .map_err(|e| s3_sdk_error("ListObjectsV2 (check rename destination)", &e))?;
+        let check = budget.request(&cancel, async {
+            self.client
+                .list_objects_v2()
+                .bucket(&self.bucket)
+                .prefix(&new_prefix)
+                .max_keys(1)
+                .send()
+                .await
+                .map_err(|e| s3_sdk_error("ListObjectsV2 (check rename destination)", &e))
+        }).await?;
 
         if !check.contents().is_empty() {
             return Err(FmError::AlreadyExists(new_prefix));
         }
 
         // List all objects under old prefix
-        let children = list_all_objects(&self.client, &self.bucket, old_prefix).await?;
+        let children = list_all_objects_bounded(&self.client, &self.bucket, old_prefix, &budget, &cancel, &|_| {}).await?;
+        budget.check(&cancel)?;
         if children.is_empty() {
             return Ok(());
         }
@@ -1608,89 +1635,25 @@ impl S3Service {
         on_result: &(dyn Fn(SearchEvent) + Send + Sync),
     ) -> Result<(), FmError> {
         let matcher = crate::search_matcher::SearchMatcher::new(query, use_regex)?;
-        let mut continuation_token: Option<String> = None;
-        let mut total_found: u32 = 0;
-        let mut streamed: u32 = 0;
-        let mut page = 1;
-        const MAX_STREAMED: u32 = 1000;
-
-        loop {
-            if cancel.load(Ordering::Relaxed) {
-                on_result(SearchEvent::Done(SearchDone {
-                    total_found,
-                    cancelled: true,
+        let budget = ScanBudget::new();
+        let result = scan::walk_objects(&self.client, &self.bucket, prefix, &budget, cancel, |obj| {
+            let key = obj.key().ok_or_else(|| s3err("Incomplete search: object without key"))?;
+            let filename = key.rsplit('/').next().unwrap_or(key);
+            if !filename.is_empty() && matcher.is_match(filename) {
+                on_result(SearchEvent::Result(SearchResult {
+                    path: s3_path(&self.bucket, key), name: filename.into(),
+                    size: obj.size().unwrap_or(0).max(0) as u64, is_dir: false,
+                    line_number: None, snippet: None,
                 }));
-                return Ok(());
+                return Ok(budget.matched());
             }
-
-            let mut req = self
-                .client
-                .list_objects_v2()
-                .bucket(&self.bucket)
-                .prefix(prefix);
-
-            if let Some(token) = &continuation_token {
-                req = req.continuation_token(token);
-            }
-
-            let resp = req
-                .send()
-                .await
-                .map_err(|e| s3_sdk_error(&format!("ListObjectsV2 (search, page {page})"), &e))?;
-            page += 1;
-
-            for obj in resp.contents() {
-                if cancel.load(Ordering::Relaxed) {
-                    on_result(SearchEvent::Done(SearchDone {
-                        total_found,
-                        cancelled: true,
-                    }));
-                    return Ok(());
-                }
-
-                let key = match obj.key() {
-                    Some(k) => k,
-                    None => continue,
-                };
-
-                let filename = key.rsplit('/').next().unwrap_or(key);
-                if filename.is_empty() {
-                    continue;
-                }
-
-                if matcher.is_match(filename) {
-                    total_found += 1;
-                    if streamed < MAX_STREAMED {
-                        let size = obj.size().unwrap_or(0) as u64;
-                        let is_dir = key.ends_with('/');
-                        on_result(SearchEvent::Result(SearchResult {
-                            path: s3_path(&self.bucket, key),
-                            name: filename.to_string(),
-                            size,
-                            is_dir,
-                            line_number: None,
-                            snippet: None,
-                        }));
-                        streamed += 1;
-                    }
-                }
-            }
-
-            if resp.is_truncated() == Some(true) {
-                continuation_token = resp
-                    .next_continuation_token()
-                    .map(std::string::ToString::to_string);
-            } else {
-                break;
-            }
-        }
-
-        on_result(SearchEvent::Done(SearchDone {
-            total_found,
-            cancelled: false,
-        }));
-
-        Ok(())
+            Ok(false)
+        }, &|progress| on_result(SearchEvent::ScanProgress { progress })).await;
+        on_result(SearchEvent::ScanFinished {
+            outcome: scan::outcome(&result), progress: budget.progress(),
+            message: result.as_ref().err().map(ToString::to_string),
+        });
+        result
     }
 
     // ── File Editing & Preview ──────────────────────────────────────────
@@ -1892,6 +1855,9 @@ impl S3Service {
 
     /// List all versions of an S3 object.
     pub async fn list_object_versions(&self, key: &str) -> Result<Vec<S3ObjectVersion>, FmError> {
+        let budget = ScanBudget::new();
+        let cancel = AtomicBool::new(false);
+        let mut seen = HashSet::new();
         let actual_key = strip_s3_prefix(key, &self.bucket);
         let mut versions: Vec<S3ObjectVersion> = Vec::new();
         let mut key_marker: Option<String> = None;
@@ -1911,9 +1877,10 @@ impl S3Service {
                 req = req.version_id_marker(vm);
             }
 
-            let resp = req.send().await.map_err(|e| s3_sdk_error("List object versions", &e))?;
+            let resp = budget.request(&cancel, async { req.send().await.map_err(|e| s3_sdk_error("List object versions", &e)) }).await?;
 
             for v in resp.versions() {
+                budget.object(&cancel)?;
                 let vkey = v.key().unwrap_or_default();
                 if vkey != actual_key {
                     continue;
@@ -1933,6 +1900,7 @@ impl S3Service {
             }
 
             for dm in resp.delete_markers() {
+                budget.object(&cancel)?;
                 let dmkey = dm.key().unwrap_or_default();
                 if dmkey != actual_key {
                     continue;
@@ -1952,10 +1920,9 @@ impl S3Service {
             }
 
             if resp.is_truncated() == Some(true) {
-                key_marker = resp.next_key_marker().map(std::string::ToString::to_string);
-                version_id_marker = resp
-                    .next_version_id_marker()
-                    .map(std::string::ToString::to_string);
+                let (key, version) = scan::paired_cursor(&mut seen, resp.next_key_marker(), resp.next_version_id_marker())?;
+                key_marker = Some(key);
+                version_id_marker = version;
             } else {
                 break;
             }
@@ -2436,6 +2403,9 @@ impl S3Service {
         &self,
         prefix: Option<&str>,
     ) -> Result<Vec<S3MultipartUpload>, FmError> {
+        let budget = ScanBudget::new();
+        let cancel = AtomicBool::new(false);
+        let mut seen = HashSet::new();
         let mut uploads: Vec<S3MultipartUpload> = Vec::new();
         let mut key_marker: Option<String> = None;
         let mut upload_id_marker: Option<String> = None;
@@ -2453,9 +2423,10 @@ impl S3Service {
                 req = req.upload_id_marker(um);
             }
 
-            let resp = req.send().await.map_err(|e| s3_sdk_error("List multipart uploads", &e))?;
+            let resp = budget.request(&cancel, async { req.send().await.map_err(|e| s3_sdk_error("List multipart uploads", &e)) }).await?;
 
             for upload in resp.uploads() {
+                budget.object(&cancel)?;
                 let key = upload.key().unwrap_or_default().to_string();
                 let uid = upload.upload_id().unwrap_or_default().to_string();
                 let initiated = upload
@@ -2471,10 +2442,9 @@ impl S3Service {
             }
 
             if resp.is_truncated() == Some(true) {
-                key_marker = resp.next_key_marker().map(std::string::ToString::to_string);
-                upload_id_marker = resp
-                    .next_upload_id_marker()
-                    .map(std::string::ToString::to_string);
+                let (key, upload) = scan::paired_cursor(&mut seen, resp.next_key_marker(), resp.next_upload_id_marker())?;
+                key_marker = Some(key);
+                upload_id_marker = upload;
             } else {
                 break;
             }
@@ -3748,6 +3718,9 @@ impl S3Service {
     pub async fn list_inventory_configurations(
         &self,
     ) -> Result<Vec<S3InventoryConfiguration>, FmError> {
+        let budget = ScanBudget::new();
+        let cancel = AtomicBool::new(false);
+        let mut seen = HashSet::new();
         let mut all_configs = Vec::new();
         let mut continuation_token: Option<String> = None;
 
@@ -3761,12 +3734,13 @@ impl S3Service {
                 req = req.continuation_token(token);
             }
 
-            let resp = req.send().await;
+            let resp = budget.request(&cancel, async { Ok(req.send().await) }).await?;
 
             match resp {
                 Ok(r) => {
                     if let Some(configs) = r.inventory_configuration_list {
                         for ic in &configs {
+                            budget.object(&cancel)?;
                             let id = ic.id().to_string();
                             let enabled = ic.is_enabled();
 
@@ -3820,7 +3794,10 @@ impl S3Service {
                     }
 
                     if r.is_truncated.unwrap_or(false) {
-                        continuation_token = r.next_continuation_token;
+                        let next = r.next_continuation_token.filter(|t| !t.is_empty())
+                            .ok_or_else(|| s3err("Incomplete inventory listing: missing continuation token"))?;
+                        if !seen.insert(next.clone()) { return Err(s3err("Incomplete inventory listing: cyclic continuation token")); }
+                        continuation_token = Some(next);
                     } else {
                         break;
                     }
@@ -3828,9 +3805,9 @@ impl S3Service {
                 Err(e) => {
                     let err_str = e.to_string();
                     let err_dbg = format!("{e:?}");
-                    if err_str.contains("NoSuchConfiguration")
+                    if budget.progress().requests == 1 && (err_str.contains("NoSuchConfiguration")
                         || err_dbg.contains("NoSuchConfiguration")
-                        || err_dbg.contains("StatusCode(404)")
+                        || err_dbg.contains("StatusCode(404)"))
                     {
                         return Ok(vec![]);
                     }

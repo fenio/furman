@@ -90,49 +90,16 @@ pub async fn list_all_objects(
     bucket: &str,
     prefix: &str,
 ) -> Result<Vec<(String, u64, i64)>, FmError> {
-    let mut results = Vec::new();
-    let mut continuation_token: Option<String> = None;
-    let mut page = 1;
+    let budget = super::scan::ScanBudget::new();
+    list_all_objects_bounded(client, bucket, prefix, &budget, &AtomicBool::new(false), &|_| {}).await
+}
 
-    loop {
-        let mut req = client.list_objects_v2().bucket(bucket).prefix(prefix);
-
-        if let Some(token) = &continuation_token {
-            req = req.continuation_token(token);
-        }
-
-        let resp = req.send().await.map_err(|e| {
-            s3_sdk_error(
-                &format!("ListObjectsV2 (recursive listing, page {page})"),
-                &e,
-            )
-        })?;
-        page += 1;
-
-        for obj in resp.contents() {
-            let key = obj.key().unwrap_or_default().to_string();
-            let size = obj.size().unwrap_or(0) as u64;
-            let modified = obj
-                .last_modified()
-                .and_then(|t| t.to_millis().ok())
-                .unwrap_or(0);
-            results.push((key, size, modified));
-        }
-
-        if resp.is_truncated() == Some(true) {
-            let next = resp
-                .next_continuation_token()
-                .ok_or_else(|| s3err("Truncated listing without continuation token"))?;
-            if continuation_token.as_deref() == Some(next) {
-                return Err(s3err("Listing repeated its continuation token"));
-            }
-            continuation_token = Some(next.to_owned());
-        } else {
-            break;
-        }
-    }
-
-    Ok(results)
+pub async fn list_all_objects_bounded(
+    client: &S3Client, bucket: &str, prefix: &str, budget: &super::scan::ScanBudget,
+    cancel: &AtomicBool, on_progress: &(dyn Fn(super::scan::ScanProgress) + Send + Sync),
+) -> Result<Vec<(String, u64, i64)>, FmError> {
+    Ok(super::scan::collect_objects(client, bucket, prefix, budget, cancel, on_progress).await?
+        .into_iter().map(|o| (o.key, o.size, o.modified)).collect())
 }
 
 // ── Multipart upload helpers ────────────────────────────────────────────────
