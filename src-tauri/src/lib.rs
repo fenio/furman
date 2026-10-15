@@ -68,6 +68,7 @@ pub fn run() {
         .manage(TerminalState(Mutex::new(HashMap::new())))
         .manage(S3State(Mutex::new(HashMap::new())))
         .manage(commands::aws::AwsSsoState::default())
+        .manage(commands::comparison_presets::ComparisonPresetState::default())
         .manage(s3::writes::WriteState::default())
         .manage(SftpState::default())
         .manage(SearchState(Mutex::new(HashMap::new())))
@@ -285,6 +286,8 @@ pub fn run() {
             commands::aws::aws_shared_profiles,
             commands::aws::aws_sso_login,
             commands::aws::aws_sso_cancel,
+            commands::comparison_presets::comparison_presets_load,
+            commands::comparison_presets::comparison_presets_save,
             commands::s3::s3_activity_snapshot,
             commands::s3::s3_activity_clear,
             commands::s3::s3_connect,

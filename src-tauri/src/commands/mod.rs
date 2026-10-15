@@ -1,5 +1,6 @@
 pub mod archive;
 pub mod aws;
+pub mod comparison_presets;
 pub mod cloudfront;
 pub mod comparison;
 pub mod directory;

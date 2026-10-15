@@ -3,6 +3,7 @@
   import type { PanelBackend } from '#lib/types/index.js';
   import { appState } from '#lib/state/app.svelte.js';
   import { canComparePanes, defaultComparisonMode, parseComparisonExcludes, type ComparisonMode } from '#lib/utils/comparison-options.js';
+  import ComparisonPresets from './ComparisonPresets.svelte';
 
   interface Props {
     leftPath: string;
@@ -39,6 +40,7 @@
       {#if !supported}
         <p role="alert">Comparison currently supports local folders and S3 buckets/prefixes, not SFTP or archives.</p>
       {/if}
+      <ComparisonPresets {mode} {excludeText} onApply={(nextMode, exclusions) => { mode = nextMode; excludeText = exclusions.join(', '); }} />
       <fieldset>
         <legend>Comparison method</legend>
         <label><input type="radio" bind:group={mode} value="sha256" /> Contents — SHA-256</label>

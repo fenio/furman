@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { onMount, onDestroy } from 'svelte';
+  import { onDestroy } from 'svelte';
   import { SvelteSet } from 'svelte/reactivity';
   import { syncDiff, cancelSync } from '#lib/services/tauri.js';
   import { appState } from '#lib/state/app.svelte.js';
@@ -8,6 +8,9 @@
   import { canUseScan } from '#lib/utils/scan.js';
   import { errorText } from '#lib/utils/error-report.js';
   import ScanStatus from './ScanStatus.svelte';
+  import ComparisonPresets from './ComparisonPresets.svelte';
+  import type { ComparisonMode } from '#lib/utils/comparison-options.js';
+  import ErrorNotice from './ErrorNotice.svelte';
 
   interface Props {
     sourceBackend: PanelBackend;
@@ -35,6 +38,7 @@
   let scanning = $state(false);
   let scanComplete = $state(false);
   let scanError = $state('');
+  let optionsSaveError = $state<unknown>(null);
   let outcome = $state<ScanOutcome | null>(null);
   let scanProgress = $state<ScanProgress | null>(null);
   let pendingEntries: SyncEntry[] = [];
@@ -78,10 +82,6 @@
     return allEntries.filter((e) => e.status === filter);
   });
 
-  onMount(() => {
-    startScan();
-  });
-
   onDestroy(() => {
     clearPendingEntries();
     if (currentSyncId) {
@@ -122,7 +122,8 @@
     // Persist exclude patterns
     if (appState.syncExcludePatterns !== excludeText) {
       appState.syncExcludePatterns = excludeText;
-      appState.persistConfig();
+      optionsSaveError = null;
+      appState.persistConfig().catch((error: unknown) => { optionsSaveError = error; });
     }
 
     const handleEvent = (event: SyncEvent) => {
@@ -187,6 +188,12 @@
     scanError = 'Options changed or scan cancelled. Rescan before syncing.';
   }
 
+  function applyPreset(mode: ComparisonMode, exclusions: string[]) {
+    invalidateScan();
+    compareMode = mode;
+    excludeText = exclusions.join(', ');
+  }
+
   function toggleSelection(path: string) {
     if (selectedPaths.has(path)) {
       selectedPaths.delete(path);
@@ -218,6 +225,13 @@
   }
 
   function handleKeydown(e: KeyboardEvent) {
+    // Preset controls own their keyboard interaction. Enter/Space must never
+    // bubble into execution or alter the scan selection.
+    if ((e.target as HTMLElement | null)?.closest('[data-comparison-presets]')) {
+      if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); onClose(); }
+      return;
+    }
+    if (e.key !== 'Escape' && (e.target as HTMLElement | null)?.closest('button, input, select, textarea, summary')) return;
     // Don't intercept keys when typing in the exclude input
     if (excludeInput && document.activeElement === excludeInput) {
       if (e.key === 'Escape') {
@@ -337,6 +351,10 @@
   <div class="dialog-box">
     <div class="dialog-title">Sync: {sourcePath} &rarr; {destPath}</div>
     <div class="dialog-body">
+      <div class="sync-roots"><strong>Source:</strong> {sourcePath} ({sourceBackend})<br /><strong>Destination:</strong> {destPath} ({destBackend})</div>
+      <ComparisonPresets mode={compareMode} {excludeText} onApply={applyPreset} />
+      <p class="hint">Review source → destination and options, then Compare. Opening this dialog or applying a preset does not start a scan. Only a complete fresh comparison can enable Sync; existing write previews and approvals still apply.</p>
+      {#if optionsSaveError}<ErrorNotice error={optionsSaveError} context="Could not save default Sync exclusions; this scan still uses the displayed options" />{/if}
       <!-- Options row -->
       <div class="options-row">
         <div class="option-group">
@@ -363,7 +381,7 @@
             SHA-256 <span class="hint">(reads all contents)</span>
           </label>
         </div>
-        <button class="rescan-btn" onclick={startScan} disabled={scanning}>Rescan</button>
+        <button class="rescan-btn" onclick={startScan} disabled={scanning}>{outcome ? 'Rescan' : 'Compare'}</button>
       </div>
 
       <!-- Filter buttons -->
@@ -515,6 +533,8 @@
     min-height: 0;
     overflow-y: auto;
   }
+
+  .sync-roots { font-size: 12px; overflow-wrap: anywhere; flex-shrink: 0; }
 
   /* Options row */
   .options-row {
