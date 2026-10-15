@@ -409,6 +409,21 @@ async fn encrypted_reads_versions_and_rekeyed_copies_work() {
         assert!(plain.get_object().bucket(&dest_bucket).key(format!("guarded/{}", key.rsplit('/').next().unwrap())).send().await.is_err());
     }
 
+    // Metadata copies retain source/destination SSE-C headers, including on
+    // multipart copies, but do not encrypt a plain object on a keyed connection.
+    for key in ["folder/file", "large", "plain-src"] {
+        let before = service.get_object_metadata(key).await.unwrap();
+        service.put_object_metadata_checked(key, Some("text/plain"), None, Some("max-age=60"), None, &before.custom, before.revision.as_deref()).await.unwrap();
+        let head = source.head_object().bucket(&bucket).key(key).send().await.unwrap();
+        assert_eq!(head.content_type(), Some("text/plain"));
+        if key == "plain-src" {
+            assert!(head.sse_customer_algorithm().is_none());
+            plain.get_object().bucket(&bucket).key(key).send().await.unwrap();
+        } else {
+            assert_eq!(head.sse_customer_algorithm(), Some("AES256"));
+            assert!(plain.get_object().bucket(&bucket).key(key).send().await.is_err());
+        }
+    }
     service
         .restore_version("folder/file", &old.version_id)
         .await

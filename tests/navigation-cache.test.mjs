@@ -112,5 +112,10 @@ test('actual S3 service invalidates before writes and again on rejection, withou
     assert.ok(cache.revision > during);
     assert.equal(cache.put('scope', [row('stale')], original), false);
     assert.equal(cache.put('scope', [row('stale')], during), false);
+    let argumentsSent;
+    globalThis.__s3ServiceCacheTest.invoke = (_command, args) => { argumentsSent = args; return Promise.resolve(); };
+    await service.s3PutObjectMetadata('connection', 'key', 'application/json', null, null, null, { keep: 'value' }, 'loaded-revision');
+    assert.equal(argumentsSent.expectedRevision, 'loaded-revision');
+    assert.deepEqual(argumentsSent.custom, { keep: 'value' });
   } finally { delete globalThis.__s3ServiceCacheTest; }
 });

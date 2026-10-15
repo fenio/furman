@@ -1166,13 +1166,7 @@
     metadataLoading = true;
     metadataMessage = '';
     try {
-      objectMetadata = await s3GetObjectMetadata(s3ConnectionId, path);
-      metaContentType = objectMetadata.content_type ?? '';
-      metaContentDisposition = objectMetadata.content_disposition ?? '';
-      metaCacheControl = objectMetadata.cache_control ?? '';
-      metaContentEncoding = objectMetadata.content_encoding ?? '';
-      metaCustom = Object.entries(objectMetadata.custom).map(([key, value]) => ({ key, value }));
-      metaOriginal = JSON.stringify({ ct: metaContentType, cd: metaContentDisposition, cc: metaCacheControl, ce: metaContentEncoding, custom: metaCustom });
+      applyLoadedMetadata(await s3GetObjectMetadata(s3ConnectionId, path));
     } catch (err: unknown) {
       metadataMessage = 'Error: ' + String(err);
     } finally {
@@ -1184,6 +1178,16 @@
     metaCustom = [...metaCustom, { key: '', value: '' }];
   }
 
+  function applyLoadedMetadata(metadata: S3ObjectMetadata) {
+    objectMetadata = metadata;
+    metaContentType = metadata.content_type ?? '';
+    metaContentDisposition = metadata.content_disposition ?? '';
+    metaCacheControl = metadata.cache_control ?? '';
+    metaContentEncoding = metadata.content_encoding ?? '';
+    metaCustom = Object.entries(metadata.custom).map(([key, value]) => ({ key, value }));
+    metaOriginal = JSON.stringify({ ct: metaContentType, cd: metaContentDisposition, cc: metaCacheControl, ce: metaContentEncoding, custom: metaCustom });
+  }
+
   function removeCustomMeta(index: number) {
     metaCustom = metaCustom.filter((_, i) => i !== index);
   }
@@ -1192,6 +1196,7 @@
     savingMetadata = true;
     metadataMessage = '';
     try {
+      if (!objectMetadata?.revision) throw new Error('Reload metadata before saving; no loaded revision is available.');
       const customMap: Record<string, string> = {};
       for (const m of metaCustom) {
         if (m.key.trim()) customMap[m.key.trim()] = m.value;
@@ -1203,11 +1208,15 @@
         metaCacheControl || null,
         metaContentEncoding || null,
         customMap,
+        objectMetadata.revision,
       );
-      metaOriginal = JSON.stringify({ ct: metaContentType, cd: metaContentDisposition, cc: metaCacheControl, ce: metaContentEncoding, custom: metaCustom });
+      // Obtain a fresh revision after self-copy. If this read fails, preserve
+      // the old revision so a retry cannot silently approve stale changes.
+      applyLoadedMetadata(await s3GetObjectMetadata(s3ConnectionId, path));
       metadataMessage = 'Metadata saved';
     } catch (err: unknown) {
-      metadataMessage = 'Error: ' + String(err);
+      metadataMessage = 'Error: ' + String(err) + '\nIf a write was sent, its outcome may be uncertain. Reload metadata before retrying.';
+      if (objectMetadata) objectMetadata.revision = null;
     } finally {
       savingMetadata = false;
     }
@@ -2045,48 +2054,51 @@
               {#if metadataLoading}
                 <div class="loading">Loading metadata...</div>
               {:else if metadataMessage && !objectMetadata}
-                <div class="error">{metadataMessage}</div>
+                <div class="error"><ErrorNotice error={metadataMessage} /></div>
               {:else}
                 <div class="tag-editor">
                   <label class="meta-field">
                     <span class="meta-label">Content-Type</span>
-                    <input class="meta-input" type="text" bind:value={metaContentType} placeholder="application/octet-stream" />
+                    <input class="meta-input" type="text" bind:value={metaContentType} placeholder="application/octet-stream" list="metadata-mime-types" disabled={savingMetadata} />
+                    <datalist id="metadata-mime-types">{#each ['application/octet-stream', 'application/json', 'application/pdf', 'text/plain', 'text/html', 'text/css', 'text/javascript', 'image/png', 'image/jpeg', 'image/svg+xml'] as mime (mime)}<option value={mime}></option>{/each}</datalist>
                   </label>
                   <label class="meta-field">
                     <span class="meta-label">Content-Disposition</span>
-                    <input class="meta-input" type="text" bind:value={metaContentDisposition} placeholder="inline" />
+                    <input class="meta-input" type="text" bind:value={metaContentDisposition} placeholder="inline" disabled={savingMetadata} />
                   </label>
                   <label class="meta-field">
                     <span class="meta-label">Cache-Control</span>
-                    <input class="meta-input" type="text" bind:value={metaCacheControl} placeholder="max-age=3600" />
+                    <input class="meta-input" type="text" bind:value={metaCacheControl} placeholder="max-age=3600" disabled={savingMetadata} />
                   </label>
                   <label class="meta-field">
                     <span class="meta-label">Content-Encoding</span>
-                    <input class="meta-input" type="text" bind:value={metaContentEncoding} placeholder="gzip" />
+                    <input class="meta-input" type="text" bind:value={metaContentEncoding} placeholder="gzip" disabled={savingMetadata} />
                   </label>
                   <div class="tag-header">
                     <span class="meta-label">Custom Metadata</span>
-                    <button class="version-action-btn" onclick={addCustomMeta}>+ Add</button>
+                    <button class="version-action-btn" onclick={addCustomMeta} disabled={savingMetadata}>+ Add</button>
                   </div>
                   {#each metaCustom as meta, i (i)}
                     <div class="tag-row">
-                      <input class="tag-input" type="text" bind:value={meta.key} placeholder="key" />
-                      <input class="tag-input" type="text" bind:value={meta.value} placeholder="value" />
-                      <button class="version-action-btn danger" onclick={() => removeCustomMeta(i)} title="Remove">&times;</button>
+                      <input class="tag-input" type="text" bind:value={meta.key} placeholder="key" disabled={savingMetadata} />
+                      <input class="tag-input" type="text" bind:value={meta.value} placeholder="value" disabled={savingMetadata} />
+                      <button class="version-action-btn danger" onclick={() => removeCustomMeta(i)} title="Remove" disabled={savingMetadata}>&times;</button>
                     </div>
                   {/each}
                   <div class="tag-actions">
                     {#if metadataDirty}
-                      <button class="dialog-btn apply-btn" onclick={saveMetadata} disabled={savingMetadata}>
+                      <button class="dialog-btn apply-btn" onclick={saveMetadata} disabled={savingMetadata || !objectMetadata?.revision}>
                         {savingMetadata ? 'Saving...' : 'Save'}
                       </button>
                     {/if}
                     {#if metadataMessage}
-                      <span class="sc-message" class:sc-error={metadataMessage.startsWith('Error')}>{metadataMessage}</span>
+                      {#if metadataMessage.startsWith('Error')}<ErrorNotice error={metadataMessage} />{:else}<span class="sc-message">{metadataMessage}</span>{/if}
                     {/if}
                   </div>
                 </div>
               {/if}
+              <p>Metadata edits copy the object conditionally and preserve readable attributes. Large objects use server-side multipart copy. Extra ACL/tag permissions may be required; unsupported conditions or unpreservable encryption fail without an unguarded fallback. ETags cannot guard every metadata-only race.</p>
+              <button class="version-action-btn" disabled={savingMetadata || metadataLoading} onclick={() => { objectMetadata = null; void loadMetadata(); }}>Reload metadata (discard edits)</button>
             </div>
           {/if}
 

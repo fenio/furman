@@ -8,10 +8,11 @@ destination objects, not loaded panel rows. Sync retains its selected relative
 paths and exclusions; SHA-256 comparison values are rechecked, never interpreted
 as S3 ETags. Ordinary Copy is not automatically destination-verified; Sync is.
 
-This is **not protection for every write API**. Moves, renames, metadata edits,
+This is **not protection for every write API**. Moves, renames,
 folder creation, SFTP/archive staging, OS drag/drop upload handlers, legacy
 upload/copy commands, and client-side password-encrypted uploads retain their
-existing behavior. SSE-C is supported by the guarded path: original connection
+existing behavior. Metadata edits have a [separate conditional-copy contract](s3-metadata-compatibility.md),
+not the content-write preview/policy workflow described here. SSE-C is supported by the guarded path: original connection
 clients/interceptors are preserved, with independent source/destination keys.
 Keychain storage and HTTPS-only SSE-C transport are unchanged.
 
@@ -63,6 +64,8 @@ creation response may leave an unknown incomplete upload. Inspect the bucket's
 incomplete uploads after uncertain outcomes.
 
 These guarantees rely on providers correctly enforcing S3 condition headers.
+Known unsupported Garage configurations are now blocked by a native safety gate;
+see [provider restrictions](s3-metadata-compatibility.md#known-unsupported-destination-conditions).
 Furman does not probe with scratch writes during read-only preview and cannot
 prove that an arbitrary provider will not silently ignore protocol semantics.
 Provider integration tests exercise conflicting creates/replacements; mocked

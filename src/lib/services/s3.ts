@@ -33,6 +33,7 @@ export interface WriteSelection {
   expected_destination?: { type: 'missing' } | { type: 'match'; etag: string };
 }
 export interface WritePreview {
+  guard_supported: boolean;
   id: string; bucket: string; total: number; existing: number; unguardable: number;
   bytes: number; expires_seconds: number; relay: boolean;
   entries: { source: string; key: string; size: number; exists: boolean }[];
@@ -79,6 +80,7 @@ export async function s3Connect(
   proxyUsername?: string,
   proxyPassword?: string,
   sseCustomerKey?: string,
+  provider?: string,
 ): Promise<void> {
   await invoke('s3_connect', {
     id,
@@ -99,6 +101,7 @@ export async function s3Connect(
     proxyUsername: proxyUsername || null,
     proxyPassword: proxyPassword || null,
     sseCustomerKey: sseCustomerKey ?? null,
+    provider: provider ?? null,
   });
 }
 
@@ -402,6 +405,7 @@ export async function s3PutObjectMetadata(
   cacheControl: string | null,
   contentEncoding: string | null,
   custom: Record<string, string>,
+  expectedRevision?: string,
 ): Promise<void> {
   await invoke('s3_put_object_metadata', {
     id,
@@ -411,6 +415,7 @@ export async function s3PutObjectMetadata(
     cacheControl: cacheControl || null,
     contentEncoding: contentEncoding || null,
     custom,
+    expectedRevision: expectedRevision ?? null,
   });
 }
 

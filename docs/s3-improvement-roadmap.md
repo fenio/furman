@@ -17,14 +17,15 @@ separate PR, with provider-specific behavior and safety tested explicitly.
    and fail-closed behavior on providers without the needed conditional writes.
    See [the guarded content-write contract](s3-guarded-writes.md) for supported
    entry points, costs, and explicit exclusions.
-4. **Bounded navigation cache and diagnostics — current PR.** Per-profile/revision cache with
+4. **Bounded navigation cache and diagnostics — merged in [#358](https://github.com/fenio/furman/pull/358).** Per-profile/revision cache with
    invalidation, visible freshness, manual refresh, and no stale destructive
    preflight. Add an activity inspector with operation, duration, status, request
    IDs, retries, counts, and a safe diagnostic export.
    See [the cache and activity contract](s3-cache-activity.md).
-5. **Metadata and provider compatibility.** Attribute-preserving metadata edits
+5. **Metadata and provider compatibility — current PR.** Attribute-preserving metadata edits
    above 5 GiB, MIME inference, conflict guards, tested checksum policies, and
    single-delete fallback only for recognized unsupported bulk-delete errors.
+   See [the metadata and compatibility contract](s3-metadata-compatibility.md).
 6. **AWS SSO usability.** Profile discovery, clear expired-session states, and an
    explicit AWS CLI v2 sign-in action without storing SSO tokens ourselves.
 7. **Saved jobs, then opt-in scheduling.** Start with reusable comparison/sync

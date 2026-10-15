@@ -5,7 +5,7 @@ use crate::models::FmError;
 
 pub fn s3_sdk_error<E>(operation: &str, error: &SdkError<E>) -> FmError
 where
-    E: ProvideErrorMetadata,
+    E: ProvideErrorMetadata + std::error::Error + 'static,
 {
     let reason = match error {
         SdkError::ResponseError(_) => "The server returned an incomplete or invalid S3 response. A dropped connection, malformed XML, or a proxy/gateway error can cause this.",
@@ -17,6 +17,19 @@ where
         _ => "The S3 request failed.",
     };
     let mut details = vec![format!("{operation}: {reason}")];
+    // Recognize our own static signing safety failure without dumping arbitrary
+    // SDK source chains, request headers, credentials or transport Debug values.
+    let mut source: Option<&(dyn std::error::Error + 'static)> = Some(error);
+    for _ in 0..16 {
+        let Some(current) = source else {
+            break;
+        };
+        if current.to_string().contains(super::compat::CONDITION_ERROR) {
+            details.push(super::compat::CONDITION_ERROR.into());
+            break;
+        }
+        source = current.source();
+    }
     if let Some(response) = error.raw_response() {
         details.push(format!("HTTP {}", response.status().as_u16()));
         // Only allowlisted diagnostic headers; never include authorization, URLs,
@@ -103,7 +116,9 @@ mod tests {
             let mut raw = response(502);
             raw.headers_mut()
                 .insert("x-amz-request-id", "listing-request");
-            let (http, _) = aws_smithy_http_client::test_util::capture_request(Some(raw.try_into_http1x().unwrap()));
+            let (http, _) = aws_smithy_http_client::test_util::capture_request(Some(
+                raw.try_into_http1x().unwrap(),
+            ));
             let client = aws_sdk_s3::Client::from_conf(
                 aws_sdk_s3::Config::builder()
                     .behavior_version_latest()

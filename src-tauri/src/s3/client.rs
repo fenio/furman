@@ -206,6 +206,9 @@ pub async fn build_s3_client(
     };
 
     let mut s3_config_builder = aws_sdk_s3::config::Builder::from(&final_config);
+    if final_config.endpoint_url().is_some_and(|endpoint| !endpoint.is_empty()) {
+        s3_config_builder = s3_config_builder.request_checksum_calculation(aws_sdk_s3::config::RequestChecksumCalculation::WhenRequired);
+    }
     if endpoint.is_some_and(|ep| !ep.is_empty()) {
         s3_config_builder = s3_config_builder.force_path_style(true);
     }
@@ -213,5 +216,6 @@ pub async fn build_s3_client(
         s3_config_builder.set_accelerate(Some(true));
     }
     s3_config_builder = s3_config_builder.interceptor(super::activity::interceptor());
-    Ok((S3Client::from_conf(s3_config_builder.build()), final_config))
+    let client = super::compat::configure_conditions(S3Client::from_conf(s3_config_builder.build()), None, access_key);
+    Ok((client, final_config))
 }

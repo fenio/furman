@@ -476,6 +476,46 @@ async fn inaccessible_destinations_are_not_treated_as_missing() {
     assert_eq!(http.actual_requests().count(), 1);
 }
 
+#[tokio::test]
+async fn compatible_checksum_policy_does_not_weaken_single_or_multipart_guards() {
+    for size in [3, 9 * 1024 * 1024] {
+        let small = [(404, &[][..], ""), (200, &[][..], "")];
+        let large = [(404, &[][..], ""), (200, &[][..], "<InitiateMultipartUploadResult><UploadId>upload</UploadId></InitiateMultipartUploadResult>"),
+            (200, &[("etag", "\"part1\"")][..], ""), (200, &[("etag", "\"part2\"")][..], ""),
+            (200, &[][..], "<CompleteMultipartUploadResult><ETag>\"done\"</ETag></CompleteMultipartUploadResult>")];
+        let (mut endpoint, http) = endpoint(if size == 3 { &small } else { &large });
+        endpoint.client = Client::from_conf(
+            endpoint
+                .client
+                .config()
+                .to_builder()
+                .request_checksum_calculation(
+                    aws_sdk_s3::config::RequestChecksumCalculation::WhenRequired,
+                )
+                .build(),
+        );
+        let (plan, _dir) = local_plan(endpoint, size).await;
+        execute(plan, WritePolicy::CreateOnly, false).await.unwrap();
+        let requests: Vec<_> = http.actual_requests().collect();
+        for request in &requests {
+            assert!(request
+                .headers()
+                .get("x-amz-sdk-checksum-algorithm")
+                .is_none());
+            assert!(request.headers().get("x-amz-checksum-crc32c").is_none());
+        }
+        assert_eq!(
+            requests
+                .last()
+                .unwrap()
+                .headers()
+                .get("if-none-match")
+                .unwrap(),
+            "*"
+        );
+    }
+}
+
 #[test]
 fn local_preview_rejects_symlinks_and_special_files() {
     use nix::{sys::stat::Mode, unistd::mkfifo};

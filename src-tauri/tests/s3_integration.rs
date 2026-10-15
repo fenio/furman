@@ -1,6 +1,29 @@
 mod common;
 
 #[tokio::test]
+async fn metadata_edit_large_preserves_attributes_and_rejects_stale_revisions() {
+    use std::collections::HashMap;
+    let ctx = common::TestContext::new().await;
+    let key = "folder/metadata +?.json";
+    let bytes = vec![0x61; 9 * 1024 * 1024];
+    ctx.client.put_object().bucket(&ctx.bucket).key(key).body(aws_sdk_s3::primitives::ByteStream::from(bytes.clone()))
+        .content_type("application/octet-stream").content_language("fr").cache_control("old")
+        .metadata("existing", "keep").send().await.unwrap();
+    ctx.service.put_object_tags(key, &[app_lib::models::S3Tag { key: "purpose".into(), value: "metadata test + =".into() }]).await.unwrap();
+    let before = ctx.service.get_object_metadata(key).await.unwrap();
+    ctx.service.put_object_metadata_checked(key, Some("application/json"), None, Some("new"), None, &before.custom, before.revision.as_deref()).await.unwrap();
+    let head = ctx.client.head_object().bucket(&ctx.bucket).key(key).send().await.unwrap();
+    assert_eq!(head.content_type(), Some("application/json")); assert_eq!(head.content_language(), Some("fr")); assert_eq!(head.cache_control(), Some("new"));
+    assert_eq!(head.metadata().unwrap().get("existing").map(String::as_str), Some("keep"));
+    assert_eq!(ctx.service.get_object_tags(key).await.unwrap()[0].value, "metadata test + =");
+    let body = ctx.client.get_object().bucket(&ctx.bucket).key(key).send().await.unwrap().body.collect().await.unwrap().into_bytes();
+    assert_eq!(&body[..], &bytes);
+    assert!(ctx.service.put_object_metadata_checked(key, Some("text/plain"), None, None, None, &HashMap::new(), before.revision.as_deref()).await.is_err());
+    assert_eq!(ctx.client.head_object().bucket(&ctx.bucket).key(key).send().await.unwrap().content_type(), Some("application/json"));
+    ctx.cleanup().await;
+}
+
+#[tokio::test]
 async fn guarded_writes_preserve_conflicting_destination_payloads() {
     use app_lib::s3::writes::{prepare, WriteEndpoint, WritePolicy, WriteSelection};
     use std::sync::{Arc, atomic::AtomicBool};
@@ -28,6 +51,12 @@ async fn guarded_writes_preserve_conflicting_destination_payloads() {
     // accept the condition while overwriting a conflicting object above.
     if result.is_ok() { assert_eq!(read().await, b"approved"); }
     else { assert_eq!(read().await, b"concurrent-replace"); }
+    if !app_lib::s3::compat::conditional_writes_supported(&ctx.client) {
+        let plan = preview().await.unwrap();
+        assert!(!plan.preview().guard_supported);
+        plan.execute(WritePolicy::Overwrite, true, true, "explicit-unguarded", Arc::new(AtomicBool::new(false)), &|_| {}).await.unwrap();
+        assert_eq!(read().await, b"approved");
+    }
     ctx.cleanup().await;
 }
 
@@ -762,7 +791,7 @@ async fn test_object_metadata_roundtrip() {
     let mut custom = std::collections::HashMap::new();
     custom.insert("x-custom-key".to_string(), "custom-value".to_string());
 
-    ctx.service
+    let result = ctx.service
         .put_object_metadata(
             "meta.txt",
             Some("text/plain"),
@@ -771,8 +800,14 @@ async fn test_object_metadata_roundtrip() {
             None,
             &custom,
         )
-        .await
-        .expect("put_object_metadata failed");
+        .await;
+    if !app_lib::s3::compat::conditional_writes_supported(&ctx.client) {
+        assert!(result.err().unwrap().to_string().contains("Conditional destination writes are disabled"));
+        assert!(ctx.service.get_object_metadata("meta.txt").await.unwrap().custom.is_empty());
+        ctx.cleanup().await;
+        return;
+    }
+    result.expect("put_object_metadata failed");
 
     let meta = ctx
         .service
@@ -798,10 +833,16 @@ async fn test_object_metadata_content_type() {
     ctx.put_object("image.png", b"\x89PNG\r\n\x1a\n").await;
 
     let empty = std::collections::HashMap::new();
-    ctx.service
+    let result = ctx.service
         .put_object_metadata("image.png", Some("image/png"), None, None, None, &empty)
-        .await
-        .expect("put content-type failed");
+        .await;
+    if !app_lib::s3::compat::conditional_writes_supported(&ctx.client) {
+        assert!(result.err().unwrap().to_string().contains("Conditional destination writes are disabled"));
+        assert_ne!(ctx.service.get_object_metadata("image.png").await.unwrap().content_type.as_deref(), Some("image/png"));
+        ctx.cleanup().await;
+        return;
+    }
+    result.expect("put content-type failed");
 
     let meta = ctx
         .service
@@ -1336,6 +1377,7 @@ async fn test_upload_files() {
     assert!(result.is_none());
 
     // Verify objects exist in S3
+    assert_eq!(ctx.service.get_object_metadata("uploaded/up1.txt").await.unwrap().content_type.as_deref(), Some("text/plain"));
     ctx.service
         .head_object("uploaded/up1.txt")
         .await

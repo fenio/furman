@@ -304,6 +304,8 @@ pub struct S3BucketEncryption {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct S3ObjectMetadata {
+    #[serde(default)]
+    pub revision: Option<String>,
     pub content_type: Option<String>,
     pub content_disposition: Option<String>,
     pub cache_control: Option<String>,

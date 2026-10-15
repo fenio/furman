@@ -548,7 +548,7 @@ export class PanelData {
         if (saved) sseCustomerKey = await connectionsState.getSseCustomerKey(saved);
       }
       info.sseCustomerKeyEnabled = sseCustomerKey !== undefined;
-      await s3Connect(info.connectionId, info.bucket, info.region, endpoint, profile, accessKey, secretKey, roleArn, externalId, sessionName, sessionDurationSecs, useTransferAcceleration, anonymous, webIdentityToken, proxyUrl, proxyUsername, proxyPassword, sseCustomerKey);
+      await s3Connect(info.connectionId, info.bucket, info.region, endpoint, profile, accessKey, secretKey, roleArn, externalId, sessionName, sessionDurationSecs, useTransferAcceleration, anonymous, webIdentityToken, proxyUrl, proxyUsername, proxyPassword, sseCustomerKey, info.provider);
       this.releaseTemporaryArchive();
       this.backend = 's3';
       this.s3Connection = info;

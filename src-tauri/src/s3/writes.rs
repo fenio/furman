@@ -94,6 +94,7 @@ pub struct WritePreviewEntry {
 
 #[derive(Serialize)]
 pub struct WritePreview {
+    pub guard_supported: bool,
     pub id: String,
     pub bucket: String,
     pub total: usize,
@@ -141,6 +142,7 @@ impl WriteState {
 impl WritePlan {
     pub fn preview(&self) -> WritePreview {
         WritePreview {
+            guard_supported: super::compat::conditional_writes_supported(&self.destination.client),
             id: self.id.clone(),
             bucket: self.destination.bucket.clone(),
             total: self.items.len(),
@@ -482,7 +484,7 @@ fn cancellable<'a, T: 'a>(
     }
 }
 
-fn write_error<E: aws_sdk_s3::error::ProvideErrorMetadata>(
+fn write_error<E: aws_sdk_s3::error::ProvideErrorMetadata + std::error::Error + 'static>(
     operation: &str,
     error: &SdkError<E>,
 ) -> FmError {
@@ -519,7 +521,7 @@ async fn commit_file(
 ) -> Result<Option<String>, FmError> {
     use aws_sdk_s3::{
         primitives::ByteStream,
-        types::{ChecksumAlgorithm, CompletedMultipartUpload, CompletedPart},
+        types::{CompletedMultipartUpload, CompletedPart},
     };
     // A lost response must not trigger an automatic replay of an approved write.
     // Keep all connection configuration/interceptors (including SSE-C), but make
@@ -541,7 +543,7 @@ async fn commit_file(
             .bucket(&endpoint.bucket)
             .key(key)
             .body(body)
-            .checksum_algorithm(ChecksumAlgorithm::Crc32C)
+            .set_checksum_algorithm(super::compat::upload_checksum(&client))
             .set_metadata(Some(headers.metadata.clone()))
             .set_content_type(headers.content_type.clone())
             .set_cache_control(headers.cache_control.clone())
@@ -579,7 +581,7 @@ async fn commit_file(
             .create_multipart_upload()
             .bucket(&endpoint.bucket)
             .key(key)
-            .checksum_algorithm(ChecksumAlgorithm::Crc32C)
+            .set_checksum_algorithm(super::compat::upload_checksum(&client))
             .set_metadata(Some(headers.metadata.clone()))
             .set_content_type(headers.content_type.clone())
             .set_cache_control(headers.cache_control.clone())
@@ -615,7 +617,7 @@ async fn commit_file(
                     .key(key)
                     .upload_id(&upload_id)
                     .part_number(number as i32 + 1)
-                    .checksum_algorithm(ChecksumAlgorithm::Crc32C)
+                    .set_checksum_algorithm(super::compat::upload_checksum(&client))
                     .body(body)
                     .send()
                     .await
@@ -702,6 +704,9 @@ impl WritePlan {
     ) -> Result<WriteResult, FmError> {
         use sha2::{Digest, Sha256};
         use tokio::io::AsyncWriteExt;
+        if policy != WritePolicy::Overwrite {
+            super::compat::check_conditional_writes(&self.destination.client)?;
+        }
         if self.created.elapsed() >= Duration::from_secs(900) {
             return Err(invalid("Write preview expired; prepare it again"));
         }
@@ -781,7 +786,12 @@ impl WritePlan {
                             Source::Local(source) => source.sha256.clone(),
                             _ => unreachable!(),
                         },
-                        Headers::default(),
+                        Headers {
+                            content_type: Some(
+                                super::compat::content_type(&item.key, false).into(),
+                            ),
+                            ..Headers::default()
+                        },
                     )
                 }
                 Source::S3 {

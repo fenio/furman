@@ -1,4 +1,6 @@
 pub mod client;
+pub mod compat;
+pub mod metadata;
 pub mod activity;
 pub mod crypto;
 pub mod errors;
@@ -14,6 +16,8 @@ mod write_local;
 mod listing_tests;
 #[cfg(test)]
 mod scan_tests;
+#[cfg(test)]
+mod compat_tests;
 
 pub use client::{build_s3_client, S3Connection, S3State};
 pub use helpers::{

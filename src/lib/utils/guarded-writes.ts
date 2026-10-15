@@ -5,7 +5,8 @@ export function writeNeedsApproval(policy: WritePolicy, existing: number): boole
   return policy === 'overwrite' || (policy === 'replace_unchanged' && existing > 0);
 }
 
-export function validWritePolicy(policy: WritePolicy, preview: Pick<WritePreview, 'existing' | 'unguardable'> | null): boolean {
+export function validWritePolicy(policy: WritePolicy, preview: (Pick<WritePreview, 'existing' | 'unguardable'> & { guard_supported?: boolean }) | null): boolean {
+  if (preview?.guard_supported === false && policy !== 'overwrite') return false;
   return preview !== null && !(policy === 'create_only' && preview.existing > 0)
     && !(policy === 'replace_unchanged' && preview.unguardable > 0);
 }

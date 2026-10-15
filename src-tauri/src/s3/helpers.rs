@@ -140,7 +140,7 @@ pub async fn upload_part_with_retry(
             .key(key)
             .upload_id(upload_id)
             .part_number(part_number)
-            .checksum_algorithm(aws_sdk_s3::types::ChecksumAlgorithm::Crc32C)
+            .set_checksum_algorithm(super::compat::upload_checksum(client))
             .body(buf.into())
             .send()
             .await;
@@ -191,7 +191,8 @@ pub async fn upload_file_multipart(
         .create_multipart_upload()
         .bucket(bucket)
         .key(key)
-        .checksum_algorithm(aws_sdk_s3::types::ChecksumAlgorithm::Crc32C);
+        .set_checksum_algorithm(super::compat::upload_checksum(client))
+        .content_type(super::compat::content_type(key, metadata.is_some_and(|metadata| metadata.contains_key("furman-encrypted"))));
     if let Some(meta) = metadata {
         for (k, v) in meta {
             create_req = create_req.metadata(k, v);
