@@ -289,6 +289,7 @@
       // Display
       { id: 'toggle-theme', label: 'Toggle dark / light theme', shortcut: `${mod}${shift}L`, category: 'Display', execute: () => appState.toggleTheme() },
       { id: 'preferences', label: 'Preferences', category: 'Display', execute: () => appState.showPreferences() },
+      { id: 's3-activity', label: 'S3 activity and navigation cache', category: 'S3', execute: () => { appState.modal = 's3-activity'; } },
       { id: 'shortcuts', label: 'Keyboard shortcuts', shortcut: `${mod}/`, category: 'Display', execute: () => { appState.modal = 'shortcuts'; } },
 
       // Disk Usage

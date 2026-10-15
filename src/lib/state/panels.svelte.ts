@@ -11,6 +11,7 @@ import { mountNetworkShare } from '#lib/services/mount.js';
 import { appState } from '#lib/state/app.svelte.js';
 import { connectionsState } from '#lib/state/connections.svelte.js';
 import { comparisonState, type ComparisonSide } from '#lib/state/comparison.svelte.js';
+import { s3NavigationCache, clearS3NavigationCache } from '#lib/state/navigation-cache.svelte.js';
 
 /// Threshold above which we use streamed directory listing.
 const STREAM_THRESHOLD = 50_000;
@@ -247,6 +248,9 @@ export class PanelData {
   }
 
   async loadDirectory(path: string, focusName?: string) {
+    // A same-path reload (toolbar, keyboard or post-operation reload) is always
+    // a network refresh, never a cache hit. Navigating away/back may use cache.
+    if (this.backend === 's3' && path === this.path) clearS3NavigationCache();
     this.disposeS3Listing();
     this.clearFilter();
     this.dirSizeCache = {};
@@ -346,6 +350,23 @@ export class PanelData {
     this.streamComplete = false;
     let firstPage = true;
     let pendingFocus = focusName;
+    const revision = s3NavigationCache.revision;
+    const cacheKey = JSON.stringify([connection.connectionId, connection.bucket, prefix]);
+    const cached = s3NavigationCache.get(cacheKey);
+    if (cached) {
+      this.entries = cached.entries;
+      this.cursorIndex = listingPosition(this.filteredSortedEntries, undefined, undefined, focusName).cursorIndex;
+      this.selectionAnchor = this.cursorIndex;
+      this.loading = false;
+      this.streamComplete = true;
+      this.s3ListingProgress = { status: 'complete', pages: 0, requests: 0, items: cached.entries.filter(entry => entry.name !== '..').length,
+        elapsedMs: 0, updatedAt: Date.now(), pending: false, error: null, source: 'cache', cachedAt: cached.savedAt, fetchedAt: cached.savedAt, cacheRevision: revision };
+      if (!navigatingHistory) {
+        this.history = [...this.history.slice(0, this.historyIndex + 1), path];
+        this.historyIndex = this.history.length - 1;
+      }
+      return;
+    }
     this.s3ListingSession = new ProgressiveListing<FileEntry>(
       token => s3ListObjectsPage(connection.connectionId, prefix, token),
       entries => {
@@ -368,7 +389,11 @@ export class PanelData {
         }
       },
       progress => {
-        this.s3ListingProgress = progress;
+        // Only commit a fully settled, exhaustive listing. Cancelled/failed
+        // prefixes and listings that overlapped mutations never enter the cache.
+        const cacheStored = progress.status === 'complete' && !progress.pending
+          ? s3NavigationCache.put(cacheKey, this.entries, revision) : undefined;
+        this.s3ListingProgress = { ...progress, source: 'network', cacheRevision: revision, fetchedAt: progress.status === 'complete' ? progress.updatedAt : undefined, cacheStored };
         this.loading = progress.pages === 0 && progress.status === 'loading';
         this.streamComplete = progress.status === 'complete';
       },

@@ -101,6 +101,7 @@ function serverComponent(file, dependencies = {}) {
 test('listing status distinguishes incomplete, failed, cancelled, and complete scopes', async () => {
   const { default: Status } = await import(serverComponent('S3ListingStatus.svelte', {
     './ErrorNotice.svelte': serverComponent('ErrorNotice.svelte'),
+    '#lib/state/navigation-cache.svelte.js': 'data:text/javascript,export const navigationCacheState={revision:0};export const s3NavigationCache={limits:{ttlMs:60000}};',
   }));
   const progress = { status: 'loading', items: 10, pages: 1, requests: 2, elapsedMs: 2000, updatedAt: Date.now(), pending: true, error: null };
   const html = state => render(Status, { props: { progress: { ...progress, ...state }, onCancel() {}, onRetry() {}, onRefresh() {} } }).body;
@@ -119,6 +120,19 @@ test('listing status distinguishes incomplete, failed, cancelled, and complete s
   const complete = html({ status: 'complete', pending: false });
   assert.ok(complete.includes('Complete'));
   assert.ok(!complete.includes('loaded items'));
+});
+
+test('cached listings disclose age, zero network calls, staleness, and manual refresh', async () => {
+  const { default: Status } = await import(serverComponent('S3ListingStatus.svelte', {
+    './ErrorNotice.svelte': serverComponent('ErrorNotice.svelte'),
+    '#lib/state/navigation-cache.svelte.js': 'data:text/javascript,export const navigationCacheState={revision:2};export const s3NavigationCache={limits:{ttlMs:60000}};',
+  }));
+  const progress = { status: 'complete', items: 3, pages: 0, requests: 0, elapsedMs: 0, updatedAt: Date.now(), pending: false, error: null,
+    source: 'cache', cachedAt: Date.now() - 61_000, fetchedAt: Date.now() - 61_000, cacheRevision: 1 };
+  const html = render(Status, { props: { progress, onRefresh() {}, onCancel() {}, onRetry() {} } }).body;
+  for (const text of ['Cached complete listing', 'no LIST calls for this visit', 'Stale view', 'invalidated this listing', 'Refresh']) assert.ok(html.includes(text), text);
+  const uncached = render(Status, { props: { progress: { ...progress, source: 'network', cacheStored: false }, onRefresh() {}, onCancel() {}, onRetry() {} } }).body;
+  assert.ok(uncached.includes('Not retained in navigation cache'));
 });
 
 test('error notices render escaped diagnostics with details closed initially', async () => {

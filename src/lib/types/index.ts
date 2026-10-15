@@ -76,6 +76,7 @@ export type ModalType =
   | 'search'
   | 'sync'
   | 'preferences'
+  | 's3-activity'
   | 'properties'
   | 'batch-edit'
   | 'shortcuts'

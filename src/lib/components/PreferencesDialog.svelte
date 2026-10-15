@@ -203,6 +203,10 @@
       {/if}
 
       {#if activeTab === 'network'}
+        <div class="pref-row">
+          <span>S3 request activity and display-only navigation cache</span>
+          <button class="dialog-btn" onclick={() => { appState.modal = 's3-activity'; }}>Open inspector</button>
+        </div>
         <div class="section-title">S3</div>
 
         <div class="pref-row">

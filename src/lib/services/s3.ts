@@ -1,4 +1,24 @@
-import { invoke, Channel } from '@tauri-apps/api/core';
+import { invoke as nativeInvoke, Channel } from '@tauri-apps/api/core';
+import type { InvokeArgs, InvokeOptions } from '@tauri-apps/api/core';
+import { beginS3Mutation } from '#lib/state/navigation-cache.svelte.js';
+import { mayChangeS3 } from '#lib/utils/navigation-cache.js';
+
+async function invoke<T>(command: string, args?: InvokeArgs, options?: InvokeOptions): Promise<T> {
+  const end = mayChangeS3(command) ? beginS3Mutation() : null;
+  try { return await nativeInvoke<T>(command, args, options); }
+  finally { end?.(); } // Failed/cancelled writes can still have changed objects.
+}
+
+export interface S3Activity {
+  id: number; started_ms: number; operation: string; duration_ms: number;
+  outcome: 'success' | 'failed' | 'timeout' | 'abandoned'; http_status: number | null;
+  request_id: string | null; attempts: number; retries: number;
+}
+export interface S3ActivitySnapshot {
+  schema_version: number; app_version: string; capacity: number; evicted: number; records: S3Activity[];
+}
+export async function s3ActivitySnapshot(): Promise<S3ActivitySnapshot> { return invoke('s3_activity_snapshot'); }
+export async function s3ActivityClear(): Promise<void> { await invoke('s3_activity_clear'); }
 import type { S3ListingPage } from '#lib/types/index.js';
 import type { ScanLimits } from '#lib/types/index.js';
 import type { ScanProgress } from '#lib/types/index.js';

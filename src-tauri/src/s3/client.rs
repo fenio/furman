@@ -212,5 +212,6 @@ pub async fn build_s3_client(
     if use_transfer_acceleration.unwrap_or(false) && endpoint.is_none_or(str::is_empty) {
         s3_config_builder.set_accelerate(Some(true));
     }
+    s3_config_builder = s3_config_builder.interceptor(super::activity::interceptor());
     Ok((S3Client::from_conf(s3_config_builder.build()), final_config))
 }

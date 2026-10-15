@@ -12,15 +12,16 @@ separate PR, with provider-specific behavior and safety tested explicitly.
    outcomes; no destructive work from incomplete preflight. Show bytes read and
    potential transfer costs for SHA-256 comparison. Harden all cursor handling.
    See [the implemented contract](s3-scan-safeguards.md).
-3. **Guarded writes — current PR.** Create-only and replace-if-unchanged policies for PUT and
+3. **Guarded writes — merged in [#357](https://github.com/fenio/furman/pull/357).** Create-only and replace-if-unchanged policies for PUT and
    multipart completion, approved local snapshots, explicit overwrite approval,
    and fail-closed behavior on providers without the needed conditional writes.
    See [the guarded content-write contract](s3-guarded-writes.md) for supported
    entry points, costs, and explicit exclusions.
-4. **Bounded navigation cache and diagnostics.** Per-profile/revision cache with
+4. **Bounded navigation cache and diagnostics — current PR.** Per-profile/revision cache with
    invalidation, visible freshness, manual refresh, and no stale destructive
    preflight. Add an activity inspector with operation, duration, status, request
    IDs, retries, counts, and a safe diagnostic export.
+   See [the cache and activity contract](s3-cache-activity.md).
 5. **Metadata and provider compatibility.** Attribute-preserving metadata edits
    above 5 GiB, MIME inference, conflict guards, tested checksum policies, and
    single-delete fallback only for recognized unsupported bulk-delete errors.
@@ -52,7 +53,10 @@ or assume its documented next-release features are already released.
   to settle. Navigation/closing a tab detaches old results immediately.
 - LIST calls count app-level page requests, including retries initiated by the
   user, not individual SDK wire attempts. Pages count accepted successful pages.
-- Progressive pane browsing itself has no cache, automatic retry loop, or
-  recursive-scan cap. Loaded entries still consume memory proportional to the
-  listed prefix. The separate [scan budgets](s3-scan-safeguards.md) apply to
-  recursive work and complete-list APIs; bounded caching remains future work.
+- Complete pane listings may be reused from the bounded, short-lived display
+  cache, with source/age/staleness visible and Refresh bypassing it. Incomplete
+  prefixes still load progressively without an automatic retry loop or recursive
+  scan cap. Loaded entries consume memory proportional to the listed prefix;
+  the cache budget does not cap active panels. The separate
+  [scan budgets](s3-scan-safeguards.md) apply to recursive work and complete-list
+  APIs, which never use the display cache.
