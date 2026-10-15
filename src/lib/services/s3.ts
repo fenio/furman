@@ -402,6 +402,7 @@ export async function s3PutObjectMetadata(
   cacheControl: string | null,
   contentEncoding: string | null,
   custom: Record<string, string>,
+  expectedRevision?: string,
 ): Promise<void> {
   await invoke('s3_put_object_metadata', {
     id,
@@ -411,6 +412,7 @@ export async function s3PutObjectMetadata(
     cacheControl: cacheControl || null,
     contentEncoding: contentEncoding || null,
     custom,
+    expectedRevision: expectedRevision ?? null,
   });
 }
 

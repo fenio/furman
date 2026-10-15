@@ -18,6 +18,47 @@ use zeroize::Zeroizing;
 
 const NAME: &str = "FurmanSseC";
 
+/// An SSE-C-enabled connection may also contain plain objects. Metadata edits
+/// must not implicitly encrypt those objects just because the connection has a key.
+#[derive(Debug)]
+struct PlainMetadata;
+impl Intercept for PlainMetadata {
+    fn name(&self) -> &'static str {
+        "FurmanPlainMetadata"
+    }
+    fn modify_before_signing(
+        &self,
+        context: &mut BeforeTransmitInterceptorContextMut<'_>,
+        _runtime: &RuntimeComponents,
+        _config: &mut ConfigBag,
+    ) -> Result<(), BoxError> {
+        for header in [
+            "x-amz-server-side-encryption-customer-algorithm",
+            "x-amz-server-side-encryption-customer-key",
+            "x-amz-server-side-encryption-customer-key-md5",
+            "x-amz-copy-source-server-side-encryption-customer-algorithm",
+            "x-amz-copy-source-server-side-encryption-customer-key",
+            "x-amz-copy-source-server-side-encryption-customer-key-md5",
+        ] {
+            context.request_mut().headers_mut().remove(header);
+        }
+        Ok(())
+    }
+}
+pub fn metadata_client(client: &Client, encrypted: bool) -> Client {
+    if encrypted {
+        client.clone()
+    } else {
+        Client::from_conf(
+            client
+                .config()
+                .to_builder()
+                .interceptor(PlainMetadata)
+                .build(),
+        )
+    }
+}
+
 #[derive(Clone, Debug)]
 struct ReadWithoutKey;
 impl Storable for ReadWithoutKey {

@@ -818,16 +818,18 @@ pub async fn s3_put_object_metadata(
     cache_control: Option<String>,
     content_encoding: Option<String>,
     custom: HashMap<String, String>,
+    expected_revision: Option<String>,
 ) -> Result<(), FmError> {
     let service = get_service(&state, &id)?;
     service
-        .put_object_metadata(
+        .put_object_metadata_checked(
             &key,
             content_type.as_deref(),
             content_disposition.as_deref(),
             cache_control.as_deref(),
             content_encoding.as_deref(),
             &custom,
+            expected_revision.as_deref(),
         )
         .await
 }

@@ -196,6 +196,7 @@ export interface S3BucketEncryption {
 }
 
 export interface S3ObjectMetadata {
+  revision: string | null;
   content_type: string | null;
   content_disposition: string | null;
   cache_control: string | null;

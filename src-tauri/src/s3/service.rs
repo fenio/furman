@@ -697,7 +697,8 @@ impl S3Service {
                     .put_object()
                     .bucket(&self.bucket)
                     .key(key)
-                    .checksum_algorithm(aws_sdk_s3::types::ChecksumAlgorithm::Crc32C)
+                    .set_checksum_algorithm(super::compat::upload_checksum(&self.client))
+                    .content_type(super::compat::content_type(key, false))
                     .body(data.into());
                 if let Some(meta) = metadata {
                     for (mk, mv) in meta {
@@ -901,7 +902,8 @@ impl S3Service {
                     .put_object()
                     .bucket(&self.bucket)
                     .key(key)
-                    .checksum_algorithm(aws_sdk_s3::types::ChecksumAlgorithm::Crc32C)
+                    .set_checksum_algorithm(super::compat::upload_checksum(&self.client))
+                    .content_type("application/octet-stream")
                     .body(data.into());
                 for (mk, mv) in &metadata {
                     req = req.metadata(mk, mv);
@@ -1347,6 +1349,10 @@ impl S3Service {
         let mut bytes_done: u64 = 0;
 
         // Batch delete (max 1000 per request)
+        // An ambiguous earlier retry must not be hidden by a final 501 that
+        // would otherwise authorize single-delete fallback (extra delete markers).
+        let delete_client = aws_sdk_s3::Client::from_conf(self.client.config().to_builder()
+            .retry_config(aws_sdk_s3::config::retry::RetryConfig::disabled()).build());
         for chunk in to_delete.chunks(1000) {
             if cancel.load(Ordering::Relaxed) {
                 return Err(FmError::Other("Operation cancelled".into()));
@@ -1366,19 +1372,26 @@ impl S3Service {
                 .build()
                 .map_err(|e| s3err(e.to_string()))?;
 
-            let resp = self
-                .client
+            let result = delete_client
                 .delete_objects()
                 .bucket(&self.bucket)
                 .delete(delete)
                 .send()
-                .await
-                .map_err(|e| {
-                    s3_sdk_error(
-                        &format!("DeleteObjects ({files_done} of {files_total} objects completed; failed batch outcome unknown)"),
-                        &e,
-                    )
-                })?;
+                .await;
+            let resp = match result {
+                Ok(response) => response,
+                Err(error) if super::compat::unsupported(&error) => {
+                    for (key, size) in chunk {
+                        super::verification::check_cancelled(cancel)?;
+                        delete_client.delete_object().bucket(&self.bucket).key(key).send().await
+                            .map_err(|error| s3_sdk_error(&format!("Single-delete compatibility fallback ({files_done} of {files_total} completed; current outcome unknown)"), &error))?;
+                        files_done += 1; bytes_done += size;
+                        on_progress(ProgressEvent { id: op_id.into(), bytes_done, bytes_total, current_file: format!("Deleted {files_done} of {files_total} objects (single-delete fallback)"), files_done, files_total });
+                    }
+                    continue;
+                }
+                Err(error) => return Err(s3_sdk_error(&format!("DeleteObjects ({files_done} of {files_total} objects completed; failed batch outcome unknown; no single-delete fallback)"), &error)),
+            };
 
             let deleted = resp.deleted();
             let errors = resp.errors();
@@ -2174,6 +2187,7 @@ impl S3Service {
             .unwrap_or_default();
 
         Ok(S3ObjectMetadata {
+            revision: Some(super::metadata::revision(&head)),
             content_type: head.content_type().map(std::string::ToString::to_string),
             content_disposition: head
                 .content_disposition()
@@ -2186,7 +2200,8 @@ impl S3Service {
         })
     }
 
-    /// Update metadata for an S3 object via self-copy with REPLACE directive.
+    /// Update metadata with fresh conditional self-copy preflight. UI callers
+    /// should supply their loaded revision through put_object_metadata_checked.
     pub async fn put_object_metadata(
         &self,
         key: &str,
@@ -2196,56 +2211,15 @@ impl S3Service {
         content_encoding: Option<&str>,
         custom: &HashMap<String, String>,
     ) -> Result<(), FmError> {
+        self.put_object_metadata_checked(key, content_type, content_disposition, cache_control, content_encoding, custom, None).await
+    }
+
+    pub async fn put_object_metadata_checked(
+        &self, key: &str, content_type: Option<&str>, content_disposition: Option<&str>,
+        cache_control: Option<&str>, content_encoding: Option<&str>, custom: &HashMap<String, String>, expected_revision: Option<&str>,
+    ) -> Result<(), FmError> {
         let actual_key = strip_s3_prefix(key, &self.bucket);
-
-        // Check object size — reject >5 GiB (copy_object limit)
-        let head = self
-            .client
-            .head_object()
-            .bucket(&self.bucket)
-            .key(&actual_key)
-            .send()
-            .await
-            .map_err(|e| s3_sdk_error("Read metadata before update", &e))?;
-
-        let size = head.content_length().unwrap_or(0) as u64;
-        if size > COPY_MULTIPART_THRESHOLD {
-            return Err(s3err(format!(
-                "Object is too large ({:.1} GB) for metadata update via copy. Maximum is 5 GB.",
-                size as f64 / (1024.0 * 1024.0 * 1024.0)
-            )));
-        }
-
-        let copy_source = format!("{}/{}", self.bucket, actual_key);
-
-        let mut req = self
-            .client
-            .copy_object()
-            .bucket(&self.bucket)
-            .key(&actual_key)
-            .copy_source(&copy_source)
-            .metadata_directive(aws_sdk_s3::types::MetadataDirective::Replace);
-
-        if let Some(ct) = content_type {
-            req = req.content_type(ct);
-        }
-        if let Some(cd) = content_disposition {
-            req = req.content_disposition(cd);
-        }
-        if let Some(cc) = cache_control {
-            req = req.cache_control(cc);
-        }
-        if let Some(ce) = content_encoding {
-            req = req.content_encoding(ce);
-        }
-
-        for (k, v) in custom {
-            req = req.metadata(k, v);
-        }
-
-        req.send().await.map_err(|e| s3_sdk_error("Update object metadata", &e))?;
-
-        Ok(())
+        Box::pin(super::metadata::update(&self.client, &self.bucket, &actual_key, content_type, content_disposition, cache_control, content_encoding, custom, expected_revision)).await
     }
 
     // ── Tagging ─────────────────────────────────────────────────────────

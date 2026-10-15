@@ -519,7 +519,7 @@ async fn commit_file(
 ) -> Result<Option<String>, FmError> {
     use aws_sdk_s3::{
         primitives::ByteStream,
-        types::{ChecksumAlgorithm, CompletedMultipartUpload, CompletedPart},
+        types::{CompletedMultipartUpload, CompletedPart},
     };
     // A lost response must not trigger an automatic replay of an approved write.
     // Keep all connection configuration/interceptors (including SSE-C), but make
@@ -541,7 +541,7 @@ async fn commit_file(
             .bucket(&endpoint.bucket)
             .key(key)
             .body(body)
-            .checksum_algorithm(ChecksumAlgorithm::Crc32C)
+            .set_checksum_algorithm(super::compat::upload_checksum(&client))
             .set_metadata(Some(headers.metadata.clone()))
             .set_content_type(headers.content_type.clone())
             .set_cache_control(headers.cache_control.clone())
@@ -579,7 +579,7 @@ async fn commit_file(
             .create_multipart_upload()
             .bucket(&endpoint.bucket)
             .key(key)
-            .checksum_algorithm(ChecksumAlgorithm::Crc32C)
+            .set_checksum_algorithm(super::compat::upload_checksum(&client))
             .set_metadata(Some(headers.metadata.clone()))
             .set_content_type(headers.content_type.clone())
             .set_cache_control(headers.cache_control.clone())
@@ -615,7 +615,7 @@ async fn commit_file(
                     .key(key)
                     .upload_id(&upload_id)
                     .part_number(number as i32 + 1)
-                    .checksum_algorithm(ChecksumAlgorithm::Crc32C)
+                    .set_checksum_algorithm(super::compat::upload_checksum(&client))
                     .body(body)
                     .send()
                     .await
@@ -781,7 +781,12 @@ impl WritePlan {
                             Source::Local(source) => source.sha256.clone(),
                             _ => unreachable!(),
                         },
-                        Headers::default(),
+                        Headers {
+                            content_type: Some(
+                                super::compat::content_type(&item.key, false).into(),
+                            ),
+                            ..Headers::default()
+                        },
                     )
                 }
                 Source::S3 {

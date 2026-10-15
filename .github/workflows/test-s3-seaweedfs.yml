@@ -88,6 +88,7 @@ jobs:
         run: |
           cargo test --test s3_integration -- --test-threads=4 \
             --exact \
+            metadata_edit_large_preserves_attributes_and_rejects_stale_revisions \
             guarded_writes_preserve_conflicting_destination_payloads \
             guarded_multipart_conflicts_do_not_replace_current_payloads \
             test_create_and_delete_bucket \
