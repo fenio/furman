@@ -22,6 +22,7 @@
   import { platform } from '#lib/state/platform.svelte.js';
   import { comparisonState } from '#lib/state/comparison.svelte.js';
   import { clipboardState } from '#lib/state/clipboard.svelte.js';
+  import { guardedWrites } from '#lib/state/guarded-writes.svelte.js';
   import { previewState } from '#lib/state/preview.svelte.js';
 
   // ── Extracted action modules ──────────────────────────────────────────────
@@ -583,7 +584,7 @@
     // Modal guard: skip file-operation actions when a modal is open or xterm is focused
     if (!alwaysAllowed.has(action)) {
       if (isXtermFocused()) return;
-      if (appState.modal !== 'none' && appState.modal !== 'volume-selector') return;
+      if (guardedWrites.request || (appState.modal !== 'none' && appState.modal !== 'volume-selector')) return;
     }
 
     const active = panels.active;
@@ -803,6 +804,7 @@
   }
 
   function handleGlobalKeydown(e: KeyboardEvent) {
+    if (guardedWrites.request) return;
     const cmd = e.metaKey || e.ctrlKey;
 
     // ESC hides quake console

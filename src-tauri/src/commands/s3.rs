@@ -28,6 +28,76 @@ fn get_service(state: &State<'_, S3State>, id: &str) -> Result<S3Service, FmErro
 
 // ── Commands ────────────────────────────────────────────────────────────────
 
+fn write_endpoint(state: &S3State, id: &str) -> Result<s3::writes::WriteEndpoint, FmError> {
+    let map = state.0.lock().map_err(|e| s3err(e.to_string()))?;
+    let connection = map.get(id).ok_or_else(|| s3err("S3 connection not found"))?;
+    Ok(s3::writes::WriteEndpoint { client: connection.client.clone(), bucket: connection.bucket.clone(), id: id.into() })
+}
+
+#[tauri::command]
+pub async fn s3_prepare_write(
+    state: State<'_, S3State>, writes: State<'_, s3::writes::WriteState>, file_op_state: State<'_, FileOpState>,
+    op_id: String, source_id: Option<String>, destination_id: String,
+    selections: Vec<s3::writes::WriteSelection>, prefix: String, channel: Channel<s3::scan::ScanProgress>,
+) -> Result<s3::writes::WritePreview, FmError> {
+    let source = source_id.as_deref().map(|id| write_endpoint(&state, id)).transpose()?;
+    let destination = write_endpoint(&state, &destination_id)?;
+    let flags = Arc::new(crate::commands::file::OpFlags { cancel: AtomicBool::new(false), pause: AtomicBool::new(false) });
+    file_op_state.0.lock().map_err(|e| s3err(e.to_string()))?.insert(op_id.clone(), flags.clone());
+    // Keep the cancellation flag owned until blocking local work has stopped.
+    let cancel = Arc::new(AtomicBool::new(false));
+    let result = {
+        let prepare = s3::writes::prepare(source, destination, selections, prefix, cancel.clone(), Arc::new(move |event| { let _ = channel.send(event); }));
+        tokio::pin!(prepare);
+        loop {
+            tokio::select! {
+                result = &mut prepare => break result,
+                _ = tokio::time::sleep(std::time::Duration::from_millis(50)) => {
+                    if flags.cancel.load(std::sync::atomic::Ordering::Relaxed) { cancel.store(true, std::sync::atomic::Ordering::Relaxed); }
+                }
+            }
+        }
+    };
+    file_op_state.0.lock().map_err(|e| s3err(e.to_string()))?.remove(&op_id);
+    let plan = result?;
+    if flags.cancel.load(std::sync::atomic::Ordering::Relaxed) { return Err(s3err("Write preview cancelled; no approval was saved")); }
+    plan.validate_connections(&state)?;
+    writes.insert(plan)
+}
+
+#[tauri::command]
+pub async fn s3_execute_write(
+    state: State<'_, S3State>, writes: State<'_, s3::writes::WriteState>, file_op_state: State<'_, FileOpState>,
+    plan_id: String, op_id: String, policy: s3::writes::WritePolicy, replacement_approved: bool,
+    verify: bool, channel: Channel<ProgressEvent>,
+) -> Result<s3::writes::WriteResult, FmError> {
+    let plan = writes.take(&plan_id)?;
+    plan.validate_connections(&state)?;
+    let flags = Arc::new(crate::commands::file::OpFlags { cancel: AtomicBool::new(false), pause: AtomicBool::new(false) });
+    file_op_state.0.lock().map_err(|e| s3err(e.to_string()))?.insert(op_id.clone(), flags.clone());
+    let cancel = Arc::new(AtomicBool::new(false));
+    let progress = |event| { let _ = channel.send(event); };
+    let result = {
+        let execute = plan.execute(policy, replacement_approved, verify, &op_id, cancel.clone(), &progress);
+        tokio::pin!(execute);
+        loop {
+            tokio::select! {
+                result = &mut execute => break result,
+                _ = tokio::time::sleep(std::time::Duration::from_millis(50)) => {
+                    if flags.cancel.load(std::sync::atomic::Ordering::Relaxed) { cancel.store(true, std::sync::atomic::Ordering::Relaxed); }
+                }
+            }
+        }
+    };
+    file_op_state.0.lock().map_err(|e| s3err(e.to_string()))?.remove(&op_id);
+    result
+}
+
+#[tauri::command]
+pub fn s3_discard_write(writes: State<'_, s3::writes::WriteState>, plan_id: String) -> Result<(), FmError> {
+    writes.discard(&plan_id)
+}
+
 #[tauri::command]
 pub async fn s3_check_credentials() -> Result<bool, FmError> {
     s3::service::check_credentials().await

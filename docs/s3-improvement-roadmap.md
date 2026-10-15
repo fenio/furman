@@ -7,14 +7,16 @@ separate PR, with provider-specific behavior and safety tested explicitly.
 1. **Progressive listings — merged in [#355](https://github.com/fenio/furman/pull/355).** Page-based S3 browsing, immediate first
    results, partial/complete status, Cancel/Continue/Retry, stale-navigation
    protection, and explicit loaded-only sorting/filtering/selection semantics.
-2. **Scan safeguards — current PR.** Configurable object/request/time budgets for recursive
+2. **Scan safeguards — merged in [#356](https://github.com/fenio/furman/pull/356).** Configurable object/request/time budgets for recursive
    search and enumeration; scanned/matched counts; complete/cancelled/limited
    outcomes; no destructive work from incomplete preflight. Show bytes read and
    potential transfer costs for SHA-256 comparison. Harden all cursor handling.
    See [the implemented contract](s3-scan-safeguards.md).
-3. **Guarded writes.** Create-only and replace-if-unchanged policies for PUT and
+3. **Guarded writes — current PR.** Create-only and replace-if-unchanged policies for PUT and
    multipart completion, approved local snapshots, explicit overwrite approval,
    and fail-closed behavior on providers without the needed conditional writes.
+   See [the guarded content-write contract](s3-guarded-writes.md) for supported
+   entry points, costs, and explicit exclusions.
 4. **Bounded navigation cache and diagnostics.** Per-profile/revision cache with
    invalidation, visible freshness, manual refresh, and no stale destructive
    preflight. Add an activity inspector with operation, duration, status, request

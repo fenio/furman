@@ -23,6 +23,8 @@
   import SearchDialog from '#lib/components/SearchDialog.svelte';
   import PreferencesDialog from '#lib/components/PreferencesDialog.svelte';
   import OverwriteDialog from '#lib/components/OverwriteDialog.svelte';
+  import GuardedWriteDialog from '#lib/components/GuardedWriteDialog.svelte';
+  import { guardedWrites } from '#lib/state/guarded-writes.svelte.js';
   import PropertiesDialog from '#lib/components/PropertiesDialog.svelte';
   import SyncDialog from '#lib/components/SyncDialog.svelte';
   import CompareDialog from '#lib/components/CompareDialog.svelte';
@@ -450,6 +452,9 @@
 
   {#if transfersState.dialogVisible}
     <TransferProgressDialog />
+  {/if}
+  {#if guardedWrites.request}
+    <GuardedWriteDialog request={guardedWrites.request} />
   {/if}
 </div>
 

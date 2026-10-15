@@ -1,5 +1,59 @@
 mod common;
 
+#[tokio::test]
+async fn guarded_writes_preserve_conflicting_destination_payloads() {
+    use app_lib::s3::writes::{prepare, WriteEndpoint, WritePolicy, WriteSelection};
+    use std::sync::{Arc, atomic::AtomicBool};
+    let ctx = common::TestContext::new().await;
+    let directory = tempfile::tempdir().unwrap();
+    let local = directory.path().join("guarded");
+    std::fs::write(&local, b"approved").unwrap();
+    let destination = WriteEndpoint { client: ctx.client.clone(), bucket: ctx.bucket.clone(), id: "test".into() };
+    let read = || async { ctx.client.get_object().bucket(&ctx.bucket).key("guarded").send().await.unwrap().body.collect().await.unwrap().into_bytes().to_vec() };
+    let preview = || prepare(None, destination.clone(), vec![WriteSelection {
+        path: local.to_str().unwrap().into(), destination_key: None, expected_sha256: None,
+        expected_source_etag: None, expected_destination: None, expected_destination_sha256: None,
+    }], "".into(), Arc::new(AtomicBool::new(false)), Arc::new(|_| {}));
+    let plan = preview().await.unwrap();
+    ctx.put_object("guarded", b"concurrent-create").await;
+    assert!(plan.execute(WritePolicy::CreateOnly, false, true, "create-conflict", Arc::new(AtomicBool::new(false)), &|_| {}).await.is_err());
+    assert_eq!(read().await, b"concurrent-create");
+    let plan = preview().await.unwrap();
+    ctx.put_object("guarded", b"concurrent-replace").await;
+    assert!(plan.execute(WritePolicy::ReplaceUnchanged, true, true, "replace-conflict", Arc::new(AtomicBool::new(false)), &|_| {}).await.is_err());
+    assert_eq!(read().await, b"concurrent-replace");
+    let plan = preview().await.unwrap();
+    let result = plan.execute(WritePolicy::ReplaceUnchanged, true, true, "replace", Arc::new(AtomicBool::new(false)), &|_| {}).await;
+    // Providers can reject unsupported conditional replacement, but must never
+    // accept the condition while overwriting a conflicting object above.
+    if result.is_ok() { assert_eq!(read().await, b"approved"); }
+    else { assert_eq!(read().await, b"concurrent-replace"); }
+    ctx.cleanup().await;
+}
+
+#[tokio::test]
+async fn guarded_multipart_conflicts_do_not_replace_current_payloads() {
+    use app_lib::s3::writes::{prepare, WriteEndpoint, WritePolicy, WriteSelection};
+    use std::sync::{Arc, atomic::AtomicBool};
+    let ctx = common::TestContext::new().await;
+    let directory = tempfile::tempdir().unwrap(); let path = directory.path().join("large");
+    std::fs::File::create(&path).unwrap().set_len(9 * 1024 * 1024).unwrap();
+    let destination = WriteEndpoint { client: ctx.client.clone(), bucket: ctx.bucket.clone(), id: "test".into() };
+    for policy in [WritePolicy::CreateOnly, WritePolicy::ReplaceUnchanged] {
+        let plan = prepare(None, destination.clone(), vec![WriteSelection {
+            path: path.to_str().unwrap().into(), destination_key: None, expected_sha256: None,
+            expected_source_etag: None, expected_destination: None, expected_destination_sha256: None,
+        }], "".into(), Arc::new(AtomicBool::new(false)), Arc::new(|_| {})).await.unwrap();
+        ctx.put_object("large", if policy == WritePolicy::CreateOnly { b"concurrent-create" } else { b"concurrent-replace" }).await;
+        assert!(plan.execute(policy, true, false, "multipart-conflict", Arc::new(AtomicBool::new(false)), &|_| {}).await.is_err());
+        let payload = ctx.client.get_object().bucket(&ctx.bucket).key("large").send().await.unwrap().body.collect().await.unwrap().into_bytes();
+        assert_eq!(&payload[..], if policy == WritePolicy::CreateOnly { b"concurrent-create".as_slice() } else { b"concurrent-replace".as_slice() });
+        let uploads = ctx.client.list_multipart_uploads().bucket(&ctx.bucket).send().await.unwrap();
+        assert!(uploads.uploads().is_empty());
+    }
+    ctx.cleanup().await;
+}
+
 use app_lib::models::S3PublicAccessBlock;
 use app_lib::s3::client::build_s3_client;
 use app_lib::s3::service::{self, S3Service};

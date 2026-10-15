@@ -88,6 +88,8 @@ jobs:
         run: |
           cargo test --test s3_integration -- --test-threads=4 \
             --exact \
+            guarded_writes_preserve_conflicting_destination_payloads \
+            guarded_multipart_conflicts_do_not_replace_current_payloads \
             test_create_and_delete_bucket \
             test_list_objects \
             test_put_text_and_download_temp \

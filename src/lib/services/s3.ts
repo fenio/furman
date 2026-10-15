@@ -1,6 +1,35 @@
 import { invoke, Channel } from '@tauri-apps/api/core';
 import type { S3ListingPage } from '#lib/types/index.js';
 import type { ScanLimits } from '#lib/types/index.js';
+import type { ScanProgress } from '#lib/types/index.js';
+
+export type WritePolicy = 'create_only' | 'skip_existing' | 'replace_unchanged' | 'overwrite';
+export interface WriteSelection {
+  path: string;
+  destination_key?: string;
+  expected_sha256?: string;
+  expected_source_etag?: string;
+  expected_destination_sha256?: string;
+  expected_destination?: { type: 'missing' } | { type: 'match'; etag: string };
+}
+export interface WritePreview {
+  id: string; bucket: string; total: number; existing: number; unguardable: number;
+  bytes: number; expires_seconds: number; relay: boolean;
+  entries: { source: string; key: string; size: number; exists: boolean }[];
+}
+export async function s3PrepareWrite(opId: string, sourceId: string | null, destinationId: string, selections: WriteSelection[], prefix: string, onProgress: (event: ScanProgress) => void): Promise<WritePreview> {
+  const channel = new Channel<ScanProgress>();
+  channel.onmessage = onProgress;
+  return invoke('s3_prepare_write', { opId, sourceId, destinationId, selections, prefix, channel });
+}
+export async function s3ExecuteWrite(planId: string, opId: string, policy: WritePolicy, replacementApproved: boolean, verify: boolean, onProgress: (event: ProgressEvent) => void): Promise<{ written: number; skipped: number }> {
+  const channel = new Channel<ProgressEvent>();
+  channel.onmessage = onProgress;
+  return invoke('s3_execute_write', { planId, opId, policy, replacementApproved, verify, channel });
+}
+export async function s3DiscardWrite(planId: string): Promise<void> {
+  await invoke('s3_discard_write', { planId });
+}
 
 export async function s3SetScanLimits(limits: ScanLimits): Promise<void> {
   await invoke('s3_set_scan_limits', { limits });
