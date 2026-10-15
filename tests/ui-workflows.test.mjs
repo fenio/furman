@@ -5,6 +5,52 @@ import { defaultComparisonMode, canComparePanes, parseComparisonExcludes } from 
 import { normalizeSseCustomerKey } from '../src/lib/utils/sse-c.ts';
 import { textDiff, comparisonDiffPair } from '../src/lib/utils/file-diff.ts';
 import { revealSecret } from '../src/lib/utils/reveal-secret.ts';
+import { errorReport, errorText } from '../src/lib/utils/error-report.ts';
+import { readFileSync } from 'node:fs';
+import { compile } from 'svelte/compiler';
+import { render } from 'svelte/server';
+
+test('error notices render escaped diagnostics with details closed initially', async () => {
+  const source = readFileSync(new URL('../src/lib/components/ErrorNotice.svelte', import.meta.url), 'utf8');
+  const compiled = compile(source, { generate: 'server', filename: 'ErrorNotice.svelte' }).js.code
+    .replaceAll('svelte/internal/server', import.meta.resolve('svelte/internal/server'))
+    .replaceAll('#lib/utils/error-report.js', new URL('../src/lib/utils/error-report.ts', import.meta.url).href);
+  const { default: ErrorNotice } = await import(`data:text/javascript;base64,${Buffer.from(compiled).toString('base64')}`);
+  const short = render(ErrorNotice, { props: { error: 'Permission denied' } }).body;
+  assert.ok(short.includes('Permission denied'));
+  assert.ok(!short.includes('<details'));
+  const long = render(ErrorNotice, { props: { error: 'Listing failed\nHTTP 502\n<script>not executable</script>' } }).body;
+  assert.match(long, /<details\b[^>]*>/);
+  assert.doesNotMatch(long, /<details\b[^>]*\bopen(?:\s|=|>)/);
+  assert.ok(long.includes('Copy error'));
+  assert.ok(long.includes('HTTP 502'));
+  assert.ok(!long.includes('<script>'));
+  assert.ok(long.includes('&lt;script>'));
+});
+
+test('short errors stay inline; long and multiline errors retain complete details', () => {
+  assert.equal(errorReport('Permission denied').details, '');
+  const text = 'ListObjectsV2 failed\nHTTP 502\nrequestId: request-123';
+  const report = errorReport(text, 'Could not list folder');
+  assert.equal(report.summary, 'Could not list folder: ListObjectsV2 failed');
+  assert.equal(report.details, text);
+  assert.equal(report.copyText, `Could not list folder\n${text}`);
+  const long = 'x'.repeat(4000);
+  assert.equal(errorReport(long).summary.length, 198);
+  assert.equal(errorReport(long).details, long);
+});
+
+test('error normalization retains causes and useful fields but not arbitrary data', () => {
+  const cause = new Error('Connection reset');
+  const error = new Error('Listing failed', { cause });
+  assert.equal(errorText(error), 'Listing failed\nCaused by: Connection reset');
+  assert.equal(errorText({ message: 'Forbidden', code: 'AccessDenied', status: 403, requestId: 'abc', secretKey: 'do-not-print', headers: { authorization: 'do-not-print' } }), 'Forbidden\ncode: AccessDenied\nstatus: 403\nrequestId: abc');
+  cause.cause = error;
+  assert.equal(errorText(error), 'Listing failed\nCaused by: Connection reset');
+  for (const empty of [null, undefined, '', {}, { secretKey: 'hidden' }]) {
+    assert.match(errorText(empty), /without additional error details/);
+  }
+});
 
 test('text diffs identify added and removed lines with both line numbers', () => {
   const rows = textDiff('same\nold\nend\n', 'same\nnew\nend\n');

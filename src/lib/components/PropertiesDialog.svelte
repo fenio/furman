@@ -1,4 +1,5 @@
 <script lang="ts">
+  import ErrorNotice from './ErrorNotice.svelte';
   import { onDestroy, onMount, untrack } from 'svelte';
   import { appState } from '#lib/state/app.svelte.js';
   import { cleanupTempPath, getFileProperties, getDirectorySize, inspectModel } from '#lib/services/tauri.js';
@@ -1534,7 +1535,7 @@
       {#if loading}
         <div class="loading">Loading...</div>
       {:else if error}
-        <div class="error">{error}</div>
+        <div class="error"><ErrorNotice {error} context="Could not load properties" /></div>
       {:else if sftpIsRoot && sftpConnection}
         <!-- SFTP connection info -->
         <table class="props-table">
@@ -1657,7 +1658,7 @@
           {#if modelLoading}
             <div class="loading">Loading model metadata...</div>
           {:else if modelError}
-            <div class="error">{modelError}</div>
+            <div class="error"><ErrorNotice error={modelError} /></div>
           {:else if modelMetadata}
             <table class="props-table">
               <tbody>
@@ -2133,7 +2134,7 @@
               {#if versionsLoading}
                 <div class="loading">Loading versions...</div>
               {:else if versionsError}
-                <div class="error">{versionsError}</div>
+                <div class="error"><ErrorNotice error={versionsError} /></div>
               {:else if versions.length === 0}
                 <div class="versions-empty">No version history (versioning may not be enabled on this bucket)</div>
               {:else}
@@ -2767,7 +2768,7 @@
               {#if uploadsLoading}
                 <div class="loading">Loading uploads...</div>
               {:else if uploadsError}
-                <div class="error">{uploadsError}</div>
+                <div class="error"><ErrorNotice error={uploadsError} /></div>
               {:else if multipartUploads.length === 0}
                 <div class="versions-empty">No incomplete multipart uploads</div>
               {:else}
@@ -2950,7 +2951,7 @@
               {#if aclLoading}
                 <div class="loading">Loading ACL...</div>
               {:else if aclError}
-                <div class="error">{aclError}</div>
+                <div class="error"><ErrorNotice error={aclError} /></div>
               {:else if bucketAcl}
                 <div class="tag-editor">
                   <div class="acl-owner">

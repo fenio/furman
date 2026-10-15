@@ -1,6 +1,7 @@
 /* eslint-disable svelte/prefer-svelte-reactivity -- Native collections here are non-reactive indexes or internal bookkeeping. */
 import type { FileEntry, SortField, SortDirection, ViewMode, PanelBackend, S3ConnectionInfo, SftpConnectionInfo, ArchiveInfo, GitRepoInfo, DirListEvent } from '#lib/types/index.js';
 import { SvelteSet } from 'svelte/reactivity';
+import { errorText } from '#lib/utils/error-report.js';
 import { sortEntries } from '#lib/utils/sort.js';
 import { listDirectory, listDirectoryStreamed, listArchive, watchDirectory, unwatchDirectory, getGitRepoInfo, getDirectorySize, cleanupTempPath } from '#lib/services/tauri.js';
 import { s3Connect, s3Disconnect, s3ListObjects, s3IsObjectEncrypted } from '#lib/services/s3.js';
@@ -298,7 +299,7 @@ export class PanelData {
       }
       this.selectionAnchor = this.cursorIndex;
     } catch (err: unknown) {
-      this.error = err instanceof Error ? err.message : String(err);
+      this.error = errorText(err);
     } finally {
       this.loading = false;
     }
@@ -365,7 +366,7 @@ export class PanelData {
         }
       });
     } catch (err: unknown) {
-      this.error = err instanceof Error ? err.message : String(err);
+      this.error = errorText(err);
       this.loading = false;
       this.streamComplete = true;
       return;
@@ -462,7 +463,7 @@ export class PanelData {
       // Load root of the bucket
       await this.loadDirectory(`s3://${info.bucket}/`);
     } catch (err: unknown) {
-      this.error = err instanceof Error ? err.message : String(err);
+      this.error = errorText(err);
       this.loading = false;
       throw err;
     }
@@ -497,7 +498,7 @@ export class PanelData {
       this.sftpConnection = info;
       await this.loadDirectory(`sftp://${info.host}:${info.port}${homeDir.startsWith('/') ? '' : '/'}${homeDir}/`);
     } catch (err: unknown) {
-      this.error = err instanceof Error ? err.message : String(err);
+      this.error = errorText(err);
       this.loading = false;
     }
   }

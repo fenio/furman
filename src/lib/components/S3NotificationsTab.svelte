@@ -1,4 +1,5 @@
 <script lang="ts">
+  import ErrorNotice from './ErrorNotice.svelte';
   import { onMount } from 'svelte';
   import {
     s3GetNotificationConfiguration,
@@ -285,7 +286,7 @@
   {#if loading}
     <div class="loading">Loading notification configuration...</div>
   {:else if error}
-    <div class="error">{error}</div>
+    <div class="error"><ErrorNotice {error} context="Could not load notifications" /></div>
   {:else}
     <div class="notif-field-row">
       <label class="notif-checkbox">

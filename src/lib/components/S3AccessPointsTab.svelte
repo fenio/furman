@@ -1,4 +1,5 @@
 <script lang="ts">
+  import ErrorNotice from './ErrorNotice.svelte';
   import { onMount } from 'svelte';
   import {
     s3ListAccessPoints,
@@ -345,7 +346,7 @@
   {#if loading}
     <div class="loading">Loading access points...</div>
   {:else if error}
-    <div class="error">{error}</div>
+    <div class="error"><ErrorNotice {error} context="Could not load access points" /></div>
   {:else if accessPoints.length === 0}
     <div class="ap-empty">No access points configured for this bucket.</div>
   {:else}

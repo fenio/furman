@@ -5,6 +5,7 @@ import { sftpDownload, sftpUpload, sftpDelete } from '#lib/services/sftp.js';
 import { formatSize } from '#lib/utils/format.js';
 import { appState } from '#lib/state/app.svelte.js';
 import { statusState } from '#lib/state/status.svelte.js';
+import { errorText } from '#lib/utils/error-report.js';
 
 export type TransferStatus = 'queued' | 'running' | 'paused' | 'completed' | 'failed' | 'cancelled';
 type TransferType = 'copy' | 'move' | 'extract' | 'delete';
@@ -350,7 +351,7 @@ class TransfersState {
       this.complete(t.id);
     } catch (err: unknown) {
       await this.releaseStaging(t);
-      const msg = String(err);
+      const msg = errorText(err);
       if (msg.includes('cancelled')) {
         this.markCancelled(t.id);
       } else {

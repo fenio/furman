@@ -1,4 +1,5 @@
 <script lang="ts">
+  import ErrorNotice from './ErrorNotice.svelte';
   import { onMount } from 'svelte';
   import {
     s3ListInventoryConfigurations,
@@ -252,7 +253,7 @@
   {#if loading}
     <div class="loading">Loading inventory configurations...</div>
   {:else if error}
-    <div class="error">{error}</div>
+    <div class="error"><ErrorNotice {error} context="Could not load inventory" /></div>
   {:else}
     {#if configs.length === 0}
       <div class="inv-empty">No inventory configurations found for this bucket.</div>

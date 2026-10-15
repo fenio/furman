@@ -4,6 +4,7 @@ use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::Semaphore;
 
+use super::errors::s3_sdk_error;
 use crate::models::FmError;
 
 // ── Bandwidth throttling ───────────────────────────────────────────────────
@@ -91,6 +92,7 @@ pub async fn list_all_objects(
 ) -> Result<Vec<(String, u64, i64)>, FmError> {
     let mut results = Vec::new();
     let mut continuation_token: Option<String> = None;
+    let mut page = 1;
 
     loop {
         let mut req = client.list_objects_v2().bucket(bucket).prefix(prefix);
@@ -99,7 +101,13 @@ pub async fn list_all_objects(
             req = req.continuation_token(token);
         }
 
-        let resp = req.send().await.map_err(|e| s3err(e.to_string()))?;
+        let resp = req.send().await.map_err(|e| {
+            s3_sdk_error(
+                &format!("ListObjectsV2 (recursive listing, page {page})"),
+                &e,
+            )
+        })?;
+        page += 1;
 
         for obj in resp.contents() {
             let key = obj.key().unwrap_or_default().to_string();
@@ -187,12 +195,10 @@ pub async fn upload_part_with_retry(
                     let backoff = std::time::Duration::from_millis(500 * (attempt as u64 + 1));
                     tokio::time::sleep(backoff).await;
                 } else {
-                    return Err(s3err(format!(
-                        "Part {} failed after {} retries: {}",
-                        part_number,
-                        PART_RETRIES + 1,
-                        e,
-                    )));
+                    return Err(s3_sdk_error(
+                        &format!("Upload part {part_number} failed after {} attempts", PART_RETRIES + 1),
+                        &e,
+                    ));
                 }
             }
         }
@@ -224,7 +230,7 @@ pub async fn upload_file_multipart(
             create_req = create_req.metadata(k, v);
         }
     }
-    let create_resp = create_req.send().await.map_err(|e| s3err(e.to_string()))?;
+    let create_resp = create_req.send().await.map_err(|e| s3_sdk_error("Create multipart upload", &e))?;
 
     let upload_id = create_resp
         .upload_id()
@@ -351,7 +357,7 @@ pub async fn upload_file_multipart(
         .multipart_upload(completed_upload)
         .send()
         .await
-        .map_err(|e| s3err(e.to_string()))?;
+        .map_err(|e| s3_sdk_error("Complete multipart upload", &e))?;
 
     Ok(())
 }
@@ -374,7 +380,7 @@ pub async fn copy_object_multipart(
         .key(dest_key)
         .send()
         .await
-        .map_err(|e| s3err(e.to_string()))?;
+        .map_err(|e| s3_sdk_error("Create multipart copy", &e))?;
 
     let upload_id = create_resp
         .upload_id()
@@ -429,7 +435,7 @@ pub async fn copy_object_multipart(
                          (upload_id={upload_id}); part may be orphaned: {abort_err}"
                     );
                 }
-                return Err(s3err(e.to_string()));
+                return Err(s3_sdk_error("Copy multipart part", &e));
             }
         }
     }
@@ -459,7 +465,7 @@ pub async fn copy_object_multipart(
         .multipart_upload(completed_upload)
         .send()
         .await
-        .map_err(|e| s3err(e.to_string()))?;
+        .map_err(|e| s3_sdk_error("Complete multipart copy", &e))?;
 
     Ok(())
 }
@@ -548,7 +554,7 @@ pub(crate) async fn copy_via_download(
         .key(src_key)
         .send()
         .await
-        .map_err(|e| s3err(e.to_string()))?;
+        .map_err(|e| s3_sdk_error("Read copy source metadata", &e))?;
     if head.content_length().unwrap_or(-1) != object_size as i64 {
         return Err(s3err(format!("Source changed before copying: {src_key}")));
     }
@@ -562,7 +568,7 @@ pub(crate) async fn copy_via_download(
             .set_if_match(source_etag.clone())
             .send()
             .await
-            .map_err(|e| s3err(e.to_string()))?;
+            .map_err(|e| s3_sdk_error("Download copy source", &e))?;
         let body = resp
             .body
             .collect()
@@ -579,7 +585,7 @@ pub(crate) async fn copy_via_download(
             .body(body.into())
             .send()
             .await
-            .map_err(|e| s3err(e.to_string()))?;
+            .map_err(|e| s3_sdk_error("Upload copy destination", &e))?;
     } else {
         // Large file: multipart upload with range-based GETs from source
         let create_resp = dest_client
@@ -588,7 +594,7 @@ pub(crate) async fn copy_via_download(
             .key(dest_key)
             .send()
             .await
-            .map_err(|e| s3err(e.to_string()))?;
+            .map_err(|e| s3_sdk_error("Create relay multipart upload", &e))?;
 
         let upload_id = create_resp
             .upload_id()
@@ -615,7 +621,7 @@ pub(crate) async fn copy_via_download(
                     .set_if_match(source_etag.clone())
                     .send()
                     .await
-                    .map_err(|e| s3err(format!("Range GET failed for part {part_number}: {e}")))?;
+                    .map_err(|e| s3_sdk_error(&format!("Download copy source part {part_number}"), &e))?;
 
                 let chunk = get_resp
                     .body
@@ -649,7 +655,7 @@ pub(crate) async fn copy_via_download(
                         completed_parts.push((part_number, etag));
                         throttle(chunk_size).await;
                     }
-                    Err(e) => return Err(s3err(e.to_string())),
+                    Err(e) => return Err(s3_sdk_error("Upload relay part", &e)),
                 }
             }
 
@@ -676,7 +682,7 @@ pub(crate) async fn copy_via_download(
                 .multipart_upload(completed_upload)
                 .send()
                 .await
-                .map_err(|e| s3err(e.to_string()))?;
+                .map_err(|e| s3_sdk_error("Complete relay multipart upload", &e))?;
             Ok::<(), FmError>(())
         }
         .await;

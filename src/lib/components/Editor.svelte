@@ -1,4 +1,5 @@
 <script lang="ts">
+	import ErrorNotice from './ErrorNotice.svelte';
 	import { readFileText, writeFileText } from '#lib/services/tauri.js';
 	import { s3PutText } from '#lib/services/s3.js';
 	import { sftpPutText } from '#lib/services/sftp.js';
@@ -198,13 +199,13 @@
 	{#if loading}
 		<div class="editor-loading">Loading...</div>
 	{:else if error && !content}
-		<div class="editor-error">Error: {error}</div>
+		<div class="editor-error"><ErrorNotice {error} context="Could not open file" /></div>
 	{:else}
 		<div class="editor-body" bind:this={editorContainer}></div>
 	{/if}
 
 	{#if error && content}
-		<div class="editor-status-error">Error: {error}</div>
+		<div class="editor-status-error"><ErrorNotice {error} context="Could not save file" /></div>
 	{/if}
 
 	{#if showDiscardConfirm}

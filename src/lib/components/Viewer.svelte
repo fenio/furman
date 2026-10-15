@@ -1,4 +1,5 @@
 <script lang="ts">
+  import ErrorNotice from './ErrorNotice.svelte';
   import type { ViewerMode } from '#lib/types/index.js';
   import { readFileText, readFileBinary } from '#lib/services/tauri.js';
   import { convertFileSrc } from '@tauri-apps/api/core';
@@ -324,7 +325,7 @@
     {#if loading}
       <div class="viewer-loading">Loading...</div>
     {:else if error}
-      <div class="viewer-error">Error: {error}</div>
+      <div class="viewer-error"><ErrorNotice {error} context="Could not open file" /></div>
     {:else if mode === 'text'}
       <pre class="viewer-text hljs">{#each highlightedLines as line, i (i)}<div
           class="viewer-line"

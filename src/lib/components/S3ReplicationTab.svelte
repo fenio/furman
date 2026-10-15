@@ -1,4 +1,5 @@
 <script lang="ts">
+  import ErrorNotice from './ErrorNotice.svelte';
   import { onMount } from 'svelte';
   import {
     s3GetReplicationConfiguration,
@@ -277,7 +278,7 @@
   {#if loading}
     <div class="loading">Loading replication configuration...</div>
   {:else if error}
-    <div class="error">{error}</div>
+    <div class="error"><ErrorNotice {error} context="Could not load replication" /></div>
   {:else}
     <div class="repl-field">
       <label class="repl-label">IAM Role ARN

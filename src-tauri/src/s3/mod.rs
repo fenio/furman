@@ -1,5 +1,6 @@
 pub mod client;
 pub mod crypto;
+pub mod errors;
 pub mod helpers;
 pub mod service;
 pub mod sse_c;
