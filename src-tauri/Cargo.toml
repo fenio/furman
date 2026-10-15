@@ -33,8 +33,11 @@ chrono = { version = "0.4", features = ["serde"] }
 dirs = "7"
 
 aws-config = { version = "1", features = ["behavior-version-latest"] }
+aws-runtime = "1"
+aws-types = "1"
 aws-sdk-s3 = "1"
 aws-sdk-sts = "1"
+aws-sdk-sso = { version = "1", default-features = false }
 aws-sdk-kms = "1"
 aws-sdk-cloudfront = "1"
 aws-sdk-s3control = "1"

@@ -203,14 +203,14 @@ pub async fn s3_connect(
             .max_keys(1)
             .send()
             .await
-            .map_err(|e| s3err(format!("Cannot access public bucket '{bucket}': {e}")))?;
+            .map_err(|e| s3::errors::s3_sdk_error("Connect: ListObjectsV2 (public bucket)", &e))?;
     } else {
         client
             .head_bucket()
             .bucket(&bucket)
             .send()
             .await
-            .map_err(|e| s3err(format!("Cannot access bucket '{bucket}': {e}")))?;
+            .map_err(|e| s3::errors::s3_sdk_error("Connect: HeadBucket", &e))?;
     }
 
     let conn = s3::S3Connection {

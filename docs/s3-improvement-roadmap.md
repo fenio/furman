@@ -22,12 +22,13 @@ separate PR, with provider-specific behavior and safety tested explicitly.
    preflight. Add an activity inspector with operation, duration, status, request
    IDs, retries, counts, and a safe diagnostic export.
    See [the cache and activity contract](s3-cache-activity.md).
-5. **Metadata and provider compatibility — current PR.** Attribute-preserving metadata edits
+5. **Metadata and provider compatibility — merged in [#359](https://github.com/fenio/furman/pull/359).** Attribute-preserving metadata edits
    above 5 GiB, MIME inference, conflict guards, tested checksum policies, and
    single-delete fallback only for recognized unsupported bulk-delete errors.
    See [the metadata and compatibility contract](s3-metadata-compatibility.md).
-6. **AWS SSO usability.** Profile discovery, clear expired-session states, and an
-   explicit AWS CLI v2 sign-in action without storing SSO tokens ourselves.
+6. **AWS SSO usability — current PR.** Profile discovery, clear expired-session states, and an
+    explicit AWS CLI v2 sign-in action without storing SSO tokens ourselves.
+    See [the SSO usability contract](s3-aws-sso.md).
 7. **Saved jobs, then opt-in scheduling.** Start with reusable comparison/sync
    presets. Later add pinned destinations, fresh comparisons, persistent outcomes,
    failure pauses, and explicit approval; never silently schedule uploads.

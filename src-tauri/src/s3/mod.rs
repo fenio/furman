@@ -1,4 +1,5 @@
 pub mod client;
+pub mod aws_profiles;
 pub mod compat;
 pub mod metadata;
 pub mod activity;

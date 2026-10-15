@@ -67,6 +67,7 @@ pub fn run() {
         .manage(WatcherState(Mutex::new(HashMap::new())))
         .manage(TerminalState(Mutex::new(HashMap::new())))
         .manage(S3State(Mutex::new(HashMap::new())))
+        .manage(commands::aws::AwsSsoState::default())
         .manage(s3::writes::WriteState::default())
         .manage(SftpState::default())
         .manage(SearchState(Mutex::new(HashMap::new())))
@@ -281,6 +282,9 @@ pub fn run() {
             commands::terminal::terminal_resize,
             commands::terminal::terminal_close,
             // s3 commands
+            commands::aws::aws_shared_profiles,
+            commands::aws::aws_sso_login,
+            commands::aws::aws_sso_cancel,
             commands::s3::s3_activity_snapshot,
             commands::s3::s3_activity_clear,
             commands::s3::s3_connect,
