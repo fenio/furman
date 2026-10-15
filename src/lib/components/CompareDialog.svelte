@@ -1,6 +1,7 @@
 <script lang="ts">
   import { onMount, untrack } from 'svelte';
   import type { PanelBackend } from '#lib/types/index.js';
+  import { appState } from '#lib/state/app.svelte.js';
   import { canComparePanes, defaultComparisonMode, parseComparisonExcludes, type ComparisonMode } from '#lib/utils/comparison-options.js';
 
   interface Props {
@@ -48,6 +49,7 @@
       <label for="compare-excludes">Exclude patterns (optional, comma-separated)</label>
       <input id="compare-excludes" type="text" bind:value={excludeText} placeholder=".DS_Store, *.tmp, node_modules/**" />
       <p>Compares the current pane roots recursively. No exclusions unless specified; current file contents only, not version history. Neither side is modified.</p>
+      <p>Scan budgets: {appState.s3ScanLimits.max_objects.toLocaleString()} entries, {appState.s3ScanLimits.max_requests.toLocaleString()} S3 API calls, {appState.s3ScanLimits.max_seconds}s across both sides. Configure in Preferences → Network. A stopped scan cannot establish equality.</p>
       {#if mode === 'sha256' && (leftBackend === 's3' || rightBackend === 's3')}
         <p>S3 contents are downloaded for hashing; download/egress charges may apply. Keep both sides stable during verification.</p>
       {/if}

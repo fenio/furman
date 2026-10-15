@@ -22,28 +22,78 @@ pub async fn object_sha256(
     etag: Option<&str>,
     cancel: &AtomicBool,
 ) -> Result<String, FmError> {
-    check_cancelled(cancel)?;
-    let response = client
-        .get_object()
-        .bucket(bucket)
-        .key(key)
-        .set_if_match(etag.map(str::to_owned))
-        .send()
-        .await
-        .map_err(|e| FmError::S3(format!("Cannot verify {bucket}/{key}: {e}")))?;
+    object_sha256_bounded(client, bucket, key, expected_size, etag, cancel, None).await
+}
+
+pub async fn object_sha256_bounded(
+    client: &Client,
+    bucket: &str,
+    key: &str,
+    expected_size: u64,
+    etag: Option<&str>,
+    cancel: &AtomicBool,
+    scan: Option<(
+        &super::scan::ScanBudget,
+        &(dyn Fn(super::scan::ScanProgress) + Send + Sync),
+    )>,
+) -> Result<String, FmError> {
+    if let Some((budget, _)) = scan {
+        budget.check(cancel)?;
+    } else {
+        check_cancelled(cancel)?;
+    }
+    let request = async {
+        client
+            .get_object()
+            .bucket(bucket)
+            .key(key)
+            .set_if_match(etag.map(str::to_owned))
+            .send()
+            .await
+            .map_err(|e| super::errors::s3_sdk_error("GetObject (SHA-256 verification)", &e))
+    };
+    let response = if let Some((budget, on_progress)) = scan {
+        let response = budget.request(cancel, request).await?;
+        on_progress(budget.progress());
+        response
+    } else {
+        request.await?
+    };
     let mut body = response.body;
     let mut digest = Sha256::new();
     let mut bytes = 0u64;
-    while let Some(chunk) = body
-        .try_next()
-        .await
-        .map_err(|e| FmError::S3(format!("Cannot read {bucket}/{key}: {e}")))?
-    {
-        check_cancelled(cancel)?;
+    loop {
+        let read = async {
+            body.try_next()
+                .await
+                .map_err(|e| FmError::S3(format!("Cannot read {bucket}/{key}: {e}")))
+        };
+        let chunk = if let Some((budget, _)) = scan {
+            budget.wait(cancel, read).await?
+        } else {
+            read.await?
+        };
+        let Some(chunk) = chunk else { break };
+        if let Some((budget, _)) = scan {
+            budget.check(cancel)?;
+        } else {
+            check_cancelled(cancel)?;
+        }
         bytes += chunk.len() as u64;
         digest.update(&chunk);
+        if let Some((budget, on_progress)) = scan {
+            budget.bytes(chunk.len() as u64, true);
+            if budget.progress().bytes_read % (1024 * 1024) < chunk.len() as u64 {
+                on_progress(budget.progress());
+            }
+        }
     }
-    check_cancelled(cancel)?;
+    if let Some((budget, on_progress)) = scan {
+        budget.check(cancel)?;
+        on_progress(budget.progress());
+    } else {
+        check_cancelled(cancel)?;
+    }
     if bytes != expected_size {
         return Err(FmError::S3(format!(
             "Object changed or incomplete read while verifying {bucket}/{key}: expected {expected_size} bytes, read {bytes}"

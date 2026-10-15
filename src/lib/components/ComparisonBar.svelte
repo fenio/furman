@@ -1,6 +1,8 @@
 <script lang="ts">
   import { comparisonState, type ComparisonFilter } from '#lib/state/comparison.svelte.js';
   import { panels } from '#lib/state/panels.svelte.js';
+  import ScanStatus from './ScanStatus.svelte';
+  import ErrorNotice from './ErrorNotice.svelte';
 
   interface Props {
     side: 'left' | 'right';
@@ -23,7 +25,8 @@
   {#if comparisonState.scanning}
     <span class="spinner"></span>
     <span class="bar-label">{comparisonState.mode === 'sha256' ? 'Reading contents for SHA-256...' : 'Comparing metadata...'}</span>
-  {:else}
+    <button class="filter-btn" onclick={() => comparisonState.cancelScan()}>Cancel scan</button>
+  {:else if comparisonState.outcome === 'complete'}
     <span class="badge green">{counts.new}</span>
     <span class="badge yellow">{counts.modified}</span>
     <span class="badge red">{counts.deleted}</span>
@@ -38,9 +41,17 @@
         onclick={() => comparisonState.setFilter(f.id, side)}
       >{f.label}</button>
     {/each}
+  {:else}
+    <span class="bar-label">Comparison incomplete — {comparisonState.outcome ?? 'not finished'}</span>
+    <button class="filter-btn" onclick={() => comparisonState.retryComparison()}>Rescan</button>
   {/if}
   <button class="close-btn" onclick={() => comparisonState.stopComparison()}>×</button>
 </div>
+{#if comparisonState.scanProgress}
+  <ScanStatus progress={comparisonState.scanProgress} outcome={comparisonState.outcome} message={comparisonState.scanMessage} />
+{:else if comparisonState.scanMessage}
+  <ErrorNotice error={comparisonState.scanMessage} />
+{/if}
 
 <style>
   .comparison-bar {

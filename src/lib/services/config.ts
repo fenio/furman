@@ -3,6 +3,8 @@ import type { FavoriteItem } from '#lib/state/sidebar.svelte.js';
 import type { Workspace } from '#lib/state/workspaces.svelte.js';
 import type { S3Bookmark, SftpBookmark, ConnectionProfile, SortField, SortDirection, ColumnId } from '#lib/types/index.js';
 import { inferProviderFromEndpoint } from '#lib/data/s3-providers.js';
+import type { ScanLimits } from '#lib/types/index.js';
+import { DEFAULT_SCAN_LIMITS } from '#lib/utils/scan.js';
 
 export interface Config {
   theme: 'dark' | 'light';
@@ -33,6 +35,7 @@ export interface Config {
   multipartThreshold: number;
   multipartPartSize: number;
   concurrentParts: number;
+  s3ScanLimits: ScanLimits;
   remoteDownloadLimit: number;
   sftpInactivityTimeout: number;
   sftpKeepaliveInterval: number;
@@ -70,6 +73,7 @@ export const DEFAULT_CONFIG: Config = {
   multipartThreshold: 8388608,    // 8 MB
   multipartPartSize: 8388608,     // 8 MB
   concurrentParts: 4,
+  s3ScanLimits: { ...DEFAULT_SCAN_LIMITS },
   remoteDownloadLimit: 104857600, // 100 MB
   sftpInactivityTimeout: 300,     // 5 min in seconds
   sftpKeepaliveInterval: 30,      // seconds

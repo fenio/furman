@@ -55,6 +55,21 @@ Open Preferences with **Cmd+,** (or via the Command Palette). Settings are organ
 
 **Multipart settings** control how large files are uploaded to S3. Files larger than the threshold are split into parts of the configured size and uploaded with the specified concurrency. Higher concurrency can improve throughput on fast connections.
 
+### Scan limits
+
+| Setting | Default |
+| --- | ---: |
+| Entries scanned | 100,000 |
+| S3 API calls | 1,000 |
+| Absolute deadline | 300 seconds |
+| S3 search results | 1,000 |
+
+These budgets apply to new S3 recursive searches, local/S3 comparisons (both
+sides combined), and S3 transfer preflight. Zero/unlimited values are not
+accepted. A stopped scan is incomplete and cannot enable Sync. See
+[scan safeguards](s3-scan-safeguards.md) for ranges, counting, cancellation,
+and SHA-256 download-cost caveats.
+
 ### SFTP
 
 | Setting | Options | Default |

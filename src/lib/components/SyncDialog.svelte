@@ -4,6 +4,10 @@
   import { syncDiff, cancelSync } from '#lib/services/tauri.js';
   import { appState } from '#lib/state/app.svelte.js';
   import type { SyncEntry, SyncEvent, PanelBackend } from '#lib/types/index.js';
+  import type { ScanOutcome, ScanProgress } from '#lib/types/index.js';
+  import { canUseScan } from '#lib/utils/scan.js';
+  import { errorText } from '#lib/utils/error-report.js';
+  import ScanStatus from './ScanStatus.svelte';
 
   interface Props {
     sourceBackend: PanelBackend;
@@ -31,6 +35,28 @@
   let scanning = $state(false);
   let scanComplete = $state(false);
   let scanError = $state('');
+  let outcome = $state<ScanOutcome | null>(null);
+  let scanProgress = $state<ScanProgress | null>(null);
+  let pendingEntries: SyncEntry[] = [];
+  let entryFlushTimer: ReturnType<typeof setTimeout> | undefined;
+
+  function clearPendingEntries() {
+    clearTimeout(entryFlushTimer);
+    entryFlushTimer = undefined;
+    pendingEntries = [];
+  }
+
+  function flushEntries() {
+    clearTimeout(entryFlushTimer);
+    entryFlushTimer = undefined;
+    const batch = pendingEntries;
+    pendingEntries = [];
+    if (!batch.length) return;
+    allEntries = [...allEntries, ...batch];
+    for (const entry of batch) {
+      if (entry.status === 'new' || entry.status === 'modified') selectedPaths.add(entry.relative_path);
+    }
+  }
   let filter = $state<'all' | 'new' | 'modified' | 'deleted'>('all');
   let selectedPaths = new SvelteSet<string>();
   let cursorIndex = $state(0);
@@ -57,9 +83,11 @@
   });
 
   onDestroy(() => {
+    clearPendingEntries();
     if (currentSyncId) {
       cancelSync(currentSyncId).catch(() => {});
     }
+    currentSyncId = '';
   });
 
   function parseExcludePatterns(): string[] {
@@ -78,12 +106,15 @@
     }
 
     currentSyncId = id;
+    clearPendingEntries();
     allEntries = [];
     selectedPaths.clear();
     cursorIndex = 0;
     scanning = true;
     scanComplete = false;
     scanError = '';
+    outcome = null;
+    scanProgress = null;
     newCount = 0;
     modifiedCount = 0;
     deletedCount = 0;
@@ -98,17 +129,27 @@
       if (id !== currentSyncId) return;
 
       if (event.type === 'Entry') {
-        allEntries = [...allEntries, event as SyncEntry];
-        // Auto-select new and modified entries
-        if (event.status === 'new' || event.status === 'modified') {
-          selectedPaths.add(event.relative_path);
-        }
+        pendingEntries.push(event as SyncEntry);
+        if (!entryFlushTimer) entryFlushTimer = setTimeout(flushEntries, 50);
+      } else if (event.type === 'ScanProgress') {
+        scanProgress = event.progress;
+      } else if (event.type === 'ScanStopped') {
+        clearPendingEntries();
+        scanProgress = event.progress;
+        outcome = event.outcome;
+        scanError = event.message;
+        scanComplete = false;
+        scanning = false;
+        selectedPaths.clear();
+        currentSyncId = '';
       } else if (event.type === 'Done') {
+        flushEntries();
         newCount = event.new_count;
         modifiedCount = event.modified;
         deletedCount = event.deleted;
         scanning = false;
         scanComplete = true;
+        outcome = 'complete';
       }
     };
 
@@ -125,19 +166,23 @@
       handleEvent,
     ).catch((err: unknown) => {
       if (id === currentSyncId) {
+        clearPendingEntries();
         scanning = false;
         scanComplete = false;
-        scanError = 'Comparison failed: ' + String(err);
+        scanError = 'Comparison failed: ' + errorText(err);
+        outcome = 'failed';
         selectedPaths.clear();
       }
     });
   }
 
   function invalidateScan() {
+    clearPendingEntries();
     if (currentSyncId) cancelSync(currentSyncId).catch(() => {});
     currentSyncId = '';
     scanning = false;
     scanComplete = false;
+    outcome = 'cancelled';
     selectedPaths.clear();
     scanError = 'Options changed or scan cancelled. Rescan before syncing.';
   }
@@ -161,7 +206,7 @@
   }
 
   function handleSync() {
-    if (!scanComplete || scanning) return;
+    if (!scanComplete || !canUseScan(outcome, scanning)) return;
     const selected = allEntries.filter((e) => selectedPaths.has(e.relative_path));
     onSync(selected);
   }
@@ -322,6 +367,12 @@
       </div>
 
       <!-- Filter buttons -->
+      <p class="hint">Scan budgets: {appState.s3ScanLimits.max_objects.toLocaleString()} entries, {appState.s3ScanLimits.max_requests.toLocaleString()} S3 API calls, {appState.s3ScanLimits.max_seconds}s (both sides combined). Configure in Preferences → Network.</p>
+      {#if compareMode === 'sha256' && (sourceBackend === 's3' || destBackend === 's3')}
+        <p class="hint">SHA-256 downloads included S3 contents; API request and download/egress charges may apply.</p>
+      {/if}
+      {#if scanProgress}<ScanStatus progress={scanProgress} outcome={outcome ?? undefined} message={scanError} />{/if}
+      {#if scanning}<button class="rescan-btn" onclick={invalidateScan}>Cancel scan</button>{/if}
       <div class="filter-row">
         <button
           class="filter-btn"
@@ -404,7 +455,7 @@
         <button class="dialog-btn" onclick={onClose}>Cancel</button>
         <button
           class="dialog-btn sync-btn"
-          disabled={selectedPaths.size === 0 || scanning || !scanComplete}
+          disabled={selectedPaths.size === 0 || !canUseScan(outcome, scanning) || !scanComplete}
           onclick={handleSync}
         >Sync ({selectedPaths.size})</button>
       </div>

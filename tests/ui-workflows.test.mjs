@@ -9,6 +9,46 @@ import { errorReport, errorText } from '../src/lib/utils/error-report.ts';
 import { readFileSync } from 'node:fs';
 import { compile } from 'svelte/compiler';
 import { render } from 'svelte/server';
+import { DEFAULT_SCAN_LIMITS, validScanLimits, scanLimitsFromConfig, scanSummary, canUseScan } from '../src/lib/utils/scan.ts';
+
+test('scan limits reject disabled, fractional, and excessive budgets and migrate old configs safely', () => {
+  assert.equal(validScanLimits(DEFAULT_SCAN_LIMITS), true);
+  for (const key of Object.keys(DEFAULT_SCAN_LIMITS)) {
+    for (const invalid of [0, -1, 1.5, NaN, Infinity, Number.MAX_SAFE_INTEGER]) {
+      assert.equal(validScanLimits({ ...DEFAULT_SCAN_LIMITS, [key]: invalid }), false);
+    }
+  }
+  assert.deepEqual(scanLimitsFromConfig(undefined), DEFAULT_SCAN_LIMITS);
+  assert.deepEqual(scanLimitsFromConfig({ max_objects: 0 }), DEFAULT_SCAN_LIMITS);
+  assert.deepEqual(scanLimitsFromConfig({ ...DEFAULT_SCAN_LIMITS, extra: 'not copied' }), DEFAULT_SCAN_LIMITS);
+});
+
+test('only exhaustive successful scans can authorize Sync', () => {
+  for (const outcome of [null, 'cancelled', 'limited', 'failed', 'complete']) {
+    assert.equal(canUseScan(outcome, true), false);
+    assert.equal(canUseScan(outcome, false), outcome === 'complete');
+  }
+  const progress = { scanned: 20, matched: 3, requests: 2, bytes_read: 7, s3_bytes_read: 3, elapsed_ms: 2000 };
+  assert.match(scanSummary(progress, 'limited'), /Incomplete — limited/);
+  assert.match(scanSummary(progress, 'cancelled'), /Incomplete — cancelled/);
+  assert.match(scanSummary(progress, 'failed'), /Incomplete — failed/);
+  assert.match(scanSummary(progress, 'complete'), /^Complete:/);
+});
+
+test('scan status keeps stopped scans visibly incomplete and reports downloaded bytes', async () => {
+  const { default: Status } = await import(serverComponent('ScanStatus.svelte', {
+    '#lib/utils/scan.js': new URL('../src/lib/utils/scan.ts', import.meta.url).href,
+    '#lib/utils/format.js': new URL('../src/lib/utils/format.ts', import.meta.url).href,
+    './ErrorNotice.svelte': serverComponent('ErrorNotice.svelte'),
+  }));
+  for (const outcome of ['limited', 'cancelled', 'failed']) {
+    const html = render(Status, { props: { outcome, progress: { scanned: 5, matched: 1, requests: 2, bytes_read: 7, s3_bytes_read: 3, elapsed_ms: 1000 }, message: 'A useful reason' } }).body;
+    assert.ok(html.includes('Incomplete'));
+    assert.ok(html.includes('cannot establish equality or authorize Sync'));
+    assert.ok(html.includes('S3 payload read: 3'));
+    assert.ok(html.includes('A useful reason'));
+  }
+});
 
 function serverComponent(file, dependencies = {}) {
   const source = readFileSync(new URL(`../src/lib/components/${file}`, import.meta.url), 'utf8');

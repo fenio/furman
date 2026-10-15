@@ -1,5 +1,5 @@
 use crate::models::{FmError, SyncEntry, SyncEvent};
-use crate::s3::verification::{check_cancelled, object_sha256};
+use crate::s3::scan::{self, ScanBudget, ScanProgress};
 use crate::s3::S3State;
 use glob_match::glob_match;
 use sha2::{Digest, Sha256};
@@ -59,127 +59,115 @@ pub async fn sync_diff(
         id: id.clone(),
     };
     let use_checksum = compare_mode == "checksum" || compare_mode == "sha256";
+    let budget = Arc::new(ScanBudget::new());
+    let progress_channel = channel.clone();
+    let on_progress: Arc<dyn Fn(ScanProgress) + Send + Sync> = Arc::new(move |progress| {
+        let _ = progress_channel.send(SyncEvent::ScanProgress { progress });
+    });
+    let result = async {
+        on_progress(budget.progress());
 
-    // Collect source files
-    let mut source_files = collect_files(
-        &source_backend,
-        &source_path,
-        &source_s3_id,
-        use_checksum,
-        &s3_state,
-        &cancel_flag,
-        &exclude_patterns,
-    )
-    .await?;
+        // Collect source files
+        let mut source_files = collect_files(
+            &source_backend,
+            &source_path,
+            &source_s3_id,
+            use_checksum,
+            &s3_state,
+            &cancel_flag,
+            &exclude_patterns,
+            &budget,
+            &on_progress,
+        )
+        .await?;
 
-    check_cancelled(&cancel_flag)?;
+        budget.check(&cancel_flag)?;
 
-    // Collect dest files
-    let mut dest_files = collect_files(
-        &dest_backend,
-        &dest_path,
-        &dest_s3_id,
-        use_checksum,
-        &s3_state,
-        &cancel_flag,
-        &exclude_patterns,
-    )
-    .await?;
+        // Collect dest files
+        let mut dest_files = collect_files(
+            &dest_backend,
+            &dest_path,
+            &dest_s3_id,
+            use_checksum,
+            &s3_state,
+            &cancel_flag,
+            &exclude_patterns,
+            &budget,
+            &on_progress,
+        )
+        .await?;
 
-    check_cancelled(&cancel_flag)?;
+        budget.check(&cancel_flag)?;
 
-    // Apply exclude filters
-    if !exclude_patterns.is_empty() {
-        apply_excludes(&mut source_files, &exclude_patterns);
-        apply_excludes(&mut dest_files, &exclude_patterns);
-    }
-
-    // Compare and stream entries
-    let mut scanned: u32 = 0;
-    let mut new_count: u32 = 0;
-    let mut modified: u32 = 0;
-    let mut deleted: u32 = 0;
-    let mut same_count: u32 = 0;
-
-    // Keys in source
-    for (rel_path, (src_size, src_modified, ref src_etag)) in &source_files {
-        check_cancelled(&cancel_flag)?;
-
-        let entry = if let Some((dst_size, dst_modified, ref dst_etag)) = dest_files.get(rel_path) {
-            let is_modified = if use_checksum {
-                files_differ_checksum(
-                    *src_size,
-                    src_etag.as_deref(),
-                    *dst_size,
-                    dst_etag.as_deref(),
-                )
-            } else {
-                files_differ_metadata(*src_size, *src_modified, *dst_size, *dst_modified)
-            };
-
-            if is_modified {
-                modified += 1;
-                SyncEntry {
-                    relative_path: rel_path.clone(),
-                    status: "modified".to_string(),
-                    source_size: *src_size,
-                    dest_size: *dst_size,
-                    source_modified: *src_modified,
-                    dest_modified: *dst_modified,
-                    source_etag: src_etag.clone().unwrap_or_default(),
-                    dest_etag: dst_etag.clone().unwrap_or_default(),
-                }
-            } else {
-                same_count += 1;
-                SyncEntry {
-                    relative_path: rel_path.clone(),
-                    status: "same".to_string(),
-                    source_size: *src_size,
-                    dest_size: *dst_size,
-                    source_modified: *src_modified,
-                    dest_modified: *dst_modified,
-                    source_etag: src_etag.clone().unwrap_or_default(),
-                    dest_etag: dst_etag.clone().unwrap_or_default(),
-                }
-            }
-        } else {
-            new_count += 1;
-            SyncEntry {
-                relative_path: rel_path.clone(),
-                status: "new".to_string(),
-                source_size: *src_size,
-                dest_size: 0,
-                source_modified: *src_modified,
-                dest_modified: 0,
-                source_etag: src_etag.clone().unwrap_or_default(),
-                dest_etag: String::new(),
-            }
-        };
-
-        let _ = channel.send(SyncEvent::Entry(entry));
-        scanned += 1;
-
-        if scanned % 100 == 0 {
-            let _ = channel.send(SyncEvent::Progress { scanned });
+        // Apply exclude filters
+        if !exclude_patterns.is_empty() {
+            apply_excludes(&mut source_files, &exclude_patterns);
+            apply_excludes(&mut dest_files, &exclude_patterns);
         }
-    }
 
-    // Keys only in dest (deleted from source perspective)
-    for (rel_path, (dst_size, dst_modified, ref dst_etag)) in &dest_files {
-        check_cancelled(&cancel_flag)?;
+        // Compare and stream entries
+        let mut scanned: u32 = 0;
+        let mut new_count: u32 = 0;
+        let mut modified: u32 = 0;
+        let mut deleted: u32 = 0;
+        let mut same_count: u32 = 0;
 
-        if !source_files.contains_key(rel_path) {
-            deleted += 1;
-            let entry = SyncEntry {
-                relative_path: rel_path.clone(),
-                status: "deleted".to_string(),
-                source_size: 0,
-                dest_size: *dst_size,
-                source_modified: 0,
-                dest_modified: *dst_modified,
-                source_etag: String::new(),
-                dest_etag: dst_etag.clone().unwrap_or_default(),
-            };
+        // Keys in source
+        for (rel_path, (src_size, src_modified, ref src_etag)) in &source_files {
+            budget.check(&cancel_flag)?;
+
+            let entry =
+                if let Some((dst_size, dst_modified, ref dst_etag)) = dest_files.get(rel_path) {
+                    let is_modified = if use_checksum {
+                        files_differ_checksum(
+                            *src_size,
+                            src_etag.as_deref(),
+                            *dst_size,
+                            dst_etag.as_deref(),
+                        )
+                    } else {
+                        files_differ_metadata(*src_size, *src_modified, *dst_size, *dst_modified)
+                    };
+
+                    if is_modified {
+                        modified += 1;
+                        SyncEntry {
+                            relative_path: rel_path.clone(),
+                            status: "modified".to_string(),
+                            source_size: *src_size,
+                            dest_size: *dst_size,
+                            source_modified: *src_modified,
+                            dest_modified: *dst_modified,
+                            source_etag: src_etag.clone().unwrap_or_default(),
+                            dest_etag: dst_etag.clone().unwrap_or_default(),
+                        }
+                    } else {
+                        same_count += 1;
+                        SyncEntry {
+                            relative_path: rel_path.clone(),
+                            status: "same".to_string(),
+                            source_size: *src_size,
+                            dest_size: *dst_size,
+                            source_modified: *src_modified,
+                            dest_modified: *dst_modified,
+                            source_etag: src_etag.clone().unwrap_or_default(),
+                            dest_etag: dst_etag.clone().unwrap_or_default(),
+                        }
+                    }
+                } else {
+                    new_count += 1;
+                    SyncEntry {
+                        relative_path: rel_path.clone(),
+                        status: "new".to_string(),
+                        source_size: *src_size,
+                        dest_size: 0,
+                        source_modified: *src_modified,
+                        dest_modified: 0,
+                        source_etag: src_etag.clone().unwrap_or_default(),
+                        dest_etag: String::new(),
+                    }
+                };
+
             let _ = channel.send(SyncEvent::Entry(entry));
             scanned += 1;
 
@@ -187,17 +175,53 @@ pub async fn sync_diff(
                 let _ = channel.send(SyncEvent::Progress { scanned });
             }
         }
+
+        // Keys only in dest (deleted from source perspective)
+        for (rel_path, (dst_size, dst_modified, ref dst_etag)) in &dest_files {
+            budget.check(&cancel_flag)?;
+
+            if !source_files.contains_key(rel_path) {
+                deleted += 1;
+                let entry = SyncEntry {
+                    relative_path: rel_path.clone(),
+                    status: "deleted".to_string(),
+                    source_size: 0,
+                    dest_size: *dst_size,
+                    source_modified: 0,
+                    dest_modified: *dst_modified,
+                    source_etag: String::new(),
+                    dest_etag: dst_etag.clone().unwrap_or_default(),
+                };
+                let _ = channel.send(SyncEvent::Entry(entry));
+                scanned += 1;
+
+                if scanned % 100 == 0 {
+                    let _ = channel.send(SyncEvent::Progress { scanned });
+                }
+            }
+        }
+
+        budget.check(&cancel_flag)?;
+        on_progress(budget.progress());
+        let total = new_count + modified + deleted + same_count;
+        let _ = channel.send(SyncEvent::Done {
+            total,
+            new_count,
+            modified,
+            deleted,
+        });
+
+        Ok(())
     }
-
-    let total = new_count + modified + deleted + same_count;
-    let _ = channel.send(SyncEvent::Done {
-        total,
-        new_count,
-        modified,
-        deleted,
-    });
-
-    Ok(())
+    .await;
+    if let Err(error) = &result {
+        let _ = channel.send(SyncEvent::ScanStopped {
+            outcome: scan::outcome(&result),
+            progress: budget.progress(),
+            message: error.to_string(),
+        });
+    }
+    result
 }
 
 #[tauri::command]
@@ -283,18 +307,24 @@ async fn collect_files(
     s3_state: &State<'_, S3State>,
     cancel: &Arc<AtomicBool>,
     exclude_patterns: &[String],
+    budget: &Arc<ScanBudget>,
+    on_progress: &Arc<dyn Fn(ScanProgress) + Send + Sync>,
 ) -> Result<HashMap<String, FileInfo>, FmError> {
     match backend {
         "local" => {
             let path = path.to_owned();
             let cancel = cancel.clone();
             let exclude_patterns = exclude_patterns.to_vec();
+            let budget = budget.clone();
+            let on_progress = on_progress.clone();
             tokio::task::spawn_blocking(move || {
-                collect_local_files_recursive(
+                collect_local_files_bounded(
                     Path::new(&path),
                     use_checksum,
                     &cancel,
                     &exclude_patterns,
+                    &budget,
+                    on_progress.as_ref(),
                 )
             })
             .await
@@ -308,6 +338,8 @@ async fn collect_files(
                 s3_state,
                 cancel,
                 exclude_patterns,
+                budget,
+                on_progress.as_ref(),
             )
             .await
         }
@@ -316,11 +348,30 @@ async fn collect_files(
 }
 
 /// Recursively walk a local directory, returning size, mtime and optional SHA-256.
+#[cfg(test)]
 fn collect_local_files_recursive(
     root: &Path,
     use_checksum: bool,
     cancel: &AtomicBool,
     exclude_patterns: &[String],
+) -> Result<HashMap<String, FileInfo>, FmError> {
+    collect_local_files_bounded(
+        root,
+        use_checksum,
+        cancel,
+        exclude_patterns,
+        &ScanBudget::new(),
+        &|_| {},
+    )
+}
+
+fn collect_local_files_bounded(
+    root: &Path,
+    use_checksum: bool,
+    cancel: &AtomicBool,
+    exclude_patterns: &[String],
+    budget: &ScanBudget,
+    on_progress: &(dyn Fn(ScanProgress) + Send + Sync),
 ) -> Result<HashMap<String, FileInfo>, FmError> {
     let mut result = HashMap::new();
     let root_str = root.to_string_lossy().to_string();
@@ -331,6 +382,8 @@ fn collect_local_files_recursive(
         cancel,
         exclude_patterns,
         &mut result,
+        budget,
+        on_progress,
     )?;
     Ok(result)
 }
@@ -342,11 +395,16 @@ fn walk_local(
     cancel: &AtomicBool,
     exclude_patterns: &[String],
     out: &mut HashMap<String, FileInfo>,
+    budget: &ScanBudget,
+    on_progress: &(dyn Fn(ScanProgress) + Send + Sync),
 ) -> Result<(), FmError> {
-    check_cancelled(cancel)?;
+    budget.check(cancel)?;
     let entries = fs::read_dir(dir)?;
     for entry in entries {
-        check_cancelled(cancel)?;
+        budget.object(cancel)?;
+        if budget.progress().scanned % 100 == 0 {
+            on_progress(budget.progress());
+        }
         let entry = entry?;
         let path = entry.path();
         let metadata = fs::symlink_metadata(&path)?;
@@ -355,9 +413,24 @@ fn walk_local(
         if metadata.is_symlink() && path.is_dir() {
             continue;
         }
+        if !metadata.is_dir() && !metadata.is_file() {
+            return Err(FmError::Other(format!(
+                "Comparison requires regular files or directories: {}",
+                path.display()
+            )));
+        }
 
         if metadata.is_dir() {
-            walk_local(&path, root, use_checksum, cancel, exclude_patterns, out)?;
+            walk_local(
+                &path,
+                root,
+                use_checksum,
+                cancel,
+                exclude_patterns,
+                out,
+                budget,
+                on_progress,
+            )?;
         } else {
             let full = path.to_string_lossy().to_string();
             // Build relative path by stripping root prefix
@@ -383,7 +456,12 @@ fn walk_local(
                 .unwrap_or(0);
 
             let checksum = if use_checksum {
-                Some(compute_file_sha256(&path, cancel)?)
+                Some(compute_file_sha256_bounded(
+                    &path,
+                    cancel,
+                    budget,
+                    on_progress,
+                )?)
             } else {
                 None
             };
@@ -392,23 +470,49 @@ fn walk_local(
         }
     }
 
+    budget.check(cancel)?;
+    on_progress(budget.progress());
     Ok(())
 }
 
 /// Hash file contents without buffering the whole file or blocking the UI loop.
+#[cfg(test)]
 fn compute_file_sha256(path: &Path, cancel: &AtomicBool) -> Result<String, FmError> {
-    let mut file = fs::File::open(path)?;
+    compute_file_sha256_bounded(path, cancel, &ScanBudget::new(), &|_| {})
+}
+
+fn compute_file_sha256_bounded(
+    path: &Path,
+    cancel: &AtomicBool,
+    budget: &ScanBudget,
+    on_progress: &(dyn Fn(ScanProgress) + Send + Sync),
+) -> Result<String, FmError> {
+    let mut options = fs::OpenOptions::new();
+    options.read(true);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        options.custom_flags(nix::libc::O_NONBLOCK | nix::libc::O_NOFOLLOW);
+    }
+    let mut file = options.open(path)?;
     let before = file.metadata()?;
+    if !before.is_file() {
+        return Err(FmError::Other("Comparison requires a regular file".into()));
+    }
     let mut context = Sha256::new();
     let mut buffer = [0u8; 8192];
 
     loop {
-        check_cancelled(cancel)?;
+        budget.check(cancel)?;
         let bytes_read = file.read(&mut buffer)?;
         if bytes_read == 0 {
             break;
         }
         context.update(&buffer[..bytes_read]);
+        budget.bytes(bytes_read as u64, false);
+        if budget.progress().bytes_read % (1024 * 1024) < bytes_read as u64 {
+            on_progress(budget.progress());
+        }
     }
     let after = file.metadata()?;
     if before.len() != after.len() || before.modified()? != after.modified()? {
@@ -429,6 +533,8 @@ async fn collect_s3_files(
     s3_state: &State<'_, S3State>,
     cancel: &AtomicBool,
     exclude_patterns: &[String],
+    budget: &ScanBudget,
+    on_progress: &(dyn Fn(ScanProgress) + Send + Sync),
 ) -> Result<HashMap<String, FileInfo>, FmError> {
     use aws_sdk_s3::Client as S3Client;
 
@@ -461,11 +567,18 @@ async fn collect_s3_files(
     } else {
         format!("{prefix}/")
     };
-    let objects = list_all_objects(&client, actual_bucket, &prefix, cancel).await?;
+    let objects =
+        scan::collect_objects(&client, actual_bucket, &prefix, budget, cancel, on_progress).await?;
 
     let mut result = HashMap::new();
-    for (key, size, modified, etag) in objects {
-        check_cancelled(cancel)?;
+    for object in objects {
+        budget.check(cancel)?;
+        let scan::ListedObject {
+            key,
+            size,
+            modified,
+            etag,
+        } = object;
         // Skip "directory" markers
         if key.ends_with('/') {
             continue;
@@ -475,7 +588,18 @@ async fn collect_s3_files(
         }
         // Strip prefix to get relative path
         let checksum = if use_checksum {
-            Some(object_sha256(&client, actual_bucket, &key, size, etag.as_deref(), cancel).await?)
+            Some(
+                crate::s3::verification::object_sha256_bounded(
+                    &client,
+                    actual_bucket,
+                    &key,
+                    size,
+                    etag.as_deref(),
+                    cancel,
+                    Some((budget, on_progress)),
+                )
+                .await?,
+            )
         } else {
             None
         };
@@ -512,56 +636,6 @@ fn parse_s3_path(path: &str) -> Result<(String, String), FmError> {
         // Not an S3 path — treat as prefix only
         Ok((String::new(), path.trim_end_matches('/').to_string()))
     }
-}
-
-/// List ALL objects under a prefix (handles pagination).
-/// Returns (key, size, modified_ms, etag).
-async fn list_all_objects(
-    client: &aws_sdk_s3::Client,
-    bucket: &str,
-    prefix: &str,
-    cancel: &AtomicBool,
-) -> Result<Vec<(String, u64, i64, Option<String>)>, FmError> {
-    let mut results = Vec::new();
-    let mut continuation_token: Option<String> = None;
-
-    loop {
-        check_cancelled(cancel)?;
-        let mut req = client.list_objects_v2().bucket(bucket).prefix(prefix);
-
-        if let Some(token) = &continuation_token {
-            req = req.continuation_token(token);
-        }
-
-        let resp = req.send().await.map_err(|e| FmError::S3(e.to_string()))?;
-
-        for obj in resp.contents() {
-            let key = obj.key().unwrap_or_default().to_string();
-            let size = obj.size().unwrap_or(0) as u64;
-            let modified = obj
-                .last_modified()
-                .and_then(|t| t.to_millis().ok())
-                .unwrap_or(0);
-            let etag = obj.e_tag().map(std::string::ToString::to_string);
-            results.push((key, size, modified, etag));
-        }
-
-        if resp.is_truncated() == Some(true) {
-            let next = resp.next_continuation_token().ok_or_else(|| {
-                FmError::S3("Truncated listing without continuation token".into())
-            })?;
-            if continuation_token.as_deref() == Some(next) {
-                return Err(FmError::S3(
-                    "Listing repeated its continuation token".into(),
-                ));
-            }
-            continuation_token = Some(next.to_owned());
-        } else {
-            break;
-        }
-    }
-
-    Ok(results)
 }
 
 #[cfg(test)]
@@ -642,5 +716,62 @@ mod tests {
             hash.as_deref(),
             Some("ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad")
         );
+    }
+
+    #[test]
+    fn local_scan_budgets_count_excluded_entries_and_actual_hash_bytes() {
+        let temp = tempfile::tempdir().unwrap();
+        fs::write(temp.path().join("a"), b"abc").unwrap();
+        fs::write(temp.path().join("b"), b"defg").unwrap();
+        let budget = ScanBudget::with_limits(scan::ScanLimits {
+            max_objects: 1,
+            ..scan::ScanLimits::DEFAULT
+        });
+        let result = collect_local_files_bounded(
+            temp.path(),
+            true,
+            &AtomicBool::new(false),
+            &["*".into()],
+            &budget,
+            &|_| {},
+        );
+        assert!(matches!(result, Err(FmError::ScanLimited(_))));
+        assert_eq!(budget.progress().scanned, 1);
+        assert_eq!(budget.progress().bytes_read, 0);
+
+        let budget = ScanBudget::new();
+        assert_eq!(
+            collect_local_files_bounded(
+                temp.path(),
+                true,
+                &AtomicBool::new(false),
+                &[],
+                &budget,
+                &|_| {}
+            )
+            .unwrap()
+            .len(),
+            2
+        );
+        assert_eq!(budget.progress().bytes_read, 7);
+        assert_eq!(budget.progress().s3_bytes_read, 0);
+    }
+
+    #[test]
+    fn local_comparison_rejects_nonregular_files_without_blocking() {
+        use nix::sys::stat::Mode;
+        let temp = tempfile::tempdir().unwrap();
+        let fifo = temp.path().join("fifo");
+        nix::unistd::mkfifo(&fifo, Mode::S_IRUSR | Mode::S_IWUSR).unwrap();
+        assert!(collect_local_files_bounded(
+            temp.path(),
+            true,
+            &AtomicBool::new(false),
+            &[],
+            &ScanBudget::new(),
+            &|_| {}
+        )
+        .is_err());
+        assert!(compute_file_sha256(&fifo, &AtomicBool::new(false)).is_err());
     }
 }

@@ -3,6 +3,11 @@
   import { searchFiles, cancelSearch } from '#lib/services/tauri.js';
   import { s3SearchObjects } from '#lib/services/s3.js';
   import type { SearchResult, SearchEvent, SearchMode, PanelBackend } from '#lib/types/index.js';
+  import type { ScanOutcome, ScanProgress } from '#lib/types/index.js';
+  import { errorText } from '#lib/utils/error-report.js';
+  import ScanStatus from './ScanStatus.svelte';
+  import ErrorNotice from './ErrorNotice.svelte';
+  import { appState } from '#lib/state/app.svelte.js';
 
   interface Props {
     root: string;
@@ -23,6 +28,10 @@
   let totalFound = $state(0);
   let searchComplete = $state(false);
   let searchError = $state('');
+  let scanProgress = $state<ScanProgress | null>(null);
+  let outcome = $state<ScanOutcome | undefined>(undefined);
+  let generation = 0;
+  let disposed = false;
   let currentSearchId = $state('');
   let inputEl: HTMLInputElement | undefined = $state(undefined);
   let resultsEl: HTMLDivElement | undefined = $state(undefined);
@@ -33,10 +42,13 @@
   });
 
   onDestroy(() => {
+    disposed = true;
+    generation++;
     clearTimeout(debounceTimer);
     if (currentSearchId) {
       cancelSearch(currentSearchId).catch(() => {});
     }
+    currentSearchId = '';
   });
 
   function relativePath(fullPath: string): string {
@@ -62,10 +74,16 @@
   }
 
   async function doSearch() {
+    const attempt = ++generation;
+    const previous = currentSearchId;
+    currentSearchId = '';
     // Cancel any previous search.
-    if (currentSearchId) {
-      await cancelSearch(currentSearchId).catch(() => {});
+    if (previous) {
+      await cancelSearch(previous).catch(() => {});
     }
+    if (disposed || attempt !== generation) return;
+    scanProgress = null;
+    outcome = undefined;
 
     if (query.length < (useRegex ? 1 : 2)) {
       results = [];
@@ -95,8 +113,19 @@
         totalFound = results.length;
       } else if (event.type === 'Done') {
         totalFound = event.total_found;
-        searchComplete = true;
+        outcome = event.cancelled ? 'cancelled' : 'complete';
+        searchComplete = !event.cancelled;
         searching = false;
+      } else if (event.type === 'ScanProgress') {
+        scanProgress = event.progress;
+      } else if (event.type === 'ScanFinished') {
+        scanProgress = event.progress;
+        outcome = event.outcome;
+        totalFound = event.progress.matched;
+        searchComplete = event.outcome === 'complete';
+        searchError = event.message ?? '';
+        searching = false;
+        currentSearchId = '';
       }
     };
 
@@ -111,9 +140,10 @@
 
     searchPromise.catch((error: unknown) => {
       if (id === currentSearchId) {
-        searchError = String(error);
+        searchError = errorText(error);
         searching = false;
-        searchComplete = true;
+        searchComplete = false;
+        outcome = 'failed';
       }
     });
   }
@@ -154,9 +184,7 @@
       e.preventDefault();
       e.stopPropagation();
       if (searching && currentSearchId) {
-        cancelSearch(currentSearchId).catch(() => {});
-        searching = false;
-        searchComplete = true;
+        stopSearch();
       } else {
         onClose();
       }
@@ -194,11 +222,22 @@
     if (searching) {
       return `Searching... (${results.length} found)`;
     }
+    if (outcome && outcome !== 'complete') return `Incomplete — ${outcome} (${results.length} results retained)`;
     if (!searchComplete) return '';
     if (results.length < totalFound) {
       return `${results.length} shown of ${totalFound} total matches`;
     }
     return `${totalFound} match${totalFound === 1 ? '' : 'es'} found`;
+  }
+
+  function stopSearch() {
+    const id = currentSearchId;
+    currentSearchId = '';
+    generation++;
+    if (id) cancelSearch(id).catch(() => {});
+    searching = false;
+    searchComplete = false;
+    outcome = 'cancelled';
   }
 
   function formatSize(bytes: number): string {
@@ -252,9 +291,10 @@
           Regex
         </label>
       </div>
-      {#if searchError}
-        <div id="search-error" class="search-error">{searchError}</div>
-      {/if}
+      {#if scanProgress}
+        <p>S3 scan limits: {appState.s3ScanLimits.max_objects.toLocaleString()} objects, {appState.s3ScanLimits.max_requests.toLocaleString()} API calls, {appState.s3ScanLimits.max_seconds}s, {appState.s3ScanLimits.max_results.toLocaleString()} matches. Configure in Preferences → Network.</p>
+        <div id="search-error"><ScanStatus progress={scanProgress} {outcome} message={searchError} showMatches /></div>
+      {:else if searchError}<div id="search-error" class="search-error"><ErrorNotice error={searchError} /></div>{/if}
 
       <div class="results-list" bind:this={resultsEl}>
         {#each results as r, i (i)}
@@ -289,6 +329,7 @@
     </div>
     <div class="dialog-footer">
       <span class="status-text">{statusText()}</span>
+      {#if searching}<button class="dialog-btn" onclick={stopSearch}>Cancel scan</button>{/if}
       <button class="dialog-btn" onclick={onClose}>Close</button>
     </div>
   </div>

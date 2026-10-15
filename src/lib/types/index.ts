@@ -101,7 +101,15 @@ export interface SearchDone {
   cancelled: boolean;
 }
 
-export type SearchEvent = SearchResult | SearchDone;
+export type SearchEvent = SearchResult | SearchDone | ScanEvent;
+export interface ScanLimits { max_objects: number; max_requests: number; max_seconds: number; max_results: number }
+export type ScanOutcome = 'complete' | 'cancelled' | 'limited' | 'failed';
+export interface ScanProgress {
+  scanned: number; matched: number; requests: number; bytes_read: number; s3_bytes_read: number; elapsed_ms: number;
+}
+export type ScanEvent =
+  | { type: 'ScanProgress'; progress: ScanProgress }
+  | { type: 'ScanFinished'; progress: ScanProgress; outcome: ScanOutcome; message: string | null };
 
 export interface SyncEntry {
   relative_path: string;
@@ -115,6 +123,8 @@ export interface SyncEntry {
 }
 
 export type SyncEvent =
+  | { type: 'ScanProgress'; progress: ScanProgress }
+  | { type: 'ScanStopped'; progress: ScanProgress; outcome: ScanOutcome; message: string }
   | ({ type: 'Entry' } & SyncEntry)
   | { type: 'Progress'; scanned: number }
   | { type: 'Done'; total: number; new_count: number; modified: number; deleted: number };

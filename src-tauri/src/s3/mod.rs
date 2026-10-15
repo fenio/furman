@@ -2,12 +2,15 @@ pub mod client;
 pub mod crypto;
 pub mod errors;
 pub mod helpers;
+pub mod scan;
 pub mod service;
 pub mod sse_c;
 pub mod verification;
 
 #[cfg(test)]
 mod listing_tests;
+#[cfg(test)]
+mod scan_tests;
 
 pub use client::{build_s3_client, S3Connection, S3State};
 pub use helpers::{

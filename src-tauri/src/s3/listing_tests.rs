@@ -4,7 +4,7 @@ use aws_smithy_http_client::test_util::{ReplayEvent, StaticReplayClient};
 use aws_smithy_types::body::SdkBody;
 use tauri::http::{Request, Response};
 
-fn service(pages: &[&str]) -> (S3Service, StaticReplayClient) {
+pub(super) fn service(pages: &[&str]) -> (S3Service, StaticReplayClient) {
     let http = StaticReplayClient::new(
         pages
             .iter()

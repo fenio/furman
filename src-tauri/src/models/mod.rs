@@ -73,6 +73,10 @@ pub struct ProgressEvent {
 
 #[derive(Debug, thiserror::Error)]
 pub enum FmError {
+    #[error("Scan limit reached: {0}. Scan incomplete; narrow the scope or increase Preferences > Network > Scan limits")]
+    ScanLimited(String),
+    #[error("Scan cancelled")]
+    ScanCancelled,
     #[error("I/O error: {0}")]
     Io(#[from] std::io::Error),
 
@@ -227,6 +231,14 @@ pub struct SearchDone {
 pub enum SearchEvent {
     Result(SearchResult),
     Done(SearchDone),
+    ScanProgress {
+        progress: crate::s3::scan::ScanProgress,
+    },
+    ScanFinished {
+        outcome: crate::s3::scan::ScanOutcome,
+        progress: crate::s3::scan::ScanProgress,
+        message: Option<String>,
+    },
 }
 
 // ── SyncEvent ───────────────────────────────────────────────────────────
@@ -247,6 +259,14 @@ pub struct SyncEntry {
 #[serde(tag = "type")]
 pub enum SyncEvent {
     Entry(SyncEntry),
+    ScanProgress {
+        progress: crate::s3::scan::ScanProgress,
+    },
+    ScanStopped {
+        outcome: crate::s3::scan::ScanOutcome,
+        progress: crate::s3::scan::ScanProgress,
+        message: String,
+    },
     Progress {
         scanned: u32,
     },
