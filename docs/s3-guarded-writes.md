@@ -63,6 +63,11 @@ when the upload ID is known; cleanup failures are reported. A lost multipart
 creation response may leave an unknown incomplete upload. Inspect the bucket's
 incomplete uploads after uncertain outcomes.
 
+Abort cleanup alone permits up to three SDK attempts within a 30-second timeout,
+always for the same bucket/key/upload ID. This cannot complete a payload and does
+not retry uploads or completion. Permanent cleanup failures retain sanitized SDK
+diagnostics alongside the original write error; failed cleanup remains visible.
+
 These guarantees rely on providers correctly enforcing S3 condition headers.
 Known unsupported Garage configurations are now blocked by a native safety gate;
 see [provider restrictions](s3-metadata-compatibility.md#known-unsupported-destination-conditions).
