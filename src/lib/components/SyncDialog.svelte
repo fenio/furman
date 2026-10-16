@@ -1,17 +1,18 @@
 <script lang="ts">
-  import { onDestroy } from 'svelte';
+  import { onDestroy, untrack } from 'svelte';
   import { SvelteSet } from 'svelte/reactivity';
   import { syncDiff, cancelSync } from '#lib/services/tauri.js';
   import { appState } from '#lib/state/app.svelte.js';
   import type { SyncEntry, SyncEvent, PanelBackend } from '#lib/types/index.js';
   import type { ScanOutcome, ScanProgress } from '#lib/types/index.js';
-  import { canUseScan } from '#lib/utils/scan.js';
+  import { canUseScan, scanLimitsFromConfig, validScanLimits } from '#lib/utils/scan.js';
   import { errorText } from '#lib/utils/error-report.js';
   import ScanStatus from './ScanStatus.svelte';
   import ComparisonPresets from './ComparisonPresets.svelte';
   import SavedSyncJobs from './SavedSyncJobs.svelte';
   import type { ComparisonMode } from '#lib/utils/comparison-options.js';
   import ErrorNotice from './ErrorNotice.svelte';
+  import type { SyncPolicy } from '#lib/utils/sync-workflow.js';
 
   interface Props {
     sourceBackend: PanelBackend;
@@ -22,6 +23,10 @@
     destS3Id: string;
     onSync: (entries: SyncEntry[]) => void;
     onClose: () => void;
+    embedded?: boolean;
+    initialMode?: ComparisonMode;
+    initialExclusions?: string[];
+    initialPolicy?: SyncPolicy;
   }
 
   let {
@@ -33,6 +38,10 @@
     destS3Id,
     onSync,
     onClose,
+    embedded = false,
+    initialMode,
+    initialExclusions,
+    initialPolicy = 'update',
   }: Props = $props();
 
   let allEntries = $state<SyncEntry[]>([]);
@@ -60,7 +69,7 @@
     if (!batch.length) return;
     allEntries = [...allEntries, ...batch];
     for (const entry of batch) {
-      if (entry.status === 'new' || entry.status === 'modified') selectedPaths.add(entry.relative_path);
+      if (entry.status === 'new' || (entry.status === 'modified' && policy === 'update')) selectedPaths.add(entry.relative_path);
     }
   }
   let filter = $state<'all' | 'new' | 'modified' | 'deleted'>('all');
@@ -71,8 +80,15 @@
   let excludeInput: HTMLInputElement | undefined = $state(undefined);
 
   // Options
-  let excludeText = $state(appState.syncExcludePatterns);
-  let compareMode = $state<'size_mtime' | 'sha256'>('sha256');
+  let excludeText = $state(untrack(() => initialExclusions?.join(', ') ?? appState.syncExcludePatterns));
+  let compareMode = $state<ComparisonMode>(untrack(() => initialMode ?? 'sha256'));
+  let policy = $state<SyncPolicy>(untrack(() => initialPolicy));
+  let scanLimits = $state(untrack(() => scanLimitsFromConfig(appState.s3ScanLimits)));
+  const limitsValid = $derived(validScanLimits(scanLimits));
+  function resetScanLimits() {
+    invalidateScan();
+    scanLimits = scanLimitsFromConfig(appState.s3ScanLimits);
+  }
 
   // Summary counts
   let newCount = $state(0);
@@ -100,6 +116,7 @@
   }
 
   function startScan() {
+    if (!validScanLimits(scanLimits)) return;
     const id = `sync-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 
     // Cancel any existing scan
@@ -167,6 +184,7 @@
       parseExcludePatterns(),
       compareMode,
       handleEvent,
+      { ...scanLimits },
     ).catch((err: unknown) => {
       if (id === currentSyncId) {
         clearPendingEntries();
@@ -180,14 +198,15 @@
   }
 
   function invalidateScan() {
+    const hadComparison = scanning || scanComplete || outcome !== null || allEntries.length > 0;
     clearPendingEntries();
     if (currentSyncId) cancelSync(currentSyncId).catch(() => {});
     currentSyncId = '';
     scanning = false;
     scanComplete = false;
-    outcome = 'cancelled';
+    outcome = hadComparison ? 'cancelled' : null;
     selectedPaths.clear();
-    scanError = 'Options changed or scan cancelled. Rescan before syncing.';
+    scanError = hadComparison ? 'Options changed or scan cancelled. Compare again before transferring.' : '';
   }
 
   function applyPreset(mode: ComparisonMode, exclusions: string[]) {
@@ -197,6 +216,8 @@
   }
 
   function toggleSelection(path: string) {
+    const entry = allEntries.find(entry => entry.relative_path === path);
+    if (!entry || entry.status === 'deleted' || entry.status === 'same' || (entry.status === 'modified' && policy === 'missing')) return;
     if (selectedPaths.has(path)) {
       selectedPaths.delete(path);
     } else {
@@ -206,7 +227,7 @@
 
   function selectAll() {
     selectedPaths.clear();
-    for (const e of filtered) selectedPaths.add(e.relative_path);
+    for (const e of filtered) if (e.status === 'new' || (e.status === 'modified' && policy === 'update')) selectedPaths.add(e.relative_path);
   }
 
   function selectNone() {
@@ -216,8 +237,13 @@
 
   function handleSync() {
     if (jobPanelOpen || !scanComplete || !canUseScan(outcome, scanning)) return;
-    const selected = allEntries.filter((e) => selectedPaths.has(e.relative_path));
-    onSync(selected);
+    const selected = allEntries.filter((e) => selectedPaths.has(e.relative_path) && (e.status === 'new' || (e.status === 'modified' && policy === 'update')));
+    if (embedded && destBackend === 'local' && selected.some(entry => entry.relative_path.includes('/'))) {
+      scanError = 'This guided transfer was refused before copying: the existing local-destination engine cannot preserve selected nested file mappings yet. No files were copied. Use an S3 destination or copy the nested folders separately; local-destination mapping needs a separate engine update.';
+      scanComplete = false; outcome = 'failed'; selectedPaths.clear();
+      return;
+    }
+    if (selected.length) onSync(selected);
   }
 
   function scrollCursorIntoView() {
@@ -283,9 +309,7 @@
 
     if (e.key === 'Enter') {
       e.preventDefault();
-      if (selectedPaths.size > 0) {
-        handleSync();
-      }
+      // Transfers require the explicit review button, never a bubbled Enter.
       return;
     }
   }
@@ -314,7 +338,7 @@
       case 'modified':
         return 'MOD';
       case 'deleted':
-        return 'DEL';
+        return 'ONLY AT DEST';
       default:
         return status.toUpperCase();
     }
@@ -345,19 +369,24 @@
 
 <div
   class="dialog-overlay no-select"
-  role="dialog"
-  aria-modal="true"
+  class:embedded
+  role={embedded ? 'region' : 'dialog'}
+  aria-modal={embedded ? undefined : true}
+  aria-label="Compare and review changes"
   tabindex="-1"
   onkeydown={handleKeydown}
 >
   <div class="dialog-box">
-    <div class="dialog-title">Sync: {sourcePath} &rarr; {destPath}</div>
+    {#if !embedded}<div class="dialog-title">Sync: {sourcePath} &rarr; {destPath}</div>{/if}
     <div class="dialog-body">
-      <div class="sync-roots"><strong>Source:</strong> {sourcePath} ({sourceBackend})<br /><strong>Destination:</strong> {destPath} ({destBackend})</div>
+      {#if !embedded}<div class="sync-roots"><strong>Source:</strong> {sourcePath} ({sourceBackend})<br /><strong>Destination:</strong> {destPath} ({destBackend})</div>
       <ComparisonPresets mode={compareMode} {excludeText} onApply={applyPreset} />
       <SavedSyncJobs defaultLocalPath={sourceBackend === 'local' ? sourcePath : ''} onOpenChange={(open) => { jobPanelOpen = open; }} />
+      {/if}
       {#if jobPanelOpen}<p class="hint">Ordinary Sync is disabled while the separate saved-job controls are open. Close that section to return to the current pane operation; closing it also releases/cancels its read-only native session.</p>{/if}
-      <p class="hint">Review source → destination and options, then Compare. Opening this dialog or applying a preset does not start a scan. Only a complete fresh comparison can enable Sync; existing write previews and approvals still apply.</p>
+      <p class="hint">Compare first, then select the changes you want to transfer. Nothing is deleted from the destination. Opening this dialog or applying a preset does not start a scan. S3 writes require a separate guarded write review.</p>
+      {#if embedded && destBackend === 'local'}<p class="hint">Local-destination limitation: this guide can copy files directly within the compared folder, but refuses nested file selections because the existing engine cannot preserve those mappings yet. No flattening fallback is used.</p>{/if}
+      <label>What should be copied? <select bind:value={policy} onchange={invalidateScan}><option value="missing">Add missing files only</option><option value="update">Add missing files and update changed files</option></select></label>
       {#if optionsSaveError}<ErrorNotice error={optionsSaveError} context="Could not save default Sync exclusions; this scan still uses the displayed options" />{/if}
       <!-- Options row -->
       <div class="options-row">
@@ -385,17 +414,28 @@
             SHA-256 <span class="hint">(reads all contents)</span>
           </label>
         </div>
-        <button class="rescan-btn" onclick={startScan} disabled={scanning}>{outcome ? 'Rescan' : 'Compare'}</button>
+        <button class="rescan-btn" onclick={startScan} disabled={scanning || !limitsValid}>{outcome ? 'Rescan' : 'Compare'}</button>
       </div>
 
       <!-- Filter buttons -->
-      <p class="hint">Scan budgets: {appState.s3ScanLimits.max_objects.toLocaleString()} entries, {appState.s3ScanLimits.max_requests.toLocaleString()} S3 API calls, {appState.s3ScanLimits.max_seconds}s (both sides combined). Configure in Preferences → Network.</p>
+      <details><summary>Advanced comparison options and limits</summary>
+        <p class="hint">Limits apply to this comparison only, across both sides combined. Preferences and saved presets are not changed. Increasing limits can increase time, memory use and S3 charges.</p>
+        <div class="scan-limits">
+          <label>Maximum entries <input type="number" min="1" max="10000000" step="1" bind:value={scanLimits.max_objects} oninput={invalidateScan} /></label>
+          <label>Maximum S3 API requests <input type="number" min="1" max="1000000" step="1" bind:value={scanLimits.max_requests} oninput={invalidateScan} /></label>
+          <label>Maximum duration (seconds) <input type="number" min="1" max="86400" step="1" bind:value={scanLimits.max_seconds} oninput={invalidateScan} /></label>
+        </div>
+        {#if !limitsValid}<p role="alert">Enter whole numbers: entries 1–10,000,000; requests 1–1,000,000; duration 1–86,400 seconds. Compare is disabled until the limits are valid.</p>{/if}
+        <button class="rescan-btn" type="button" onclick={resetScanLimits}>Reset limits to Preferences</button>
+      </details>
+      {#if embedded}<ComparisonPresets mode={compareMode} {excludeText} onApply={applyPreset} />{/if}
       {#if compareMode === 'sha256' && (sourceBackend === 's3' || destBackend === 's3')}
         <p class="hint">SHA-256 downloads included S3 contents; API request and download/egress charges may apply.</p>
       {/if}
       {#if scanProgress}<ScanStatus progress={scanProgress} outcome={outcome ?? undefined} message={scanError} />{/if}
+      {#if scanError && !scanProgress}<ErrorNotice error={scanError} context="Comparison could not finish" />{/if}
       {#if scanning}<button class="rescan-btn" onclick={invalidateScan}>Cancel scan</button>{/if}
-      <div class="filter-row">
+      {#if scanning || outcome}<div class="filter-row">
         <button
           class="filter-btn"
           class:active={filter === 'all'}
@@ -415,7 +455,7 @@
           class="filter-btn deleted"
           class:active={filter === 'deleted'}
           onclick={() => setFilter('deleted')}
-        >Deleted <span class="badge">{filterCount('deleted')}</span></button>
+        >Destination only <span class="badge">{filterCount('deleted')}</span></button>
 
         <span class="spacer"></span>
         <button class="select-btn" onclick={selectAll}>Select All</button>
@@ -438,6 +478,7 @@
             <input
               type="checkbox"
               class="entry-check"
+              disabled={entry.status === 'deleted' || (entry.status === 'modified' && policy === 'missing')}
               checked={selectedPaths.has(entry.relative_path)}
               onclick={(e) => { e.stopPropagation(); toggleSelection(entry.relative_path); }}
               tabindex="-1"
@@ -460,6 +501,7 @@
           </div>
         {/if}
       </div>
+      {/if}
 
     </div>
     <!-- Footer -->
@@ -468,24 +510,32 @@
         {#if scanning}
           Scanning{compareMode === 'sha256' ? ' (reading contents for SHA-256; S3 download charges may apply)' : ''}... ({allEntries.length} files)
         {:else if scanError}
-          {scanError}
+          Comparison incomplete — inspect the diagnostic above. No transfer is authorized.
         {:else if scanComplete}
-          {filterCount('new')} new, {filterCount('modified')} modified, {filterCount('deleted')} deleted &mdash; {selectedPaths.size} selected
+          {filterCount('new')} new, {filterCount('modified')} modified, {filterCount('deleted')} destination-only (kept) &mdash; {selectedPaths.size} selected
         {/if}
       </span>
       <div class="footer-buttons">
-        <button class="dialog-btn" onclick={onClose}>Cancel</button>
+        <button class="dialog-btn" onclick={onClose}>{embedded ? 'Back to destination' : 'Cancel'}</button>
         <button
           class="dialog-btn sync-btn"
           disabled={jobPanelOpen || selectedPaths.size === 0 || !canUseScan(outcome, scanning) || !scanComplete}
           onclick={handleSync}
-        >Sync ({selectedPaths.size})</button>
+        >{destBackend === 's3' ? 'Review transfer' : 'Copy selected'} ({selectedPaths.size})</button>
       </div>
     </div>
   </div>
 </div>
 
 <style>
+  .scan-limits { display: flex; flex-wrap: wrap; gap: 12px; margin-bottom: 12px; }
+  .scan-limits label { display: flex; flex-direction: column; gap: 6px; font-size: 12px; }
+  .scan-limits input { width: 160px; padding: 7px; border: 1px solid var(--border-subtle); border-radius: 4px; background: var(--bg-surface); color: var(--text-primary); font: inherit; }
+  .dialog-overlay.embedded { position: static; display: block; background: none; backdrop-filter: none; -webkit-backdrop-filter: none; }
+  .embedded .dialog-box { width: 100%; height: auto; max-width: none; max-height: none; border: 0; border-radius: 0; box-shadow: none; background: transparent; }
+  .embedded .dialog-body { padding: 0; overflow: visible; }
+  .embedded .entry-list { min-height: 120px; max-height: 35vh; }
+  .embedded .dialog-footer { padding: 16px 0 0; }
   .dialog-overlay {
     position: fixed;
     top: 0;

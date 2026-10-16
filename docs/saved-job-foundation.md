@@ -15,6 +15,10 @@ There are no retry/resume or scheduling commands.
 
 ## Using definitions
 
+The main entry point is now [the three-step Sync guide](guided-sync.md). The form
+below remains available under **Manage saved transfers and local history** for
+advanced creation/rebinding/deletion; normal use no longer starts with this form.
+
 In Sync, expand **Saved job definitions — explicit manual workflow**. These fields are
 separate from the current Sync operation: selecting, saving or rebinding does
 not apply a preset, change the current roots/options, clear or approve its scan,

@@ -168,6 +168,21 @@ class ComparisonState {
     }
   }
 
+  syncSetup(side: ComparisonSide) {
+    if (!this.active || this.scanning || this.outcome !== 'complete' || !this.lastComparison) return null;
+    const [leftPath, leftBackend, leftS3Id, rightPath, rightBackend, rightS3Id] = this.lastComparison;
+    const left = { path: leftPath, backend: leftBackend, s3Id: leftS3Id };
+    const right = { path: rightPath, backend: rightBackend, s3Id: rightS3Id };
+    return { source: side === 'left' ? left : right, destination: side === 'left' ? right : left,
+      options: { mode: this.mode, exclusions: [...this.lastExcludes], fromComparison: true } };
+  }
+  openSync(side: ComparisonSide) {
+    const setup = this.syncSetup(side);
+    if (!setup) return;
+    appState.showSync(setup.source, setup.destination, setup.options);
+    if (appState.modal === 'sync') this.stopComparison();
+  }
+
   cancelScan() {
     if (this.syncId) cancelSync(this.syncId).catch(() => {});
     this.syncId = '';

@@ -45,6 +45,28 @@ const presetExports = `refresh, apply, mutate, handleKeydown,
   setName(value) { name = value; }, confirm() { confirmDelete = true; },
   get state() { return { report, selectedId, name, ready, busy, failure, status }; }`;
 
+test('editable comparison limits are run-local, validated, snapshotted and invalidate old results without rescanning', async () => {
+  const scans = []; const cancelled = []; const transfers = [];
+  const defaults = { max_objects: 100000, max_requests: 1000, max_seconds: 300, max_results: 1000 };
+  const fixture = { props: { sourceBackend: 'local', sourcePath: '/a', sourceS3Id: '', destBackend: 's3', destPath: 's3://bucket/b/', destS3Id: 's3', embedded: true, onSync: entries => transfers.push(entries), onClose() {} }, app: { s3ScanLimits: { ...defaults }, syncExcludePatterns: '', persistConfig: async () => { throw new Error('Limits must not save preferences'); } }, scan: async (...args) => scans.push(args), cancel: async id => cancelled.push(id) };
+  const { harness: h, cleanup } = await scriptFixture('SyncDialog.svelte', fixture, `startScan,handleSync,resetScanLimits,setLimit(key,value){scanLimits[key]=value;invalidateScan();},get state(){return{scanComplete,outcome,scanLimits};}`);
+  try {
+    assert.equal(scans.length, 0);
+    h.setLimit('max_objects', 42); h.setLimit('max_requests', 23); h.setLimit('max_seconds', 17);
+    assert.equal(scans.length, 0); assert.deepEqual(fixture.app.s3ScanLimits, defaults);
+    h.startScan(); const first = scans[0];
+    assert.deepEqual(first[10], { ...defaults, max_objects: 42, max_requests: 23, max_seconds: 17 });
+    first[9]({ type: 'Entry', relative_path: 'file', status: 'new', source_size: 3, dest_size: 0 });
+    first[9]({ type: 'Done', new_count: 1, modified: 0, deleted: 0 });
+    assert.equal(h.state.scanComplete, true);
+    h.setLimit('max_seconds', 18); h.handleSync(); first[9]({ type: 'Done', new_count: 1, modified: 0, deleted: 0 });
+    assert.equal(h.state.scanComplete, false); assert.equal(transfers.length, 0); assert.equal(scans.length, 1); assert.equal(first[10].max_seconds, 17); assert.ok(cancelled.length);
+    for (const invalid of [undefined, NaN, 0, -1, 1.5, 86401]) { h.setLimit('max_seconds', invalid); h.startScan(); assert.equal(scans.length, 1); }
+    h.resetScanLimits(); assert.deepEqual(h.state.scanLimits, defaults); assert.equal(scans.length, 1);
+    h.startScan(); assert.deepEqual(scans[1][10], defaults); assert.deepEqual(fixture.app.s3ScanLimits, defaults);
+  } finally { cleanup(); }
+});
+
 test('actual preset controller never applies, scans or transfers on load/save/update/delete', async () => {
   let disk = { revision: 'initial', presets: [preset()] }; let applies = 0; const writes = [];
   const fixture = { props: { mode: 'size_mtime', excludeText: '*.tmp, nested/**', onApply: () => applies++ }, load: async () => structuredClone(disk), save: async (revision, presets) => { assert.equal(revision, disk.revision); writes.push(structuredClone(presets)); disk = { revision: 'r' + writes.length, presets: structuredClone(presets) }; return structuredClone(disk); } };
@@ -120,6 +142,21 @@ test('preset service IPC is allowlisted and has no connection or execution calls
   } finally { delete globalThis.__comparisonPresetRpc; }
 });
 
+test('guided copy policies never select destination-only files and Enter cannot launch a transfer', async()=>{
+  const scans=[];const transfers=[];const fixture={props:{sourceBackend:'local',sourcePath:'/a',sourceS3Id:'',destBackend:'s3',destPath:'s3://bucket/b/',destS3Id:'destination',embedded:true,onSync:entries=>transfers.push(entries),onClose(){}},app:{syncExcludePatterns:'',persistConfig:async()=>{}},scan:async(...args)=>scans.push(args),cancel:async()=>{}};
+  const{harness:h,cleanup}=await scriptFixture('SyncDialog.svelte',fixture,`startScan,handleSync,handleKeydown,selectAll,toggleSelection,setPolicy(value){policy=value;invalidateScan();},get selected(){return [...selectedPaths];}`);
+  const entries=['new','modified','deleted'].map(status=>({type:'Entry',relative_path:status,status,source_size:status==='deleted'?0:3,dest_size:status==='new'?0:3}));
+  try{for(const policy of ['missing','update']){h.setPolicy(policy);h.startScan();const event=scans.at(-1)[9];entries.forEach(event);event({type:'Done',new_count:1,modified:1,deleted:1});h.selectAll();h.toggleSelection('deleted');assert.deepEqual(h.selected,policy==='missing'?['new']:['new','modified']);let prevented=false;h.handleKeydown({key:'Enter',target:null,preventDefault(){prevented=true;}});assert.ok(prevented);assert.equal(transfers.length,policy==='missing'?0:1);h.handleSync();assert.deepEqual(transfers.at(-1).map(entry=>entry.status),policy==='missing'?['new']:['new','modified']);}}finally{cleanup();}
+});
+
+test('guide refuses nested local-destination selections before the legacy copy/download engine can flatten them',async()=>{
+  for(const sourceBackend of ['local','s3']){
+    const scans=[];const transfers=[];const fixture={props:{sourceBackend,sourcePath:sourceBackend==='local'?'/a':'s3://bucket/a/',sourceS3Id:'source',destBackend:'local',destPath:'/b',destS3Id:'',embedded:true,onSync:entries=>transfers.push(entries),onClose(){}},app:{syncExcludePatterns:'',persistConfig:async()=>{}},scan:async(...args)=>scans.push(args),cancel:async()=>{}};
+    const{harness:h,cleanup}=await scriptFixture('SyncDialog.svelte',fixture,`startScan,handleSync,get state(){return{scanComplete,outcome,scanError};}`);
+    try{h.startScan();scans[0][9]({type:'Entry',relative_path:'nested/file.txt',status:'new',source_size:3,dest_size:0});scans[0][9]({type:'Done',new_count:1,modified:0,deleted:0});h.handleSync();assert.equal(transfers.length,0);assert.equal(h.state.scanComplete,false);assert.equal(h.state.outcome,'failed');assert.match(h.state.scanError,/No files were copied/);}finally{cleanup();}
+  }
+});
+
 test('both actual dialogs render shared options-only presets and explicit roots', async () => {
   const dependencies = {
     '#lib/utils/comparison-options.js': new URL('../src/lib/utils/comparison-options.ts', import.meta.url).href,
@@ -142,5 +179,5 @@ test('both actual dialogs render shared options-only presets and explicit roots'
   const { default: Sync } = await import(component('SyncDialog.svelte'));
   const sync = render(Sync, { props: { sourceBackend: 's3', sourcePath: 's3://left/root/', sourceS3Id: 'left', destBackend: 's3', destPath: 's3://right/dest/', destS3Id: 'right', onSync() {}, onClose() {} } }).body;
   assert.ok(sync.includes('data-comparison-presets')); assert.ok(sync.includes('Opening this dialog or applying a preset does not start a scan'));
-  assert.match(sync, /disabled[^>]*>\s*Sync \(0\)/); assert.ok(sync.includes('No paths, connection identities, secrets'));
+  assert.match(sync, /disabled[^>]*>\s*Review transfer \(0\)/); assert.ok(sync.includes('No paths, connection identities, secrets'));
 });

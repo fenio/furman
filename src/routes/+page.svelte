@@ -27,7 +27,8 @@
   import S3ActivityDialog from '#lib/components/S3ActivityDialog.svelte';
   import { guardedWrites } from '#lib/state/guarded-writes.svelte.js';
   import PropertiesDialog from '#lib/components/PropertiesDialog.svelte';
-  import SyncDialog from '#lib/components/SyncDialog.svelte';
+  import SyncWizard from '#lib/components/SyncWizard.svelte';
+  import type { SyncLocation } from '#lib/utils/sync-workflow.js';
   import ConfigSaveNotice from '#lib/components/ConfigSaveNotice.svelte';
   import JobJournalNotice from '#lib/components/JobJournalNotice.svelte';
   import CompareDialog from '#lib/components/CompareDialog.svelte';
@@ -202,14 +203,14 @@
     panels.active.loadDirectory(dirPath, fileName);
   }
 
-  function handleSyncExecute(entries: SyncEntry[]) {
+  function handleSyncExecute(entries: SyncEntry[], source: SyncLocation, destination: SyncLocation) {
     // Capture sync state before closeModal() resets it
-    const sourceBackend = appState.syncSourceBackend;
-    const sourcePath = appState.syncSourcePath;
-    const sourceS3Id = appState.syncSourceS3Id;
-    const destBackend = appState.syncDestBackend;
-    const destPath = appState.syncDestPath;
-    const destS3Id = appState.syncDestS3Id;
+    const sourceBackend = source.backend;
+    const sourcePath = source.path;
+    const sourceS3Id = source.s3Id;
+    const destBackend = destination.backend;
+    const destPath = destination.path;
+    const destS3Id = destination.s3Id;
 
     appState.closeModal();
     if (entries.length === 0) return;
@@ -440,13 +441,11 @@
   {/if}
 
   {#if appState.modal === 'sync'}
-    <SyncDialog
-      sourceBackend={appState.syncSourceBackend}
-      sourcePath={appState.syncSourcePath}
-      sourceS3Id={appState.syncSourceS3Id}
-      destBackend={appState.syncDestBackend}
-      destPath={appState.syncDestPath}
-      destS3Id={appState.syncDestS3Id}
+    <SyncWizard
+      source={{ backend: appState.syncSourceBackend, path: appState.syncSourcePath, s3Id: appState.syncSourceS3Id }}
+      destination={{ backend: appState.syncDestBackend, path: appState.syncDestPath, s3Id: appState.syncDestS3Id }}
+      locations={[panels.left, panels.right].map((panel, index) => ({ backend: panel.backend, path: panel.path, s3Id: panel.s3Connection?.connectionId ?? '', profileId: panel.s3Connection?.profileId, bucket: panel.s3Connection?.bucket, label: connectionsState.s3Profiles.find(profile => profile.id === panel.s3Connection?.profileId)?.name ?? `${index === 0 ? 'Left' : 'Right'} pane` }))}
+      options={appState.syncSetupOptions}
       onSync={handleSyncExecute}
       onClose={() => appState.closeModal()}
     />

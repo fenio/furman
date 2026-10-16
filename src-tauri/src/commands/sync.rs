@@ -22,6 +22,16 @@ type FileInfo = (u64, i64, Option<String>);
 
 // ── Commands ────────────────────────────────────────────────────────────
 
+fn comparison_budget(limits: Option<scan::ScanLimits>) -> Result<ScanBudget, FmError> {
+    match limits {
+        Some(limits) => {
+            limits.validate()?;
+            Ok(ScanBudget::with_limits(limits))
+        }
+        None => Ok(ScanBudget::new()),
+    }
+}
+
 #[tauri::command]
 pub async fn sync_diff(
     id: String,
@@ -33,10 +43,13 @@ pub async fn sync_diff(
     dest_s3_id: String,
     exclude_patterns: Vec<String>,
     compare_mode: String, // "size_mtime" | "sha256" (legacy "checksum" also uses SHA-256)
+    scan_limits: Option<scan::ScanLimits>,
     channel: Channel<SyncEvent>,
     s3_state: State<'_, S3State>,
     sync_state: State<'_, SyncState>,
 ) -> Result<(), FmError> {
+    // Overrides belong to this comparison, never the process-wide defaults.
+    let budget = Arc::new(comparison_budget(scan_limits)?);
     if !matches!(
         compare_mode.as_str(),
         "size_mtime" | "size-and-date" | "checksum" | "sha256"
@@ -59,7 +72,6 @@ pub async fn sync_diff(
         id: id.clone(),
     };
     let use_checksum = compare_mode == "checksum" || compare_mode == "sha256";
-    let budget = Arc::new(ScanBudget::new());
     let progress_channel = channel.clone();
     let on_progress: Arc<dyn Fn(ScanProgress) + Send + Sync> = Arc::new(move |progress| {
         let _ = progress_channel.send(SyncEvent::ScanProgress { progress });
@@ -641,6 +653,44 @@ fn parse_s3_path(path: &str) -> Result<(String, String), FmError> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn comparison_limits_are_validated_and_operation_scoped() {
+        let defaults = ScanBudget::new().limits;
+        let limits = scan::ScanLimits {
+            max_objects: 2,
+            max_requests: 3,
+            max_seconds: 4,
+            ..defaults
+        };
+        let budget = comparison_budget(Some(limits)).unwrap();
+        assert_eq!(budget.limits, limits);
+        assert_eq!(comparison_budget(None).unwrap().limits, defaults);
+        let cancel = AtomicBool::new(false);
+        assert!(budget.object(&cancel).is_ok());
+        assert!(budget.object(&cancel).is_ok());
+        assert!(matches!(
+            budget.object(&cancel),
+            Err(FmError::ScanLimited(_))
+        ));
+        for invalid in [
+            scan::ScanLimits {
+                max_objects: 0,
+                ..limits
+            },
+            scan::ScanLimits {
+                max_requests: 1_000_001,
+                ..limits
+            },
+            scan::ScanLimits {
+                max_seconds: 86_401,
+                ..limits
+            },
+        ] {
+            assert!(comparison_budget(Some(invalid)).is_err());
+        }
+        assert_eq!(ScanBudget::new().limits, defaults);
+    }
 
     #[test]
     fn metadata_comparison_is_symmetric() {

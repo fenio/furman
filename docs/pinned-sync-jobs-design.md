@@ -8,7 +8,9 @@ durable read-only journal/recovery merged in [#366](https://github.com/fenio/fur
 initial guarded local creates merged in [#367](https://github.com/fenio/furman/pull/367);
 S3-source creates merged in [#368](https://github.com/fenio/furman/pull/368);
 checked replacements merged in [#369](https://github.com/fenio/furman/pull/369);
-guarded bounded multipart jobs are the current implementation step.** See the
+guarded bounded multipart jobs merged in [#371](https://github.com/fenio/furman/pull/371).**
+The current [guided Sync usability follow-up](guided-sync.md) changes presentation
+and read-only comparison handoff, not the native authority protocol. See the
 [foundation contract](saved-job-foundation.md) for its exact scope and remaining
 live-binding gates, and the [read-only runtime contract](job-bound-comparisons.md).
 See [checked payload previews](job-checked-previews.md) for the implemented preparation boundary.

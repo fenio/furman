@@ -62,7 +62,7 @@
         source: sourceKind === 'local' ? { kind: 'local', path: localPath } : { kind: 's3', profile_id: sourceProfile, prefix: sourcePrefix },
         destination_profile_id: destinationProfile, destination_prefix: destinationPrefix,
         exclude_patterns: parseComparisonExcludes(excludeText), acknowledged });
-      if (active) { report = result; choose(result.jobs.find(job => job.definition.name === name.trim())?.definition.id ?? ''); status = 'Definition saved. No credentials were read and no connection, comparison or transfer was started. Execution is not implemented.'; }
+      if (active) { report = result; choose(result.jobs.find(job => job.definition.name === name.trim())?.definition.id ?? ''); status = 'Saved transfer settings. No credentials were read and no connection, comparison or transfer was started. Review and approve its workflow separately.'; }
     } catch (error) { if (active) failure = error; }
     finally { if (active) { busy = false; acknowledged = false; } }
   }
@@ -79,7 +79,7 @@
   <summary>Saved job definitions — explicit manual workflow{busy ? ' — working…' : failure ? ' — error (expand for details)' : ''}</summary>
   <fieldset disabled={busy}>
     <legend>Pinned definitions (foundation)</legend>
-    <p>These fields are separate from the current Sync operation. Saving/rebinding inspects saved configuration and local directory metadata only. It does not read keychain secrets, connect, apply roots to this dialog, scan or transfer. Select a valid saved revision for explicit binding/comparison/preparation below. Eligible local → S3 / S3 → S3 small-object writes require separate native execution review and approval; replacements require an additional explicit acknowledgement. Scheduling is disabled.</p>
+    <p>These advanced settings are separate from the current Sync operation. Saving/rebinding inspects saved configuration and local directory metadata only. It does not read keychain secrets, connect, apply roots to this dialog, scan or transfer. Select a valid saved revision for explicit binding/comparison/preparation below. Eligible local → S3 / S3 → S3 writes up to 1 GiB/file require separate native execution review and approval; replacements and multipart staging require additional explicit acknowledgements. Scheduling is disabled.</p>
     <label>Definition
       <select value={selectedId} disabled={!ready} onchange={(event) => choose(event.currentTarget.value)}>
         <option value="">New definition / choose explicitly</option>

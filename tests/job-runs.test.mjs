@@ -15,15 +15,15 @@ const complete=status=>({...status,phase:'complete',outcome:'complete',summary:{
 const eligible=(run,manifest)=>({...complete(bound()),run_id:run,manifest_id:manifest,phase:'prepared',preview:{id:'native-preview',can_review_execution:true,execution_available:false}});
 function imports(code,dependencies){return code.replace(/from (['"])([^'"]+)\1/g,(_,quote,name)=>{const resolved=dependencies[name]??(name==='#lib/state/navigation-cache.svelte.js'?data('export const beginS3Mutation=()=>()=>{};'):name.startsWith('svelte')?import.meta.resolve(name):null);assert.ok(resolved,`Unmapped job-run import ${name}`);return `from ${JSON.stringify(resolved)}`;});}
 let sequence=0;
-async function fixture(methods={}){
+async function fixture(methods={},guided=false){
   const key=`jobRunFixture${sequence++}`;const calls=[];const destroys=[];const initial=bound();
-  const context={props:{definition:structuredClone(definition)},destroys,calls,methods:{bind:async()=>initial,scan:async()=>complete(initial),page:async()=>[{id:'entry',relative_path:'nested/file',status:'new',source_size:3,destination_size:null}],release:async()=>{},status:async()=>initial,...methods}};
+  const context={props:{definition:structuredClone(definition),guided},destroys,calls,methods:{bind:async()=>initial,scan:async()=>complete(initial),page:async()=>[{id:'entry',relative_path:'nested/file',status:'new',source_size:3,destination_size:null}],release:async()=>{},status:async()=>initial,...methods}};
   globalThis[key]=context;
   const rpc=data(`const run=(name,...args)=>{const fixture=globalThis.${key};fixture.calls.push([name,...args]);return fixture.methods[name](...args);};export const bindJobSession=(...args)=>run('bind',...args);export const scanJobSession=(...args)=>run('scan',...args);export const releaseJobSession=(...args)=>run('release',...args);export const jobSessionStatus=(...args)=>run('status',...args);export const jobManifestPage=(...args)=>run('page',...args);export const prepareJobPreview=(...args)=>run('prepare',...args);export const reviewJobExecution=(...args)=>run('review',...args);export const executeJobPreview=(...args)=>run('execute',...args);`);
   let script=source.match(/<script lang="ts">([\s\S]*?)<\/script>/)[1].replaceAll('$props()',`globalThis.${key}.props`).replace(/^\s*import \w+ from '\.\/[^']+\.svelte';/gm,'');
   script+=`\nexport const harness={bind,compare,more,refresh,release,prepare,reviewExecution,execute,toggleEntry,approve(){approved=true;},approveSnapshots(){snapshotApproved=true;},approveExecution(){executeApproved=true;exclusionsApproved=true;},approveReplacements(){replacementsApproved=true;},approveMultipart(){multipartApproved=true;},setBudget(value){snapshotMiB=value;},get state(){return{approved,session,progress,rows,busy,failure,status,opId,selectedIds,snapshotApproved,executeApproved,exclusionsApproved,replacementsApproved,multipartApproved};}};`;
   const code=compileModule(stripTypeScriptTypes(script),{generate:'client',filename:'JobComparisonSession.svelte.js'}).js.code;
-  const {harness}=await import(data(imports(code,{'svelte':data(`export const onDestroy=callback=>globalThis.${key}.destroys.push(callback);`),'#lib/services/job-runs.js':rpc,'#lib/services/log.js':data('export const error=()=>{};')})));
+  const {harness}=await import(data(imports(code,{'svelte':data(`export const onDestroy=callback=>globalThis.${key}.destroys.push(callback);export const untrack=callback=>callback();`),'#lib/services/job-runs.js':rpc,'#lib/services/log.js':data('export const error=()=>{};')})));
   return{h:harness,calls,context,close(){for(const destroy of destroys)destroy();},cleanup(){delete globalThis[key];}};
 }
 
@@ -104,6 +104,11 @@ test('checked preparation requires explicit loaded native entry selection and se
     assert.equal(f.h.state.snapshotApproved,false);assert.equal(f.h.state.session.phase,'prepared');assert.equal(f.h.state.session.execution_available,false);
     await f.h.prepare();assert.equal(f.calls.filter(call=>call[0]==='prepare').length,1);assert.ok(!f.calls.some(call=>/execute|upload|delete/.test(call[0])));
   }finally{f.close();await Promise.resolve();f.cleanup();}
+});
+
+test('friendly guided job labels do not combine connection/comparison/preparation or restore execution approval',async()=>{
+  const f=await fixture({prepare:async(run,manifest)=>eligible(run,manifest)},true);
+  try{assert.equal(f.calls.length,0);await f.h.bind();assert.equal(f.calls.length,0);f.h.approve();await f.h.bind();assert.deepEqual(f.calls.map(c=>c[0]),['bind']);await f.h.compare();f.h.toggleEntry('entry');await f.h.prepare();assert.equal(f.calls.filter(c=>c[0]==='prepare').length,0);f.h.approveSnapshots();await f.h.prepare();assert.equal(f.calls.find(c=>c[0]==='prepare')[4],'skip_existing');await f.h.execute();assert.equal(f.calls.filter(c=>c[0]==='execute').length,0);}finally{f.close();await Promise.resolve();f.cleanup();}
 });
 
 test('selection changes reset snapshot approval and invalid disk budgets never reach native preparation',async()=>{

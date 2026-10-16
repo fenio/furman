@@ -1,5 +1,8 @@
 # Guarded multipart saved jobs
 
+Merged in [#371](https://github.com/fenio/furman/pull/371). The [guided Sync follow-up](guided-sync.md)
+makes this manual workflow accessible through source → destination → review.
+
 This source/PR extends [checked replacements (#369)](https://github.com/fenio/furman/pull/369)
 to bounded larger local → S3 and S3 → S3 creates/replacements. It does not change
 ordinary transfers, release versions, scheduling, deletion, dynamic AWS-auth jobs,

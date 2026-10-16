@@ -14,7 +14,7 @@
   <aside aria-label="Saved job journal needs attention">
     <strong>Saved jobs need local journal/review attention.</strong>
     {#if (jobJournalState.report?.pending_uploads?.length ?? 0) > 0}<p>Multipart staging/cleanup evidence remains. After active work stops, inspect incomplete uploads at the provider; unfinished parts may incur charges. Startup and review never reconnect, clean up or resume automatically.</p>{/if}
-    <p>Open Sync → Saved job definitions → Local attempt history to inspect and explicitly acknowledge review. This never reconnects, retries or restores approvals. Ordinary workflows remain available; unresolved job/storage pauses block new job work. Scheduling is disabled.</p>
+    <p>Open Sync → Manage saved transfers and local history → Local attempt history to inspect and explicitly acknowledge review. This never reconnects, retries or restores approvals. Ordinary workflows remain available; unresolved job/storage pauses block new job work. Scheduling is disabled.</p>
     {#if jobJournalState.error}<ErrorNotice error={jobJournalState.error} context="Saved-job operation or journal recovery/review" />{/if}
     <button type="button" onclick={refresh} disabled={busy}>Refresh local journal recovery</button>
   </aside>

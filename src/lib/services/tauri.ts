@@ -1,5 +1,5 @@
 import { invoke, Channel } from '@tauri-apps/api/core';
-import type { DirListing, DirListEvent, VolumeInfo, ProgressEvent, SearchEvent, SearchMode, SyncEvent, GitRepoInfo, FileProperties, TransferCheckpoint, ModelMetadata, DiskUsageEvent } from '#lib/types/index.js';
+import type { DirListing, DirListEvent, VolumeInfo, ProgressEvent, SearchEvent, SearchMode, SyncEvent, ScanLimits, GitRepoInfo, FileProperties, TransferCheckpoint, ModelMetadata, DiskUsageEvent } from '#lib/types/index.js';
 
 export async function listArchive(
   archivePath: string,
@@ -223,7 +223,8 @@ export async function syncDiff(
   destS3Id: string,
   excludePatterns: string[],
   compareMode: string,
-  onEvent: (e: SyncEvent) => void
+  onEvent: (e: SyncEvent) => void,
+  scanLimits?: ScanLimits,
 ): Promise<void> {
   const channel = new Channel<SyncEvent>();
   channel.onmessage = onEvent;
@@ -237,6 +238,7 @@ export async function syncDiff(
     destS3Id,
     excludePatterns,
     compareMode,
+    scanLimits,
     channel,
   });
 }

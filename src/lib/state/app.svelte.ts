@@ -73,6 +73,7 @@ class AppState {
   propertiesSftpConnection = $state<SftpConnectionInfo | undefined>(undefined);
   propertiesArchiveInfo = $state<ArchiveInfo | undefined>(undefined);
   syncSourceBackend = $state<PanelBackend>('local');
+  syncSetupOptions = $state<{ mode: 'sha256' | 'size_mtime'; exclusions: string[]; fromComparison?: boolean } | null>(null);
   syncSourcePath = $state('');
   syncSourceS3Id = $state('');
   syncDestBackend = $state<PanelBackend>('local');
@@ -374,12 +375,14 @@ class AppState {
   showSync(
     source: { backend: PanelBackend; path: string; s3Id: string },
     dest: { backend: PanelBackend; path: string; s3Id: string },
+    options: { mode: 'sha256' | 'size_mtime'; exclusions: string[]; fromComparison?: boolean } | null = null,
   ) {
     if (!canSyncBackends(source.backend, dest.backend)) {
       statusState.setMessage('Sync not supported for SFTP/archive panels');
       return;
     }
     this.syncSourceBackend = source.backend;
+    this.syncSetupOptions = options ? { ...options, exclusions: [...options.exclusions] } : null;
     this.syncSourcePath = source.path;
     this.syncSourceS3Id = source.s3Id;
     this.syncDestBackend = dest.backend;
@@ -538,6 +541,7 @@ class AppState {
     this.localBatchEditBackend = 'local';
     this.localBatchEditSftpConnectionId = '';
     this.syncSourceBackend = 'local';
+    this.syncSetupOptions = null;
     this.syncSourcePath = '';
     this.syncSourceS3Id = '';
     this.syncDestBackend = 'local';
