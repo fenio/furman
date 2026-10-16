@@ -7,7 +7,8 @@ extends its runtime capabilities. Saving a definition never authorizes writes.
 The [journal follow-up](job-journal.md) adds local-only history/recovery/review.
 The [checked-preview follow-up](job-checked-previews.md) adds non-executable
 snapshot preparation. [Initial guarded execution](job-guarded-execution.md)
-requires separate single-use approval for local → S3 creates up to 5 MiB/file.
+requires separate single-use approval for creates up to 5 MiB/file, now extended
+to [supported S3 sources](job-s3-create-execution.md).
 There are no retry/resume or scheduling commands.
 
 ## Using definitions
@@ -150,7 +151,7 @@ explicitly warns about partial cleanup.
 
 ## Explicitly deferred
 
-Broader S3-source/replacement/multipart execution and scheduling remain follow-up
+Unsupported S3 attributes, replacement/multipart execution and scheduling remain follow-up
 work; [initial local-create execution](job-guarded-execution.md) implements native
 single-use approval, guarded snapshot consumption, verification and intent/outcomes.
 History/review/reconciliation is implemented in

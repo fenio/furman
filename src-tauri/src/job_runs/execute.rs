@@ -27,6 +27,8 @@ use sha2::{Digest, Sha256};
 use std::os::unix::fs::FileExt;
 
 #[cfg(test)]
+mod s3_tests;
+#[cfg(test)]
 mod tests;
 
 // Only these static native diagnoses may escape SDK source chains. Never format
@@ -63,6 +65,10 @@ pub struct Review {
     pub destination: String,
     pub exclusions: Vec<String>,
     pub destination_sse_c: bool,
+    pub s3_source: bool,
+    pub preserved_tag_count: usize,
+    pub source_aes256_files: usize,
+    pub source_sse_c_files: usize,
 }
 pub(super) struct Approval {
     id: String,
@@ -102,6 +108,26 @@ impl Approval {
                 .destination
                 .configuration
                 .sse_customer_key_enabled,
+            s3_source: matches!(self.binding.source, BoundSource::S3(_)),
+            preserved_tag_count: self
+                .plan
+                .items
+                .iter()
+                .filter_map(|item| item.controls.as_ref())
+                .map(|controls| controls.tags.len())
+                .sum(),
+            source_aes256_files: self
+                .plan
+                .items
+                .iter()
+                .filter(|item| item.snapshot.attributes.aes256)
+                .count(),
+            source_sse_c_files: self
+                .plan
+                .items
+                .iter()
+                .filter(|item| item.snapshot.attributes.customer_encrypted)
+                .count(),
         }
     }
     pub fn validate(&self, run: &str, expires: Instant) -> Result<(), FmError> {
@@ -110,6 +136,13 @@ impl Approval {
             .check_owner(&self.binding, run, &self.manifest, expires)?;
         if let Some(reason) = self.plan.execution_blocker() {
             return Err(error(&reason));
+        }
+        if matches!(self.binding.source, BoundSource::S3(_))
+            && self.plan.items.iter().any(|item| item.controls.is_none())
+        {
+            return Err(error(
+                "Native source ACL/tag preservation review is missing",
+            ));
         }
         if self.expires != expires || !self.binding.attempt.healthy() {
             return Err(error("Execution approval ownership/storage changed"));
@@ -176,14 +209,13 @@ async fn snapshot_bytes(
     .map_err(|_| error("Checked snapshot read worker failed"))?
 }
 async fn read_object(
-    binding: &Binding,
+    endpoint: &super::Endpoint,
     key: &str,
     size: u64,
     etag: &str,
     budget: &ScanBudget,
     cancel: &AtomicBool,
 ) -> Result<(String, Attributes), FmError> {
-    let endpoint = &binding.destination;
     let response = budget
         .request(cancel, async {
             endpoint
@@ -254,7 +286,7 @@ async fn source_matches(
     item: &preview::Item,
     budget: &Arc<ScanBudget>,
     cancel: &Arc<AtomicBool>,
-) -> Result<(), FmError> {
+) -> Result<Option<super::controls::Controls>, FmError> {
     let expected = item
         .entry
         .source
@@ -285,11 +317,54 @@ async fn source_matches(
                 ));
             }
         }
-        BoundSource::S3(_) => {
-            return Err(error("S3-source execution is not supported by this cohort; source attribute/encryption/ACL/tag preservation needs separate review"));
+        BoundSource::S3(endpoint) => {
+            let SourcePin::S3 { pin } = &binding.job.source else {
+                return Err(error("Native source kind changed"));
+            };
+            let key = format!("{}{}", pin.prefix, item.entry.row.relative_path);
+            let (digest, attributes) = read_object(
+                endpoint,
+                &key,
+                expected.size,
+                expected
+                    .etag
+                    .as_deref()
+                    .ok_or_else(|| error("Missing native source validator"))?,
+                budget,
+                cancel,
+            )
+            .await?;
+            if digest != expected.sha256 || attributes != item.snapshot.attributes {
+                return Err(error("Source payload, version or supported attributes changed after preparation; no approval can be reused"));
+            }
+            super::controls::require_unlocked_source(endpoint, budget, cancel).await?;
+            let controls = super::controls::read(
+                endpoint,
+                &key,
+                attributes.version.as_deref(),
+                budget,
+                cancel,
+            )
+            .await?;
+            if attributes
+                .tag_count
+                .is_some_and(|count| count as usize != controls.tags.len())
+                || item
+                    .controls
+                    .as_ref()
+                    .is_some_and(|expected| expected != &controls)
+            {
+                return Err(error("Source ACL/tags changed after native execution review; compare and prepare again"));
+            }
+            if attributes.content_type.is_none() {
+                return Err(error(
+                    "S3 source Content-Type is missing; the job writer cannot silently invent one",
+                ));
+            }
+            return Ok(Some(controls));
         }
     }
-    Ok(())
+    Ok(None)
 }
 
 pub async fn review(state: &JobRunState, request: ReviewRequest) -> Result<RunStatus, FmError> {
@@ -299,7 +374,7 @@ pub async fn review(state: &JobRunState, request: ReviewRequest) -> Result<RunSt
             "A fresh checked preview is required for execution review",
         ));
     }
-    let (binding, plan, manifest, expires, cancel) = {
+    let (binding, mut plan, manifest, expires, cancel) = {
         let mut inner = state.0.lock().map_err(|_| error("Job state unavailable"))?;
         let slot = inner
             .slot
@@ -322,6 +397,12 @@ pub async fn review(state: &JobRunState, request: ReviewRequest) -> Result<RunSt
             .binding
             .clone()
             .ok_or_else(|| error("Missing binding"))?;
+        if matches!(binding.source, BoundSource::S3(_)) {
+            let minimum_calls = plan.items.len() as u64 * 9;
+            if minimum_calls > binding.limits.max_requests {
+                return Err(error(&format!("Selected S3 execution needs at least {minimum_calls} logical S3 calls, exceeding the reviewed {}-call execution budget. Prepare fewer files or explicitly review higher limits in a fresh bound run; no approval or write was admitted.",binding.limits.max_requests)));
+            }
+        }
         let manifest = slot
             .manifest
             .as_ref()
@@ -349,11 +430,11 @@ pub async fn review(state: &JobRunState, request: ReviewRequest) -> Result<RunSt
         .attempt
         .stage(Status::Reviewing, ScanProgress::default(), None)?;
     let result = async {
-        for item in &plan.items {
+        for item in &mut plan.items {
             binding.validate()?;
             budget.object(&cancel)?;
             missing(&binding, &item.key, &budget, &cancel).await?;
-            source_matches(&binding, item, &budget, &cancel).await?;
+            item.controls = source_matches(&binding, item, &budget, &cancel).await?;
             snapshot_bytes(
                 binding.clone(),
                 item.snapshot
@@ -404,6 +485,15 @@ pub async fn review(state: &JobRunState, request: ReviewRequest) -> Result<RunSt
             Ok(view)
         }
         Err(failure) => {
+            if let Ok(mut inner) = state.0.lock() {
+                if let Some(slot) = inner
+                    .slot
+                    .as_mut()
+                    .filter(|slot| slot.id == request.run_id && slot.phase == Phase::Reviewing)
+                {
+                    slot.progress = budget.progress();
+                }
+            }
             let result = state.stop(
                 &request.run_id,
                 super::outcome(&failure),
@@ -520,11 +610,6 @@ fn writer(
     first_deadline: Option<Instant>,
     budget: Arc<ScanBudget>,
 ) -> Result<(Client, Arc<ScopedWriter>), FmError> {
-    if !matches!(binding.source, BoundSource::Local(_)) {
-        return Err(error(
-            "Only retained local-root job sources can derive an initial writer",
-        ));
-    }
     if !crate::s3::compat::conditional_writes_supported(&binding.destination.client) {
         return Err(error(crate::s3::compat::CONDITION_ERROR));
     }
@@ -753,6 +838,10 @@ async fn run(state: JobRunState, id: String, approval: Approval, cancel: Arc<Ato
                 .set_metadata(Some(a.metadata.clone())).set_content_type(a.content_type.clone())
                 .set_cache_control(a.cache_control.clone()).set_content_disposition(a.disposition.clone())
                 .set_content_encoding(a.encoding.clone()).set_content_language(a.language.clone());
+            if matches!(binding.source,BoundSource::S3(_)) {
+                let controls=item.controls.as_ref().ok_or_else(||error("Source ACL/tag review is missing from the native approval"))?;
+                put=put.set_tagging(controls.tagging()).storage_class(aws_sdk_s3::types::StorageClass::Standard);
+            }
             if a.aes256 && !binding.job.destination.configuration.sse_customer_key_enabled {
                 put = put.server_side_encryption(aws_sdk_s3::types::ServerSideEncryption::Aes256);
             }
@@ -769,14 +858,20 @@ async fn run(state: JobRunState, id: String, approval: Approval, cancel: Arc<Ato
             uncertain = true;
             let etag = response.e_tag().filter(|e| !e.is_empty() && e.len() <= 1024)
                 .ok_or_else(|| error("PUT acknowledged without a bounded ETag; mandatory verification cannot be pinned"))?;
-            let (digest, actual) = read_object(&binding, &item.key, item.snapshot.size, etag, &budget, &cancel).await?;
+            let (digest, actual) = read_object(&binding.destination, &item.key, item.snapshot.size, etag, &budget, &cancel).await?;
+            if actual.version.as_deref()!=response.version_id(){return Err(error("Written object version changed before verification; no success was recorded"));}
             let sse = binding.job.destination.configuration.sse_customer_key_enabled;
-            if digest != item.snapshot.sha256 || actual.metadata != a.metadata
+            if !actual.complete || digest != item.snapshot.sha256 || actual.metadata != a.metadata
                 || a.content_type.as_ref().is_some_and(|v| actual.content_type.as_ref() != Some(v))
                 || actual.cache_control != a.cache_control || actual.disposition != a.disposition
                 || actual.encoding != a.encoding || actual.language != a.language
                 || actual.customer_encrypted != sse || (a.aes256 && !sse && !actual.aes256) {
                 return Err(error("Written object failed mandatory SHA-256/header/encryption verification; it was not rolled back"));
+            }
+            if let Some(expected)=&item.controls {
+                if !actual.standard_storage{return Err(error("Written object did not retain STANDARD storage; no success was recorded"));}
+                let actual_controls=super::controls::read(&binding.destination,&item.key,actual.version.as_deref(),&budget,&cancel).await?;
+                if actual_controls.tags!=expected.tags||actual.tag_count.is_some_and(|count|count as usize!=actual_controls.tags.len()){return Err(error("Written object tags failed native verification; it was not rolled back"));}
             }
             uncertain = false;
             counts.verified_files += 1;

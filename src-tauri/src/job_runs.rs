@@ -2,6 +2,7 @@
 //! approved writers never enter legacy connection/transfer registries.
 mod attributes;
 pub(crate) mod collect;
+mod controls;
 pub(crate) mod execute;
 pub(crate) mod journal;
 pub(crate) mod preview;
@@ -843,7 +844,13 @@ impl aws_sdk_s3::config::Intercept for ReadNamespaceGuard {
             .unwrap_or("");
         if !matches!(
             operation,
-            "HeadBucket" | "HeadObject" | "ListObjectsV2" | "GetObject"
+            "HeadBucket"
+                | "HeadObject"
+                | "ListObjectsV2"
+                | "GetObject"
+                | "GetObjectAcl"
+                | "GetObjectTagging"
+                | "GetObjectLockConfiguration"
         ) {
             return Err(READ_ONLY_ERROR.into());
         }

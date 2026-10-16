@@ -6,7 +6,7 @@ stages/outcomes, abandoned-attempt reconciliation and explicit review pauses.
 Its v1 schema was read-only and could not represent payload intent. The
 [initial guarded-execution follow-up](job-guarded-execution.md) now introduces
 v2, retaining v1 read compatibility and adding executable intent/outcome counters
-for separately approved local → S3 creates up to 5 MiB/file only. **No history or
+for separately approved creates up to 5 MiB/file, including [supported S3 sources](job-s3-create-execution.md). **No history or
 recovery action approves execution. No retry/resume or scheduling is enabled.**
 
 ## Local-only startup and manual review
@@ -170,6 +170,7 @@ late replies and the absence of connection/execution calls during review.
 native approval, snapshot consumption, pre-mutation durable intent and mandatory
 SHA-256 verification with confirmed/partial/uncertain outcomes. The read-only
 sequence described above remains preparation only; see that companion for the
-executable v2 lifecycle, counter protocol and fault behavior. S3-source attribute/
-encryption/ACL/tag preservation, replacements and multipart job execution need
-separate review/testing. Scheduling remains a separately authorized later proposal.
+executable v2 lifecycle, counter protocol and fault behavior. The [S3 extension](job-s3-create-execution.md)
+implements the supported preservation subset. Richer source attributes,
+replacements and multipart job execution need separate review/testing.
+Scheduling remains a separately authorized later proposal.

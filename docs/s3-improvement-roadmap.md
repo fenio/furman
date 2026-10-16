@@ -29,7 +29,7 @@ separate PR, with provider-specific behavior and safety tested explicitly.
 6. **AWS SSO usability — merged in [#360](https://github.com/fenio/furman/pull/360).** Profile discovery, clear expired-session states, and an
     explicit AWS CLI v2 sign-in action without storing SSO tokens ourselves.
     See [the SSO usability contract](s3-aws-sso.md).
-7. **Saved jobs, then opt-in scheduling — options presets merged in [#361](https://github.com/fenio/furman/pull/361); design merged in [#362](https://github.com/fenio/furman/pull/362); definition foundation merged in [#363](https://github.com/fenio/furman/pull/363); read-only native binding/comparisons merged in [#364](https://github.com/fenio/furman/pull/364); checked previews/snapshots merged in [#365](https://github.com/fenio/furman/pull/365); durable journal/recovery/review pauses merged in [#366](https://github.com/fenio/furman/pull/366); guarded local-create execution in the current PR.** Start with reusable comparison/sync
+7. **Saved jobs, then opt-in scheduling — options presets merged in [#361](https://github.com/fenio/furman/pull/361); design merged in [#362](https://github.com/fenio/furman/pull/362); definition foundation merged in [#363](https://github.com/fenio/furman/pull/363); read-only native binding/comparisons merged in [#364](https://github.com/fenio/furman/pull/364); checked previews/snapshots merged in [#365](https://github.com/fenio/furman/pull/365); durable journal/recovery/review pauses merged in [#366](https://github.com/fenio/furman/pull/366); guarded local creates merged in [#367](https://github.com/fenio/furman/pull/367); S3-source preservation/creates in the current PR.** Start with reusable comparison/sync
    presets (method and explicit exclusions only; no stored identities or approval).
    See [the options-preset contract](comparison-presets.md).
    See [the configured-identity and definition foundation](saved-job-foundation.md).
@@ -38,8 +38,10 @@ separate PR, with provider-specific behavior and safety tested explicitly.
    See [the read-only journal/recovery foundation](job-journal.md).
    Follow [the pinned manual-job design](pinned-sync-jobs-design.md) for guarded execution,
     persistent outcomes and review pauses. See [initial guarded execution](job-guarded-execution.md):
-    separately approved local → S3 missing-object creates up to 5 MiB/file only.
-    Replacements, S3-source/multipart execution and deletion remain deferred.
+    merged in [#367](https://github.com/fenio/furman/pull/367), and the current
+    [S3 attribute-preserving create extension](job-s3-create-execution.md),
+    up to 5 MiB/file. Replacements, multipart execution, unsupported source
+    attributes and deletion remain deferred.
    Scheduling remains a separate future proposal; never
    silently schedule uploads.
 
