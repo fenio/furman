@@ -35,6 +35,7 @@
   import { sftpHead } from '#lib/services/sftp.js';
   import { formatSize, formatDate, formatPermissions } from '#lib/utils/format.js';
   import { summarizeVersionSizes } from '#lib/utils/s3-versions.js';
+  import { initialExpandedRule, expandedRuleAfterRemoval } from '#lib/utils/rule-disclosure.js';
   import { connectionsState } from '#lib/state/connections.svelte.js';
   import type {
     FileProperties, S3ObjectProperties, S3ObjectVersion, PanelBackend,
@@ -288,6 +289,7 @@
   // Bucket-level: CORS Configuration
   let corsExpanded = $state(false);
   let corsRules = $state<S3CorsRule[]>([]);
+  let editingCorsRuleIndex = $state<number | null>(null);
   let corsOriginal = $state('');
   let corsLoading = $state(false);
   let corsMessage = $state('');
@@ -668,6 +670,7 @@
     try {
       lifecycleRules = await s3GetBucketLifecycle(s3ConnectionId);
       lifecycleOriginal = JSON.stringify(lifecycleRules);
+      editingRuleIndex = initialExpandedRule(lifecycleRules.length);
     } catch (err: unknown) {
       lifecycleMessage = 'Error: ' + String(err);
     } finally {
@@ -691,8 +694,13 @@
 
   function removeLifecycleRule(index: number) {
     lifecycleRules = lifecycleRules.filter((_, i) => i !== index);
-    if (editingRuleIndex === index) editingRuleIndex = null;
-    else if (editingRuleIndex !== null && editingRuleIndex > index) editingRuleIndex--;
+    editingRuleIndex = expandedRuleAfterRemoval(editingRuleIndex, index, lifecycleRules.length);
+  }
+
+  function toggleLifecycleRule(index: number) { editingRuleIndex = editingRuleIndex === index ? null : index; }
+  function handleRuleToggleKeydown(event: KeyboardEvent) {
+    // Let native button activation work without the dialog's Enter-to-close.
+    if (event.key === 'Enter' || event.key === ' ') event.stopPropagation();
   }
 
   function addTransition(ruleIndex: number) {
@@ -764,6 +772,7 @@
     try {
       corsRules = await s3GetBucketCors(s3ConnectionId);
       corsOriginal = JSON.stringify(corsRules);
+      editingCorsRuleIndex = initialExpandedRule(corsRules.length);
     } catch (err: unknown) {
       corsMessage = 'Error: ' + String(err);
     } finally {
@@ -779,10 +788,17 @@
       expose_headers: [],
       max_age_seconds: null,
     }];
+    editingCorsRuleIndex = corsRules.length - 1;
   }
 
   function removeCorsRule(index: number) {
     corsRules = corsRules.filter((_, i) => i !== index);
+    editingCorsRuleIndex = expandedRuleAfterRemoval(editingCorsRuleIndex, index, corsRules.length);
+  }
+
+  function toggleCorsRule(index: number) { editingCorsRuleIndex = editingCorsRuleIndex === index ? null : index; }
+  function corsSummary(rule: S3CorsRule): string {
+    return `${rule.allowed_methods.join(', ') || '(no methods)'} · ${rule.allowed_origins.join(', ') || '(no origins)'}`;
   }
 
   function toggleCorsMethod(ruleIndex: number, method: string) {
@@ -1340,7 +1356,7 @@
             lifecycleLoading = true;
             bucketLoads.push(
               s3GetBucketLifecycle(s3ConnectionId)
-                .then(r => { lifecycleRules = r; lifecycleOriginal = JSON.stringify(r); })
+                .then(r => { lifecycleRules = r; lifecycleOriginal = JSON.stringify(r); editingRuleIndex = initialExpandedRule(r.length); })
                 .catch(err => { lifecycleMessage = 'Error: ' + String(err); })
                 .finally(() => { lifecycleLoading = false; })
             );
@@ -1349,7 +1365,7 @@
             corsLoading = true;
             bucketLoads.push(
               s3GetBucketCors(s3ConnectionId)
-                .then(r => { corsRules = r; corsOriginal = JSON.stringify(r); })
+                .then(r => { corsRules = r; corsOriginal = JSON.stringify(r); editingCorsRuleIndex = initialExpandedRule(r.length); })
                 .catch(err => { corsMessage = 'Error: ' + String(err); })
                 .finally(() => { corsLoading = false; })
             );
@@ -2632,8 +2648,8 @@
                           <span class="lifecycle-summary">{lifecycleSummary(rule)}</span>
                         {/if}
                         <div class="lifecycle-rule-actions">
-                          <button class="version-action-btn" onclick={() => { editingRuleIndex = editingRuleIndex === i ? null : i; }}>
-                            {editingRuleIndex === i ? 'Collapse' : 'Edit'}
+                          <button type="button" class="version-action-btn" aria-expanded={editingRuleIndex === i} onkeydown={handleRuleToggleKeydown} onclick={() => toggleLifecycleRule(i)}>
+                            {editingRuleIndex === i ? 'Collapse' : 'Expand'}
                           </button>
                           <button class="version-action-btn danger" onclick={() => removeLifecycleRule(i)} title="Delete rule">&times;</button>
                         </div>
@@ -2823,11 +2839,13 @@
                     <div class="lifecycle-rule">
                       <div class="lifecycle-rule-header">
                         <span class="lifecycle-rule-id">Rule {i + 1}</span>
+                        {#if editingCorsRuleIndex !== i}<span class="lifecycle-summary" title={corsSummary(rule)}>{corsSummary(rule)}</span>{/if}
                         <div class="lifecycle-rule-actions">
+                          <button type="button" class="version-action-btn" aria-expanded={editingCorsRuleIndex === i} onkeydown={handleRuleToggleKeydown} onclick={() => toggleCorsRule(i)}>{editingCorsRuleIndex === i ? 'Collapse' : 'Expand'}</button>
                           <button class="version-action-btn danger cors-remove-btn" onclick={() => removeCorsRule(i)} title="Remove rule" aria-label={`Remove CORS rule ${i + 1}`}>&times;</button>
                         </div>
                       </div>
-                      <div class="lifecycle-rule-body">
+                      {#if editingCorsRuleIndex === i}<div class="lifecycle-rule-body">
                         <label class="meta-field">
                           <span class="meta-label">Allowed Origins</span>
                           <textarea
@@ -2895,7 +2913,7 @@
                             placeholder="none"
                           />
                         </label>
-                      </div>
+                      </div>{/if}
                     </div>
                   {/each}
                   {#if corsRules.length === 0}
