@@ -15,7 +15,7 @@ use std::sync::atomic::Ordering;
 use std::{
     collections::HashSet,
     io::{Read, Write},
-    os::unix::fs::MetadataExt,
+    os::unix::fs::{MetadataExt, PermissionsExt},
     path::Path,
 };
 
@@ -363,6 +363,16 @@ fn digest_hex(hash: Sha256) -> String {
         .map(|byte| format!("{byte:02x}"))
         .collect()
 }
+fn private_snapshot() -> Result<File, FmError> {
+    let file = tempfile::tempfile().map_err(|_| error("Cannot allocate private job snapshot; check temporary storage permissions/free space and open-file limits"))?;
+    // Linux O_TMPFILE may use 0666 masked by umask, unlike named temp files.
+    // Enforce the same owner-only contract on every platform before any payload.
+    file.set_permissions(std::fs::Permissions::from_mode(0o600))
+        .map_err(|_| {
+            error("Cannot enforce owner-only job snapshot permissions; no payload was staged")
+        })?;
+    Ok(file)
+}
 fn local_snapshot(
     root: &File,
     input: &ItemInput,
@@ -389,7 +399,7 @@ fn local_snapshot(
     if !before.is_file() || before.len() != expected.size {
         return Err(error("Local source type/size changed since comparison"));
     }
-    let mut output = tempfile::tempfile().map_err(|_| error("Cannot allocate private job snapshot; check temporary storage permissions and free space"))?;
+    let mut output = private_snapshot()?;
     let mut hash = Sha256::new();
     let mut bytes = 0u64;
     let mut buffer = [0; 65536];
@@ -483,7 +493,7 @@ async fn s3_snapshot(
             "Source GET does not match the compared opaque ETag/size",
         ));
     }
-    let mut output = tempfile::tempfile().map_err(|_| error("Cannot allocate private job snapshot; check temporary storage permissions and free space"))?;
+    let mut output = private_snapshot()?;
     let mut body = response.body;
     let mut hash = Sha256::new();
     let mut bytes = 0u64;

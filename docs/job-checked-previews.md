@@ -105,6 +105,8 @@ condition gates remain attached. The read-only guard now also permits
 `HeadObject`; PUT/COPY/DELETE/multipart mutations remain forbidden.
 
 Snapshots use private `0600`, immediately unlinked temporary files. They are
+explicitly chmodded owner-only before any payload is written, including on Linux
+where unnamed `O_TMPFILE` allocations otherwise inherit broader umask-based modes. They are
 retained only as native capabilities, never returned as filesystem paths or
 registered for generic file/transfer IPC. A changed live source after successful
 preparation cannot change the retained bytes. Disk worker ownership is retained

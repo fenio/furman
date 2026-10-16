@@ -260,6 +260,11 @@ async fn independent_sse_s3_snapshot_gets_keep_opaque_conditions_and_actual_cont
     let plan = inner.slot.as_ref().unwrap().preview.as_ref().unwrap();
     assert_ne!(plan.items[0].snapshot.sha256, "source-etag");
     assert_eq!(plan.items[0].snapshot.size, 3);
+    assert_eq!(
+        plan.items[0].snapshot.file.metadata().unwrap().mode() & 0o777,
+        0o600
+    );
+    assert_eq!(plan.items[0].snapshot.file.metadata().unwrap().nlink(), 0);
 }
 
 #[tokio::test]
