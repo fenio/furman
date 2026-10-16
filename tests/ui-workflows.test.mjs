@@ -102,13 +102,26 @@ function serverComponent(file, dependencies = {}) {
   return `data:text/javascript;base64,${Buffer.from(code).toString('base64')}`;
 }
 
+test('pane listing diagnostics sit below all file views and above the selection footer', () => {
+  const source = readFileSync(new URL('../src/lib/components/FilePanel.svelte', import.meta.url), 'utf8');
+  const diagnostics = source.indexOf('<S3ListingStatus');
+  assert.equal(source.match(/<S3ListingStatus\b/g)?.length, 1);
+  assert.ok(diagnostics > source.indexOf('<ColumnView'));
+  assert.ok(diagnostics > source.indexOf('<FileIcon'));
+  assert.ok(diagnostics > source.indexOf('<FileRow'));
+  assert.ok(diagnostics < source.indexOf('class="panel-footer"'));
+  // All view branches close before the diagnostics: it is not scrolled away
+  // with rows, icons or columns, and uses the same handlers in either pane.
+  assert.match(source.slice(source.indexOf('<FileRow'), diagnostics), /<\/div>\s*\{\/if\}\s*<!-- Listing diagnostics[^]*\{#if isS3 && panel\.s3ListingProgress\}/);
+});
+
 test('listing status distinguishes incomplete, failed, cancelled, and complete scopes', async () => {
   const { default: Status } = await import(serverComponent('S3ListingStatus.svelte', {
     './ErrorNotice.svelte': serverComponent('ErrorNotice.svelte'),
     '#lib/state/navigation-cache.svelte.js': 'data:text/javascript,export const navigationCacheState={revision:0};export const s3NavigationCache={limits:{ttlMs:60000}};',
   }));
   const progress = { status: 'loading', items: 10, pages: 1, requests: 2, elapsedMs: 2000, updatedAt: Date.now(), pending: true, error: null };
-  const html = state => render(Status, { props: { progress: { ...progress, ...state }, onCancel() {}, onRetry() {}, onRefresh() {} } }).body;
+  const html = state => render(Status, { props: { progress: { ...progress, ...state }, onCancel() {}, onRetry() {}, onRefresh() {}, onActivity() {} } }).body;
   const loading = html({});
   assert.ok(loading.includes('loaded items'));
   assert.ok(loading.includes('all their children'));
@@ -123,6 +136,8 @@ test('listing status distinguishes incomplete, failed, cancelled, and complete s
   assert.ok(failed.includes('HTTP 502'));
   const complete = html({ status: 'complete', pending: false });
   assert.ok(complete.includes('Complete'));
+  assert.ok(complete.includes('Refresh'));
+  assert.ok(complete.includes('Activity / cache'));
   assert.ok(!complete.includes('loaded items'));
 });
 

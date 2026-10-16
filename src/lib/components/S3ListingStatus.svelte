@@ -59,7 +59,7 @@
 </div>
 
 <style>
-  .listing-status { padding: 6px 10px; border-bottom: 1px solid var(--border-subtle); font-size: 12px; color: var(--text-secondary); flex-shrink: 0; }
+  .listing-status { padding: 6px 10px; border-top: 1px solid var(--border-subtle); font-size: 12px; color: var(--text-secondary); flex-shrink: 0; }
   .listing-summary { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 6px; }
   .actions { display: flex; gap: 6px; }
   button { font: inherit; cursor: pointer; }
