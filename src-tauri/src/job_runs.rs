@@ -6,6 +6,7 @@ mod controls;
 pub(crate) mod execute;
 pub(crate) mod journal;
 pub(crate) mod preview;
+mod replacement;
 #[cfg(test)]
 mod tests;
 

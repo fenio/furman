@@ -163,5 +163,6 @@ reconciliation and review pauses. [Initial execution](job-guarded-execution.md)
 adds explicit single-use approval, guarded native snapshot consumption, executable
 intent/outcomes and verification for small creates. The [S3 extension](job-s3-create-execution.md)
 implements the supported attribute/encryption/tag/ACL subset. Richer source
-attributes, conditional replacements and multipart execution need separate coverage.
+attributes and multipart execution need separate coverage. [Checked replacements](job-checked-replacements.md)
+now add separate existing-object approval with destination revalidation/preservation.
 Scheduling remains separate.

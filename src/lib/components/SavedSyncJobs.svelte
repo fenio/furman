@@ -79,7 +79,7 @@
   <summary>Saved job definitions — explicit manual workflow{busy ? ' — working…' : failure ? ' — error (expand for details)' : ''}</summary>
   <fieldset disabled={busy}>
     <legend>Pinned definitions (foundation)</legend>
-    <p>These fields are separate from the current Sync operation. Saving/rebinding inspects saved configuration and local directory metadata only. It does not read keychain secrets, connect, apply roots to this dialog, scan or transfer. Select a valid saved revision for explicit binding/comparison/preparation below. Only eligible local → S3 / S3 → S3 creates can run after separate native execution review and approval; scheduling is disabled.</p>
+    <p>These fields are separate from the current Sync operation. Saving/rebinding inspects saved configuration and local directory metadata only. It does not read keychain secrets, connect, apply roots to this dialog, scan or transfer. Select a valid saved revision for explicit binding/comparison/preparation below. Eligible local → S3 / S3 → S3 small-object writes require separate native execution review and approval; replacements require an additional explicit acknowledgement. Scheduling is disabled.</p>
     <label>Definition
       <select value={selectedId} disabled={!ready} onchange={(event) => choose(event.currentTarget.value)}>
         <option value="">New definition / choose explicitly</option>

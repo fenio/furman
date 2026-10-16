@@ -75,6 +75,7 @@ jobs:
           cargo test --lib job_runs::tests::loopback_minio_native_binding_and_comparison_never_modify_payloads -- --ignored
           cargo test --lib job_runs::execute::tests::loopback_minio_local_create_execution_and_conflict_never_overwrite_existing -- --ignored
           cargo test --lib job_runs::execute::s3_tests::loopback_minio_s3_create_preserves_versioned_metadata_headers_and_tags_without_changing_source -- --ignored
+          cargo test --lib job_runs::execute::replacement_tests::loopback_minio_checked_local_and_s3_replacements_preserve_the_approved_attribute_policy -- --ignored
 
       - name: Stop MinIO
         if: always()

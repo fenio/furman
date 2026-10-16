@@ -8,6 +8,8 @@ Its v1 schema was read-only and could not represent payload intent. The
 v2, retaining v1 read compatibility and adding executable intent/outcome counters
 for separately approved creates up to 5 MiB/file, including [supported S3 sources](job-s3-create-execution.md). **No history or
 recovery action approves execution. No retry/resume or scheduling is enabled.**
+The [checked replacement follow-up](job-checked-replacements.md) upgrades storage
+to v3 with explicit replacement subcounts/acknowledgement; v1/v2 remain readable.
 
 ## Local-only startup and manual review
 
@@ -90,7 +92,7 @@ Storage is separate from definitions and preferences:
 
 ```text
 ~/.config/furman/job-runs/             owner-only directory
-  journal.json                      private bounded strict v2 schema (v1 readable)
+  journal.json                      private bounded strict v3 schema (v1/v2 readable)
   initialized                       fixed, non-secret initialization evidence
   dirty                             fixed recovery evidence during commit
   lock                              cooperating-process metadata lock
@@ -172,5 +174,5 @@ SHA-256 verification with confirmed/partial/uncertain outcomes. The read-only
 sequence described above remains preparation only; see that companion for the
 executable v2 lifecycle, counter protocol and fault behavior. The [S3 extension](job-s3-create-execution.md)
 implements the supported preservation subset. Richer source attributes,
-replacements and multipart job execution need separate review/testing.
+multipart job execution and broader replacement cohorts need separate review/testing.
 Scheduling remains a separately authorized later proposal.

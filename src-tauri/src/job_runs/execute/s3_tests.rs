@@ -17,10 +17,10 @@ fn failure(status: u16, code: &str) -> Response<SdkBody> {
         .body(SdkBody::from(format!("<Error><Code>{code}</Code></Error>")))
         .unwrap()
 }
-fn unlocked() -> Response<SdkBody> {
+pub(super) fn unlocked() -> Response<SdkBody> {
     failure(404, "ObjectLockConfigurationNotFoundError")
 }
-fn object(version: Option<&str>, encryption: &str) -> Response<SdkBody> {
+pub(super) fn object(version: Option<&str>, encryption: &str) -> Response<SdkBody> {
     let mut response = payload("abc", "source-etag");
     for (name, value) in [
         ("content-type", "text/plain; charset=utf-8"),
@@ -54,10 +54,10 @@ fn object(version: Option<&str>, encryption: &str) -> Response<SdkBody> {
     }
     response
 }
-fn acl(owner: &str) -> Response<SdkBody> {
+pub(super) fn acl(owner: &str) -> Response<SdkBody> {
     Response::builder().status(200).body(SdkBody::from(format!("<AccessControlPolicy><Owner><ID>{owner}</ID></Owner><AccessControlList><Grant><Grantee xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\" xsi:type=\"CanonicalUser\"><ID>{owner}</ID></Grantee><Permission>FULL_CONTROL</Permission></Grant></AccessControlList></AccessControlPolicy>"))).unwrap()
 }
-fn tags(version: Option<&str>, value: &str) -> Response<SdkBody> {
+pub(super) fn tags(version: Option<&str>, value: &str) -> Response<SdkBody> {
     let mut response=Response::builder().status(200).body(SdkBody::from(format!("<Tagging><TagSet><Tag><Key>space key</Key><Value>{value}</Value></Tag><Tag><Key>stage</Key><Value>prod / test</Value></Tag></TagSet></Tagging>"))).unwrap();
     if let Some(version) = version {
         response
@@ -75,7 +75,7 @@ fn review_reads(version: Option<&str>, encryption: &str) -> Vec<Response<SdkBody
         tags(version, "native-only-tag-value"),
     ]
 }
-fn ack(version: Option<&str>) -> Response<SdkBody> {
+pub(super) fn ack(version: Option<&str>) -> Response<SdkBody> {
     let mut response = empty();
     response
         .headers_mut()
@@ -207,6 +207,7 @@ fn execute_request(status: &RunStatus) -> ExecuteRequest {
             .clone(),
         approved: true,
         acknowledge_exclusions: true,
+        acknowledge_replacements: false,
     }
 }
 async fn wait(state: &JobRunState, id: &str) -> RunStatus {

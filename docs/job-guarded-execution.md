@@ -7,6 +7,8 @@ preparation, startup/recovery and history review are never execution approval.**
 This is source/PR functionality; it does not create a new tagged release.
 The [S3-source follow-up](job-s3-create-execution.md) extends the same guarded
 cohort to supported S3 metadata/headers/tags/encryption with explicit ACL/lock gates.
+The [replacement extension](job-checked-replacements.md) adds checked small-object
+`replace_unchanged`, a third acknowledgement and durable replacement subcounts.
 
 ## Supported cohort and explicit exclusions
 
@@ -36,7 +38,7 @@ verification, proof of bucket ownership or physical-server/DNS/proxy alias ident
 Managed credential edits invalidate generations before mutation; external keychain
 edits and editors ignoring locks remain outside that tracking.
 
-**Not enabled:** replacements (including `replace_unchanged` previews), multipart
+**Not enabled:** unguarded replacements, larger-object/multipart
 job writes, unsupported S3 source attributes, deletion/move/rename, local destinations,
 unguarded overwrite, dynamic AWS profile/SSO execution, retry/resume, headless/MCP
 execution or scheduling. Custom source ACLs, KMS/retention and non-STANDARD source
