@@ -300,6 +300,8 @@ pub fn run() {
             commands::saved_jobs::saved_job_status,
             commands::saved_jobs::saved_job_manifest_page,
             commands::saved_jobs::saved_job_prepare,
+            commands::saved_jobs::saved_job_history,
+            commands::saved_jobs::saved_job_history_review,
             commands::s3::s3_activity_snapshot,
             commands::s3::s3_activity_clear,
             commands::s3::s3_connect,

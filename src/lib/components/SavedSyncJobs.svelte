@@ -4,6 +4,7 @@
   import { parseComparisonExcludes } from '#lib/utils/comparison-options.js';
   import ErrorNotice from './ErrorNotice.svelte';
   import JobComparisonSession from './JobComparisonSession.svelte';
+  import JobHistory from './JobHistory.svelte';
 
   let { defaultLocalPath = '', onOpenChange = () => {} }: { defaultLocalPath?: string; onOpenChange?: (open: boolean) => void } = $props();
   let detailsOpen = $state(false);
@@ -131,6 +132,7 @@
       {/key}
     {:else}<p>Explicitly rebind the saved definition above before requesting native connection validation or comparison.</p>{/if}
   {/if}
+  {#if detailsOpen}<JobHistory labels={Object.fromEntries((report?.jobs ?? []).map(job => [job.definition.id, job.definition.name]))} />{/if}
   {#if failure}<ErrorNotice error={failure} context="Saved job definitions" />{/if}
   {#if status}<p role="status">{status}</p>{/if}
 </details>

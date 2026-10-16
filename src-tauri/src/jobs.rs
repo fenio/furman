@@ -862,6 +862,7 @@ pub fn delete(
     if !acknowledged {
         return Err(error("Confirm deletion of the saved definition"));
     }
+    let _run = crate::job_runs::run_lock(paths)?;
     let _lock = lock(paths)?;
     let (revision, mut store) = load(paths)?;
     if revision != expected {

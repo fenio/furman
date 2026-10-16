@@ -1139,7 +1139,7 @@ async fn loopback_minio_native_binding_and_comparison_never_modify_payloads() {
         let reader: KeyReader = Arc::new(move |_| Ok(Some(secret.to_string())));
         let bound = bind_with(
             &state,
-            paths,
+            paths.clone(),
             fresh_id(),
             job.id,
             job.revision,
@@ -1175,6 +1175,13 @@ async fn loopback_minio_native_binding_and_comparison_never_modify_payloads() {
             return Err(error("Loopback native snapshot preparation did not retain a checked non-executable preview"));
         }
         state.release(&bound.run_id)?;
+        let history = state.history(&paths)?;
+        if history.records.len() != 1 || history.records[0].status != journal::Status::Discarded
+            || history.records[0].policy != Some(preview::Policy::ReplaceUnchanged)
+            || history.records[0].comparison.s3_bytes_read != 9
+            || history.records[0].preparation.s3_bytes_read != 9 || history.execution_available {
+            return Err(error("Loopback job history did not durably retain the expected read-only outcome/counters"));
+        }
         for (bucket, key, expected) in [
             (&source_bucket, "src/nested/file", b"abc"),
             (&source_bucket, "src/new", b"new"),

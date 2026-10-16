@@ -4,7 +4,8 @@ This is the definition foundation merged in [#363](https://github.com/fenio/furm
 the first implementation step of the [pinned manual-job design](pinned-sync-jobs-design.md).
 The [subsequent read-only binding/comparison contract](job-bound-comparisons.md)
 extends its runtime capabilities. **Job writes still cannot run.** There are no
-job execute, retry, history or scheduling commands. The [checked-preview follow-up](job-checked-previews.md)
+job execute, retry or scheduling commands. The [journal follow-up](job-journal.md)
+adds local-only read-only history/recovery/review. The [checked-preview follow-up](job-checked-previews.md)
 adds non-executable snapshot preparation. `execution_available`
 is always false, and the UI's Run control remains permanently disabled.
 
@@ -148,8 +149,9 @@ explicitly warns about partial cleanup.
 
 ## Explicitly deferred
 
-Executable writer derivation from shared source descriptors/snapshots, execution policies,
-post-write verification, durable attempt history, review pauses, restart
-reconciliation and scheduling remain follow-up work. No definition created by
+Executable writer derivation from shared source descriptors/snapshots, execution approval,
+post-write verification, executable intent/write-outcome handling and scheduling
+remain follow-up work. Read-only history/review/reconciliation is implemented in
+[the journal companion](job-journal.md). No definition created by
 this step authorizes a later writer; the remaining design acceptance tests are
 mandatory before execution controls can be enabled.
