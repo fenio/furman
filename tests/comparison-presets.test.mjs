@@ -45,6 +45,28 @@ const presetExports = `refresh, apply, mutate, handleKeydown,
   setName(value) { name = value; }, confirm() { confirmDelete = true; },
   get state() { return { report, selectedId, name, ready, busy, failure, status }; }`;
 
+test('editable comparison limits are run-local, validated, snapshotted and invalidate old results without rescanning', async () => {
+  const scans = []; const cancelled = []; const transfers = [];
+  const defaults = { max_objects: 100000, max_requests: 1000, max_seconds: 300, max_results: 1000 };
+  const fixture = { props: { sourceBackend: 'local', sourcePath: '/a', sourceS3Id: '', destBackend: 's3', destPath: 's3://bucket/b/', destS3Id: 's3', embedded: true, onSync: entries => transfers.push(entries), onClose() {} }, app: { s3ScanLimits: { ...defaults }, syncExcludePatterns: '', persistConfig: async () => { throw new Error('Limits must not save preferences'); } }, scan: async (...args) => scans.push(args), cancel: async id => cancelled.push(id) };
+  const { harness: h, cleanup } = await scriptFixture('SyncDialog.svelte', fixture, `startScan,handleSync,resetScanLimits,setLimit(key,value){scanLimits[key]=value;invalidateScan();},get state(){return{scanComplete,outcome,scanLimits};}`);
+  try {
+    assert.equal(scans.length, 0);
+    h.setLimit('max_objects', 42); h.setLimit('max_requests', 23); h.setLimit('max_seconds', 17);
+    assert.equal(scans.length, 0); assert.deepEqual(fixture.app.s3ScanLimits, defaults);
+    h.startScan(); const first = scans[0];
+    assert.deepEqual(first[10], { ...defaults, max_objects: 42, max_requests: 23, max_seconds: 17 });
+    first[9]({ type: 'Entry', relative_path: 'file', status: 'new', source_size: 3, dest_size: 0 });
+    first[9]({ type: 'Done', new_count: 1, modified: 0, deleted: 0 });
+    assert.equal(h.state.scanComplete, true);
+    h.setLimit('max_seconds', 18); h.handleSync(); first[9]({ type: 'Done', new_count: 1, modified: 0, deleted: 0 });
+    assert.equal(h.state.scanComplete, false); assert.equal(transfers.length, 0); assert.equal(scans.length, 1); assert.equal(first[10].max_seconds, 17); assert.ok(cancelled.length);
+    for (const invalid of [undefined, NaN, 0, -1, 1.5, 86401]) { h.setLimit('max_seconds', invalid); h.startScan(); assert.equal(scans.length, 1); }
+    h.resetScanLimits(); assert.deepEqual(h.state.scanLimits, defaults); assert.equal(scans.length, 1);
+    h.startScan(); assert.deepEqual(scans[1][10], defaults); assert.deepEqual(fixture.app.s3ScanLimits, defaults);
+  } finally { cleanup(); }
+});
+
 test('actual preset controller never applies, scans or transfers on load/save/update/delete', async () => {
   let disk = { revision: 'initial', presets: [preset()] }; let applies = 0; const writes = [];
   const fixture = { props: { mode: 'size_mtime', excludeText: '*.tmp, nested/**', onApply: () => applies++ }, load: async () => structuredClone(disk), save: async (revision, presets) => { assert.equal(revision, disk.revision); writes.push(structuredClone(presets)); disk = { revision: 'r' + writes.length, presets: structuredClone(presets) }; return structuredClone(disk); } };

@@ -5,7 +5,7 @@
   import { appState } from '#lib/state/app.svelte.js';
   import type { SyncEntry, SyncEvent, PanelBackend } from '#lib/types/index.js';
   import type { ScanOutcome, ScanProgress } from '#lib/types/index.js';
-  import { canUseScan } from '#lib/utils/scan.js';
+  import { canUseScan, scanLimitsFromConfig, validScanLimits } from '#lib/utils/scan.js';
   import { errorText } from '#lib/utils/error-report.js';
   import ScanStatus from './ScanStatus.svelte';
   import ComparisonPresets from './ComparisonPresets.svelte';
@@ -83,6 +83,12 @@
   let excludeText = $state(untrack(() => initialExclusions?.join(', ') ?? appState.syncExcludePatterns));
   let compareMode = $state<ComparisonMode>(untrack(() => initialMode ?? 'sha256'));
   let policy = $state<SyncPolicy>(untrack(() => initialPolicy));
+  let scanLimits = $state(untrack(() => scanLimitsFromConfig(appState.s3ScanLimits)));
+  const limitsValid = $derived(validScanLimits(scanLimits));
+  function resetScanLimits() {
+    invalidateScan();
+    scanLimits = scanLimitsFromConfig(appState.s3ScanLimits);
+  }
 
   // Summary counts
   let newCount = $state(0);
@@ -110,6 +116,7 @@
   }
 
   function startScan() {
+    if (!validScanLimits(scanLimits)) return;
     const id = `sync-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 
     // Cancel any existing scan
@@ -177,6 +184,7 @@
       parseExcludePatterns(),
       compareMode,
       handleEvent,
+      { ...scanLimits },
     ).catch((err: unknown) => {
       if (id === currentSyncId) {
         clearPendingEntries();
@@ -406,14 +414,21 @@
             SHA-256 <span class="hint">(reads all contents)</span>
           </label>
         </div>
-        <button class="rescan-btn" onclick={startScan} disabled={scanning}>{outcome ? 'Rescan' : 'Compare'}</button>
+        <button class="rescan-btn" onclick={startScan} disabled={scanning || !limitsValid}>{outcome ? 'Rescan' : 'Compare'}</button>
       </div>
 
       <!-- Filter buttons -->
       <details><summary>Advanced comparison options and limits</summary>
-      {#if embedded}<ComparisonPresets mode={compareMode} {excludeText} onApply={applyPreset} />{/if}
-      <p class="hint">Scan budgets: {appState.s3ScanLimits.max_objects.toLocaleString()} entries, {appState.s3ScanLimits.max_requests.toLocaleString()} S3 API calls, {appState.s3ScanLimits.max_seconds}s (both sides combined). Configure in Preferences → Network.</p>
+        <p class="hint">Limits apply to this comparison only, across both sides combined. Preferences and saved presets are not changed. Increasing limits can increase time, memory use and S3 charges.</p>
+        <div class="scan-limits">
+          <label>Maximum entries <input type="number" min="1" max="10000000" step="1" bind:value={scanLimits.max_objects} oninput={invalidateScan} /></label>
+          <label>Maximum S3 API requests <input type="number" min="1" max="1000000" step="1" bind:value={scanLimits.max_requests} oninput={invalidateScan} /></label>
+          <label>Maximum duration (seconds) <input type="number" min="1" max="86400" step="1" bind:value={scanLimits.max_seconds} oninput={invalidateScan} /></label>
+        </div>
+        {#if !limitsValid}<p role="alert">Enter whole numbers: entries 1–10,000,000; requests 1–1,000,000; duration 1–86,400 seconds. Compare is disabled until the limits are valid.</p>{/if}
+        <button class="rescan-btn" type="button" onclick={resetScanLimits}>Reset limits to Preferences</button>
       </details>
+      {#if embedded}<ComparisonPresets mode={compareMode} {excludeText} onApply={applyPreset} />{/if}
       {#if compareMode === 'sha256' && (sourceBackend === 's3' || destBackend === 's3')}
         <p class="hint">SHA-256 downloads included S3 contents; API request and download/egress charges may apply.</p>
       {/if}
@@ -513,6 +528,9 @@
 </div>
 
 <style>
+  .scan-limits { display: flex; flex-wrap: wrap; gap: 12px; margin-bottom: 12px; }
+  .scan-limits label { display: flex; flex-direction: column; gap: 6px; font-size: 12px; }
+  .scan-limits input { width: 160px; padding: 7px; border: 1px solid var(--border-subtle); border-radius: 4px; background: var(--bg-surface); color: var(--text-primary); font: inherit; }
   .dialog-overlay.embedded { position: static; display: block; background: none; backdrop-filter: none; -webkit-backdrop-filter: none; }
   .embedded .dialog-box { width: 100%; height: auto; max-width: none; max-height: none; border: 0; border-radius: 0; box-shadow: none; background: transparent; }
   .embedded .dialog-body { padding: 0; overflow: visible; }

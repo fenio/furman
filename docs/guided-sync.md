@@ -90,6 +90,16 @@ or unguarded overwrite is implicitly authorized.
 
 ## Compare → Sync
 
+**Advanced comparison options and limits** contains editable maximum entries,
+S3 API requests and duration (seconds), initialized from Preferences. Overrides
+apply only to this comparison across both roots; they are validated in the UI and
+native command and never change global defaults. Reset explicitly reloads the
+Preferences values. Editing or resetting invalidates results/selections and cancels
+the current scan without starting another; a fresh complete comparison is required.
+Saved method/exclusion presets are a separate section, not a substitute for editing
+these fields, and do not store scan-limit overrides. Saved native-job budgets are
+unchanged by these one-off comparison controls.
+
 After a complete successful pane comparison, each comparison bar offers **Sync
 from this side…** when that direction has new/modified files. The right-side action
 reverses the *original compared roots/IDs*, not current pane navigation or labels.
