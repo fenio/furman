@@ -25,7 +25,7 @@ export interface JobRunStatus {
   execution_review: JobExecutionReview | null;
   execution: JobExecutionResult | null;
 }
-export interface JobExecutionReview { approval_id: string; preview: JobCheckedPreview; source: string; destination: string; exclusions: string[]; destination_sse_c: boolean; s3_source: boolean; preserved_tag_count: number; source_aes256_files: number; source_sse_c_files: number; replacement_files: number; destination_aes256_files: number }
+export interface JobExecutionReview { approval_id: string; preview: JobCheckedPreview; source: string; destination: string; exclusions: string[]; destination_sse_c: boolean; s3_source: boolean; preserved_tag_count: number; source_aes256_files: number; source_sse_c_files: number; replacement_files: number; destination_aes256_files: number; multipart_files: number; multipart_parts: number }
 export interface JobExecutionResult { status: JobAttemptStatus; counts: JobExecutionCounts; outcome_recorded: boolean; message: string | null }
 export type JobPreviewPolicy = 'create_only' | 'skip_existing' | 'replace_unchanged';
 export interface JobCheckedPreview {
@@ -75,7 +75,7 @@ export function reviewJobExecution(runId: string, previewId: string): Promise<Jo
   return jobInvoke('saved_job_execution_review', { request: { run_id: runId, preview_id: previewId } });
 }
 let monitoringExecution = false;
-export async function executeJobPreview(runId: string, approvalId: string, approved: boolean, acknowledgeExclusions: boolean, acknowledgeReplacements = false): Promise<JobRunStatus> {
+export async function executeJobPreview(runId: string, approvalId: string, approved: boolean, acknowledgeExclusions: boolean, acknowledgeReplacements = false, acknowledgeMultipart = false): Promise<JobRunStatus> {
   if (!approved || !acknowledgeExclusions) throw new Error('Explicit single-use execution and attribute-exclusion acknowledgement is required.');
   if (monitoringExecution) throw new Error('A native execution outcome is still being monitored; wait for it or inspect local history.');
   monitoringExecution = true;
@@ -84,7 +84,7 @@ export async function executeJobPreview(runId: string, approvalId: string, appro
   // views conservatively, including failed/uncertain outcomes.
   const endMutation = beginS3Mutation();
   try {
-    let status = await jobInvoke<JobRunStatus>('saved_job_execute', { request: { run_id: runId, approval_id: approvalId, approved, acknowledge_exclusions: acknowledgeExclusions, ...(acknowledgeReplacements ? { acknowledge_replacements: true } : {}) } });
+    let status = await jobInvoke<JobRunStatus>('saved_job_execute', { request: { run_id: runId, approval_id: approvalId, approved, acknowledge_exclusions: acknowledgeExclusions, ...(acknowledgeReplacements ? { acknowledge_replacements: true } : {}), ...(acknowledgeMultipart ? { acknowledge_multipart: true } : {}) } });
     jobExecutionState.status = status;
     // Monitor only explicitly admitted work, independently of its dialog lifetime.
     // These are local status reads, never mutation retries or restart resume.

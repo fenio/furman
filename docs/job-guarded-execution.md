@@ -9,6 +9,8 @@ The [S3-source follow-up](job-s3-create-execution.md) extends the same guarded
 cohort to supported S3 metadata/headers/tags/encryption with explicit ACL/lock gates.
 The [replacement extension](job-checked-replacements.md) adds checked small-object
 `replace_unchanged`, a third acknowledgement and durable replacement subcounts.
+The [multipart extension](job-guarded-multipart.md) adds separately acknowledged
+conditional completion through 1 GiB/file and durable private cleanup evidence.
 
 ## Supported cohort and explicit exclusions
 
@@ -38,12 +40,12 @@ verification, proof of bucket ownership or physical-server/DNS/proxy alias ident
 Managed credential edits invalidate generations before mutation; external keychain
 edits and editors ignoring locks remain outside that tracking.
 
-**Not enabled:** unguarded replacements, larger-object/multipart
-job writes, unsupported S3 source attributes, deletion/move/rename, local destinations,
+**Not enabled:** unguarded replacements, objects above the multipart extension's 1 GiB cap,
+unsupported S3 source attributes, deletion/move/rename, local destinations,
 unguarded overwrite, dynamic AWS profile/SSO execution, retry/resume, headless/MCP
 execution or scheduling. Custom source ACLs, KMS/retention and non-STANDARD source
-storage remain refused, never a payload-only downgrade. Larger files and richer
-policies visibly remain read-only. Ordinary guarded Copy/Sync is unchanged.
+storage remain refused, never a payload-only downgrade. Files above the bounded
+multipart cap and unsupported policies remain read-only. Ordinary guarded Copy/Sync is unchanged.
 
 ## Manual flow and native ownership
 

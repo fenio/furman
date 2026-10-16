@@ -69,6 +69,22 @@ pub async fn saved_job_history_review(
 }
 
 #[tauri::command]
+pub async fn saved_job_multipart_cleanup_review(
+    state: tauri::State<'_, crate::job_runs::JobRunState>,
+    expected_revision: String,
+    evidence_id: String,
+    acknowledged: bool,
+) -> Result<crate::job_runs::journal::Report, FmError> {
+    let state = state.inner().clone();
+    let paths = Paths::home()?;
+    tokio::task::spawn_blocking(move || {
+        state.review_multipart_cleanup(&paths, &expected_revision, &evidence_id, acknowledged)
+    })
+    .await
+    .map_err(|_| FmError::Other("Local multipart cleanup review failed; refresh history".into()))?
+}
+
+#[tauri::command]
 pub fn saved_jobs_save(request: SaveRequest) -> Result<Report, FmError> {
     jobs::save(&Paths::home()?, request)
 }

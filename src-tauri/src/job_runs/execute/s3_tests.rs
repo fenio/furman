@@ -208,6 +208,7 @@ fn execute_request(status: &RunStatus) -> ExecuteRequest {
         approved: true,
         acknowledge_exclusions: true,
         acknowledge_replacements: false,
+        acknowledge_multipart: false,
     }
 }
 async fn wait(state: &JobRunState, id: &str) -> RunStatus {

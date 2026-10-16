@@ -165,4 +165,6 @@ intent/outcomes and verification for small creates. The [S3 extension](job-s3-cr
 implements the supported attribute/encryption/tag/ACL subset. Richer source
 attributes and multipart execution need separate coverage. [Checked replacements](job-checked-replacements.md)
 now add separate existing-object approval with destination revalidation/preservation.
+The [multipart extension](job-guarded-multipart.md) enables separately acknowledged
+larger writes up to 1 GiB/file without reopening snapshot paths or restoring authority.
 Scheduling remains separate.

@@ -7,7 +7,8 @@ checked non-executable previews/snapshots merged in [#365](https://github.com/fe
 durable read-only journal/recovery merged in [#366](https://github.com/fenio/furman/pull/366);
 initial guarded local creates merged in [#367](https://github.com/fenio/furman/pull/367);
 S3-source creates merged in [#368](https://github.com/fenio/furman/pull/368);
-checked small-object replacements are the current implementation step.** See the
+checked replacements merged in [#369](https://github.com/fenio/furman/pull/369);
+guarded bounded multipart jobs are the current implementation step.** See the
 [foundation contract](saved-job-foundation.md) for its exact scope and remaining
 live-binding gates, and the [read-only runtime contract](job-bound-comparisons.md).
 See [checked payload previews](job-checked-previews.md) for the implemented preparation boundary.
@@ -17,8 +18,10 @@ adds native single-use approval, durable executable intent and verified outcomes
 for creates up to 5 MiB/file. The [S3-source extension](job-s3-create-execution.md)
 adds supported headers/metadata/tags/encryption, owner-only ACL and source-lock gates.
 The [replacement extension](job-checked-replacements.md) adds checked existing-object
-writes with separate acknowledgement and journal v3. Broader object sizes and
-multipart execution guarantees below remain unimplemented.
+writes with separate acknowledgement and journal v3. The [multipart extension](job-guarded-multipart.md)
+raises the file cap to 1 GiB with conditional completion, bounded cleanup and private
+v4 evidence. Larger objects, automatic resume/remote recovery and scheduling remain
+unimplemented; the broader target guarantees below are not all enabled.
 This document is the review gate between
 the [implemented options presets](comparison-presets.md) and runnable jobs. It adds
 no commands, execution paths, automatic connections, timers or migrations.

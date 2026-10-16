@@ -7,6 +7,7 @@ use std::{os::unix::fs::symlink, sync::atomic::Ordering};
 
 fn record(job: &str, status: Status) -> Record {
     Record {
+        multipart_cleanup_reviews: 0,
         run_id: fresh_id(),
         job_id: job.into(),
         job_revision: "1".into(),
@@ -23,6 +24,123 @@ fn record(job: &str, status: Status) -> Record {
 }
 fn raw_path(paths: &Paths) -> PathBuf {
     paths.store.parent().unwrap().join("job-runs/journal.json")
+}
+
+fn multipart_store() -> Store {
+    let mut store = Store {
+        revision: fresh_id(),
+        ..Store::default()
+    };
+    let mut intent = record(&fresh_id(), Status::Interrupted);
+    intent.policy = Some(Policy::CreateOnly);
+    intent.execution = Some(Execution {
+        selected_files: 1,
+        selected_bytes: 9 * 1024 * 1024,
+        attempted_files: 1,
+        multipart_files: 1,
+        ..Execution::default()
+    });
+    store.uploads.push(Upload {
+        id: fresh_id(),
+        run_id: intent.run_id.clone(),
+        origin: "https://private.test".into(),
+        bucket: "private-bucket".into(),
+        key: "private/key".into(),
+        upload_id: Some("private-upload-id".into()),
+        state: UploadState::Active,
+        parts: 2,
+        attempted_parts: 1,
+        acknowledged_parts: 0,
+    });
+    store.records.push(intent);
+    store
+}
+
+#[test]
+fn v4_upload_evidence_is_private_strict_bounded_and_cannot_authorize_or_hide_success() {
+    let store = multipart_store();
+    store.validate(true).unwrap();
+    let report = serde_json::to_string(&store.report(false)).unwrap();
+    for forbidden in [
+        "private.test",
+        "private-bucket",
+        "private/key",
+        "private-upload-id",
+    ] {
+        assert!(!report.contains(forbidden));
+    }
+    for mode in 0..9 {
+        let mut bad = multipart_store();
+        match mode {
+            0 => bad.version = 3,
+            1 => bad.uploads[0].run_id = fresh_id(),
+            2 => bad.uploads[0].origin = "https://credential@private.test/".into(),
+            3 => bad.uploads[0].upload_id = None,
+            4 => bad.uploads[0].acknowledged_parts = 2,
+            5 => bad.uploads[0].state = UploadState::Completing,
+            6 => bad.records[0].status = Status::Succeeded,
+            7 => bad.uploads[0].parts = 129,
+            _ => bad.records[0].multipart_cleanup_reviews = 2,
+        }
+        assert!(bad.validate(true).is_err(), "mode {mode}");
+    }
+}
+
+#[test]
+fn retention_never_evicts_upload_evidence_even_after_the_job_pause_is_reviewed() {
+    let mut store = multipart_store();
+    let protected = store.records[0].run_id.clone();
+    let job = store.records[0].job_id.clone();
+    for _ in 0..49 {
+        store.records.push(record(&job, Status::Discarded));
+    }
+    store.prune(&job).unwrap();
+    assert!(store.records.iter().any(|r| r.run_id == protected));
+    assert_eq!(store.uploads.len(), 1);
+    assert_eq!(store.records.len(), 49);
+}
+
+#[test]
+fn v3_history_migrates_without_multipart_authority_and_restart_retains_exact_upload_phase_locally()
+{
+    let (_root, paths, job) = fixture(true, false);
+    start(&paths, &fresh_id(), &job).unwrap();
+    let path = raw_path(&paths);
+    let mut raw: serde_json::Value = serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
+    raw["version"] = 3.into();
+    raw.as_object_mut().unwrap().remove("uploads");
+    raw["records"][0]
+        .as_object_mut()
+        .unwrap()
+        .remove("multipart_cleanup_reviews");
+    fs::write(&path, serde_json::to_vec(&raw).unwrap()).unwrap();
+    let report = recover(&paths).unwrap();
+    assert!(report.pending_uploads.is_empty());
+    assert_eq!(report.records[0].multipart_cleanup_reviews, 0);
+    assert_eq!(
+        serde_json::from_slice::<Store>(&fs::read(&path).unwrap())
+            .unwrap()
+            .version,
+        4
+    );
+    let storage = Storage::open(&paths, false).unwrap().unwrap();
+    let _lock = storage.lock().unwrap();
+    let mut store = multipart_store();
+    store.records[0].status = Status::Executing;
+    store.uploads[0].state = UploadState::Completing;
+    store.uploads[0].attempted_parts = 2;
+    store.uploads[0].acknowledged_parts = 2;
+    storage.commit(&mut store).unwrap();
+    drop(_lock);
+    let recovered = recover(&paths).unwrap();
+    assert_eq!(recovered.records[0].status, Status::Interrupted);
+    assert_eq!(recovered.pending_uploads.len(), 1);
+    assert_eq!(recovered.pending_uploads[0].acknowledged_parts, 2);
+    assert!(matches!(
+        recovered.pending_uploads[0].state,
+        UploadState::Completing
+    ));
+    assert_eq!(recover(&paths).unwrap().revision, recovered.revision);
 }
 fn sample_progress() -> ScanProgress {
     ScanProgress {
@@ -178,7 +296,7 @@ fn legacy_v2_execution_migrates_to_v3_with_zero_replacement_authority() {
         serde_json::from_slice::<Store>(&fs::read(path).unwrap())
             .unwrap()
             .version,
-        3
+        4
     );
     assert!(state.0.lock().unwrap().slot.is_none());
 }
@@ -208,7 +326,7 @@ fn v1_read_only_history_migrates_without_replay_and_executing_recovery_preserves
         serde_json::from_slice::<Store>(&fs::read(&path).unwrap())
             .unwrap()
             .version,
-        3
+        4
     );
     let storage = Storage::open(&paths, false).unwrap().unwrap();
     let lock = storage.lock().unwrap();
@@ -422,7 +540,7 @@ fn corrupt_future_oversized_symlink_fifo_shared_and_invalid_marker_storage_fail_
             0 => fs::write(&path, b"{DO_NOT_INCLUDE_RAW_DATA").unwrap(),
             1 => {
                 let mut value: serde_json::Value = serde_json::from_slice(&original).unwrap();
-                value["version"] = 4.into();
+                value["version"] = 5.into();
                 fs::write(&path, serde_json::to_vec(&value).unwrap()).unwrap();
             }
             2 => {

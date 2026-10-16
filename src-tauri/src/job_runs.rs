@@ -383,6 +383,25 @@ impl JobRunState {
         report.in_memory_storage_fault = self.journal_fault()?.load(Ordering::Relaxed);
         Ok(report)
     }
+    pub fn review_multipart_cleanup(
+        &self,
+        paths: &Paths,
+        revision: &str,
+        id: &str,
+        acknowledged: bool,
+    ) -> Result<journal::Report, FmError> {
+        if !acknowledged {
+            return Err(error(
+                "Explicit external multipart cleanup review acknowledgement is required",
+            ));
+        }
+        let _lease = run_lock(paths)?;
+        let fault = self.journal_fault()?;
+        if fault.load(Ordering::Relaxed) {
+            return Err(error("Recover and explicitly review journal storage health before resolving multipart evidence"));
+        }
+        journal::resolve_evidence(paths, revision, id, acknowledged)
+    }
     fn attach_attempt(&self, id: &str, attempt: Arc<journal::Attempt>) -> Result<(), FmError> {
         let mut inner = self
             .0

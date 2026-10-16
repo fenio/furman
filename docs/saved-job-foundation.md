@@ -9,6 +9,8 @@ The [checked-preview follow-up](job-checked-previews.md) adds non-executable
 snapshot preparation. [Initial guarded execution](job-guarded-execution.md)
 requires separate single-use approval for creates up to 5 MiB/file, now extended
 to [supported S3 sources](job-s3-create-execution.md).
+The [replacement](job-checked-replacements.md) and [bounded multipart](job-guarded-multipart.md)
+extensions add separately acknowledged existing-object writes and up to 1 GiB/file.
 There are no retry/resume or scheduling commands.
 
 ## Using definitions

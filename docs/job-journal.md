@@ -10,6 +10,11 @@ for separately approved creates up to 5 MiB/file, including [supported S3 source
 recovery action approves execution. No retry/resume or scheduling is enabled.**
 The [checked replacement follow-up](job-checked-replacements.md) upgrades storage
 to v3 with explicit replacement subcounts/acknowledgement; v1/v2 remain readable.
+The [multipart extension](job-guarded-multipart.md) upgrades to v4 (v1/v2/v3 readable)
+and adds explicitly disclosed native-only destination/upload cleanup evidence,
+durable part counters and separate local external-cleanup review. Older claims
+below about v3 storing no object locations apply to ordinary attempt records,
+not this new private ledger. Neither startup nor review reconnects or aborts.
 
 ## Local-only startup and manual review
 
@@ -92,7 +97,7 @@ Storage is separate from definitions and preferences:
 
 ```text
 ~/.config/furman/job-runs/             owner-only directory
-  journal.json                      private bounded strict v3 schema (v1/v2 readable)
+  journal.json                      private bounded strict v4 schema (v1/v2/v3 readable)
   initialized                       fixed, non-secret initialization evidence
   dirty                             fixed recovery evidence during commit
   lock                              cooperating-process metadata lock

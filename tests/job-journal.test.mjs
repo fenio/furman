@@ -20,10 +20,10 @@ async function controller(file, methods = {}) {
   const key = `jobJournalFixture${sequence++}`;
   const context = { props: { labels: {} }, mounts: [], calls: [], shared: { report: null, error: null }, methods: { load: async () => report(), review: async () => ({ ...report(), revision: 'new-revision', pauses: {} }), ...methods } };
   globalThis[key] = context;
-  const rpc = data(`const run=(method,...args)=>{const f=globalThis.${key};f.calls.push([method,...args]);return f.methods[method](...args);};export const loadJobHistory=()=>run('load');export const reviewJobHistory=(...args)=>run('review',...args);`);
+  const rpc = data(`const run=(method,...args)=>{const f=globalThis.${key};f.calls.push([method,...args]);return f.methods[method](...args);};export const loadJobHistory=()=>run('load');export const reviewJobHistory=(...args)=>run('review',...args);export const reviewMultipartCleanup=(...args)=>run('cleanup',...args);`);
   let script = source(file).match(/<script lang="ts">([\s\S]*?)<\/script>/)[1].replaceAll('$props()', `globalThis.${key}.props`).replace(/^\s*import \w+ from '\.\/[^']+\.svelte';/gm, '');
   script += file === 'JobHistory.svelte'
-    ? '\nexport const harness={refresh,review,clear,selectJob(value){jobId=value;acknowledged=false;},acknowledge(){acknowledged=true;},confirmRemoval(){confirmClear=true;},get state(){return{report,busy,failure,acknowledged,confirmClear};}};'
+    ? '\nexport const harness={refresh,review,clear,resolveCleanup,selectCleanup(value){cleanupId=value;cleanupReviewed=false;},acknowledgeCleanup(){cleanupReviewed=true;},selectJob(value){jobId=value;acknowledged=false;},acknowledge(){acknowledged=true;},confirmRemoval(){confirmClear=true;},get state(){return{report,busy,failure,acknowledged,confirmClear,cleanupReviewed};}};'
     : '\nexport const harness={refresh};';
   const code = compileModule(stripTypeScriptTypes(script), { generate: 'client', filename: `${file}.js` }).js.code;
   const { harness } = await import(data(imports(code, {
@@ -70,6 +70,17 @@ test('startup notice invokes only native local history/reconciliation, not conne
   try { f.mount(); await Promise.resolve(); await Promise.resolve(); assert.deepEqual(f.calls.map(call => call[0]), ['load']); } finally { f.cleanup(); }
 });
 
+test('pending multipart evidence blocks removal and requires separate revision-bound external review',async()=>{
+  const pending={...report(),pauses:{},pending_uploads:[{id:'native-evidence',run_id:'run',state:'aborting',upload_id_known:true}]};
+  const f=await controller('JobHistory.svelte',{load:async()=>pending,cleanup:async()=>({...pending,pending_uploads:[],revision:'reviewed'})});
+  try{await f.h.refresh();f.h.confirmRemoval();await f.h.clear();f.h.selectCleanup('native-evidence');f.h.acknowledge();await f.h.resolveCleanup();assert.equal(f.calls.length,1);f.h.acknowledgeCleanup();await f.h.resolveCleanup();assert.deepEqual(f.calls[1],['cleanup','native-revision','native-evidence',true]);assert.equal(f.h.state.cleanupReviewed,false);assert.equal(f.h.state.report.execution_available,false);}finally{f.cleanup();}
+});
+
+test('external cleanup review IPC is local-ID-only and never restores remote authority',async()=>{
+  globalThis.__cleanupReviewShared={report:null,error:null};const calls=[];globalThis.__cleanupReviewRpc=async(...args)=>{calls.push(args);return{...report(),pending_uploads:[]};};
+  try{const script=stripTypeScriptTypes(readFileSync(new URL('../src/lib/services/job-journal.ts',import.meta.url),'utf8'));const service=await import(data(imports(script,{'@tauri-apps/api/core':data('export const invoke=(...args)=>globalThis.__cleanupReviewRpc(...args);'),'#lib/state/job-journal.svelte.js':data('export const jobJournalState=globalThis.__cleanupReviewShared;')})));await assert.rejects(service.reviewMultipartCleanup('revision','native-evidence',false));assert.equal(calls.length,0);await service.reviewMultipartCleanup('revision','native-evidence',true);assert.deepEqual(calls,[['saved_job_multipart_cleanup_review',{expectedRevision:'revision',evidenceId:'native-evidence',acknowledged:true}]]);}finally{delete globalThis.__cleanupReviewShared;delete globalThis.__cleanupReviewRpc;}
+});
+
 test('journal IPC is allowlisted and storage failures survive closed run controllers in shared state', async () => {
   const shared = { report: null, error: null }; const calls = []; globalThis.__journalShared = shared;
   globalThis.__journalRpc = async (command, args) => { calls.push([command, args]); return report(); };
@@ -91,7 +102,7 @@ test('journal IPC is allowlisted and storage failures survive closed run control
 test('actual startup and history UI render safety warnings and collapsed copyable diagnostics', async () => {
   const shared = { report: report(), error: '<private>\n' + 'Long storage diagnostic '.repeat(30) }; globalThis.__journalRenderState = shared;
   try {
-    const dependencies = { '#lib/services/job-journal.js': data('export const loadJobHistory=async()=>{throw new Error("No SSR I/O");};export const reviewJobHistory=async()=>{};'), '#lib/state/job-journal.svelte.js': data('export const jobJournalState=globalThis.__journalRenderState;'), '#lib/state/job-execution.svelte.js': data('export const jobExecutionState={status:null,error:null};'), '#lib/utils/error-report.js': new URL('../src/lib/utils/error-report.ts', import.meta.url).href };
+    const dependencies = { '#lib/services/job-journal.js': data('export const loadJobHistory=async()=>{throw new Error("No SSR I/O");};export const reviewJobHistory=async()=>{};export const reviewMultipartCleanup=async()=>{};'), '#lib/state/job-journal.svelte.js': data('export const jobJournalState=globalThis.__journalRenderState;'), '#lib/state/job-execution.svelte.js': data('export const jobExecutionState={status:null,error:null};'), '#lib/utils/error-report.js': new URL('../src/lib/utils/error-report.ts', import.meta.url).href };
     const component = file => data(imports(compile(source(file), { generate: 'server', filename: file }).js.code, dependencies));
     dependencies['./ErrorNotice.svelte'] = component('ErrorNotice.svelte');
     const { default: Notice } = await import(component('JobJournalNotice.svelte')); const html = render(Notice).body;
