@@ -7,7 +7,8 @@ import { textDiff, comparisonDiffPair } from '../src/lib/utils/file-diff.ts';
 import { revealSecret } from '../src/lib/utils/reveal-secret.ts';
 import { errorReport, errorText } from '../src/lib/utils/error-report.ts';
 import { readFileSync } from 'node:fs';
-import { compile } from 'svelte/compiler';
+import { compile, compileModule } from 'svelte/compiler';
+import { stripTypeScriptTypes } from 'node:module';
 import { render } from 'svelte/server';
 import { DEFAULT_SCAN_LIMITS, validScanLimits, scanLimitsFromConfig, scanSummary, canUseScan } from '../src/lib/utils/scan.ts';
 import { validWritePolicy, writeNeedsApproval, syncWriteSelections } from '../src/lib/utils/guarded-writes.ts';
@@ -89,9 +90,9 @@ test('scan status keeps stopped scans visibly incomplete and reports downloaded 
   }
 });
 
-function serverComponent(file, dependencies = {}) {
+function serverComponent(file, dependencies = {}, transform = source => source) {
   const source = readFileSync(new URL(`../src/lib/components/${file}`, import.meta.url), 'utf8');
-  const code = compile(source, { generate: 'server', filename: file }).js.code
+  const code = compile(transform(source), { generate: 'server', filename: file }).js.code
     .replace(/from (['"])([^'"]+)\1/g, (_, quote, name) => {
       const resolved = dependencies[name] ?? (name.startsWith('svelte')
         ? import.meta.resolve(name)
@@ -134,24 +135,60 @@ test('listing status distinguishes incomplete, failed, cancelled, and complete s
   const failed = html({ status: 'error', pending: false, error: 'Listing page 2 failed\nHTTP 502' });
   assert.ok(failed.includes('Retry page'));
   assert.ok(failed.includes('HTTP 502'));
+  assert.ok(failed.includes('aria-expanded="false"')); // Errors are outside routine diagnostics.
   const complete = html({ status: 'complete', pending: false });
-  assert.ok(complete.includes('Complete'));
+  assert.ok(complete.includes('Diagnostics'));
+  assert.ok(complete.includes('aria-expanded="false"'));
+  assert.ok(!complete.includes('LIST calls'));
   assert.ok(complete.includes('Refresh'));
-  assert.ok(complete.includes('Activity / cache'));
+  assert.ok(!complete.includes('Activity / cache'));
   assert.ok(!complete.includes('loaded items'));
+  const fetched = html({ status: 'complete', pending: false, source: 'network', fetchedAt: Date.now() });
+  assert.ok(!fetched.includes('Fetched ')); assert.ok(!fetched.includes('External changes are not watched'));
 });
 
 test('cached listings disclose age, zero network calls, staleness, and manual refresh', async () => {
-  const { default: Status } = await import(serverComponent('S3ListingStatus.svelte', {
+  const dependencies = {
     './ErrorNotice.svelte': serverComponent('ErrorNotice.svelte'),
     '#lib/state/navigation-cache.svelte.js': 'data:text/javascript,export const navigationCacheState={revision:2};export const s3NavigationCache={limits:{ttlMs:60000}};',
-  }));
+  };
+  const { default: Compact } = await import(serverComponent('S3ListingStatus.svelte', dependencies));
+  // Seed the actual component's expanded state for SSR. The separate controller
+  // test below exercises the real toggle and its lack of network side effects.
+  const { default: Status } = await import(serverComponent('S3ListingStatus.svelte', dependencies, source => source.replace('let diagnosticsOpen = $state(false);', 'let diagnosticsOpen = $state(true);')));
   const progress = { status: 'complete', items: 3, pages: 0, requests: 0, elapsedMs: 0, updatedAt: Date.now(), pending: false, error: null,
     source: 'cache', cachedAt: Date.now() - 61_000, fetchedAt: Date.now() - 61_000, cacheRevision: 1 };
+  const compact = render(Compact, { props: { progress, onRefresh() {}, onCancel() {}, onRetry() {} } }).body;
+  assert.ok(compact.includes('Stale listing')); assert.ok(compact.includes('Refresh'));
+  assert.ok(!compact.includes('Cached complete listing')); assert.ok(!compact.includes('LIST calls'));
   const html = render(Status, { props: { progress, onRefresh() {}, onCancel() {}, onRetry() {} } }).body;
   for (const text of ['Cached complete listing', 'no LIST calls for this visit', 'Stale view', 'invalidated this listing', 'Refresh']) assert.ok(html.includes(text), text);
   const uncached = render(Status, { props: { progress: { ...progress, source: 'network', cacheStored: false }, onRefresh() {}, onCancel() {}, onRetry() {} } }).body;
   assert.ok(uncached.includes('Not retained in navigation cache'));
+});
+
+test('pane diagnostic toggles are independent, initially closed, and never refresh/cancel/retry or change listing state', async () => {
+  const source = readFileSync(new URL('../src/lib/components/S3ListingStatus.svelte', import.meta.url), 'utf8');
+  const make = async key => {
+    const context = { calls: [], mounts: [], props: { progress: { status: 'complete', items: 3, pages: 1, requests: 1, elapsedMs: 0, updatedAt: Date.now(), pending: false, error: null }, onRefresh() { context.calls.push('refresh'); }, onCancel() { context.calls.push('cancel'); }, onRetry() { context.calls.push('retry'); } } };
+    globalThis[key] = context;
+    const data = code => `data:text/javascript;base64,${Buffer.from(code).toString('base64')}`;
+    let script = source.match(/<script lang="ts">([\s\S]*?)<\/script>/)[1]
+      .replaceAll('$props()', `globalThis.${key}.props`).replace(/^\s*import ErrorNotice[^;]+;/m, '');
+    script += '\nexport const harness={toggleDiagnostics,get open(){return diagnosticsOpen;},get progress(){return progress;},setProgress(value){progress=value;}};';
+    const dependencies = { svelte: data(`export const onMount=callback=>globalThis.${key}.mounts.push(callback);`), '#lib/state/navigation-cache.svelte.js': data('export const navigationCacheState={revision:0};export const s3NavigationCache={limits:{ttlMs:60000}};') };
+    const compiled = compileModule(stripTypeScriptTypes(script), { generate: 'client', filename: 'ListingStatus.js' }).js.code.replace(/from (['"])([^'"]+)\1/g, (_, _quote, name) => `from ${JSON.stringify(dependencies[name] ?? import.meta.resolve(name))}`);
+    return { ...(await import(data(compiled))), ...context };
+  };
+  const left = await make('leftListingDiagnostics'); const right = await make('rightListingDiagnostics');
+  try {
+    assert.equal(left.harness.open, false); assert.equal(right.harness.open, false);
+    left.harness.toggleDiagnostics(); assert.equal(left.harness.open, true); assert.equal(right.harness.open, false);
+    left.harness.toggleDiagnostics(); assert.equal(left.harness.open, false);
+    const failed = { ...left.props.progress, status: 'error', error: 'Access denied' };
+    left.harness.setProgress(failed); assert.equal(left.harness.open, false); assert.equal(left.harness.progress, failed);
+    assert.deepEqual(left.calls, []); assert.deepEqual(right.calls, []);
+  } finally { delete globalThis.leftListingDiagnostics; delete globalThis.rightListingDiagnostics; }
 });
 
 test('error notices render escaped diagnostics with details closed initially', async () => {
