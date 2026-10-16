@@ -27,6 +27,8 @@ use sha2::{Digest, Sha256};
 use std::os::unix::fs::FileExt;
 
 #[cfg(test)]
+mod replacement_tests;
+#[cfg(test)]
 mod s3_tests;
 #[cfg(test)]
 mod tests;
@@ -34,7 +36,7 @@ mod tests;
 // Only these static native diagnoses may escape SDK source chains. Never format
 // arbitrary interceptor/transport sources (which can carry URLs or credentials).
 pub(super) const GUARD_ERRORS: &[&str] = &[
-    "Job writer only authorizes a conditional create-only PUT",
+    "Job writer requires its exact native If-Match or If-None-Match PUT condition",
     "Unexpected job mutation query",
     "Job mutation resolved outside its exact approved key",
     "Job mutation cancelled, expired or blocked by journal storage",
@@ -56,6 +58,8 @@ pub struct ExecuteRequest {
     pub approval_id: String,
     pub approved: bool,
     pub acknowledge_exclusions: bool,
+    #[serde(default)]
+    pub acknowledge_replacements: bool,
 }
 #[derive(Serialize)]
 pub struct Review {
@@ -69,6 +73,8 @@ pub struct Review {
     pub preserved_tag_count: usize,
     pub source_aes256_files: usize,
     pub source_sse_c_files: usize,
+    pub replacement_files: usize,
+    pub destination_aes256_files: usize,
 }
 pub(super) struct Approval {
     id: String,
@@ -113,7 +119,7 @@ impl Approval {
                 .plan
                 .items
                 .iter()
-                .filter_map(|item| item.controls.as_ref())
+                .filter_map(|item| super::replacement::write_controls(&self.binding, item))
                 .map(|controls| controls.tags.len())
                 .sum(),
             source_aes256_files: self
@@ -121,6 +127,22 @@ impl Approval {
                 .items
                 .iter()
                 .filter(|item| item.snapshot.attributes.aes256)
+                .count(),
+            replacement_files: self
+                .plan
+                .items
+                .iter()
+                .filter(|item| super::replacement::is_replacement(item))
+                .count(),
+            destination_aes256_files: self
+                .plan
+                .items
+                .iter()
+                .filter(|item| {
+                    item.destination
+                        .as_ref()
+                        .is_some_and(|dest| dest.attributes.aes256)
+                })
                 .count(),
             source_sse_c_files: self
                 .plan
@@ -143,6 +165,15 @@ impl Approval {
             return Err(error(
                 "Native source ACL/tag preservation review is missing",
             ));
+        }
+        if self.plan.items.iter().any(|item| {
+            super::replacement::is_replacement(item)
+                && item
+                    .destination
+                    .as_ref()
+                    .is_none_or(|destination| destination.controls.is_none())
+        }) {
+            return Err(error("Native destination replacement review is missing"));
         }
         if self.expires != expires || !self.binding.attempt.healthy() {
             return Err(error("Execution approval ownership/storage changed"));
@@ -397,10 +428,16 @@ pub async fn review(state: &JobRunState, request: ReviewRequest) -> Result<RunSt
             .binding
             .clone()
             .ok_or_else(|| error("Missing binding"))?;
-        if matches!(binding.source, BoundSource::S3(_)) {
-            let minimum_calls = plan.items.len() as u64 * 9;
+        if matches!(binding.source, BoundSource::S3(_))
+            || plan.items.iter().any(super::replacement::is_replacement)
+        {
+            let minimum_calls = plan
+                .items
+                .iter()
+                .map(|item| super::replacement::minimum_calls(&binding, item))
+                .sum::<u64>();
             if minimum_calls > binding.limits.max_requests {
-                return Err(error(&format!("Selected S3 execution needs at least {minimum_calls} logical S3 calls, exceeding the reviewed {}-call execution budget. Prepare fewer files or explicitly review higher limits in a fresh bound run; no approval or write was admitted.",binding.limits.max_requests)));
+                return Err(error(&format!("Selected execution needs at least {minimum_calls} logical S3 calls, exceeding the reviewed {}-call execution budget. Prepare fewer files or explicitly review higher limits in a fresh bound run; no approval or write was admitted.",binding.limits.max_requests)));
             }
         }
         let manifest = slot
@@ -433,7 +470,12 @@ pub async fn review(state: &JobRunState, request: ReviewRequest) -> Result<RunSt
         for item in &mut plan.items {
             binding.validate()?;
             budget.object(&cancel)?;
-            missing(&binding, &item.key, &budget, &cancel).await?;
+            if super::replacement::is_replacement(item) {
+                item.destination =
+                    Some(super::replacement::check(&binding, item, &budget, &cancel).await?);
+            } else {
+                missing(&binding, &item.key, &budget, &cancel).await?;
+            }
             item.controls = source_matches(&binding, item, &budget, &cancel).await?;
             snapshot_bytes(
                 binding.clone(),
@@ -512,12 +554,13 @@ struct ScopedWriter {
     sent: AtomicBool,
     first_deadline: Option<Instant>,
     budget: Arc<ScanBudget>,
+    expected: crate::s3::writes::DestinationExpectation,
 }
 #[derive(Debug)]
 struct WriterInterceptor(Arc<ScopedWriter>);
 impl std::fmt::Debug for ScopedWriter {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.write_str("ScopedCreateOnlyJobWriter([private])")
+        f.write_str("ScopedConditionalJobWriter([private])")
     }
 }
 impl ScopedWriter {
@@ -528,12 +571,21 @@ impl ScopedWriter {
     ) -> Result<(), BoxError> {
         let operation = config.load::<Metadata>().map(Metadata::name).unwrap_or("");
         let request = context.request();
-        if operation != "PutObject"
-            || request.method() != "PUT"
-            || request.headers().get("if-none-match") != Some("*")
-            || request.headers().get("if-match").is_some()
-        {
-            return Err("Job writer only authorizes a conditional create-only PUT".into());
+        let condition = match &self.expected {
+            crate::s3::writes::DestinationExpectation::Missing => {
+                request.headers().get("if-none-match") == Some("*")
+                    && request.headers().get("if-match").is_none()
+            }
+            crate::s3::writes::DestinationExpectation::Match { etag } => {
+                request.headers().get("if-match") == Some(etag.as_str())
+                    && request.headers().get("if-none-match").is_none()
+            }
+        };
+        if operation != "PutObject" || request.method() != "PUT" || !condition {
+            return Err(
+                "Job writer requires its exact native If-Match or If-None-Match PUT condition"
+                    .into(),
+            );
         }
         let uri = request.uri();
         super::ReadNamespaceGuard {
@@ -580,7 +632,7 @@ impl ScopedWriter {
 }
 impl Intercept for WriterInterceptor {
     fn name(&self) -> &'static str {
-        "FurmanScopedCreateOnlyJobWriter"
+        "FurmanScopedConditionalJobWriter"
     }
     fn modify_before_signing(
         &self,
@@ -603,12 +655,30 @@ impl Intercept for WriterInterceptor {
         Ok(())
     }
 }
+#[cfg(test)]
 fn writer(
     binding: Arc<Binding>,
     key: String,
     cancel: Arc<AtomicBool>,
     first_deadline: Option<Instant>,
     budget: Arc<ScanBudget>,
+) -> Result<(Client, Arc<ScopedWriter>), FmError> {
+    writer_for(
+        binding,
+        key,
+        cancel,
+        first_deadline,
+        budget,
+        crate::s3::writes::DestinationExpectation::Missing,
+    )
+}
+fn writer_for(
+    binding: Arc<Binding>,
+    key: String,
+    cancel: Arc<AtomicBool>,
+    first_deadline: Option<Instant>,
+    budget: Arc<ScanBudget>,
+    expected: crate::s3::writes::DestinationExpectation,
 ) -> Result<(Client, Arc<ScopedWriter>), FmError> {
     if !crate::s3::compat::conditional_writes_supported(&binding.destination.client) {
         return Err(error(crate::s3::compat::CONDITION_ERROR));
@@ -634,6 +704,7 @@ fn writer(
         sent: AtomicBool::new(false),
         first_deadline,
         budget,
+        expected,
     });
     let mut builder = original.config().to_builder();
     builder.set_interceptors(retained);
@@ -671,6 +742,15 @@ pub async fn start(state: &JobRunState, request: ExecuteRequest) -> Result<RunSt
             .filter(|a| a.id == request.approval_id)
             .ok_or_else(|| error("Wrong/cross-run execution approval"))?;
         approval.validate(&request.run_id, slot.expires)?;
+        if approval
+            .plan
+            .items
+            .iter()
+            .any(super::replacement::is_replacement)
+            && !request.acknowledge_replacements
+        {
+            return Err(error("Separate explicit acknowledgement of existing-object replacements is required; preparation and create approvals cannot authorize replacement"));
+        }
         let approval = slot.approval.take().unwrap();
         slot.phase = Phase::Executing;
         slot.manifest = None;
@@ -679,6 +759,12 @@ pub async fn start(state: &JobRunState, request: ExecuteRequest) -> Result<RunSt
             timer.abort();
         }
         let counts = Execution {
+            replacement_files: approval
+                .plan
+                .items
+                .iter()
+                .filter(|item| super::replacement::is_replacement(item))
+                .count() as u64,
             selected_files: approval.plan.items.len() as u64,
             skipped_files: approval.plan.skipped as u64,
             selected_bytes: approval.plan.bytes,
@@ -786,6 +872,11 @@ impl Drop for ExecutionGuard {
             counts.uncertain_files = counts
                 .uncertain_files
                 .max(counts.attempted_files.saturating_sub(counts.verified_files));
+            counts.uncertain_replacements = counts.uncertain_replacements.max(
+                counts
+                    .attempted_replacements
+                    .saturating_sub(counts.verified_replacements),
+            );
             finish(&self.state,&self.id,&self.binding,Status::Interrupted,counts,Some("Execution task interrupted; sent writes may have committed. Inspect the destination and explicitly review; nothing resumes.".into()));
         }
     }
@@ -799,12 +890,19 @@ async fn run(state: JobRunState, id: String, approval: Approval, cancel: Arc<Ato
         finished: false,
     };
     let mut counts = Execution {
+        replacement_files: approval
+            .plan
+            .items
+            .iter()
+            .filter(|item| super::replacement::is_replacement(item))
+            .count() as u64,
         selected_files: approval.plan.items.len() as u64,
         skipped_files: approval.plan.skipped as u64,
         selected_bytes: approval.plan.bytes,
         ..Execution::default()
     };
     let mut uncertain = false;
+    let mut current_replacement = false;
     let budget = Arc::new(ScanBudget::with_limits(binding.limits));
     let result = async {
         approval.validate(&id, approval.expires)?;
@@ -812,7 +910,8 @@ async fn run(state: JobRunState, id: String, approval: Approval, cancel: Arc<Ato
         for item in &approval.plan.items {
             binding.validate()?;
             budget.object(&cancel)?;
-            missing(&binding, &item.key, &budget, &cancel).await?;
+            current_replacement=super::replacement::is_replacement(item);
+            if current_replacement{super::replacement::check(&binding,item,&budget,&cancel).await?;}else{missing(&binding, &item.key, &budget, &cancel).await?;}
             source_matches(&binding, item, &budget, &cancel).await?;
             let bytes = snapshot_bytes(
                 binding.clone(),
@@ -823,36 +922,39 @@ async fn run(state: JobRunState, id: String, approval: Approval, cancel: Arc<Ato
             ).await?;
             budget.check(&cancel)?;
             counts.attempted_files += 1;
+            if current_replacement{counts.attempted_replacements+=1;}
             publish(&state, &id, &counts);
             // This barrier is mandatory even when source/destination reads passed.
             binding.attempt.execution(Status::Executing, counts.clone())?;
-            let (client, scope) = writer(
+            let (client, scope) = writer_for(
                 binding.clone(), item.key.clone(), cancel.clone(),
-                if counts.attempted_files == 1 { Some(approval.expires) } else { None }, budget.clone(),
+                if counts.attempted_files == 1 { Some(approval.expires) } else { None }, budget.clone(),item.expected.clone(),
             )?;
-            let a = &item.snapshot.attributes;
+            let attributes=super::replacement::write_attributes(&binding,item)?;
+            let a = &attributes;
             let mut put = client.put_object()
-                .bucket(&binding.destination.bucket).key(&item.key).if_none_match("*")
+                .bucket(&binding.destination.bucket).key(&item.key)
                 .body(aws_sdk_s3::primitives::ByteStream::from(bytes))
                 .set_checksum_algorithm(crate::s3::compat::upload_checksum(&client))
                 .set_metadata(Some(a.metadata.clone())).set_content_type(a.content_type.clone())
                 .set_cache_control(a.cache_control.clone()).set_content_disposition(a.disposition.clone())
                 .set_content_encoding(a.encoding.clone()).set_content_language(a.language.clone());
-            if matches!(binding.source,BoundSource::S3(_)) {
-                let controls=item.controls.as_ref().ok_or_else(||error("Source ACL/tag review is missing from the native approval"))?;
+            match &item.expected{crate::s3::writes::DestinationExpectation::Missing=>{put=put.if_none_match("*");},crate::s3::writes::DestinationExpectation::Match{etag}=>{put=put.if_match(etag);}}
+            if let Some(controls)=super::replacement::write_controls(&binding,item) {
                 put=put.set_tagging(controls.tagging()).storage_class(aws_sdk_s3::types::StorageClass::Standard);
             }
             if a.aes256 && !binding.job.destination.configuration.sse_customer_key_enabled {
                 put = put.server_side_encryption(aws_sdk_s3::types::ServerSideEncryption::Aes256);
             }
             let sent = budget.request(&cancel, async {
-                put.send().await.map_err(|failure| job_sdk_error("Job conditional create-only PUT", &failure))
+                put.send().await.map_err(|failure| job_sdk_error("Job conditional payload PUT", &failure))
             }).await;
             // A transmitted error/timeout/cancellation is conservatively uncertain,
             // including provider rejection; never replay a mutation to find out.
             uncertain = scope.sent.load(Ordering::Relaxed);
             let response = sent?;
             counts.acknowledged_files += 1;
+            if current_replacement{counts.acknowledged_replacements+=1;}
             publish(&state, &id, &counts);
             binding.attempt.execution(Status::Executing, counts.clone())?;
             uncertain = true;
@@ -860,6 +962,7 @@ async fn run(state: JobRunState, id: String, approval: Approval, cancel: Arc<Ato
                 .ok_or_else(|| error("PUT acknowledged without a bounded ETag; mandatory verification cannot be pinned"))?;
             let (digest, actual) = read_object(&binding.destination, &item.key, item.snapshot.size, etag, &budget, &cancel).await?;
             if actual.version.as_deref()!=response.version_id(){return Err(error("Written object version changed before verification; no success was recorded"));}
+            if current_replacement&&actual.unsupported.is_some(){return Err(error("Written replacement has unreviewed or unsupported encryption/retention/storage attributes; inspect the destination. No success or rollback was recorded"));}
             let sse = binding.job.destination.configuration.sse_customer_key_enabled;
             if !actual.complete || digest != item.snapshot.sha256 || actual.metadata != a.metadata
                 || a.content_type.as_ref().is_some_and(|v| actual.content_type.as_ref() != Some(v))
@@ -868,13 +971,14 @@ async fn run(state: JobRunState, id: String, approval: Approval, cancel: Arc<Ato
                 || actual.customer_encrypted != sse || (a.aes256 && !sse && !actual.aes256) {
                 return Err(error("Written object failed mandatory SHA-256/header/encryption verification; it was not rolled back"));
             }
-            if let Some(expected)=&item.controls {
+            if let Some(expected)=super::replacement::write_controls(&binding,item) {
                 if !actual.standard_storage{return Err(error("Written object did not retain STANDARD storage; no success was recorded"));}
                 let actual_controls=super::controls::read(&binding.destination,&item.key,actual.version.as_deref(),&budget,&cancel).await?;
                 if actual_controls.tags!=expected.tags||actual.tag_count.is_some_and(|count|count as usize!=actual_controls.tags.len()){return Err(error("Written object tags failed native verification; it was not rolled back"));}
             }
             uncertain = false;
             counts.verified_files += 1;
+            if current_replacement{counts.verified_replacements+=1;}
             counts.verified_bytes += item.snapshot.size;
             publish(&state, &id, &counts);
             binding.attempt.execution(Status::Executing, counts.clone())?;
@@ -893,6 +997,9 @@ async fn run(state: JobRunState, id: String, approval: Approval, cancel: Arc<Ato
         Err(failure) => {
             if uncertain || counts.acknowledged_files > counts.verified_files {
                 counts.uncertain_files = counts.uncertain_files.max(1);
+                if current_replacement {
+                    counts.uncertain_replacements = counts.uncertain_replacements.max(1);
+                }
             }
             (
                 if counts.uncertain_files > 0 {

@@ -369,6 +369,19 @@ pub(super) async fn hash_s3(
     budget: &ScanBudget,
     progress: &(dyn Fn(ScanProgress) + Send + Sync),
 ) -> Result<String, FmError> {
+    hash_s3_with_attributes(endpoint, key, size, etag, cancel, budget, progress)
+        .await
+        .map(|(hash, _)| hash)
+}
+pub(super) async fn hash_s3_with_attributes(
+    endpoint: &Endpoint,
+    key: &str,
+    size: u64,
+    etag: &str,
+    cancel: &AtomicBool,
+    budget: &ScanBudget,
+    progress: &(dyn Fn(ScanProgress) + Send + Sync),
+) -> Result<(String, super::attributes::Attributes), FmError> {
     let response = budget
         .request(cancel, async {
             endpoint
@@ -391,6 +404,7 @@ pub(super) async fn hash_s3(
     {
         return Err(error("Conditional GET did not return the listed ETag and size; no complete job manifest was retained"));
     }
+    let attributes = super::attributes::Attributes::capture(&response);
     let mut body = response.body;
     let mut hash = Sha256::new();
     let mut bytes = 0u64;
@@ -420,7 +434,7 @@ pub(super) async fn hash_s3(
             "S3 body was incomplete while hashing the pinned job object",
         ));
     }
-    Ok(hex(hash.finalize()))
+    Ok((hex(hash.finalize()), attributes))
 }
 
 pub(super) fn merge(

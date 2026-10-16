@@ -80,6 +80,7 @@ pub(super) struct Item {
     pub expected: DestinationExpectation,
     pub snapshot: Snapshot,
     pub controls: Option<super::controls::Controls>,
+    pub destination: Option<super::replacement::Destination>,
 }
 pub(super) struct Plan {
     pub id: String,
@@ -135,15 +136,15 @@ impl Plan {
         }
     }
     pub fn execution_blocker(&self) -> Option<String> {
-        if self.policy == Policy::ReplaceUnchanged
-            || self
-                .items
-                .iter()
-                .any(|item| !matches!(item.expected, DestinationExpectation::Missing))
-        {
-            return Some("Initial job execution creates missing objects only. Replacements remain non-executable; prepare a new create-only/skip-existing session.".into());
-        }
         for item in &self.items {
+            if let Some(reason) = super::replacement::blocker(
+                item,
+                self.policy,
+                self.destination_sse,
+                self.source_instance.is_none(),
+            ) {
+                return Some(reason);
+            }
             if item.snapshot.size > 5 * 1024 * 1024 {
                 return Some("Initial job execution supports files up to 5 MiB only. Multipart job execution remains deferred; no weaker fallback is used.".into());
             }
@@ -201,6 +202,17 @@ impl Plan {
     }
     fn check_snapshots(&self) -> Result<(), FmError> {
         for item in &self.items {
+            let destination_owned =
+                match (&item.expected, &item.entry.destination, &item.destination) {
+                    (DestinationExpectation::Missing, None, None) => true,
+                    (DestinationExpectation::Match { etag }, Some(file), Some(_)) => {
+                        file.etag.as_deref() == Some(etag.as_str())
+                    }
+                    _ => false,
+                };
+            if !destination_owned {
+                return Err(error("Retained destination condition/attributes no longer belong to the native comparison"));
+            }
             let source = item
                 .entry
                 .source
@@ -330,7 +342,7 @@ async fn check_destination(
     cancel: &AtomicBool,
     budget: &ScanBudget,
     progress: &(dyn Fn(ScanProgress) + Send + Sync),
-) -> Result<(), FmError> {
+) -> Result<Option<super::replacement::Destination>, FmError> {
     use aws_sdk_s3::error::ProvideErrorMetadata;
     let head = budget
         .request(cancel, async {
@@ -364,7 +376,7 @@ async fn check_destination(
         })
         .await?;
     match (&input.expected, head) {
-        (DestinationExpectation::Missing, None) => Ok(()),
+        (DestinationExpectation::Missing, None) => Ok(None),
         (DestinationExpectation::Match { etag }, Some(head)) => {
             let expected = input
                 .entry
@@ -381,7 +393,7 @@ async fn check_destination(
                     "Destination changed since comparison; no usable job preview was retained",
                 ));
             }
-            let digest = super::collect::hash_s3(
+            let (digest, attributes) = super::collect::hash_s3_with_attributes(
                 endpoint,
                 &input.key,
                 expected.size,
@@ -396,7 +408,10 @@ async fn check_destination(
                     "Destination content no longer matches the native comparison; compare again",
                 ));
             }
-            Ok(())
+            Ok(Some(super::replacement::Destination {
+                attributes,
+                controls: None,
+            }))
         }
         _ => Err(error(
             "Destination existence changed since comparison; compare and prepare again",
@@ -673,20 +688,23 @@ pub(crate) async fn prepare(
         binding.validate()?;
         budget.check(&cancel)?;
         // Check every destination before allocating/downloading any source snapshots.
+        let mut destinations = vec![];
         for input in &inputs {
             budget.object(&cancel)?;
-            check_destination(
-                &binding.destination,
-                input,
-                &cancel,
-                &budget,
-                progress.as_ref(),
-            )
-            .await?;
+            destinations.push(
+                check_destination(
+                    &binding.destination,
+                    input,
+                    &cancel,
+                    &budget,
+                    progress.as_ref(),
+                )
+                .await?,
+            );
             progress(budget.progress());
         }
         let mut items = vec![];
-        for input in inputs {
+        for (input, destination) in inputs.into_iter().zip(destinations) {
             budget.check(&cancel)?;
             binding.validate()?;
             let snapshot = match &binding.source {
@@ -734,6 +752,7 @@ pub(crate) async fn prepare(
             };
             items.push(Item {
                 controls: None,
+                destination,
                 entry: input.entry,
                 key: input.key,
                 expected: input.expected,

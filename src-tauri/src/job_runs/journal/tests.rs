@@ -67,6 +67,123 @@ fn v1_cannot_smuggle_executable_intents_and_v2_requires_complete_native_counters
 }
 
 #[test]
+fn v3_replacement_counters_cannot_be_smuggled_into_v2_or_weakened_into_create_intent() {
+    let mut store = Store {
+        revision: fresh_id(),
+        ..Store::default()
+    };
+    let mut intent = record(&fresh_id(), Status::Executing);
+    intent.policy = Some(Policy::ReplaceUnchanged);
+    intent.execution = Some(Execution {
+        selected_files: 2,
+        selected_bytes: 6,
+        replacement_files: 1,
+        attempted_files: 2,
+        attempted_replacements: 1,
+        acknowledged_files: 1,
+        acknowledged_replacements: 1,
+        verified_files: 1,
+        verified_replacements: 1,
+        verified_bytes: 3,
+        ..Execution::default()
+    });
+    store.records.push(intent);
+    store.validate(true).unwrap();
+    store.version = 2;
+    assert!(store.validate(true).is_err());
+    store.version = 3;
+    store.records[0].policy = Some(Policy::CreateOnly);
+    assert!(store.validate(true).is_err());
+    store.records[0].policy = Some(Policy::ReplaceUnchanged);
+    store.records[0]
+        .execution
+        .as_mut()
+        .unwrap()
+        .verified_replacements = 2;
+    assert!(store.validate(true).is_err());
+}
+
+#[test]
+fn executing_replacement_restart_preserves_confirmed_and_unknown_subcounts_without_replay() {
+    let (_root, paths, job) = fixture(true, false);
+    start(&paths, &fresh_id(), &job).unwrap();
+    let storage = Storage::open(&paths, false).unwrap().unwrap();
+    let lock = storage.lock().unwrap();
+    let (mut store, _) = storage.load().unwrap();
+    store.records[0].status = Status::Executing;
+    store.records[0].policy = Some(Policy::ReplaceUnchanged);
+    store.records[0].execution = Some(Execution {
+        selected_files: 3,
+        selected_bytes: 9,
+        replacement_files: 2,
+        attempted_files: 2,
+        attempted_replacements: 2,
+        acknowledged_files: 1,
+        acknowledged_replacements: 1,
+        verified_files: 1,
+        verified_replacements: 1,
+        verified_bytes: 3,
+        ..Execution::default()
+    });
+    storage.commit(&mut store).unwrap();
+    drop(lock);
+    let state = JobRunState::default();
+    let report = state.history(&paths).unwrap();
+    let counts = report.records[0].execution.as_ref().unwrap();
+    assert_eq!(report.records[0].status, Status::Interrupted);
+    assert_eq!(counts.verified_replacements, 1);
+    assert_eq!(counts.uncertain_replacements, 1);
+    assert_eq!(counts.uncertain_files, 1);
+    assert!(state.0.lock().unwrap().slot.is_none());
+    assert!(!report.pauses.is_empty());
+    assert_eq!(state.history(&paths).unwrap().revision, report.revision);
+}
+
+#[test]
+fn legacy_v2_execution_migrates_to_v3_with_zero_replacement_authority() {
+    let (_root, paths, job) = fixture(true, false);
+    start(&paths, &fresh_id(), &job).unwrap();
+    let path = raw_path(&paths);
+    let mut store: Store = serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
+    store.records[0].status = Status::Executing;
+    store.records[0].policy = Some(Policy::CreateOnly);
+    store.records[0].execution = Some(Execution {
+        selected_files: 1,
+        selected_bytes: 3,
+        attempted_files: 1,
+        ..Execution::default()
+    });
+    let mut value = serde_json::to_value(store).unwrap();
+    value["version"] = 2.into();
+    for field in [
+        "replacement_files",
+        "attempted_replacements",
+        "acknowledged_replacements",
+        "verified_replacements",
+        "uncertain_replacements",
+    ] {
+        value["records"][0]["execution"]
+            .as_object_mut()
+            .unwrap()
+            .remove(field);
+    }
+    fs::write(&path, serde_json::to_vec(&value).unwrap()).unwrap();
+    let state = JobRunState::default();
+    let report = state.history(&paths).unwrap();
+    let counts = report.records[0].execution.as_ref().unwrap();
+    assert_eq!(counts.uncertain_files, 1);
+    assert_eq!(counts.replacement_files, 0);
+    assert_eq!(counts.uncertain_replacements, 0);
+    assert_eq!(
+        serde_json::from_slice::<Store>(&fs::read(path).unwrap())
+            .unwrap()
+            .version,
+        3
+    );
+    assert!(state.0.lock().unwrap().slot.is_none());
+}
+
+#[test]
 fn v1_read_only_history_migrates_without_replay_and_executing_recovery_preserves_verified_and_unknown_counts(
 ) {
     let (_root, paths, job) = fixture(true, false);
@@ -91,7 +208,7 @@ fn v1_read_only_history_migrates_without_replay_and_executing_recovery_preserves
         serde_json::from_slice::<Store>(&fs::read(&path).unwrap())
             .unwrap()
             .version,
-        2
+        3
     );
     let storage = Storage::open(&paths, false).unwrap().unwrap();
     let lock = storage.lock().unwrap();
@@ -107,6 +224,7 @@ fn v1_read_only_history_migrates_without_replay_and_executing_recovery_preserves
         verified_bytes: 3,
         uncertain_files: 0,
         skipped_files: 0,
+        ..Execution::default()
     });
     store.pauses.clear();
     storage.commit(&mut store).unwrap();
@@ -304,7 +422,7 @@ fn corrupt_future_oversized_symlink_fifo_shared_and_invalid_marker_storage_fail_
             0 => fs::write(&path, b"{DO_NOT_INCLUDE_RAW_DATA").unwrap(),
             1 => {
                 let mut value: serde_json::Value = serde_json::from_slice(&original).unwrap();
-                value["version"] = 3.into();
+                value["version"] = 4.into();
                 fs::write(&path, serde_json::to_vec(&value).unwrap()).unwrap();
             }
             2 => {

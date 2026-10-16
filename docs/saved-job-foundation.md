@@ -151,7 +151,7 @@ explicitly warns about partial cleanup.
 
 ## Explicitly deferred
 
-Unsupported S3 attributes, replacement/multipart execution and scheduling remain follow-up
+Unsupported S3 attributes, broader/multipart execution and scheduling remain follow-up
 work; [initial local-create execution](job-guarded-execution.md) implements native
 single-use approval, guarded snapshot consumption, verification and intent/outcomes.
 History/review/reconciliation is implemented in

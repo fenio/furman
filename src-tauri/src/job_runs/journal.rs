@@ -124,6 +124,16 @@ pub struct Record {
 #[derive(Clone, Default, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Execution {
+    #[serde(default)]
+    pub replacement_files: u64,
+    #[serde(default)]
+    pub attempted_replacements: u64,
+    #[serde(default)]
+    pub acknowledged_replacements: u64,
+    #[serde(default)]
+    pub verified_replacements: u64,
+    #[serde(default)]
+    pub uncertain_replacements: u64,
     pub selected_files: u64,
     pub skipped_files: u64,
     pub selected_bytes: u64,
@@ -145,9 +155,33 @@ impl Execution {
             && self.uncertain_files <= self.attempted_files.saturating_sub(self.verified_files)
             && self.verified_bytes <= self.selected_bytes
             && (self.verified_files != 0 || self.verified_bytes == 0)
+            && self.replacement_files <= self.selected_files
+            && self.verified_replacements <= self.acknowledged_replacements
+            && self.acknowledged_replacements <= self.attempted_replacements
+            && self.attempted_replacements <= self.replacement_files
+            && self.attempted_replacements <= self.attempted_files
+            && self.acknowledged_replacements <= self.acknowledged_files
+            && self.verified_replacements <= self.verified_files
+            && self.uncertain_replacements <= self.uncertain_files
+            && self.uncertain_replacements
+                <= self.attempted_replacements - self.verified_replacements
+            && self.acknowledged_files - self.acknowledged_replacements
+                <= self.attempted_files - self.attempted_replacements
+            && self.verified_files - self.verified_replacements
+                <= self.acknowledged_files - self.acknowledged_replacements
+            && self.verified_files - self.verified_replacements
+                <= self.selected_files - self.replacement_files
+            && self.uncertain_files - self.uncertain_replacements
+                <= (self.attempted_files - self.attempted_replacements)
+                    .saturating_sub(self.verified_files - self.verified_replacements)
     }
     fn follows(&self, old: &Self) -> bool {
         self.selected_files == old.selected_files
+            && self.replacement_files == old.replacement_files
+            && self.attempted_replacements >= old.attempted_replacements
+            && self.acknowledged_replacements >= old.acknowledged_replacements
+            && self.verified_replacements >= old.verified_replacements
+            && self.uncertain_replacements >= old.uncertain_replacements
             && self.skipped_files == old.skipped_files
             && self.selected_bytes == old.selected_bytes
             && self.attempted_files >= old.attempted_files
@@ -175,7 +209,7 @@ struct Store {
 impl Default for Store {
     fn default() -> Self {
         Self {
-            version: 2,
+            version: 3,
             revision: "missing".into(),
             storage_review_required: false,
             pauses: BTreeMap::new(),
@@ -206,7 +240,7 @@ impl Store {
         }
     }
     fn validate(&self, persisted: bool) -> Result<(), FmError> {
-        if !matches!(self.version, 1 | 2)
+        if !matches!(self.version, 1 | 2 | 3)
             || (persisted && !uuid(&self.revision))
             || self.records.len() > 501
             || self.pauses.len() > 500
@@ -219,6 +253,20 @@ impl Store {
         let mut active = 0;
         let mut counts = BTreeMap::new();
         for record in &self.records {
+            if self.version < 3
+                && record.execution.as_ref().is_some_and(|counts| {
+                    counts.replacement_files != 0
+                        || counts.attempted_replacements != 0
+                        || counts.acknowledged_replacements != 0
+                        || counts.verified_replacements != 0
+                        || counts.uncertain_replacements != 0
+                        || record.policy == Some(Policy::ReplaceUnchanged)
+                })
+            {
+                return Err(error(
+                    "An older journal cannot contain executable replacements",
+                ));
+            }
             if self.version == 1
                 && (record.execution.is_some()
                     || matches!(
@@ -238,8 +286,11 @@ impl Store {
                 || (record.execution.is_some()
                     && !matches!(
                         record.policy,
-                        Some(Policy::CreateOnly | Policy::SkipExisting)
+                        Some(Policy::CreateOnly | Policy::SkipExisting | Policy::ReplaceUnchanged)
                     ))
+                || record.execution.as_ref().is_some_and(|counts| {
+                    counts.replacement_files > 0 && record.policy != Some(Policy::ReplaceUnchanged)
+                })
                 || matches!(
                     record.status,
                     Status::Executing
@@ -461,7 +512,7 @@ impl Storage {
         checkpoint: &impl Fn(&str) -> Result<(), FmError>,
     ) -> Result<(), FmError> {
         self.check_dir()?;
-        store.version = 2;
+        store.version = 3;
         store.revision = fresh_id();
         store.validate(true)?;
         let bytes = serde_json::to_vec(store).map_err(|_| unavailable())?;
@@ -666,6 +717,9 @@ pub(super) fn recover(paths: &Paths) -> Result<Report, FmError> {
         if record.status.active() {
             record.status = Status::Interrupted;
             if let Some(counts) = &mut record.execution {
+                counts.uncertain_replacements = counts
+                    .uncertain_replacements
+                    .max(counts.attempted_replacements - counts.verified_replacements);
                 counts.uncertain_files = counts
                     .uncertain_files
                     .max(counts.attempted_files - counts.verified_files);
@@ -818,7 +872,6 @@ fn transition_with(
                     | Status::Cancelled
                     | Status::Interrupted
             ))
-            || record.policy == Some(Policy::ReplaceUnchanged)
         {
             return Err(error("Executable intent/counter ownership changed"));
         }
@@ -842,6 +895,9 @@ fn transition_with(
     }
     if next == Status::Interrupted {
         if let Some(counts) = &mut record.execution {
+            counts.uncertain_replacements = counts
+                .uncertain_replacements
+                .max(counts.attempted_replacements - counts.verified_replacements);
             counts.uncertain_files = counts
                 .uncertain_files
                 .max(counts.attempted_files - counts.verified_files);

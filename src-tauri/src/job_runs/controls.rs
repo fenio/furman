@@ -36,6 +36,21 @@ pub(super) async fn require_unlocked_source(
     budget: &ScanBudget,
     cancel: &AtomicBool,
 ) -> Result<(), FmError> {
+    require_unlocked(endpoint, budget, cancel, "source").await
+}
+pub(super) async fn require_unlocked_destination(
+    endpoint: &Endpoint,
+    budget: &ScanBudget,
+    cancel: &AtomicBool,
+) -> Result<(), FmError> {
+    require_unlocked(endpoint, budget, cancel, "destination").await
+}
+async fn require_unlocked(
+    endpoint: &Endpoint,
+    budget: &ScanBudget,
+    cancel: &AtomicBool,
+    role: &str,
+) -> Result<(), FmError> {
     // GET can hide per-object lock headers without GetObjectRetention/LegalHold
     // permission. Require explicit bucket-level absence, never infer it from a
     // payload response or an unsupported/denied request. Enabled buckets remain
@@ -43,8 +58,8 @@ pub(super) async fn require_unlocked_source(
     budget.request(cancel,async{
         match endpoint.client.get_object_lock_configuration().bucket(&endpoint.bucket).send().await{
             Err(failure) if failure.raw_response().is_some_and(|response|response.status().as_u16()==404)&&failure.as_service_error().and_then(|e|e.code())==Some("ObjectLockConfigurationNotFoundError")=>Ok(()),
-            Err(failure)=>Err(job_sdk_error("Job source object-lock inspection (explicit absence is required)",&failure)),
-            Ok(_)=>Err(error("Object-lock-enabled or ambiguous source buckets cannot execute jobs yet: GET headers may hide retention/legal holds. No object-lock policy is dropped or bypassed.")),
+            Err(failure)=>Err(job_sdk_error(&format!("Job {role} object-lock inspection (explicit absence is required)"),&failure)),
+            Ok(_)=>Err(error(&format!("Object-lock-enabled or ambiguous {role} buckets cannot execute this operation: GET headers may hide retention/legal holds. No object-lock policy is dropped or bypassed."))),
         }
     }).await
 }

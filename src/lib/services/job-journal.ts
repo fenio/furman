@@ -2,7 +2,7 @@ import { invoke } from '@tauri-apps/api/core';
 import { jobJournalState } from '#lib/state/job-journal.svelte.js';
 
 export type JobAttemptStatus = 'binding' | 'bound' | 'scanning' | 'compared' | 'preparing' | 'prepared' | 'reviewing' | 'awaiting_approval' | 'executing' | 'succeeded' | 'skipped' | 'partial' | 'uncertain' | 'no_changes' | 'discarded' | 'cancelled' | 'failed' | 'limited' | 'interrupted';
-export interface JobExecutionCounts { selected_files: number; skipped_files: number; selected_bytes: number; attempted_files: number; acknowledged_files: number; verified_files: number; verified_bytes: number; uncertain_files: number }
+export interface JobExecutionCounts { selected_files: number; skipped_files: number; selected_bytes: number; attempted_files: number; acknowledged_files: number; verified_files: number; verified_bytes: number; uncertain_files: number; replacement_files: number; attempted_replacements: number; acknowledged_replacements: number; verified_replacements: number; uncertain_replacements: number }
 export interface JobHistoryCounters { scanned: number; requests: number; bytes_read: number; s3_bytes_read: number; elapsed_ms: number }
 export interface JobAttemptRecord {
   run_id: string; job_id: string; job_revision: string; started_ms: number; updated_ms: number; status: JobAttemptStatus;

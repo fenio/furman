@@ -112,6 +112,7 @@ fn request(status: &RunStatus) -> ExecuteRequest {
             .clone(),
         approved: true,
         acknowledge_exclusions: true,
+        acknowledge_replacements: false,
     }
 }
 async fn wait(state: &JobRunState, id: &str) -> RunStatus {
@@ -506,7 +507,10 @@ async fn narrow_cohort_explicitly_blocks_replacements_multipart_and_ambiguous_ke
         assert!(plan.execution_blocker().unwrap().contains("5 MiB"));
         plan.items[0].snapshot.size = 3;
         plan.policy = preview::Policy::ReplaceUnchanged;
-        assert!(plan.execution_blocker().unwrap().contains("Replacements"));
+        plan.items[0].expected = crate::s3::writes::DestinationExpectation::Match {
+            etag: "unowned-validator".into(),
+        };
+        assert!(plan.execution_blocker().unwrap().contains("missing"));
     }
     assert!(review(
         &state,

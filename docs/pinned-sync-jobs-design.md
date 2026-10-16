@@ -6,7 +6,8 @@ read-only live binding/comparisons merged in [#364](https://github.com/fenio/fur
 checked non-executable previews/snapshots merged in [#365](https://github.com/fenio/furman/pull/365);
 durable read-only journal/recovery merged in [#366](https://github.com/fenio/furman/pull/366);
 initial guarded local creates merged in [#367](https://github.com/fenio/furman/pull/367);
-S3-source attribute-preserving creates are the current implementation step.** See the
+S3-source creates merged in [#368](https://github.com/fenio/furman/pull/368);
+checked small-object replacements are the current implementation step.** See the
 [foundation contract](saved-job-foundation.md) for its exact scope and remaining
 live-binding gates, and the [read-only runtime contract](job-bound-comparisons.md).
 See [checked payload previews](job-checked-previews.md) for the implemented preparation boundary.
@@ -14,7 +15,9 @@ The [journal foundation](job-journal.md) implements read-only attempt durability
 local recovery and review pauses. The [initial execution cohort](job-guarded-execution.md)
 adds native single-use approval, durable executable intent and verified outcomes
 for creates up to 5 MiB/file. The [S3-source extension](job-s3-create-execution.md)
-adds supported headers/metadata/tags/encryption, owner-only ACL and source-lock gates. Broader replacement and
+adds supported headers/metadata/tags/encryption, owner-only ACL and source-lock gates.
+The [replacement extension](job-checked-replacements.md) adds checked existing-object
+writes with separate acknowledgement and journal v3. Broader object sizes and
 multipart execution guarantees below remain unimplemented.
 This document is the review gate between
 the [implemented options presets](comparison-presets.md) and runnable jobs. It adds

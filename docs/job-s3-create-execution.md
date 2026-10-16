@@ -5,7 +5,9 @@ This source/PR follow-up to [#367](https://github.com/fenio/furman/pull/367) ext
 It does not create a tagged release or enable scheduling. **Create-only / skip-existing,
 5 MiB per file, 128 actionable native snapshots, single-use approval, durable
 pre-write intent and mandatory SHA-256 verification remain unchanged.** There are
-no replacements, multipart job writes, deletions, retries/resume or headless jobs.
+no replacements from a create approval, multipart job writes, deletions, retries/resume or headless jobs.
+The [checked replacement follow-up](job-checked-replacements.md) adds separately
+acknowledged small-object replacements and destination preservation gates.
 
 ## Supported attributes and explicit refusals
 
@@ -125,7 +127,8 @@ uncertain outcome, not a reason to claim success or drop attributes. Providers
 that cannot establish source lock absence or expose ACL/tag state remain usable
 for read-only jobs/ordinary workflows but cannot execute this cohort.
 
-The existing v2 journal and restart protocol are unchanged. It records only safe
+The create protocol uses the durable journal, now upgraded to v3 by the
+[replacement follow-up](job-checked-replacements.md). It records only safe
 IDs/revisions/times/policy and aggregate counters, never object versions,
 metadata/tag values, owner IDs/hashes, encryption keys, credentials or approvals.
 Runtime review exports source encryption/tag **counts**, not raw control values.

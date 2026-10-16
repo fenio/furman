@@ -23,7 +23,7 @@
     {#if jobExecutionState.status?.execution}
       {@const result = jobExecutionState.status.execution}
       <strong>Native job: {jobExecutionState.status.phase === 'executing' ? 'executing' : result.status}</strong>
-      <p>Run {jobExecutionState.status.run_id}. Verified {result.counts.verified_files}/{result.counts.selected_files}; skipped {result.counts.skipped_files}; uncertain {result.counts.uncertain_files}. Durable outcome: {result.outcome_recorded ? 'recorded' : 'not yet confirmed'}. Cancellation is not rollback; inspect local history/destination for incomplete outcomes. No automatic retry/resume or scheduling.</p>
+      <p>Run {jobExecutionState.status.run_id}. Verified {result.counts.verified_files}/{result.counts.selected_files}; skipped {result.counts.skipped_files}; uncertain {result.counts.uncertain_files}. Replacements verified {result.counts.verified_replacements ?? 0}/{result.counts.replacement_files ?? 0}, uncertain {result.counts.uncertain_replacements ?? 0}. Durable outcome: {result.outcome_recorded ? 'recorded' : 'not yet confirmed'}. Cancellation is not rollback; inspect local history/destination for incomplete outcomes. No automatic retry/resume or scheduling.</p>
       {#if result.message}<ErrorNotice error={result.message} context="Job execution/outcome recording" />{/if}
     {/if}
     {#if jobExecutionState.error}<ErrorNotice error={jobExecutionState.error} context="Job execution admission/monitoring unavailable" />{/if}
