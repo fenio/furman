@@ -4,7 +4,7 @@
   import { readFileText, readFileBinary } from '#lib/services/tauri.js';
   import { convertFileSrc } from '@tauri-apps/api/core';
   import { onMount, tick } from 'svelte';
-  import { highlightCode, detectLanguage } from '#lib/utils/highlight.js';
+  import { highlightCodeLines, detectLanguage, syntaxLanguages } from '#lib/utils/highlight.js';
 
   interface Props {
     path: string;
@@ -26,8 +26,11 @@
   let searchOpen = $state(false);
   let searchQuery = $state('');
   let currentMatchIdx = $state(0);
+  let syntax = $state('auto');
 
   const fileName = $derived(path.split('/').pop() ?? path);
+  const detectedLanguage = $derived(detectLanguage(fileName));
+  const detectedLabel = $derived(syntaxLanguages.find(language => language.id === detectedLanguage)?.name);
   const modeLabel = $derived(mode === 'text' ? 'TEXT' : mode === 'hex' ? 'HEX' : 'IMAGE');
   const imageSrc = $derived(mode === 'image' ? convertFileSrc(path) : '');
 
@@ -35,9 +38,7 @@
 
   const highlightedLines = $derived.by(() => {
     if (mode !== 'text' || !content) return [];
-    const lang = detectLanguage(fileName);
-    const html = highlightCode(content, lang);
-    return html.split('\n');
+    return highlightCodeLines(content, syntax === 'auto' ? detectedLanguage : syntax);
   });
 
   const matchLineIndices = $derived.by(() => {
@@ -145,6 +146,9 @@
   function handleKeydown(e: KeyboardEvent) {
     // Don't intercept when typing in search input
     if (searchOpen && e.target === searchInputEl) return;
+    // Native select type-ahead/arrows belong to the syntax picker, not the
+    // viewer's close/scroll/search shortcuts.
+    if ((e.target as HTMLElement | null)?.closest('select')) return;
 
     const el = contentEl;
 
@@ -312,6 +316,17 @@
   <div class="viewer-header">
     <span class="viewer-filename">{fileName}</span>
     <span class="viewer-mode">[{modeLabel}]</span>
+    {#if mode === 'text'}
+      <label class="viewer-syntax">Syntax
+        <select bind:value={syntax} aria-label="Syntax highlighting language">
+          <option value="auto">Auto{detectedLabel ? ` (${detectedLabel})` : ''}</option>
+          <option value="plaintext">Plain text</option>
+          {#each syntaxLanguages.filter(language => language.id !== 'plaintext') as language (language.id)}
+            <option value={language.id}>{language.name}</option>
+          {/each}
+        </select>
+      </label>
+    {/if}
     {#if searchOpen && matchLineIndices.length > 0}
       <span class="viewer-match-count">{currentMatchIdx + 1}/{matchLineIndices.length}</span>
     {:else if searchOpen && searchQuery}
@@ -385,6 +400,7 @@
     display: flex;
     gap: 2ch;
     align-items: center;
+    flex-wrap: wrap;
     background: var(--bg-header);
     color: var(--text-primary);
     padding: 8px 16px;
@@ -403,6 +419,9 @@
     padding: 2px 8px;
     font-size: 12px;
   }
+
+  .viewer-syntax { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--text-secondary); }
+  .viewer-syntax select { max-width: 210px; padding: 4px 6px; border: 1px solid var(--border-subtle); border-radius: 4px; background: var(--bg-surface); color: var(--text-primary); font: inherit; }
 
   .viewer-match-count {
     font-size: 12px;
@@ -473,7 +492,7 @@
 
   .line-num {
     color: var(--text-secondary);
-    opacity: 0.3;
+    opacity: 0.7;
     user-select: none;
   }
 

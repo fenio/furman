@@ -229,6 +229,29 @@ body {
   color: #2e7d32;
 }
 
+/* Distinct semantic colours shared by the read-only viewer and quick preview.
+   In JSON, property names must not look like string values. */
+.hljs {
+  --syntax-key: #79c0ff;
+  --syntax-string: #a5d6a7;
+  --syntax-number: #f2b77d;
+  --syntax-literal: #c5a5ff;
+  --syntax-punctuation: #b6becb;
+}
+[data-theme="light"] .hljs {
+  --syntax-key: #0550ae;
+  --syntax-string: #116329;
+  --syntax-number: #953800;
+  --syntax-literal: #8250df;
+  --syntax-punctuation: #57606a;
+}
+.hljs .hljs-attr { color: var(--syntax-key); }
+.hljs .hljs-string { color: var(--syntax-string); }
+.hljs .hljs-number { color: var(--syntax-number); }
+.hljs .hljs-literal,
+.hljs .hljs-literal .hljs-keyword { color: var(--syntax-literal); }
+.hljs .hljs-punctuation { color: var(--syntax-punctuation); }
+
 /* Prevent text selection globally for the file manager UI */
 .no-select {
   user-select: none;
