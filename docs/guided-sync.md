@@ -20,6 +20,27 @@ not a new write cohort, scheduling feature or release.
    neither Select All, row clicks nor keyboard selection can authorize deletion.
    Enter outside an explicit button no longer launches a transfer.
 
+**Folder selection:** “Browse folders…” opens a read-only in-app folder browser
+for local directories or the selected connected S3 bucket. Open a subfolder or
+go to its parent, then explicitly choose **Use this folder**. Pane paths are
+labelled shortcuts, not the only available folders. There is no misleading
+one-option dropdown when only local storage is available; the guide explicitly
+explains how to make an S3 connection available. Storage-type buttons do not
+list folders or connect automatically, and clicking an already selected type
+does not reset a custom path.
+
+Only explicitly opening the folder browser/navigation requests metadata. S3
+pages load on request (at most 20 per folder; 1,000 visible folders), retaining
+accepted folders on failure and retrying the same page without accepting cyclic
+tokens. Local browsing uses the existing non-recursive directory metadata API;
+it can enumerate the directory before applying the visible-folder cap. Symbolic-
+link folders are not offered. Closing/changing location discards late replies;
+in-flight OS/network reads may finish cooperatively. Typed-but-unopened browser
+paths cannot be mistaken for its confirmed selection. S3 bucket/connection IDs
+stay pinned and literal prefixes are never URL-decoded. Browse results select
+only a location: they never authorize a comparison, saved job or transfer, and
+the fresh complete-comparison/approval requirements below remain unchanged.
+
 **Local-destination limitation:** the existing one-off copy/download engine uses
 basenames for individually selected nested files rather than carrying each exact
 relative destination mapping. The new guide refuses such nested selections before
