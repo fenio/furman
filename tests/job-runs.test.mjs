@@ -12,15 +12,16 @@ const definition={id:'job',revision:'3',name:'Saved job',source:{kind:'local',pa
 const progress={scanned:2,matched:0,requests:2,bytes_read:3,s3_bytes_read:3,elapsed_ms:100};
 const bound=()=>({run_id:crypto.randomUUID(),job_id:'job',phase:'bound',expires_seconds:900,outcome:null,message:null,progress,summary:null,manifest_id:null,source_instance:null,destination_instance:crypto.randomUUID(),source_namespace:null,destination_namespace:'https://us-ord-1.linodeobjects.com/',limits:{max_objects:100000,max_requests:1000,max_seconds:300,max_results:1000},execution_available:false});
 const complete=status=>({...status,phase:'complete',outcome:'complete',summary:{new:1,modified:0,destination_only:0,same:2},manifest_id:crypto.randomUUID()});
-function imports(code,dependencies){return code.replace(/from (['"])([^'"]+)\1/g,(_,quote,name)=>{const resolved=dependencies[name]??(name.startsWith('svelte')?import.meta.resolve(name):null);assert.ok(resolved,`Unmapped job-run import ${name}`);return `from ${JSON.stringify(resolved)}`;});}
+const eligible=(run,manifest)=>({...complete(bound()),run_id:run,manifest_id:manifest,phase:'prepared',preview:{id:'native-preview',can_review_execution:true,execution_available:false}});
+function imports(code,dependencies){return code.replace(/from (['"])([^'"]+)\1/g,(_,quote,name)=>{const resolved=dependencies[name]??(name==='#lib/state/navigation-cache.svelte.js'?data('export const beginS3Mutation=()=>()=>{};'):name.startsWith('svelte')?import.meta.resolve(name):null);assert.ok(resolved,`Unmapped job-run import ${name}`);return `from ${JSON.stringify(resolved)}`;});}
 let sequence=0;
 async function fixture(methods={}){
   const key=`jobRunFixture${sequence++}`;const calls=[];const destroys=[];const initial=bound();
   const context={props:{definition:structuredClone(definition)},destroys,calls,methods:{bind:async()=>initial,scan:async()=>complete(initial),page:async()=>[{id:'entry',relative_path:'nested/file',status:'new',source_size:3,destination_size:null}],release:async()=>{},status:async()=>initial,...methods}};
   globalThis[key]=context;
-  const rpc=data(`const run=(name,...args)=>{const fixture=globalThis.${key};fixture.calls.push([name,...args]);return fixture.methods[name](...args);};export const bindJobSession=(...args)=>run('bind',...args);export const scanJobSession=(...args)=>run('scan',...args);export const releaseJobSession=(...args)=>run('release',...args);export const jobSessionStatus=(...args)=>run('status',...args);export const jobManifestPage=(...args)=>run('page',...args);export const prepareJobPreview=(...args)=>run('prepare',...args);`);
+  const rpc=data(`const run=(name,...args)=>{const fixture=globalThis.${key};fixture.calls.push([name,...args]);return fixture.methods[name](...args);};export const bindJobSession=(...args)=>run('bind',...args);export const scanJobSession=(...args)=>run('scan',...args);export const releaseJobSession=(...args)=>run('release',...args);export const jobSessionStatus=(...args)=>run('status',...args);export const jobManifestPage=(...args)=>run('page',...args);export const prepareJobPreview=(...args)=>run('prepare',...args);export const reviewJobExecution=(...args)=>run('review',...args);export const executeJobPreview=(...args)=>run('execute',...args);`);
   let script=source.match(/<script lang="ts">([\s\S]*?)<\/script>/)[1].replaceAll('$props()',`globalThis.${key}.props`).replace(/^\s*import \w+ from '\.\/[^']+\.svelte';/gm,'');
-  script+=`\nexport const harness={bind,compare,more,refresh,release,prepare,toggleEntry,approve(){approved=true;},approveSnapshots(){snapshotApproved=true;},setBudget(value){snapshotMiB=value;},get state(){return{approved,session,progress,rows,busy,failure,status,opId,selectedIds,snapshotApproved};}};`;
+  script+=`\nexport const harness={bind,compare,more,refresh,release,prepare,reviewExecution,execute,toggleEntry,approve(){approved=true;},approveSnapshots(){snapshotApproved=true;},approveExecution(){executeApproved=true;exclusionsApproved=true;},setBudget(value){snapshotMiB=value;},get state(){return{approved,session,progress,rows,busy,failure,status,opId,selectedIds,snapshotApproved,executeApproved,exclusionsApproved};}};`;
   const code=compileModule(stripTypeScriptTypes(script),{generate:'client',filename:'JobComparisonSession.svelte.js'}).js.code;
   const {harness}=await import(data(imports(code,{'svelte':data(`export const onDestroy=callback=>globalThis.${key}.destroys.push(callback);`),'#lib/services/job-runs.js':rpc,'#lib/services/log.js':data('export const error=()=>{};')})));
   return{h:harness,calls,context,close(){for(const destroy of destroys)destroy();},cleanup(){delete globalThis[key];}};
@@ -66,7 +67,7 @@ test('read-only service sends no credentials or caller-selected rows and cannot 
   const calls=[];globalThis.__jobRunRpc=(...args)=>{calls.push(args);return Promise.resolve(bound());};
   try{
     const script=stripTypeScriptTypes(readFileSync(new URL('../src/lib/services/job-runs.ts',import.meta.url),'utf8'));
-    const {bindJobSession,scanJobSession,jobManifestPage,releaseJobSession,jobSessionStatus}=await import(data(imports(script,{'@tauri-apps/api/core':data('export const invoke=(...args)=>globalThis.__jobRunRpc(...args);export class Channel{}'),'#lib/services/job-journal.js':data('export const noteJobJournalFailure=()=>{};')})));
+    const {bindJobSession,scanJobSession,jobManifestPage,releaseJobSession,jobSessionStatus}=await import(data(imports(script,{'@tauri-apps/api/core':data('export const invoke=(...args)=>globalThis.__jobRunRpc(...args);export class Channel{}'),'#lib/services/job-journal.js':data('export const noteJobJournalFailure=()=>{};'),'#lib/state/job-execution.svelte.js':data('export const jobExecutionState={status:null,error:null};')})));
     await assert.rejects(bindJobSession('op','job','rev',false));assert.equal(calls.length,0);await bindJobSession('op','job','rev',true);
     let progressSeen;await scanJobSession('native-run',event=>{progressSeen=event;});calls[1][1].channel.onmessage(progress);assert.equal(progressSeen.bytes_read,3);
     await jobManifestPage('native-run','native-manifest',0);await jobSessionStatus('native-run');await releaseJobSession('native-run');
@@ -76,11 +77,11 @@ test('read-only service sends no credentials or caller-selected rows and cannot 
 });
 
 test('actual session UI renders separate read-only approval and keeps comparison disabled before binding',async()=>{
-  const dependencies={'#lib/services/job-runs.js':data('export const bindJobSession=async()=>{throw new Error("No SSR binding");};export const scanJobSession=async()=>{};export const releaseJobSession=async()=>{};export const jobSessionStatus=async()=>{};export const jobManifestPage=async()=>{};export const prepareJobPreview=async()=>{};'),'#lib/services/log.js':data('export const error=()=>{};'),'#lib/utils/error-report.js':new URL('../src/lib/utils/error-report.ts',import.meta.url).href,'#lib/utils/scan.js':new URL('../src/lib/utils/scan.ts',import.meta.url).href,'#lib/utils/format.js':new URL('../src/lib/utils/format.ts',import.meta.url).href};
+  const dependencies={'#lib/services/job-runs.js':data('export const bindJobSession=async()=>{throw new Error("No SSR binding");};export const scanJobSession=async()=>{};export const releaseJobSession=async()=>{};export const jobSessionStatus=async()=>{};export const jobManifestPage=async()=>{};export const prepareJobPreview=async()=>{};export const reviewJobExecution=async()=>{};export const executeJobPreview=async()=>{};'),'#lib/services/log.js':data('export const error=()=>{};'),'#lib/utils/error-report.js':new URL('../src/lib/utils/error-report.ts',import.meta.url).href,'#lib/utils/scan.js':new URL('../src/lib/utils/scan.ts',import.meta.url).href,'#lib/utils/format.js':new URL('../src/lib/utils/format.ts',import.meta.url).href};
   const component=file=>data(imports(compile(readFileSync(new URL(`../src/lib/components/${file}`,import.meta.url),'utf8'),{generate:'server',filename:file}).js.code,dependencies));
   dependencies['./ErrorNotice.svelte']=component('ErrorNotice.svelte');dependencies['./ScanStatus.svelte']=component('ScanStatus.svelte');
   const {default:Component}=await import(data(imports(compile(source,{generate:'server',filename:'JobComparisonSession.svelte'}).js.code,dependencies)));
-  const html=render(Component,{props:{definition}}).body;assert.ok(html.includes('not unsaved editor fields'));assert.ok(html.includes('HeadBucket'));assert.match(html,/disabled[^>]*>Compare saved job/);assert.ok(html.includes('No job execution, automatic retry/resume or scheduling'));assert.ok(!html.includes('Upload now'));
+  const html=render(Component,{props:{definition}}).body;assert.ok(html.includes('not unsaved editor fields'));assert.ok(html.includes('HeadBucket'));assert.match(html,/disabled[^>]*>Compare saved job/);assert.ok(html.includes('No replacements, S3-source execution'));assert.ok(!html.includes('Upload now'));
 });
 
 test('checked preparation requires explicit loaded native entry selection and separate snapshot approval',async()=>{
@@ -114,10 +115,39 @@ test('snapshot service sends only native ownership handles, selected IDs and rev
   const calls=[];globalThis.__jobSnapshotRpc=(...args)=>{calls.push(args);return Promise.resolve(bound());};
   try{
     const script=stripTypeScriptTypes(readFileSync(new URL('../src/lib/services/job-runs.ts',import.meta.url),'utf8'));
-    const {prepareJobPreview}=await import(data(imports(script,{'@tauri-apps/api/core':data('export const invoke=(...args)=>globalThis.__jobSnapshotRpc(...args);export class Channel{}'),'#lib/services/job-journal.js':data('export const noteJobJournalFailure=()=>{};')})));
+    const {prepareJobPreview}=await import(data(imports(script,{'@tauri-apps/api/core':data('export const invoke=(...args)=>globalThis.__jobSnapshotRpc(...args);export class Channel{}'),'#lib/services/job-journal.js':data('export const noteJobJournalFailure=()=>{};'),'#lib/state/job-execution.svelte.js':data('export const jobExecutionState={status:null,error:null};')})));
     await assert.rejects(prepareJobPreview('run','manifest',['entry'],'create_only',100,false,()=>{}));assert.equal(calls.length,0);
     await prepareJobPreview('run','manifest',['entry'],'replace_unchanged',100,true,()=>{});
     assert.equal(calls[0][0],'saved_job_prepare');assert.deepEqual(calls[0][1].request,{run_id:'run',manifest_id:'manifest',entry_ids:['entry'],policy:'replace_unchanged',max_snapshot_bytes:100,approved:true});
     const encoded=JSON.stringify(calls);assert.ok(!encoded.includes('expected_sha256'));assert.ok(!encoded.includes('source_path'));assert.ok(!encoded.includes('credential'));assert.ok(!encoded.includes('overwrite'));
   }finally{delete globalThis.__jobSnapshotRpc;}
+});
+
+test('execution requires distinct native review and two explicit acknowledgements; double clicks cannot replay',async()=>{
+  const pending=deferred();const f=await fixture({prepare:async(run,manifest)=>eligible(run,manifest),review:async run=>({...bound(),run_id:run,phase:'awaiting_execution_approval',execution_available:true,execution_review:{approval_id:'native-single-use'}}),execute:async()=>pending.promise});
+  try{
+    f.h.approve();await f.h.bind();await f.h.compare();f.h.toggleEntry('entry');f.h.approveSnapshots();await f.h.prepare();
+    assert.equal(f.calls.filter(c=>c[0]==='execute').length,0);await f.h.execute();assert.equal(f.calls.filter(c=>c[0]==='execute').length,0);
+    await f.h.reviewExecution();assert.deepEqual(f.calls.at(-1),['review',f.h.state.session.run_id,'native-preview']);await f.h.execute();assert.equal(f.calls.filter(c=>c[0]==='execute').length,0);
+    f.h.approveExecution();const executing=f.h.execute();await f.h.execute();assert.equal(f.calls.filter(c=>c[0]==='execute').length,1);assert.deepEqual(f.calls.at(-1).slice(2),['native-single-use',true,true]);assert.equal(f.h.state.executeApproved,false);assert.equal(f.h.state.session.execution_review,null);
+    pending.resolve({...bound(),phase:'stopped',execution:{status:'succeeded'}});await executing;assert.equal(f.h.state.session.phase,'stopped');
+  }finally{f.close();await Promise.resolve();f.cleanup();}
+});
+
+test('closing during native execution cancels by run ID and ignores late results rather than replaying',async()=>{
+  const pending=deferred();const f=await fixture({prepare:async(run,manifest)=>eligible(run,manifest),review:async run=>({...bound(),run_id:run,phase:'awaiting_execution_approval',execution_available:true,execution_review:{approval_id:'native-single-use'}}),execute:async()=>pending.promise});
+  try{f.h.approve();await f.h.bind();await f.h.compare();f.h.toggleEntry('entry');f.h.approveSnapshots();await f.h.prepare();await f.h.reviewExecution();f.h.approveExecution();const id=f.h.state.session.run_id;const executing=f.h.execute();f.close();pending.resolve({...bound(),phase:'stopped',execution:{status:'uncertain'}});await executing;assert.ok(f.calls.some(c=>c[0]==='release'&&c[1]===id));assert.equal(f.h.state.session.phase,'executing');assert.equal(f.calls.filter(c=>c[0]==='execute').length,1);}finally{f.cleanup();}
+});
+
+test('execution service sends only native IDs and approvals, monitors locally and retains outcomes independently of dialogs',async()=>{
+  const calls=[];const shared={status:null,error:null};const notices=[];const cache=[];globalThis.__executionCache=value=>cache.push(value);globalThis.__executionShared=shared;globalThis.__executionNotice=value=>notices.push(value);
+  globalThis.__executionRpc=async(command,args)=>{calls.push([command,args]);if(command==='saved_job_execute')return{...bound(),run_id:'native-run',phase:'executing',execution:{status:'executing'}};if(command==='saved_job_status')return{...bound(),run_id:'native-run',phase:'stopped',outcome:'failed',execution:{status:'uncertain',outcome_recorded:false},message:'Outcome could not be recorded'};return bound();};
+  try{
+    const script=stripTypeScriptTypes(readFileSync(new URL('../src/lib/services/job-runs.ts',import.meta.url),'utf8'));
+    const service=await import(data(imports(script,{'@tauri-apps/api/core':data('export const invoke=(...args)=>globalThis.__executionRpc(...args);export class Channel{}'),'#lib/services/job-journal.js':data('export const noteJobJournalFailure=value=>globalThis.__executionNotice(value);'),'#lib/state/job-execution.svelte.js':data('export const jobExecutionState=globalThis.__executionShared;'),'#lib/state/navigation-cache.svelte.js':data('export const beginS3Mutation=()=>{globalThis.__executionCache("begin");return()=>globalThis.__executionCache("end");};')})));
+    await assert.rejects(service.executeJobPreview('run','approval',false,true));await assert.rejects(service.executeJobPreview('run','approval',true,false));assert.equal(calls.length,0);await service.reviewJobExecution('native-run','native-preview');const result=await service.executeJobPreview('native-run','native-approval',true,true);
+    assert.deepEqual(calls.map(c=>c[0]),['saved_job_execution_review','saved_job_execute','saved_job_status']);assert.deepEqual(calls[1][1],{request:{run_id:'native-run',approval_id:'native-approval',approved:true,acknowledge_exclusions:true}});assert.equal(shared.status,result);assert.equal(shared.status.execution.status,'uncertain');assert.ok(notices.some(n=>n.includes('Outcome could not be recorded')));
+    globalThis.__executionRpc=async()=>{throw new Error('Native status unavailable');};await assert.rejects(service.executeJobPreview('native-run','consumed',true,true));assert.match(String(shared.error),/Native status unavailable/);assert.ok(notices.some(n=>String(n).includes('sent writes may have committed')));
+    assert.deepEqual(cache,['begin','end','begin','end']);
+  }finally{delete globalThis.__executionShared;delete globalThis.__executionNotice;delete globalThis.__executionRpc;delete globalThis.__executionCache;}
 });

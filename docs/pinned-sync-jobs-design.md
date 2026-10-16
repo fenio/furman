@@ -4,15 +4,18 @@
 definition-only foundation merged in [#363](https://github.com/fenio/furman/pull/363);
 read-only live binding/comparisons merged in [#364](https://github.com/fenio/furman/pull/364);
 checked non-executable previews/snapshots merged in [#365](https://github.com/fenio/furman/pull/365);
-the durable read-only journal/recovery foundation is the current implementation step.** See the
+durable read-only journal/recovery merged in [#366](https://github.com/fenio/furman/pull/366);
+initial guarded local-create execution is the current implementation step.** See the
 [foundation contract](saved-job-foundation.md) for its exact scope and remaining
 live-binding gates, and the [read-only runtime contract](job-bound-comparisons.md).
 See [checked payload previews](job-checked-previews.md) for the implemented preparation boundary.
 The [journal foundation](job-journal.md) implements read-only attempt durability,
-local recovery and review pauses. The executable intent/write-outcome guarantees
-below remain unimplemented.
+local recovery and review pauses. The [initial execution cohort](job-guarded-execution.md)
+adds native single-use approval, durable executable intent and verified outcomes
+for local → S3 creates up to 5 MiB/file only. Broader S3-source, replacement and
+multipart execution guarantees below remain unimplemented.
 This document is the review gate between
-the [shipped options presets](comparison-presets.md) and runnable jobs. It adds
+the [implemented options presets](comparison-presets.md) and runnable jobs. It adds
 no commands, execution paths, automatic connections, timers or migrations.
 Merging this document does not enable runnable jobs or scheduling.
 
@@ -25,11 +28,14 @@ partial completion cannot look like success. A saved job is never an approval.
 
 The first implementation should support **local → S3 and S3 → S3, copy/update
 only**, using saved, keychain-backed manual S3 profiles. Restrict execution to
-the existing guarded S3 content-write path, with SHA-256 and post-write
+guarded S3 conditional-write semantics, with SHA-256 and post-write
 verification required. Read-only comparisons remain available when destination
 conditions are unsupported; they must not offer a runnable upload fallback.
 
 This intentionally does **not** cover every ordinary Sync workflow:
+
+The incremental executable cohort is narrower than the target scope above; see
+[its explicit supported/excluded cases](job-guarded-execution.md).
 
 - No deletion, move, rename, local destination, SFTP/archive destination,
   client-side password-encrypted upload, or bucket/version-history migration.

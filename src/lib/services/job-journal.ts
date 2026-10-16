@@ -1,16 +1,18 @@
 import { invoke } from '@tauri-apps/api/core';
 import { jobJournalState } from '#lib/state/job-journal.svelte.js';
 
-export type JobAttemptStatus = 'binding' | 'bound' | 'scanning' | 'compared' | 'preparing' | 'prepared' | 'no_changes' | 'discarded' | 'cancelled' | 'failed' | 'limited' | 'interrupted';
+export type JobAttemptStatus = 'binding' | 'bound' | 'scanning' | 'compared' | 'preparing' | 'prepared' | 'reviewing' | 'awaiting_approval' | 'executing' | 'succeeded' | 'skipped' | 'partial' | 'uncertain' | 'no_changes' | 'discarded' | 'cancelled' | 'failed' | 'limited' | 'interrupted';
+export interface JobExecutionCounts { selected_files: number; skipped_files: number; selected_bytes: number; attempted_files: number; acknowledged_files: number; verified_files: number; verified_bytes: number; uncertain_files: number }
 export interface JobHistoryCounters { scanned: number; requests: number; bytes_read: number; s3_bytes_read: number; elapsed_ms: number }
 export interface JobAttemptRecord {
   run_id: string; job_id: string; job_revision: string; started_ms: number; updated_ms: number; status: JobAttemptStatus;
   binding: JobHistoryCounters; comparison: JobHistoryCounters; preparation: JobHistoryCounters;
   policy: 'create_only' | 'skip_existing' | 'replace_unchanged' | null;
+  review: JobHistoryCounters; execution: JobExecutionCounts | null;
 }
 export interface JobHistoryReport {
   revision: string; storage_review_required: boolean; reconciliation_deferred: boolean; in_memory_storage_fault: boolean;
-  pauses: Record<string, { run_id: string; reason: 'failed' | 'limited' | 'interrupted' }>;
+  pauses: Record<string, { run_id: string; reason: 'failed' | 'limited' | 'interrupted' | 'partial' | 'uncertain' }>;
   records: JobAttemptRecord[]; execution_available: false;
 }
 let failureGeneration = 0;

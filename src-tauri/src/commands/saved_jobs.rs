@@ -3,8 +3,23 @@ use crate::{
     models::FmError,
 };
 
-// Read-only binding/scanning is isolated from all ordinary transfer registries.
-// Preparation retains read-only snapshots; no job execute command exists.
+#[tauri::command]
+pub async fn saved_job_execution_review(
+    state: tauri::State<'_, crate::job_runs::JobRunState>,
+    request: crate::job_runs::execute::ReviewRequest,
+) -> Result<crate::job_runs::RunStatus, FmError> {
+    crate::job_runs::execute::review(&state, request).await
+}
+#[tauri::command]
+pub async fn saved_job_execute(
+    state: tauri::State<'_, crate::job_runs::JobRunState>,
+    request: crate::job_runs::execute::ExecuteRequest,
+) -> Result<crate::job_runs::RunStatus, FmError> {
+    crate::job_runs::execute::start(&state, request).await
+}
+
+// Binding/scanning/preparation are isolated from ordinary transfer registries.
+// Execution requires a separately reviewed native single-use owned approval.
 #[tauri::command]
 pub fn saved_jobs_list() -> Result<Report, FmError> {
     jobs::list(&Paths::home()?)

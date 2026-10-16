@@ -17,6 +17,8 @@ fn record(job: &str, status: Status) -> Record {
         comparison: Counters::default(),
         preparation: Counters::default(),
         policy: None,
+        review: Counters::default(),
+        execution: None,
     }
 }
 fn raw_path(paths: &Paths) -> PathBuf {
@@ -34,9 +36,91 @@ fn sample_progress() -> ScanProgress {
 }
 
 #[test]
-fn executable_intents_and_unknown_fields_are_not_accepted_by_read_only_history() {
-    let record = serde_json::json!({"run_id":fresh_id(),"job_id":fresh_id(),"job_revision":"1","started_ms":1,"updated_ms":1,"status":"executing","binding":{},"comparison":{},"preparation":{},"policy":null});
-    assert!(serde_json::from_value::<Record>(record).is_err());
+fn v1_cannot_smuggle_executable_intents_and_v2_requires_complete_native_counters() {
+    let mut store = Store {
+        revision: fresh_id(),
+        version: 1,
+        ..Store::default()
+    };
+    let mut intent = record(&fresh_id(), Status::Executing);
+    intent.policy = Some(Policy::CreateOnly);
+    intent.execution = Some(Execution {
+        selected_files: 1,
+        selected_bytes: 3,
+        ..Execution::default()
+    });
+    store.records.push(intent);
+    assert!(store.validate(true).is_err());
+    store.version = 2;
+    assert!(store.validate(true).is_ok());
+    store.records[0].status = Status::Succeeded;
+    assert!(store.validate(true).is_err());
+    let counts = store.records[0].execution.as_mut().unwrap();
+    counts.attempted_files = 1;
+    counts.acknowledged_files = 1;
+    counts.verified_files = 1;
+    counts.verified_bytes = 3;
+    store.validate(true).unwrap();
+    let mut value = serde_json::to_value(&store).unwrap();
+    value["records"][0]["execution"]["key"] = "caller-key".into();
+    assert!(serde_json::from_value::<Store>(value).is_err());
+}
+
+#[test]
+fn v1_read_only_history_migrates_without_replay_and_executing_recovery_preserves_verified_and_unknown_counts(
+) {
+    let (_root, paths, job) = fixture(true, false);
+    let run = fresh_id();
+    start(&paths, &run, &job).unwrap();
+    let path = raw_path(&paths);
+    let mut value: serde_json::Value = serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
+    value["version"] = 1.into();
+    value["records"][0]
+        .as_object_mut()
+        .unwrap()
+        .remove("review");
+    value["records"][0]
+        .as_object_mut()
+        .unwrap()
+        .remove("execution");
+    fs::write(&path, serde_json::to_vec(&value).unwrap()).unwrap();
+    let result = recover(&paths).unwrap();
+    assert_eq!(result.records[0].status, Status::Interrupted);
+    assert!(result.records[0].execution.is_none());
+    assert_eq!(
+        serde_json::from_slice::<Store>(&fs::read(&path).unwrap())
+            .unwrap()
+            .version,
+        2
+    );
+    let storage = Storage::open(&paths, false).unwrap().unwrap();
+    let lock = storage.lock().unwrap();
+    let (mut store, _) = storage.load().unwrap();
+    store.records[0].status = Status::Executing;
+    store.records[0].policy = Some(Policy::CreateOnly);
+    store.records[0].execution = Some(Execution {
+        selected_files: 3,
+        selected_bytes: 9,
+        attempted_files: 2,
+        acknowledged_files: 1,
+        verified_files: 1,
+        verified_bytes: 3,
+        uncertain_files: 0,
+        skipped_files: 0,
+    });
+    store.pauses.clear();
+    storage.commit(&mut store).unwrap();
+    drop(lock);
+    let state = JobRunState::default();
+    let recovered = state.history(&paths).unwrap();
+    let counts = recovered.records[0].execution.as_ref().unwrap();
+    assert_eq!(counts.verified_files, 1);
+    assert_eq!(counts.uncertain_files, 1);
+    assert_eq!(recovered.records[0].status, Status::Interrupted);
+    assert!(!recovered.pauses.is_empty());
+    assert!(state.0.lock().unwrap().slot.is_none());
+    assert!(state.status(&run).is_err());
+    assert_eq!(state.history(&paths).unwrap().revision, recovered.revision);
 }
 
 #[test]
@@ -220,7 +304,7 @@ fn corrupt_future_oversized_symlink_fifo_shared_and_invalid_marker_storage_fail_
             0 => fs::write(&path, b"{DO_NOT_INCLUDE_RAW_DATA").unwrap(),
             1 => {
                 let mut value: serde_json::Value = serde_json::from_slice(&original).unwrap();
-                value["version"] = 2.into();
+                value["version"] = 3.into();
                 fs::write(&path, serde_json::to_vec(&value).unwrap()).unwrap();
             }
             2 => {

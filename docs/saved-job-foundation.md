@@ -3,15 +3,16 @@
 This is the definition foundation merged in [#363](https://github.com/fenio/furman/pull/363),
 the first implementation step of the [pinned manual-job design](pinned-sync-jobs-design.md).
 The [subsequent read-only binding/comparison contract](job-bound-comparisons.md)
-extends its runtime capabilities. **Job writes still cannot run.** There are no
-job execute, retry or scheduling commands. The [journal follow-up](job-journal.md)
-adds local-only read-only history/recovery/review. The [checked-preview follow-up](job-checked-previews.md)
-adds non-executable snapshot preparation. `execution_available`
-is always false, and the UI's Run control remains permanently disabled.
+extends its runtime capabilities. Saving a definition never authorizes writes.
+The [journal follow-up](job-journal.md) adds local-only history/recovery/review.
+The [checked-preview follow-up](job-checked-previews.md) adds non-executable
+snapshot preparation. [Initial guarded execution](job-guarded-execution.md)
+requires separate single-use approval for local → S3 creates up to 5 MiB/file.
+There are no retry/resume or scheduling commands.
 
 ## Using definitions
 
-In Sync, expand **Saved job definitions — no execution**. These fields are
+In Sync, expand **Saved job definitions — explicit manual workflow**. These fields are
 separate from the current Sync operation: selecting, saving or rebinding does
 not apply a preset, change the current roots/options, clear or approve its scan,
 connect, resolve credentials, read the keychain, or transfer data.
@@ -149,9 +150,10 @@ explicitly warns about partial cleanup.
 
 ## Explicitly deferred
 
-Executable writer derivation from shared source descriptors/snapshots, execution approval,
-post-write verification, executable intent/write-outcome handling and scheduling
-remain follow-up work. Read-only history/review/reconciliation is implemented in
+Broader S3-source/replacement/multipart execution and scheduling remain follow-up
+work; [initial local-create execution](job-guarded-execution.md) implements native
+single-use approval, guarded snapshot consumption, verification and intent/outcomes.
+History/review/reconciliation is implemented in
 [the journal companion](job-journal.md). No definition created by
 this step authorizes a later writer; the remaining design acceptance tests are
 mandatory before execution controls can be enabled.

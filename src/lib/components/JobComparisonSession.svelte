@@ -2,7 +2,7 @@
   import { onDestroy } from 'svelte';
   import type { SavedJobDefinition } from '#lib/services/saved-jobs.js';
   import type { ScanProgress } from '#lib/types/index.js';
-  import { bindJobSession, scanJobSession, releaseJobSession, jobSessionStatus, jobManifestPage, prepareJobPreview, type JobRunStatus, type JobManifestRow, type JobPreviewPolicy } from '#lib/services/job-runs.js';
+  import { bindJobSession, scanJobSession, releaseJobSession, jobSessionStatus, jobManifestPage, prepareJobPreview, reviewJobExecution, executeJobPreview, type JobRunStatus, type JobManifestRow, type JobPreviewPolicy } from '#lib/services/job-runs.js';
   import { error as logError } from '#lib/services/log.js';
   import ErrorNotice from './ErrorNotice.svelte';
   import ScanStatus from './ScanStatus.svelte';
@@ -12,7 +12,9 @@
   let session = $state.raw<JobRunStatus | null>(null);
   let progress = $state<ScanProgress | null>(null);
   let rows = $state.raw<JobManifestRow[]>([]);
-  let busy = $state<'binding' | 'scanning' | 'preparing' | 'refreshing' | 'paging' | null>(null);
+  let busy = $state<'binding' | 'scanning' | 'preparing' | 'refreshing' | 'paging' | 'reviewing' | 'executing' | null>(null);
+  let executeApproved = $state(false);
+  let exclusionsApproved = $state(false);
   let selectedIds = $state.raw<Set<string>>(new Set());
   let previewPolicy = $state<JobPreviewPolicy>('create_only');
   let snapshotMiB = $state(1024);
@@ -32,7 +34,7 @@
   onDestroy(() => {
     active = false; generation++;
     const handle = session?.run_id ?? opId;
-    if (handle) void releaseJobSession(handle).catch(() => logError('Could not release a read-only job session on close; its native expiry remains active.'));
+    if (handle) void releaseJobSession(handle).catch(() => logError('Could not cancel/release a native job session on close; inspect journal and destination. In-flight writes may have committed.'));
   });
   async function bind() {
     if (!approved || busy || (session && session.phase !== 'stopped')) return;
@@ -68,6 +70,7 @@
   }
   async function refresh() {
     if (busy || !session) return;
+    executeApproved = false; exclusionsApproved = false;
     const id = session.run_id; const current = generation; busy = 'refreshing'; failure = null;
     try { const result = await jobSessionStatus(id); if (active && generation === current) { session = result; if (!['complete', 'prepared'].includes(result.phase)) { rows = []; resetSelection(); status = ''; } } }
     catch (error) { if (active && generation === current) failure = error; }
@@ -77,12 +80,12 @@
     const handle = session?.run_id ?? opId;
     if (!handle) return;
     const current = ++generation;
-    failure = null; busy = null; rows = []; approved = false;
+    failure = null; busy = null; rows = []; approved = false; executeApproved = false; exclusionsApproved = false;
     resetSelection();
     try {
       await releaseJobSession(handle);
       if (active && generation === current) {
-        status = 'Cancellation/release requested. Native requests already sent may finish; OS keychain prompts/local filesystem calls are cooperative. A new binding cannot overlap still-running work.';
+        status = 'Cancellation/release requested. Already-sent writes may have committed; cancellation is not rollback. Native requests/OS keychain prompts/local filesystem calls are cooperative. Global execution status and local history retain the outcome. A new binding cannot overlap still-running work.';
         session = null; progress = null; opId = '';
       }
     } catch (error) { if (active && generation === current) failure = error; }
@@ -96,17 +99,33 @@
       const result = await prepareJobPreview(id, manifest, [...selectedIds], previewPolicy, snapshotMiB * 1024 * 1024, snapshotApproved, event => { if (active && generation === current) progress = event; });
       if (active && generation === current) {
         session = result; progress = result.progress;
-        if (result.phase === 'prepared') status = 'Checked payload snapshots retained natively. No upload, execution approval or scheduling is available.';
+        if (result.phase === 'prepared') status = 'Checked payload snapshots retained natively. No upload was authorized. Eligible create-only local files can be reviewed separately for execution; other previews remain read-only.';
         else if (result.phase === 'stopped') { rows = []; resetSelection(); }
       }
     } catch (error) { if (active && generation === current) failure = error; }
     finally { if (active && generation === current) { busy = null; snapshotApproved = false; } }
   }
+  async function reviewExecution() {
+    if (busy || session?.phase !== 'prepared' || !session.preview?.can_review_execution) return;
+    const current = ++generation; const id = session.run_id; const preview = session.preview.id;
+    busy = 'reviewing'; failure = null; progress = null; executeApproved = false; exclusionsApproved = false;
+    try { const result = await reviewJobExecution(id, preview); if (active && generation === current) session = result; }
+    catch (error) { if (active && generation === current) failure = error; }
+    finally { if (active && generation === current) busy = null; }
+  }
+  async function execute() {
+    if (busy || session?.phase !== 'awaiting_execution_approval' || !session.execution_available || !session.execution_review || !executeApproved || !exclusionsApproved) return;
+    const current = ++generation; const id = session.run_id; const approvalId = session.execution_review.approval_id;
+    busy = 'executing'; failure = null; status = ''; progress = null; session = { ...session, phase: 'executing', outcome: null, execution_available: false, execution_review: null }; executeApproved = false; exclusionsApproved = false;
+    try { const result = await executeJobPreview(id, approvalId, true, true); if (active && generation === current) session = result; }
+    catch (error) { if (active && generation === current) failure = error; }
+    finally { if (active && generation === current) busy = null; }
+  }
   const differenceCount = $derived(session?.summary ? session.summary.new + session.summary.modified + session.summary.destination_only : 0);
 </script>
 
-<section aria-label="Read-only native job comparison">
-  <h3>Read-only comparison — saved revision {definition.revision}</h3>
+<section aria-label="Native job comparison and explicit manual execution">
+  <h3>Native job workflow — saved revision {definition.revision}</h3>
   <p>This uses the saved definition above, not unsaved editor fields or the current Sync panes. Nothing connects or scans automatically. Only manual-key profiles are eligible; no SSO sign-in or credential-process command is run.</p>
   <p>Binding explicitly reads native keychain entries and sends at most two logical HeadBucket requests. Native clients are private, origin-guarded and read-only; shared AWS config/endpoint defaults are not silently adopted. AWS routing/custom-CA overrides and unsupported acceleration/Express settings fail closed.</p>
   <p>Binding first records a durable local read-only attempt intent. Native history contains allowlisted IDs, revisions, times, policies and stage counters, not names, roots, credentials or approvals. Journal/storage failures and unresolved review pauses block new job work; ordinary workflows remain available.</p>
@@ -117,13 +136,13 @@
     <button type="button" onclick={release} disabled={!session && !opId}>Cancel / release session</button>
     <button type="button" onclick={refresh} disabled={!!busy || !session}>Revalidate session (no network)</button>
   </div>
-  {#if busy}<p role="status">{busy === 'binding' ? 'Waiting for native keychain / read-only bucket validation…' : busy === 'scanning' ? 'Comparing pinned roots and reading included contents…' : busy === 'preparing' ? 'Rechecking destinations and retaining checked source snapshots…' : 'Reading native comparison state…'}</p>{/if}
+  {#if busy}<p role="status">{busy === 'binding' ? 'Waiting for native keychain / read-only bucket validation…' : busy === 'scanning' ? 'Comparing pinned roots and reading included contents…' : busy === 'preparing' ? 'Rechecking destinations and retaining checked source snapshots…' : busy === 'reviewing' ? 'Rechecking source, snapshots and missing destinations for separate execution approval…' : busy === 'executing' ? 'Native execution admitted: recording intent, conditionally creating files and verifying SHA-256. Sent writes cannot be recalled…' : 'Reading native comparison state…'}</p>{/if}
   {#if session}
     <p>Native phase: {session.phase}; lease remaining at last check: {session.expires_seconds}s (non-sliding). Effective destination origin: {session.destination_namespace ?? 'released'}. Source: {session.source_namespace ?? (session.phase !== 'stopped' && definition.source.kind === 'local' ? 'retained local directory capability' : 'released')}.</p>
     {#if session.phase === 'bound'}<p>Bucket validation used {session.progress.requests} logical S3 calls. Comparison budgets and counters start separately when you click Compare.</p>{/if}
     {#if session.limits}<p>Effective shared comparison budgets: {session.limits.max_objects.toLocaleString()} entries, {session.limits.max_requests.toLocaleString()} logical S3 calls, {session.limits.max_seconds}s. Job caps also bound metadata and differences. SDK reads may make one bounded retry, including the existing plain-object SSE-C fallback.</p>{/if}
   {/if}
-  <p>SHA-256 reads all included contents on both sides; S3 requests and download/egress charges may apply. Maximum one native session across cooperating processes, 100,000 scanned entries, 32 MiB estimated input metadata, 10,000 differences. A stopped scan establishes neither equality nor a usable manifest. No job execution, automatic retry/resume or scheduling is enabled.</p>
+  <p>SHA-256 reads all included contents on both sides; S3 requests and download/egress charges may apply. Maximum one native session across cooperating processes, 100,000 scanned entries, 32 MiB estimated input metadata, 10,000 differences. A stopped scan establishes neither equality nor a usable manifest. Only separately approved local → S3 creates up to 5 MiB/file can execute. No replacements, S3-source execution, multipart jobs, deletion, automatic retry/resume or scheduling.</p>
   {#if progress}<ScanStatus {progress} outcome={busy === 'preparing' ? undefined : failure && !busy ? 'failed' : session?.outcome ?? undefined} message={session?.message ?? undefined} />{/if}
   {#if session?.summary}<p>New: {session.summary.new}; modified: {session.summary.modified}; destination only (informational): {session.summary.destination_only}; content matches: {session.summary.same}. Displayed {rows.length} of {differenceCount} differences.</p>{/if}
   {#if rows.length}
@@ -144,12 +163,28 @@
     </fieldset>
   {/if}
   {#if session?.preview}
-    <h3>Native checked preview — not executable</h3>
+    <h3>Native checked preview — separate execution review required</h3>
     <p>Saved job {session.preview.job_id}, revision {session.preview.revision}; policy {session.preview.policy}. {session.preview.files} payload snapshots, {session.preview.bytes.toLocaleString()} bytes; {session.preview.skipped} selected existing files skipped. Remaining lease at last check: {session.preview.expires_seconds}s. SHA-256 and verification cannot be disabled. Release the session to discard snapshots; native expiry also releases them.</p>
     <div class="rows"><table><thead><tr><th>Relative source</th><th>Exact destination key</th><th>Bytes</th><th>Condition</th></tr></thead><tbody>{#each session.preview.entries as entry (entry.entry_id)}<tr><td>{entry.relative_path}</td><td>{entry.destination_key}</td><td>{entry.size}</td><td>{entry.replaces ? 'Compared opaque ETag' : 'Must be missing'}</td></tr>{/each}</tbody></table></div>
     {#if session.preview.entries_truncated}<p>Showing the first 50 prepared mappings; all selected mappings remain native and must be reviewed again before any future execution feature.</p>{/if}
-    <p>These snapshots are not a transaction or metadata migration. Destination content may change after preparation. Read-only stages/outcomes are journaled, but no executable intent, execution API or approval token was created. Guarded execution remains deferred.</p>
+    <p>These snapshots are not a transaction or metadata migration. Preparation grants no execution authority. Destination content may change after preparation; conditional writes are never retried unconditionally.</p>
+    {#if session.preview.execution_blocker}<p>{session.preview.execution_blocker}</p>{/if}
+    <button type="button" onclick={reviewExecution} disabled={!!busy || !session.preview.can_review_execution}>Recheck for execution review (reads only)</button>
   {/if}
+  {#if session?.execution_review}
+    {@const review = session.execution_review}
+    <fieldset disabled={!!busy}>
+      <legend>Single-use guarded execution approval</legend>
+      <p>Source root: {review.source} → destination: {review.destination}. Saved revision {review.preview.revision}, policy {review.preview.policy}; {review.preview.files} creates, {review.preview.bytes} bytes, {review.preview.skipped} selected existing files skipped. Exclusions: {review.exclusions.join(', ') || '(none)'}. All {review.preview.entries.length} exact mappings are shown below; unselected files are not included. Non-sliding lease: {review.preview.expires_seconds}s at last check.</p>
+      <div class="rows"><table><thead><tr><th>Source-relative path</th><th>Exact destination key</th><th>Bytes</th></tr></thead><tbody>{#each review.preview.entries as entry (entry.entry_id)}<tr><td>{entry.relative_path}</td><td>{entry.destination_key}</td><td>{entry.size}</td></tr>{/each}</tbody></table></div>
+      <p>Only missing objects, at most 5 MiB each: single-shot PUT with If-None-Match: *. No unguarded fallback, replacements, deletions or multipart. Payload snapshots are rehashed; source and destinations are rechecked again. Mandatory conditional GET SHA-256/header/encryption verification incurs download/egress costs. Destination SSE-C: {review.destination_sse_c ? 'enabled (its own connection-local key)' : 'not enabled; destination bucket defaults apply'}. Durable native intent must succeed before any write.</p>
+      <p>This copies local file bytes plus inferred MIME only: no local mode, ownership, ACL, xattrs or timestamps are migrated, and no metadata/tags/retention are invented. S3-source attribute preservation is unsupported here. Not atomic: cancellation, errors or connection loss can leave partial/uncertain writes. Nothing rolls back or resumes. Closing this dialog requests cancellation, not rollback. After admission, the native worker owns outcome recording; approval expiry before the first PUT blocks writes, but admitted execution can continue within its bounded execution budget.</p>
+      <label><input type="checkbox" bind:checked={exclusionsApproved} /> I accept the local-attribute exclusions, plaintext staging, verification costs and partial/uncertain outcome risks.</label>
+      <label><input type="checkbox" bind:checked={executeApproved} /> I reviewed every exact source → destination mapping, saved revision, policy and exclusions above and approve these creates once. This is separate from preparation approval.</label>
+      <button type="button" onclick={execute} disabled={!executeApproved || !exclusionsApproved || !session.execution_available}>Execute approved creates once</button>
+    </fieldset>
+  {/if}
+  {#if session?.execution}<p>Execution: {session.execution.status}; attempted {session.execution.counts.attempted_files}, acknowledged {session.execution.counts.acknowledged_files}, SHA-256 verified {session.execution.counts.verified_files}/{session.execution.counts.selected_files}, skipped {session.execution.counts.skipped_files}, uncertain {session.execution.counts.uncertain_files}. Durable outcome recorded: {session.execution.outcome_recorded ? 'yes' : 'no — inspect destination and local journal'}. No retry/resume is authorized.</p>{#if session.execution.message}<ErrorNotice error={session.execution.message} context="Job execution outcome" />{/if}{/if}
   {#if failure}<ErrorNotice error={failure} context="Native job comparison" />{/if}
   {#if status}<p role="status">{status}</p>{/if}
 </section>

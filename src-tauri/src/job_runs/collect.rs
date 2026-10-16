@@ -270,7 +270,7 @@ pub(super) fn walk_local(
     }
     budget.check(cancel)
 }
-fn hash_local(
+pub(super) fn hash_local(
     mut file: File,
     cancel: &AtomicBool,
     budget: &ScanBudget,

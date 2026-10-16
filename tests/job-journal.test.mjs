@@ -30,6 +30,7 @@ async function controller(file, methods = {}) {
     svelte: data(`export const onMount=callback=>globalThis.${key}.mounts.push(callback);`),
     '#lib/services/job-journal.js': rpc,
     '#lib/state/job-journal.svelte.js': data(`export const jobJournalState=globalThis.${key}.shared;`),
+    '#lib/state/job-execution.svelte.js': data('export const jobExecutionState={status:null,error:null};'),
   })));
   let destroy;
   return { h: harness, ...context, mount() { destroy = context.mounts[0](); }, close() { destroy?.(); }, cleanup() { delete globalThis[key]; } };
@@ -90,11 +91,11 @@ test('journal IPC is allowlisted and storage failures survive closed run control
 test('actual startup and history UI render safety warnings and collapsed copyable diagnostics', async () => {
   const shared = { report: report(), error: '<private>\n' + 'Long storage diagnostic '.repeat(30) }; globalThis.__journalRenderState = shared;
   try {
-    const dependencies = { '#lib/services/job-journal.js': data('export const loadJobHistory=async()=>{throw new Error("No SSR I/O");};export const reviewJobHistory=async()=>{};'), '#lib/state/job-journal.svelte.js': data('export const jobJournalState=globalThis.__journalRenderState;'), '#lib/utils/error-report.js': new URL('../src/lib/utils/error-report.ts', import.meta.url).href };
+    const dependencies = { '#lib/services/job-journal.js': data('export const loadJobHistory=async()=>{throw new Error("No SSR I/O");};export const reviewJobHistory=async()=>{};'), '#lib/state/job-journal.svelte.js': data('export const jobJournalState=globalThis.__journalRenderState;'), '#lib/state/job-execution.svelte.js': data('export const jobExecutionState={status:null,error:null};'), '#lib/utils/error-report.js': new URL('../src/lib/utils/error-report.ts', import.meta.url).href };
     const component = file => data(imports(compile(source(file), { generate: 'server', filename: file }).js.code, dependencies));
     dependencies['./ErrorNotice.svelte'] = component('ErrorNotice.svelte');
     const { default: Notice } = await import(component('JobJournalNotice.svelte')); const html = render(Notice).body;
     assert.ok(html.includes('Ordinary workflows remain available')); assert.ok(html.includes('&lt;private>')); assert.ok(!html.includes('<private>')); assert.ok(!/<details[^>]*\bopen\b/.test(html));
-    const { default: History } = await import(component('JobHistory.svelte')); const history = render(History).body; assert.ok(history.includes('No execution') || history.includes('no execution')); assert.ok(history.includes('not object names')); assert.ok(history.includes('Nothing reconnects'));
+    const { default: History } = await import(component('JobHistory.svelte')); const history = render(History).body; assert.ok(history.includes('never resumes or executes')); assert.ok(history.includes('not object names')); assert.ok(history.includes('Nothing reconnects'));
   } finally { delete globalThis.__journalRenderState; }
 });
