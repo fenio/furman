@@ -29,7 +29,7 @@ separate PR, with provider-specific behavior and safety tested explicitly.
 6. **AWS SSO usability — merged in [#360](https://github.com/fenio/furman/pull/360).** Profile discovery, clear expired-session states, and an
     explicit AWS CLI v2 sign-in action without storing SSO tokens ourselves.
     See [the SSO usability contract](s3-aws-sso.md).
-7. **Saved jobs, then opt-in scheduling — options presets merged in [#361](https://github.com/fenio/furman/pull/361); design merged in [#362](https://github.com/fenio/furman/pull/362); definition foundation merged in [#363](https://github.com/fenio/furman/pull/363); read-only native binding/comparisons merged in [#364](https://github.com/fenio/furman/pull/364); checked previews/snapshots merged in [#365](https://github.com/fenio/furman/pull/365); durable journal/recovery/review pauses merged in [#366](https://github.com/fenio/furman/pull/366); guarded local creates merged in [#367](https://github.com/fenio/furman/pull/367); S3 creates merged in [#368](https://github.com/fenio/furman/pull/368); checked replacements merged in [#369](https://github.com/fenio/furman/pull/369); guarded bounded multipart in the current PR.** Start with reusable comparison/sync
+7. **Saved jobs, then opt-in scheduling — options presets merged in [#361](https://github.com/fenio/furman/pull/361); design merged in [#362](https://github.com/fenio/furman/pull/362); definition foundation merged in [#363](https://github.com/fenio/furman/pull/363); read-only native binding/comparisons merged in [#364](https://github.com/fenio/furman/pull/364); checked previews/snapshots merged in [#365](https://github.com/fenio/furman/pull/365); durable journal/recovery/review pauses merged in [#366](https://github.com/fenio/furman/pull/366); guarded local creates merged in [#367](https://github.com/fenio/furman/pull/367); S3 creates merged in [#368](https://github.com/fenio/furman/pull/368); checked replacements merged in [#369](https://github.com/fenio/furman/pull/369); guarded bounded multipart merged in [#371](https://github.com/fenio/furman/pull/371); guided Sync usability in the current PR.** Start with reusable comparison/sync
    presets (method and explicit exclusions only; no stored identities or approval).
    See [the options-preset contract](comparison-presets.md).
    See [the configured-identity and definition foundation](saved-job-foundation.md).
@@ -42,12 +42,17 @@ separate PR, with provider-specific behavior and safety tested explicitly.
     [S3 attribute-preserving create extension](job-s3-create-execution.md),
      merged in [#368](https://github.com/fenio/furman/pull/368), and the
      [checked replacement extension](job-checked-replacements.md), merged in [#369](https://github.com/fenio/furman/pull/369).
-     The current [guarded multipart extension](job-guarded-multipart.md) raises the
+      The [guarded multipart extension](job-guarded-multipart.md), merged in [#371](https://github.com/fenio/furman/pull/371), raises the
      bounded file cap to 1 GiB with private durable upload/cleanup evidence and
      separate acknowledgement. Larger objects, unsupported attributes, remote
      recovery/automatic resume and deletion remain deferred.
    Scheduling remains a separate future proposal; never
    silently schedule uploads.
+
+   The [guided Sync / Compare handoff](guided-sync.md) is the current usability
+   follow-up: source → destination → review, optional reusable setup, and an
+   explicit direction-aware “Sync from this side…” action after complete Compare.
+   It adds no backend mutation authority, deletion, resume or scheduling.
 
 Retain Svelte, the dual-pane workflow, SHA-256 verification, SSE-C support, and
 keychain-backed secrets. Do not copy Brows3's plaintext secret-storage fallback

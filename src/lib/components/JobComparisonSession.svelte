@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { onDestroy } from 'svelte';
+  import { onDestroy, untrack } from 'svelte';
   import type { SavedJobDefinition } from '#lib/services/saved-jobs.js';
   import type { ScanProgress } from '#lib/types/index.js';
   import { bindJobSession, scanJobSession, releaseJobSession, jobSessionStatus, jobManifestPage, prepareJobPreview, reviewJobExecution, executeJobPreview, type JobRunStatus, type JobManifestRow, type JobPreviewPolicy } from '#lib/services/job-runs.js';
@@ -7,7 +7,7 @@
   import ErrorNotice from './ErrorNotice.svelte';
   import ScanStatus from './ScanStatus.svelte';
 
-  let { definition }: { definition: SavedJobDefinition } = $props();
+  let { definition, guided = false }: { definition: SavedJobDefinition; guided?: boolean } = $props();
   let approved = $state(false);
   let session = $state.raw<JobRunStatus | null>(null);
   let progress = $state<ScanProgress | null>(null);
@@ -18,10 +18,10 @@
   let replacementsApproved = $state(false);
   let multipartApproved = $state(false);
   let selectedIds = $state.raw<Set<string>>(new Set());
-  let previewPolicy = $state<JobPreviewPolicy>('create_only');
+  let previewPolicy = $state<JobPreviewPolicy>(untrack(() => guided ? 'skip_existing' : 'create_only'));
   let snapshotMiB = $state(1024);
   let snapshotApproved = $state(false);
-  function resetSelection() { selectedIds = new Set(); snapshotApproved = false; replacementsApproved = false; multipartApproved = false; previewPolicy = 'create_only'; }
+  function resetSelection() { selectedIds = new Set(); snapshotApproved = false; replacementsApproved = false; multipartApproved = false; previewPolicy = guided ? 'skip_existing' : 'create_only'; }
   function toggleEntry(id: string) {
     if (busy || session?.phase !== 'complete' || !rows.some(row => row.id === id && row.status !== 'destination_only')) return;
     selectedIds = selectedIds.has(id) ? new Set([...selectedIds].filter(entry => entry !== id)) : new Set([...selectedIds, id]);
@@ -45,7 +45,7 @@
     resetSelection();
     try {
       const result = await bindJobSession(opId, definition.id, definition.revision, approved);
-      if (active && generation === current) { session = result; status = 'Native keychain clients and exact origins are bound. Review the effective origins/budgets below, then explicitly compare. No objects were listed or downloaded during binding.'; }
+      if (active && generation === current) { session = result; status = guided ? 'Connected read-only. Review the locations and services, then click Compare files. No files were listed or downloaded yet.' : 'Native keychain clients and exact origins are bound. Review the effective origins/budgets below, then explicitly compare. No objects were listed or downloaded during binding.'; }
       else void releaseJobSession(result.run_id).catch(() => logError('Could not release a late read-only job binding; native expiry remains active.'));
     } catch (error) { if (active && generation === current) failure = error; }
     finally { if (active && generation === current) { busy = null; approved = false; } }
@@ -131,24 +131,29 @@
 </script>
 
 <section aria-label="Native job comparison and explicit manual execution">
-  <h3>Native job workflow — saved revision {definition.revision}</h3>
+  <h3>{guided ? 'Compare, select changes, then approve the transfer' : `Native job workflow — saved revision ${definition.revision}`}</h3>
+  <details><summary>Saved settings and connection safety</summary>
   <p>This uses the saved definition above, not unsaved editor fields or the current Sync panes. Nothing connects or scans automatically. Only manual-key profiles are eligible; no SSO sign-in or credential-process command is run.</p>
   <p>Binding explicitly reads native keychain entries and sends at most two logical HeadBucket requests. Native clients are private, origin-guarded and read-only; shared AWS config/endpoint defaults are not silently adopted. AWS routing/custom-CA overrides and unsupported acceleration/Express settings fail closed.</p>
   <p>Binding first records a durable local read-only attempt intent. Native history contains allowlisted IDs, revisions, times, policies and stage counters, not names, roots, credentials or approvals. Journal/storage failures and unresolved review pauses block new job work; ordinary workflows remain available.</p>
+  </details>
   <label><input type="checkbox" bind:checked={approved} disabled={!!busy || (!!session && session.phase !== 'stopped')} /> I reviewed the saved source → destination and approve keychain access plus read-only connection validation. This does not approve scanning, uploads or deletion.</label>
   <div class="actions">
-    <button type="button" onclick={bind} disabled={!approved || !!busy || (!!session && session.phase !== 'stopped')}>Bind native read-only session</button>
-    <button type="button" onclick={compare} disabled={!!busy || session?.phase !== 'bound'}>Compare saved job (SHA-256)</button>
+    <button type="button" onclick={bind} disabled={!approved || !!busy || (!!session && session.phase !== 'stopped')}>{guided ? 'Connect for comparison (read-only)' : 'Bind native read-only session'}</button>
+    <button type="button" onclick={compare} disabled={!!busy || session?.phase !== 'bound'}>{guided ? 'Compare files (SHA-256)' : 'Compare saved job (SHA-256)'}</button>
     <button type="button" onclick={release} disabled={!session && !opId}>Cancel / release session</button>
     <button type="button" onclick={refresh} disabled={!!busy || !session}>Revalidate session (no network)</button>
   </div>
-  {#if busy}<p role="status">{busy === 'binding' ? 'Waiting for native keychain / read-only bucket validation…' : busy === 'scanning' ? 'Comparing pinned roots and reading included contents…' : busy === 'preparing' ? 'Rechecking destinations and retaining checked source snapshots…' : busy === 'reviewing' ? 'Rechecking source, snapshots and missing destinations for separate execution approval…' : busy === 'executing' ? 'Native execution admitted: recording intent, conditionally creating files and verifying SHA-256. Sent writes cannot be recalled…' : 'Reading native comparison state…'}</p>{/if}
+  {#if busy}<p role="status">{busy === 'binding' ? 'Waiting for keychain access / read-only bucket validation…' : busy === 'scanning' ? 'Comparing folders and reading included contents…' : busy === 'preparing' ? 'Rechecking destinations and staging selected source files…' : busy === 'reviewing' ? 'Rechecking files and destinations for separate transfer approval…' : busy === 'executing' ? 'Recording intent, transferring approved changes and verifying SHA-256. Sent writes cannot be recalled…' : 'Reading comparison state…'}</p>{/if}
+  <details><summary>Session status, limits and verification costs</summary>
   {#if session}
     <p>Native phase: {session.phase}; lease remaining at last check: {session.expires_seconds}s (non-sliding). Effective destination origin: {session.destination_namespace ?? 'released'}. Source: {session.source_namespace ?? (session.phase !== 'stopped' && definition.source.kind === 'local' ? 'retained local directory capability' : 'released')}.</p>
     {#if session.phase === 'bound'}<p>Bucket validation used {session.progress.requests} logical S3 calls. Comparison budgets and counters start separately when you click Compare.</p>{/if}
     {#if session.limits}<p>Effective shared comparison budgets: {session.limits.max_objects.toLocaleString()} entries, {session.limits.max_requests.toLocaleString()} logical S3 calls, {session.limits.max_seconds}s. Job caps also bound metadata and differences. SDK reads may make one bounded retry, including the existing plain-object SSE-C fallback.</p>{/if}
   {/if}
   <p>SHA-256 reads all included contents on both sides; S3 requests and download/egress charges may apply. Maximum one native session across cooperating processes, 100,000 scanned entries, 32 MiB estimated input metadata, 10,000 differences. A stopped scan establishes neither equality nor a usable manifest. Separately approved local → S3 / S3 → S3 writes support up to 1 GiB/file; replacements require an additional acknowledgement and checked old payloads up to 1 GiB. Files above 5 MiB use separately acknowledged multipart staging. No unguarded overwrite, deletion, automatic retry/resume or scheduling.</p>
+  </details>
+  {#if guided}<p>Contents are read for SHA-256 (S3 requests/egress may cost money). Maximum 1 GiB/file and 128 selected files; destination-only files are never deleted. Connection, preparation and transfer approvals are separate.</p>{/if}
   {#if progress}<ScanStatus {progress} outcome={busy === 'preparing' ? undefined : failure && !busy ? 'failed' : session?.outcome ?? undefined} message={session?.message ?? undefined} />{/if}
   {#if session?.summary}<p>New: {session.summary.new}; modified: {session.summary.modified}; destination only (informational): {session.summary.destination_only}; content matches: {session.summary.same}. Displayed {rows.length} of {differenceCount} differences.</p>{/if}
   {#if rows.length}
@@ -159,28 +164,28 @@
   {#if session && ['complete', 'prepared'].includes(session.phase) && rows.length < differenceCount}<button type="button" onclick={more} disabled={!!busy}>Load next 100 native differences</button>{/if}
   {#if session?.phase === 'complete'}
     <fieldset disabled={!!busy}>
-      <legend>Prepare checked payloads — no uploads</legend>
+      <legend>{guided ? 'Choose and prepare your changes' : 'Prepare checked payloads — no uploads'}</legend>
       <p>Select explicit rows above (loaded rows only). {selectedIds.size} selected; at most 128 actionable files per preview. Destination-only rows cannot be selected. Preparation is single-shot after native admission; failures/cancellation require a new bind and comparison.</p>
-      <label>Guarded policy <select bind:value={previewPolicy} onchange={() => { snapshotApproved = false; }}><option value="create_only">Create only (reject existing)</option><option value="skip_existing">Skip existing (report skipped)</option><option value="replace_unchanged">Replace unchanged (separate replacement approval required)</option></select></label>
+      <label>What should be copied? <select bind:value={previewPolicy} onchange={() => { snapshotApproved = false; }}><option value="create_only">Add missing files (refuse existing selections)</option><option value="skip_existing">Add missing files only (skip existing)</option><option value="replace_unchanged">Add missing files and update changed files</option></select></label>
       <label>Maximum snapshot disk MiB <input type="number" min="1" max="16384" step="1" bind:value={snapshotMiB} oninput={() => { snapshotApproved = false; }} /></label>
       <p>Preparation rechecks included destinations (HEAD plus conditional SHA-256 reads for replacements), then reads/downloads source contents into private, unlinked temporary files. Plaintext is retained even for SSE-C sources; temporary disk, read requests and egress costs apply. The disk budget counts payload bytes, not filesystem overhead, and does not reserve free space. The existing session deadline does not slide. No payload is uploaded or deleted.</p>
       <label><input type="checkbox" bind:checked={snapshotApproved} /> I reviewed the selected saved-job entries, policy and disk budget, and approve additional reads/downloads and temporary plaintext snapshots only.</label>
-      <button type="button" onclick={prepare} disabled={!snapshotApproved || !selectedIds.size}>Prepare checked preview (no uploads)</button>
+      <button type="button" onclick={prepare} disabled={!snapshotApproved || !selectedIds.size}>{guided ? 'Prepare selected files (no uploads)' : 'Prepare checked preview (no uploads)'}</button>
     </fieldset>
   {/if}
   {#if session?.preview}
-    <h3>Native checked preview — separate execution review required</h3>
+    <h3>{guided ? 'Selected changes — review before transferring' : 'Native checked preview — separate execution review required'}</h3>
     <p>Saved job {session.preview.job_id}, revision {session.preview.revision}; policy {session.preview.policy}. {session.preview.files} payload snapshots, {session.preview.bytes.toLocaleString()} bytes; {session.preview.skipped} selected existing files skipped. Remaining lease at last check: {session.preview.expires_seconds}s. SHA-256 and verification cannot be disabled. Release the session to discard snapshots; native expiry also releases them.</p>
     <div class="rows"><table><thead><tr><th>Relative source</th><th>Exact destination key</th><th>Bytes</th><th>Condition</th></tr></thead><tbody>{#each session.preview.entries as entry (entry.entry_id)}<tr><td>{entry.relative_path}</td><td>{entry.destination_key}</td><td>{entry.size}</td><td>{entry.replaces ? 'Compared opaque ETag' : 'Must be missing'}</td></tr>{/each}</tbody></table></div>
     {#if session.preview.entries_truncated}<p>Showing the first 50 prepared mappings; all selected mappings remain native and must be reviewed again before any future execution feature.</p>{/if}
     <p>These snapshots are not a transaction or metadata migration. Preparation grants no execution authority. Destination content may change after preparation; conditional writes are never retried unconditionally.</p>
     {#if session.preview.execution_blocker}<p>{session.preview.execution_blocker}</p>{/if}
-    <button type="button" onclick={reviewExecution} disabled={!!busy || !session.preview.can_review_execution}>Recheck for execution review (reads only)</button>
+    <button type="button" onclick={reviewExecution} disabled={!!busy || !session.preview.can_review_execution}>{guided ? 'Review transfer (recheck files, no uploads)' : 'Recheck for execution review (reads only)'}</button>
   {/if}
   {#if session?.execution_review}
     {@const review = session.execution_review}
     <fieldset disabled={!!busy}>
-      <legend>Single-use guarded execution approval</legend>
+      <legend>{guided ? 'Approve this transfer once' : 'Single-use guarded execution approval'}</legend>
       <p>Source root: {review.source} → destination: {review.destination}. Saved revision {review.preview.revision}, policy {review.preview.policy}; {review.preview.files} guarded writes, {review.preview.bytes} bytes, {review.preview.skipped} selected existing files skipped. Exclusions: {review.exclusions.join(', ') || '(none)'}. All {review.preview.entries.length} exact mappings are shown below; unselected files are not included. Non-sliding lease: {review.preview.expires_seconds}s at last check.</p>
       <div class="rows"><table><thead><tr><th>Source-relative path</th><th>Exact destination key</th><th>Bytes</th><th>Native condition</th></tr></thead><tbody>{#each review.preview.entries as entry (entry.entry_id)}<tr><td>{entry.relative_path}</td><td>{entry.destination_key}</td><td>{entry.size}</td><td>{entry.replaces ? 'Replace only under compared opaque ETag' : 'Create only if missing'}</td></tr>{/each}</tbody></table></div>
       <p>{review.replacement_files ?? 0} replacements; other selected writes create missing objects. Old and new payloads are capped at 1 GiB/file. PUT or final multipart completion uses If-None-Match: * for creates or the compared native If-Match ETag for replacements—never unconditional fallback. ETags are opaque validators, not content hashes. Payload snapshots are rehashed; source/destination SHA-256 and supported attributes are rechecked. Mandatory conditional GET/header/encryption/tag/ACL verification incurs extra requests and egress costs. No deletions. Destination SSE-C: {review.destination_sse_c ? 'enabled (its own connection-local key)' : 'not enabled; destination AES256 is retained for replacements, otherwise bucket defaults apply'}. Durable native intent must succeed before any write.</p>

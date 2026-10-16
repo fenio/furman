@@ -14,7 +14,7 @@
 		"check": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json",
 		"lint": "eslint .",
 		"test:s3-versions": "node --experimental-strip-types --test tests/s3-versions.test.mjs",
-		"test:ui-workflows": "node --experimental-strip-types --test tests/ui-workflows.test.mjs tests/progressive-listing.test.mjs tests/navigation-cache.test.mjs tests/panel-cache.test.mjs tests/aws-sso.test.mjs tests/comparison-presets.test.mjs tests/saved-jobs.test.mjs tests/job-runs.test.mjs tests/job-journal.test.mjs",
+		"test:ui-workflows": "node --experimental-strip-types --test tests/ui-workflows.test.mjs tests/progressive-listing.test.mjs tests/navigation-cache.test.mjs tests/panel-cache.test.mjs tests/aws-sso.test.mjs tests/comparison-presets.test.mjs tests/saved-jobs.test.mjs tests/job-runs.test.mjs tests/job-journal.test.mjs tests/guided-sync.test.mjs",
 		"lint:fix": "eslint . --fix",
 		"tauri": "tauri"
 	},

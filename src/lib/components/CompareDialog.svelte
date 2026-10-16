@@ -32,6 +32,7 @@
       if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); onClose(); }
     }}>
     <h2 id="compare-title">Compare panes</h2>
+    <p>First inspect differences without changing either side. After a complete comparison, choose “Sync from this side…” above either pane to set up a reviewed transfer.</p>
     <form onsubmit={(event) => { event.preventDefault(); compare(); }}>
       <dl>
         <dt>Left pane</dt><dd>{leftPath} ({leftBackend})</dd>
