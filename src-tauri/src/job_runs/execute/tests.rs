@@ -113,6 +113,7 @@ fn request(status: &RunStatus) -> ExecuteRequest {
         approved: true,
         acknowledge_exclusions: true,
         acknowledge_replacements: false,
+        acknowledge_multipart: false,
     }
 }
 async fn wait(state: &JobRunState, id: &str) -> RunStatus {
@@ -494,7 +495,7 @@ async fn derived_writer_rejects_wrong_key_origin_operation_headers_and_repeated_
 }
 
 #[tokio::test]
-async fn narrow_cohort_explicitly_blocks_replacements_multipart_and_ambiguous_keys() {
+async fn narrow_cohort_explicitly_blocks_unowned_replacements_oversized_files_and_ambiguous_keys() {
     let (_root, _paths, state, prepared, http) = prepared(false, vec![]).await;
     {
         let mut inner = state.0.lock().unwrap();
@@ -503,8 +504,8 @@ async fn narrow_cohort_explicitly_blocks_replacements_multipart_and_ambiguous_ke
         plan.items[0].key = "dest//file".into();
         assert!(plan.execution_blocker().unwrap().contains("normalizing"));
         plan.items[0].key = original;
-        plan.items[0].snapshot.size = 5 * 1024 * 1024 + 1;
-        assert!(plan.execution_blocker().unwrap().contains("5 MiB"));
+        plan.items[0].snapshot.size = multipart::MAX_FILE_BYTES + 1;
+        assert!(plan.execution_blocker().unwrap().contains("1 GiB"));
         plan.items[0].snapshot.size = 3;
         plan.policy = preview::Policy::ReplaceUnchanged;
         plan.items[0].expected = crate::s3::writes::DestinationExpectation::Match {

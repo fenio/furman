@@ -145,8 +145,8 @@ impl Plan {
             ) {
                 return Some(reason);
             }
-            if item.snapshot.size > 5 * 1024 * 1024 {
-                return Some("Initial job execution supports files up to 5 MiB only. Multipart job execution remains deferred; no weaker fallback is used.".into());
+            if item.snapshot.size > super::execute::multipart::MAX_FILE_BYTES {
+                return Some("Job execution supports files up to 1 GiB only; larger objects remain non-executable without a weaker fallback.".into());
             }
             if item
                 .key

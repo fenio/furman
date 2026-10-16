@@ -52,11 +52,10 @@ pub(super) fn blocker(item: &Item, policy: Policy, sse: bool, local: bool) -> Op
         .entry
         .destination
         .as_ref()
-        .is_none_or(|file| file.size > 5 * 1024 * 1024)
+        .is_none_or(|file| file.size > super::execute::multipart::MAX_FILE_BYTES)
     {
         return Some(
-            "Small-object replacements require both old and new payloads to be at most 5 MiB"
-                .into(),
+            "Guarded replacements require both old and new payloads to be at most 1 GiB".into(),
         );
     }
     if let Some(reason) = &destination.attributes.unsupported {
@@ -163,7 +162,7 @@ pub(super) fn write_controls<'a>(binding: &Binding, item: &'a Item) -> Option<&'
     }
 }
 pub(super) fn minimum_calls(binding: &Binding, item: &Item) -> u64 {
-    match (
+    let base = match (
         matches!(binding.source, BoundSource::S3(_)),
         is_replacement(item),
     ) {
@@ -171,5 +170,17 @@ pub(super) fn minimum_calls(binding: &Binding, item: &Item) -> u64 {
         (true, false) => 9,
         (false, true) => 8,
         (false, false) => 3,
+    };
+    if super::execute::multipart::needed(item.snapshot.size) {
+        base + super::execute::multipart::parts(item.snapshot.size)
+            + 1
+            + if is_replacement(item) { 4 } else { 1 }
+            + if matches!(binding.source, BoundSource::S3(_)) {
+                4
+            } else {
+                0
+            }
+    } else {
+        base
     }
 }

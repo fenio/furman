@@ -7,12 +7,13 @@
   let busy = $state(false);
   async function refresh() { if (busy) return; busy = true; try { await loadJobHistory(); } catch { /* visible in shared notice */ } finally { busy = false; } }
   onMount(() => { void refresh(); });
-  const paused = $derived(jobJournalState.report?.storage_review_required || jobJournalState.report?.in_memory_storage_fault || Object.keys(jobJournalState.report?.pauses ?? {}).length > 0);
+  const paused = $derived(jobJournalState.report?.storage_review_required || jobJournalState.report?.in_memory_storage_fault || Object.keys(jobJournalState.report?.pauses ?? {}).length > 0 || (jobJournalState.report?.pending_uploads?.length ?? 0) > 0);
 </script>
 
 {#if jobJournalState.error || paused}
   <aside aria-label="Saved job journal needs attention">
     <strong>Saved jobs need local journal/review attention.</strong>
+    {#if (jobJournalState.report?.pending_uploads?.length ?? 0) > 0}<p>Multipart staging/cleanup evidence remains. After active work stops, inspect incomplete uploads at the provider; unfinished parts may incur charges. Startup and review never reconnect, clean up or resume automatically.</p>{/if}
     <p>Open Sync → Saved job definitions → Local attempt history to inspect and explicitly acknowledge review. This never reconnects, retries or restores approvals. Ordinary workflows remain available; unresolved job/storage pauses block new job work. Scheduling is disabled.</p>
     {#if jobJournalState.error}<ErrorNotice error={jobJournalState.error} context="Saved-job operation or journal recovery/review" />{/if}
     <button type="button" onclick={refresh} disabled={busy}>Refresh local journal recovery</button>

@@ -200,6 +200,7 @@ fn request(status: &RunStatus, acknowledged: bool) -> ExecuteRequest {
         approved: true,
         acknowledge_exclusions: true,
         acknowledge_replacements: acknowledged,
+        acknowledge_multipart: false,
     }
 }
 async fn wait(state: &JobRunState, id: &str) -> RunStatus {
@@ -750,11 +751,11 @@ async fn replacement_intent_is_durable_before_put_and_postwrite_journal_failure_
 async fn loopback_minio_checked_local_and_s3_replacements_preserve_the_approved_attribute_policy() {
     for local in [true, false] {
         for versioned in [false, true] {
-            replacement_fixture(local, versioned).await;
+            replacement_fixture(local, versioned, false, true).await;
         }
     }
 }
-async fn replacement_fixture(local: bool, versioned: bool) {
+pub(super) async fn replacement_fixture(local: bool, versioned: bool, large: bool, replace: bool) {
     let endpoint = std::env::var("FURMAN_JOB_TEST_ENDPOINT")
         .expect("Explicit disposable loopback endpoint required");
     let parsed = url::Url::parse(&endpoint).unwrap();
@@ -783,6 +784,11 @@ async fn replacement_fixture(local: bool, versioned: bool) {
     );
     let source = format!("furman-replacement-source-{}", fresh_id());
     let destination = format!("furman-replacement-dest-{}", fresh_id());
+    let content = if large {
+        vec![b'x'; 8 * 1024 * 1024 + 19]
+    } else {
+        b"abc".to_vec()
+    };
     let result: Result<(), FmError> = async {
         for bucket in [&source, &destination] {
             setup
@@ -805,24 +811,30 @@ async fn replacement_fixture(local: bool, versioned: bool) {
                     .map_err(|e| job_sdk_error("Fixture versioning", &e))?;
             }
         }
-        setup
-            .put_object()
-            .bucket(&destination)
-            .key("dest/file")
-            .body(aws_sdk_s3::primitives::ByteStream::from_static(b"old"))
-            .content_type("application/json")
-            .cache_control("private, max-age=1")
-            .metadata("preserved", "destination-only-metadata")
-            .tagging("stage=destination-only-tag")
-            .send()
-            .await
-            .map_err(|e| job_sdk_error("Fixture seed destination", &e))?;
+        if replace {
+            setup
+                .put_object()
+                .bucket(&destination)
+                .key("dest/file")
+                .body(aws_sdk_s3::primitives::ByteStream::from(if large {
+                    vec![b'o'; 6 * 1024 * 1024]
+                } else {
+                    b"old".to_vec()
+                }))
+                .content_type("application/json")
+                .cache_control("private, max-age=1")
+                .metadata("preserved", "destination-only-metadata")
+                .tagging("stage=destination-only-tag")
+                .send()
+                .await
+                .map_err(|e| job_sdk_error("Fixture seed destination", &e))?;
+        }
         let source_version = if !local {
             setup
                 .put_object()
                 .bucket(&source)
                 .key("src/file")
-                .body(aws_sdk_s3::primitives::ByteStream::from_static(b"abc"))
+                .body(aws_sdk_s3::primitives::ByteStream::from(content.clone()))
                 .content_type("text/plain")
                 .cache_control("max-age=17")
                 .metadata("preserved", "source-only-metadata")
@@ -846,7 +858,7 @@ async fn replacement_fixture(local: bool, versioned: bool) {
             "dest/",
         );
         if let SourcePin::Local { path, .. } = &job.source {
-            fs::write(Path::new(path).join("file"), "abc").unwrap();
+            fs::write(Path::new(path).join("file"), &content).unwrap();
         }
         let state = JobRunState::default();
         let secret = secret.clone();
@@ -876,8 +888,12 @@ async fn replacement_fixture(local: bool, versioned: bool) {
                 run_id: bound.run_id,
                 manifest_id: compared.manifest_id.unwrap(),
                 entry_ids: rows.iter().map(|row| row.id.clone()).collect(),
-                policy: preview::Policy::ReplaceUnchanged,
-                max_snapshot_bytes: 100,
+                policy: if replace {
+                    preview::Policy::ReplaceUnchanged
+                } else {
+                    preview::Policy::CreateOnly
+                },
+                max_snapshot_bytes: content.len() as u64,
                 approved: true,
             },
             Arc::new(|_| {}),
@@ -892,19 +908,27 @@ async fn replacement_fixture(local: bool, versioned: bool) {
                     .unwrap_or("Fixture review failed"),
             ));
         }
-        if start(&state, request(&reviewed, false)).await.is_ok() {
+        if replace && start(&state, request(&reviewed, false)).await.is_ok() {
             return Err(error(
                 "Fixture replacement accepted a create-only acknowledgement",
             ));
         }
-        start(&state, request(&reviewed, true)).await?;
+        if large && start(&state, request(&reviewed, true)).await.is_ok() {
+            return Err(error(
+                "Fixture accepted multipart without its separate acknowledgement",
+            ));
+        }
+        let mut approved = request(&reviewed, true);
+        approved.acknowledge_multipart = large;
+        start(&state, approved).await?;
         let stopped = wait(&state, &reviewed.run_id).await;
         let execution = stopped
             .execution
             .ok_or_else(|| error("Fixture execution outcome missing"))?;
         if execution.status != Status::Succeeded
             || !execution.outcome_recorded
-            || execution.counts.verified_replacements != 1
+            || execution.counts.verified_replacements != u64::from(replace)
+            || execution.counts.multipart_files != u64::from(large)
         {
             return Err(error(
                 execution
@@ -920,27 +944,28 @@ async fn replacement_fixture(local: bool, versioned: bool) {
             .send()
             .await
             .map_err(|e| job_sdk_error("Fixture replacement readback", &e))?;
-        if read
-            .metadata()
-            .and_then(|m| m.get("preserved"))
-            .map(String::as_str)
-            != Some(if local {
-                "destination-only-metadata"
-            } else {
-                "source-only-metadata"
-            })
-            || read.content_type()
+        if (!local || replace)
+            && (read
+                .metadata()
+                .and_then(|m| m.get("preserved"))
+                .map(String::as_str)
                 != Some(if local {
-                    "application/json"
+                    "destination-only-metadata"
                 } else {
-                    "text/plain"
+                    "source-only-metadata"
                 })
-            || read.cache_control()
-                != Some(if local {
-                    "private, max-age=1"
-                } else {
-                    "max-age=17"
-                })
+                || read.content_type()
+                    != Some(if local {
+                        "application/json"
+                    } else {
+                        "text/plain"
+                    })
+                || read.cache_control()
+                    != Some(if local {
+                        "private, max-age=1"
+                    } else {
+                        "max-age=17"
+                    }))
         {
             return Err(error("Fixture replacement lost approved attributes"));
         }
@@ -950,7 +975,7 @@ async fn replacement_fixture(local: bool, versioned: bool) {
             .await
             .map_err(|_| error("Fixture body failed"))?
             .into_bytes();
-        if bytes.as_ref() != b"abc" {
+        if bytes.as_ref() != content {
             return Err(error("Fixture replacement payload mismatch"));
         }
         let tags = setup
@@ -960,13 +985,14 @@ async fn replacement_fixture(local: bool, versioned: bool) {
             .send()
             .await
             .map_err(|e| job_sdk_error("Fixture tag readback", &e))?;
-        if tags.tag_set().len() != 1
-            || tags.tag_set()[0].value()
-                != if local {
-                    "destination-only-tag"
-                } else {
-                    "source-only-tag"
-                }
+        if (!local || replace)
+            && (tags.tag_set().len() != 1
+                || tags.tag_set()[0].value()
+                    != if local {
+                        "destination-only-tag"
+                    } else {
+                        "source-only-tag"
+                    })
         {
             return Err(error("Fixture replacement lost approved tags"));
         }
@@ -985,16 +1011,41 @@ async fn replacement_fixture(local: bool, versioned: bool) {
         if state.history(&paths)?.records[0]
             .execution
             .as_ref()
-            .is_none_or(|counts| counts.verified_replacements != 1)
+            .is_none_or(|counts| counts.verified_replacements != u64::from(replace))
         {
             return Err(error(
                 "Replacement journal did not retain verified subcounts",
             ));
         }
+        if !state.history(&paths)?.pending_uploads.is_empty() {
+            return Err(error("Fixture left unresolved multipart evidence"));
+        }
+        let pending = setup
+            .list_multipart_uploads()
+            .bucket(&destination)
+            .send()
+            .await
+            .map_err(|e| job_sdk_error("Fixture multipart inventory", &e))?;
+        if !pending.uploads().is_empty() {
+            return Err(error("Fixture left staged provider multipart resources"));
+        }
         Ok(())
     }
     .await;
     for bucket in [&source, &destination] {
+        if let Ok(pending) = setup.list_multipart_uploads().bucket(bucket).send().await {
+            for upload in pending.uploads() {
+                if let (Some(key), Some(id)) = (upload.key(), upload.upload_id()) {
+                    let _ = setup
+                        .abort_multipart_upload()
+                        .bucket(bucket)
+                        .key(key)
+                        .upload_id(id)
+                        .send()
+                        .await;
+                }
+            }
+        }
         if let Ok(versions) = setup.list_object_versions().bucket(bucket).send().await {
             for version in versions.versions() {
                 if let (Some(key), Some(id)) = (version.key(), version.version_id()) {

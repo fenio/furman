@@ -1,5 +1,10 @@
 # Checked small-object job replacements
 
+**Merged in [#369](https://github.com/fenio/furman/pull/369).** The subsequent
+[guarded multipart extension](job-guarded-multipart.md) raises the bounded old/new
+file cap to 1 GiB, adds multipart approval and private journal v4 cleanup evidence.
+The 5 MiB/v3 limits below describe the original small-object cohort.
+
 This source/PR follow-up to [S3 creates (#368)](https://github.com/fenio/furman/pull/368)
 enables `replace_unchanged` for selected local → S3 and S3 → S3 payload differences.
 Both **old and new replacement payloads must be at most 5 MiB**; 128 actionable

@@ -8,6 +8,8 @@ pre-write intent and mandatory SHA-256 verification remain unchanged.** There ar
 no replacements from a create approval, multipart job writes, deletions, retries/resume or headless jobs.
 The [checked replacement follow-up](job-checked-replacements.md) adds separately
 acknowledged small-object replacements and destination preservation gates.
+The [guarded multipart follow-up](job-guarded-multipart.md) raises the bounded file
+cap to 1 GiB with independent approval, conditional completion and journal v4 cleanup.
 
 ## Supported attributes and explicit refusals
 

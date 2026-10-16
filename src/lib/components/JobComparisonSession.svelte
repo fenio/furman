@@ -16,11 +16,12 @@
   let executeApproved = $state(false);
   let exclusionsApproved = $state(false);
   let replacementsApproved = $state(false);
+  let multipartApproved = $state(false);
   let selectedIds = $state.raw<Set<string>>(new Set());
   let previewPolicy = $state<JobPreviewPolicy>('create_only');
   let snapshotMiB = $state(1024);
   let snapshotApproved = $state(false);
-  function resetSelection() { selectedIds = new Set(); snapshotApproved = false; replacementsApproved = false; previewPolicy = 'create_only'; }
+  function resetSelection() { selectedIds = new Set(); snapshotApproved = false; replacementsApproved = false; multipartApproved = false; previewPolicy = 'create_only'; }
   function toggleEntry(id: string) {
     if (busy || session?.phase !== 'complete' || !rows.some(row => row.id === id && row.status !== 'destination_only')) return;
     selectedIds = selectedIds.has(id) ? new Set([...selectedIds].filter(entry => entry !== id)) : new Set([...selectedIds, id]);
@@ -71,7 +72,7 @@
   }
   async function refresh() {
     if (busy || !session) return;
-    executeApproved = false; exclusionsApproved = false; replacementsApproved = false;
+    executeApproved = false; exclusionsApproved = false; replacementsApproved = false; multipartApproved = false;
     const id = session.run_id; const current = generation; busy = 'refreshing'; failure = null;
     try { const result = await jobSessionStatus(id); if (active && generation === current) { session = result; if (!['complete', 'prepared'].includes(result.phase)) { rows = []; resetSelection(); status = ''; } } }
     catch (error) { if (active && generation === current) failure = error; }
@@ -109,7 +110,7 @@
   async function reviewExecution() {
     if (busy || session?.phase !== 'prepared' || !session.preview?.can_review_execution) return;
     const current = ++generation; const id = session.run_id; const preview = session.preview.id;
-    busy = 'reviewing'; failure = null; progress = null; executeApproved = false; exclusionsApproved = false; replacementsApproved = false;
+    busy = 'reviewing'; failure = null; progress = null; executeApproved = false; exclusionsApproved = false; replacementsApproved = false; multipartApproved = false;
     try { const result = await reviewJobExecution(id, preview); if (active && generation === current) session = result; }
     catch (error) { if (active && generation === current) failure = error; }
     finally { if (active && generation === current) busy = null; }
@@ -117,10 +118,12 @@
   async function execute() {
     if (busy || session?.phase !== 'awaiting_execution_approval' || !session.execution_available || !session.execution_review || !executeApproved || !exclusionsApproved) return;
     const replaces = (session.execution_review.replacement_files ?? 0) > 0;
+    const multipart = (session.execution_review.multipart_files ?? 0) > 0;
+    if (multipart && !multipartApproved) return;
     if (replaces && !replacementsApproved) return;
     const current = ++generation; const id = session.run_id; const approvalId = session.execution_review.approval_id;
-    busy = 'executing'; failure = null; status = ''; progress = null; session = { ...session, phase: 'executing', outcome: null, execution_available: false, execution_review: null }; executeApproved = false; exclusionsApproved = false; replacementsApproved = false;
-    try { const result = await executeJobPreview(id, approvalId, true, true, replaces); if (active && generation === current) session = result; }
+    busy = 'executing'; failure = null; status = ''; progress = null; session = { ...session, phase: 'executing', outcome: null, execution_available: false, execution_review: null }; executeApproved = false; exclusionsApproved = false; replacementsApproved = false; multipartApproved = false;
+    try { const result = await executeJobPreview(id, approvalId, true, true, replaces, multipart); if (active && generation === current) session = result; }
     catch (error) { if (active && generation === current) failure = error; }
     finally { if (active && generation === current) busy = null; }
   }
@@ -145,7 +148,7 @@
     {#if session.phase === 'bound'}<p>Bucket validation used {session.progress.requests} logical S3 calls. Comparison budgets and counters start separately when you click Compare.</p>{/if}
     {#if session.limits}<p>Effective shared comparison budgets: {session.limits.max_objects.toLocaleString()} entries, {session.limits.max_requests.toLocaleString()} logical S3 calls, {session.limits.max_seconds}s. Job caps also bound metadata and differences. SDK reads may make one bounded retry, including the existing plain-object SSE-C fallback.</p>{/if}
   {/if}
-  <p>SHA-256 reads all included contents on both sides; S3 requests and download/egress charges may apply. Maximum one native session across cooperating processes, 100,000 scanned entries, 32 MiB estimated input metadata, 10,000 differences. A stopped scan establishes neither equality nor a usable manifest. Only separately approved local → S3 / S3 → S3 writes up to 5 MiB/file can execute; replacements require an additional acknowledgement and checked old payloads up to 5 MiB. No unguarded overwrite, multipart jobs, deletion, automatic retry/resume or scheduling.</p>
+  <p>SHA-256 reads all included contents on both sides; S3 requests and download/egress charges may apply. Maximum one native session across cooperating processes, 100,000 scanned entries, 32 MiB estimated input metadata, 10,000 differences. A stopped scan establishes neither equality nor a usable manifest. Separately approved local → S3 / S3 → S3 writes support up to 1 GiB/file; replacements require an additional acknowledgement and checked old payloads up to 1 GiB. Files above 5 MiB use separately acknowledged multipart staging. No unguarded overwrite, deletion, automatic retry/resume or scheduling.</p>
   {#if progress}<ScanStatus {progress} outcome={busy === 'preparing' ? undefined : failure && !busy ? 'failed' : session?.outcome ?? undefined} message={session?.message ?? undefined} />{/if}
   {#if session?.summary}<p>New: {session.summary.new}; modified: {session.summary.modified}; destination only (informational): {session.summary.destination_only}; content matches: {session.summary.same}. Displayed {rows.length} of {differenceCount} differences.</p>{/if}
   {#if rows.length}
@@ -180,7 +183,11 @@
       <legend>Single-use guarded execution approval</legend>
       <p>Source root: {review.source} → destination: {review.destination}. Saved revision {review.preview.revision}, policy {review.preview.policy}; {review.preview.files} guarded writes, {review.preview.bytes} bytes, {review.preview.skipped} selected existing files skipped. Exclusions: {review.exclusions.join(', ') || '(none)'}. All {review.preview.entries.length} exact mappings are shown below; unselected files are not included. Non-sliding lease: {review.preview.expires_seconds}s at last check.</p>
       <div class="rows"><table><thead><tr><th>Source-relative path</th><th>Exact destination key</th><th>Bytes</th><th>Native condition</th></tr></thead><tbody>{#each review.preview.entries as entry (entry.entry_id)}<tr><td>{entry.relative_path}</td><td>{entry.destination_key}</td><td>{entry.size}</td><td>{entry.replaces ? 'Replace only under compared opaque ETag' : 'Create only if missing'}</td></tr>{/each}</tbody></table></div>
-      <p>{review.replacement_files ?? 0} replacements; other selected writes create missing objects. Both old and new replacement payloads must be at most 5 MiB. Single-shot PUT uses If-None-Match: * for creates or the compared native If-Match ETag for replacements—never unconditional fallback. ETags are opaque validators, not content hashes. Payload snapshots are rehashed; source/destination SHA-256 and supported attributes are rechecked. Mandatory conditional GET/header/encryption/tag/ACL verification incurs extra requests and egress costs. No deletions or multipart. Destination SSE-C: {review.destination_sse_c ? 'enabled (its own connection-local key)' : 'not enabled; destination AES256 is retained for replacements, otherwise bucket defaults apply'}. Durable native intent must succeed before any write.</p>
+      <p>{review.replacement_files ?? 0} replacements; other selected writes create missing objects. Old and new payloads are capped at 1 GiB/file. PUT or final multipart completion uses If-None-Match: * for creates or the compared native If-Match ETag for replacements—never unconditional fallback. ETags are opaque validators, not content hashes. Payload snapshots are rehashed; source/destination SHA-256 and supported attributes are rechecked. Mandatory conditional GET/header/encryption/tag/ACL verification incurs extra requests and egress costs. No deletions. Destination SSE-C: {review.destination_sse_c ? 'enabled (its own connection-local key)' : 'not enabled; destination AES256 is retained for replacements, otherwise bucket defaults apply'}. Durable native intent must succeed before any write.</p>
+      {#if (review.multipart_files ?? 0) > 0}
+        <p>{review.multipart_files} multipart files, {review.multipart_parts} sequential parts (up to 8 MiB per part buffer, plus SDK overhead). Entire checked snapshots still consume local staging disk; preparation does not reserve free space. Source/destination checks repeat before conditional completion. Initiation, parts and completion are not retried. Known-upload abort cleanup alone gets up to three attempts within 30 seconds, including after cancellation; completion may already have committed. An abort receipt cannot prove cleanup if an unacknowledged part may finish afterward; that evidence remains unresolved.</p>
+        <label><input type="checkbox" bind:checked={multipartApproved} /> I approve multipart staging and its extra requests/egress and possible unfinished-upload storage charges. Private journal v4 retains destination origin/bucket/key and provider upload ID for cleanup evidence, never credentials or encryption keys. Cleanup is best-effort; unresolved evidence survives restart and cannot be removed with history without a separate external-cleanup review. Startup never reconnects, cleans up or resumes automatically; inspect provider incomplete uploads/lifecycle rules manually.</label>
+      {/if}
       {#if (review.replacement_files ?? 0) > 0}
         <p>Replacement attribute policy: {review.s3_source ? 'reviewed S3 source metadata, headers and tags replace the destination values' : 'local bytes replace the payload while checked destination metadata, headers and tags are retained'}. Existing destination AES256 ({review.destination_aes256_files ?? 0} files) is retained unless the explicitly configured destination SSE-C key re-encrypts it. Unsupported old attributes, custom ACLs, KMS or object-lock-enabled destination buckets block replacement; ownership of a new object/version follows destination rules, not old-owner migration.</p>
         <label><input type="checkbox" bind:checked={replacementsApproved} /> I explicitly approve the listed existing-object replacements and their attribute policy. If-Match protects the opaque ETag only: metadata/tags/ACLs can change after checks without changing it, so concurrent edits can be overwritten. This is not an atomic metadata transaction, backup or rollback.</label>
@@ -193,7 +200,7 @@
       <p>Not atomic: cancellation, errors or connection loss can leave partial/uncertain writes. Nothing rolls back or resumes. Closing this dialog requests cancellation, not rollback. After admission, the native worker owns outcome recording; approval expiry before the first PUT blocks writes, but admitted execution can continue within its shared bounded execution budget. Additional S3 attribute checks consume that budget.</p>
       <label><input type="checkbox" bind:checked={exclusionsApproved} /> I accept the displayed attribute/ownership exclusions, destination defaults, plaintext staging, verification costs and partial/uncertain outcome risks.</label>
       <label><input type="checkbox" bind:checked={executeApproved} /> I reviewed every exact source → destination mapping, saved revision, policy and exclusions above and approve these guarded writes once. This is separate from preparation approval.</label>
-      <button type="button" onclick={execute} disabled={!executeApproved || !exclusionsApproved || ((review.replacement_files ?? 0) > 0 && !replacementsApproved) || !session.execution_available}>Execute approved writes once</button>
+      <button type="button" onclick={execute} disabled={!executeApproved || !exclusionsApproved || ((review.replacement_files ?? 0) > 0 && !replacementsApproved) || ((review.multipart_files ?? 0) > 0 && !multipartApproved) || !session.execution_available}>Execute approved writes once</button>
     </fieldset>
   {/if}
   {#if session?.execution}<p>Execution: {session.execution.status}; attempted {session.execution.counts.attempted_files}, acknowledged {session.execution.counts.acknowledged_files}, SHA-256 verified {session.execution.counts.verified_files}/{session.execution.counts.selected_files}, skipped {session.execution.counts.skipped_files}, uncertain {session.execution.counts.uncertain_files}. Replacements: {session.execution.counts.verified_replacements ?? 0}/{session.execution.counts.replacement_files ?? 0} verified, {session.execution.counts.uncertain_replacements ?? 0} uncertain. Durable outcome recorded: {session.execution.outcome_recorded ? 'yes' : 'no — inspect destination and local journal'}. No retry/resume is authorized.</p>{#if session.execution.message}<ErrorNotice error={session.execution.message} context="Job execution outcome" />{/if}{/if}

@@ -1,6 +1,6 @@
-//! Initial guarded execution cohort: single-shot create-only PUT, <=5 MiB/file.
+//! Guarded single-shot and multipart payload execution.
 //! Read clients remain read-only; only a consumed native approval derives a
-//! per-key conditional writer. No multipart/replacement/delete fallback exists.
+//! per-key conditional writer. No unconditional/delete fallback exists.
 use super::{
     attributes::Attributes,
     collect, error, fresh_id, job_sdk_error,
@@ -26,6 +26,9 @@ use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::os::unix::fs::FileExt;
 
+pub(super) mod multipart;
+#[cfg(test)]
+mod multipart_tests;
 #[cfg(test)]
 mod replacement_tests;
 #[cfg(test)]
@@ -36,6 +39,8 @@ mod tests;
 // Only these static native diagnoses may escape SDK source chains. Never format
 // arbitrary interceptor/transport sources (which can carry URLs or credentials).
 pub(super) const GUARD_ERRORS: &[&str] = &[
+    "Multipart job request escaped its exact native operation, key, upload or condition",
+    "A multipart job mutation cannot be replayed",
     "Job writer requires its exact native If-Match or If-None-Match PUT condition",
     "Unexpected job mutation query",
     "Job mutation resolved outside its exact approved key",
@@ -60,6 +65,8 @@ pub struct ExecuteRequest {
     pub acknowledge_exclusions: bool,
     #[serde(default)]
     pub acknowledge_replacements: bool,
+    #[serde(default)]
+    pub acknowledge_multipart: bool,
 }
 #[derive(Serialize)]
 pub struct Review {
@@ -75,6 +82,8 @@ pub struct Review {
     pub source_sse_c_files: usize,
     pub replacement_files: usize,
     pub destination_aes256_files: usize,
+    pub multipart_files: usize,
+    pub multipart_parts: u64,
 }
 pub(super) struct Approval {
     id: String,
@@ -98,6 +107,19 @@ impl Approval {
             ),
         };
         Review {
+            multipart_files: self
+                .plan
+                .items
+                .iter()
+                .filter(|item| multipart::needed(item.snapshot.size))
+                .count(),
+            multipart_parts: self
+                .plan
+                .items
+                .iter()
+                .filter(|item| multipart::needed(item.snapshot.size))
+                .map(|item| multipart::parts(item.snapshot.size))
+                .sum(),
             approval_id: self.id.clone(),
             preview: self.plan.view(expires),
             source,
@@ -238,6 +260,41 @@ async fn snapshot_bytes(
     })
     .await
     .map_err(|_| error("Checked snapshot read worker failed"))?
+}
+async fn check_snapshot(
+    binding: Arc<Binding>,
+    file: File,
+    size: u64,
+    expected: String,
+    cancel: Arc<AtomicBool>,
+    budget: Arc<ScanBudget>,
+) -> Result<(), FmError> {
+    let mut hash = Sha256::new();
+    for offset in (0..size).step_by(multipart::PART_BYTES as usize) {
+        let bytes = multipart::read_chunk(
+            binding.clone(),
+            file.try_clone()
+                .map_err(|_| error("Snapshot descriptor unavailable"))?,
+            offset,
+            multipart::PART_BYTES.min(size - offset),
+            cancel.clone(),
+            budget.clone(),
+        )
+        .await?;
+        hash.update(&bytes);
+    }
+    if hex(hash) != expected
+        || file
+            .metadata()
+            .map_err(|_| error("Cannot inspect retained snapshot"))?
+            .len()
+            != size
+    {
+        return Err(error(
+            "Retained snapshot no longer matches the native content digest",
+        ));
+    }
+    Ok(())
 }
 async fn read_object(
     endpoint: &super::Endpoint,
@@ -429,7 +486,9 @@ pub async fn review(state: &JobRunState, request: ReviewRequest) -> Result<RunSt
             .clone()
             .ok_or_else(|| error("Missing binding"))?;
         if matches!(binding.source, BoundSource::S3(_))
-            || plan.items.iter().any(super::replacement::is_replacement)
+            || plan.items.iter().any(|item| {
+                super::replacement::is_replacement(item) || multipart::needed(item.snapshot.size)
+            })
         {
             let minimum_calls = plan
                 .items
@@ -477,7 +536,7 @@ pub async fn review(state: &JobRunState, request: ReviewRequest) -> Result<RunSt
                 missing(&binding, &item.key, &budget, &cancel).await?;
             }
             item.controls = source_matches(&binding, item, &budget, &cancel).await?;
-            snapshot_bytes(
+            check_snapshot(
                 binding.clone(),
                 item.snapshot
                     .file
@@ -486,6 +545,7 @@ pub async fn review(state: &JobRunState, request: ReviewRequest) -> Result<RunSt
                 item.snapshot.size,
                 item.snapshot.sha256.clone(),
                 cancel.clone(),
+                budget.clone(),
             )
             .await?;
             budget.check(&cancel)?;
@@ -719,7 +779,7 @@ fn writer_for(
 
 pub async fn start(state: &JobRunState, request: ExecuteRequest) -> Result<RunStatus, FmError> {
     if !request.approved || !request.acknowledge_exclusions {
-        return Err(error("Separate explicit approval of all exact mappings, create-only writes, verification and attribute exclusions is required"));
+        return Err(error("Separate explicit approval of all exact mappings, guarded writes, verification and attribute exclusions is required"));
     }
     state.status(&request.run_id)?;
     let (approval, cancel) = {
@@ -746,6 +806,15 @@ pub async fn start(state: &JobRunState, request: ExecuteRequest) -> Result<RunSt
             .plan
             .items
             .iter()
+            .any(|item| multipart::needed(item.snapshot.size))
+            && !request.acknowledge_multipart
+        {
+            return Err(error("Separate multipart acknowledgement is required: staging can leave billable unfinished uploads; cleanup is bounded and restart never resumes or reconnects"));
+        }
+        if approval
+            .plan
+            .items
+            .iter()
             .any(super::replacement::is_replacement)
             && !request.acknowledge_replacements
         {
@@ -759,6 +828,12 @@ pub async fn start(state: &JobRunState, request: ExecuteRequest) -> Result<RunSt
             timer.abort();
         }
         let counts = Execution {
+            multipart_files: approval
+                .plan
+                .items
+                .iter()
+                .filter(|item| multipart::needed(item.snapshot.size))
+                .count() as u64,
             replacement_files: approval
                 .plan
                 .items
@@ -774,7 +849,7 @@ pub async fn start(state: &JobRunState, request: ExecuteRequest) -> Result<RunSt
             status: Status::Executing,
             counts,
             outcome_recorded: false,
-            message: Some("Native execution admitted; intent must commit before any PUT".into()),
+            message: Some("Native execution admitted; intent must commit before any payload/staging mutation".into()),
         });
         (approval, slot.cancel.clone())
     };
@@ -890,6 +965,12 @@ async fn run(state: JobRunState, id: String, approval: Approval, cancel: Arc<Ato
         finished: false,
     };
     let mut counts = Execution {
+        multipart_files: approval
+            .plan
+            .items
+            .iter()
+            .filter(|item| multipart::needed(item.snapshot.size))
+            .count() as u64,
         replacement_files: approval
             .plan
             .items
@@ -913,28 +994,34 @@ async fn run(state: JobRunState, id: String, approval: Approval, cancel: Arc<Ato
             current_replacement=super::replacement::is_replacement(item);
             if current_replacement{super::replacement::check(&binding,item,&budget,&cancel).await?;}else{missing(&binding, &item.key, &budget, &cancel).await?;}
             source_matches(&binding, item, &budget, &cancel).await?;
-            let bytes = snapshot_bytes(
+            let large=multipart::needed(item.snapshot.size);
+            let bytes = if large {check_snapshot(
+                binding.clone(),item.snapshot.file.try_clone().map_err(|_|error("Snapshot descriptor unavailable"))?,item.snapshot.size,item.snapshot.sha256.clone(),cancel.clone(),budget.clone()
+            ).await?;None}else{Some(snapshot_bytes(
                 binding.clone(),
                 item.snapshot.file.try_clone().map_err(|_| error("Snapshot descriptor unavailable"))?,
                 item.snapshot.size,
                 item.snapshot.sha256.clone(),
                 cancel.clone(),
-            ).await?;
+            ).await?)};
             budget.check(&cancel)?;
             counts.attempted_files += 1;
             if current_replacement{counts.attempted_replacements+=1;}
             publish(&state, &id, &counts);
             // This barrier is mandatory even when source/destination reads passed.
             binding.attempt.execution(Status::Executing, counts.clone())?;
+            let attributes=super::replacement::write_attributes(&binding,item)?;
+            let a = &attributes;
+            let (etag,version)=if large {
+                multipart::upload(binding.clone(),item,a,cancel.clone(),if counts.attempted_files==1{Some(approval.expires)}else{None},budget.clone(),&mut uncertain).await?
+            } else {
             let (client, scope) = writer_for(
                 binding.clone(), item.key.clone(), cancel.clone(),
                 if counts.attempted_files == 1 { Some(approval.expires) } else { None }, budget.clone(),item.expected.clone(),
             )?;
-            let attributes=super::replacement::write_attributes(&binding,item)?;
-            let a = &attributes;
             let mut put = client.put_object()
                 .bucket(&binding.destination.bucket).key(&item.key)
-                .body(aws_sdk_s3::primitives::ByteStream::from(bytes))
+                .body(aws_sdk_s3::primitives::ByteStream::from(bytes.ok_or_else(||error("Missing checked small snapshot"))?))
                 .set_checksum_algorithm(crate::s3::compat::upload_checksum(&client))
                 .set_metadata(Some(a.metadata.clone())).set_content_type(a.content_type.clone())
                 .set_cache_control(a.cache_control.clone()).set_content_disposition(a.disposition.clone())
@@ -953,16 +1040,18 @@ async fn run(state: JobRunState, id: String, approval: Approval, cancel: Arc<Ato
             // including provider rejection; never replay a mutation to find out.
             uncertain = scope.sent.load(Ordering::Relaxed);
             let response = sent?;
+            (response.e_tag().map(str::to_owned),response.version_id().map(str::to_owned))
+            };
             counts.acknowledged_files += 1;
             if current_replacement{counts.acknowledged_replacements+=1;}
             publish(&state, &id, &counts);
             binding.attempt.execution(Status::Executing, counts.clone())?;
             uncertain = true;
-            let etag = response.e_tag().filter(|e| !e.is_empty() && e.len() <= 1024)
-                .ok_or_else(|| error("PUT acknowledged without a bounded ETag; mandatory verification cannot be pinned"))?;
+            let etag = etag.as_deref().filter(|e| !e.is_empty() && e.len() <= 1024)
+                .ok_or_else(|| error("Payload write acknowledged without a bounded ETag; mandatory verification cannot be pinned"))?;
             let (digest, actual) = read_object(&binding.destination, &item.key, item.snapshot.size, etag, &budget, &cancel).await?;
-            if actual.version.as_deref()!=response.version_id(){return Err(error("Written object version changed before verification; no success was recorded"));}
-            if current_replacement&&actual.unsupported.is_some(){return Err(error("Written replacement has unreviewed or unsupported encryption/retention/storage attributes; inspect the destination. No success or rollback was recorded"));}
+            if actual.version!=version{return Err(error("Written object version changed before verification; no success was recorded"));}
+            if (current_replacement||large)&&actual.unsupported.is_some(){return Err(error("Written object has unreviewed or unsupported encryption/retention/storage attributes; inspect the destination. No success or rollback was recorded"));}
             let sse = binding.job.destination.configuration.sse_customer_key_enabled;
             if !actual.complete || digest != item.snapshot.sha256 || actual.metadata != a.metadata
                 || a.content_type.as_ref().is_some_and(|v| actual.content_type.as_ref() != Some(v))

@@ -1,5 +1,5 @@
-//! Durable allowlisted attempts and bounded create-only execution intent/outcomes.
-//! Runtime approvals, object mappings and payloads are never serialized.
+//! Durable allowlisted attempt outcomes and native-only multipart cleanup evidence.
+//! Runtime approvals, source mappings, hashes and payloads are never serialized.
 use super::{fresh_id, preview::Policy, FmError, Paths, ScanProgress};
 use serde::{Deserialize, Serialize};
 #[cfg(target_os = "macos")]
@@ -13,8 +13,11 @@ use std::{
     time::{SystemTime, UNIX_EPOCH},
 };
 
+mod multipart;
 #[cfg(test)]
 mod tests;
+pub(super) use multipart::resolve_evidence;
+pub(super) use multipart::{Upload, UploadChange, UploadState};
 const MAX_BYTES: u64 = 8 * 1024 * 1024;
 const DIRTY: &[u8] = b"FURMAN-JOB-JOURNAL-DIRTY-V1\n";
 const INITIALIZED: &[u8] = b"FURMAN-JOB-JOURNAL-INITIALIZED-V1\n";
@@ -106,6 +109,8 @@ impl From<ScanProgress> for Counters {
 #[derive(Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Record {
+    #[serde(default)]
+    pub multipart_cleanup_reviews: u64,
     pub run_id: String,
     pub job_id: String,
     pub job_revision: String,
@@ -124,6 +129,8 @@ pub struct Record {
 #[derive(Clone, Default, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Execution {
+    #[serde(default)]
+    pub multipart_files: u64,
     #[serde(default)]
     pub replacement_files: u64,
     #[serde(default)]
@@ -148,7 +155,8 @@ impl Execution {
         self.selected_files > 0
             && self.selected_files <= 128
             && self.skipped_files <= 10_000
-            && self.selected_bytes <= 128 * 5 * 1024 * 1024
+            && self.selected_bytes <= 16 * 1024 * 1024 * 1024
+            && self.multipart_files <= self.selected_files
             && self.verified_files <= self.acknowledged_files
             && self.acknowledged_files <= self.attempted_files
             && self.attempted_files <= self.selected_files
@@ -177,6 +185,7 @@ impl Execution {
     }
     fn follows(&self, old: &Self) -> bool {
         self.selected_files == old.selected_files
+            && self.multipart_files == old.multipart_files
             && self.replacement_files == old.replacement_files
             && self.attempted_replacements >= old.attempted_replacements
             && self.acknowledged_replacements >= old.acknowledged_replacements
@@ -200,6 +209,8 @@ pub struct Pause {
 #[derive(Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct Store {
+    #[serde(default)]
+    uploads: Vec<Upload>,
     version: u32,
     revision: String,
     storage_review_required: bool,
@@ -209,7 +220,8 @@ struct Store {
 impl Default for Store {
     fn default() -> Self {
         Self {
-            version: 3,
+            version: 4,
+            uploads: vec![],
             revision: "missing".into(),
             storage_review_required: false,
             pauses: BTreeMap::new(),
@@ -219,6 +231,7 @@ impl Default for Store {
 }
 #[derive(Serialize)]
 pub struct Report {
+    pub pending_uploads: Vec<multipart::UploadNotice>,
     pub revision: String,
     pub storage_review_required: bool,
     pub reconciliation_deferred: bool,
@@ -230,6 +243,7 @@ pub struct Report {
 impl Store {
     fn report(&self, dirty: bool) -> Report {
         Report {
+            pending_uploads: self.uploads.iter().map(Upload::notice).collect(),
             revision: self.revision.clone(),
             storage_review_required: self.storage_review_required || dirty,
             reconciliation_deferred: false,
@@ -240,7 +254,7 @@ impl Store {
         }
     }
     fn validate(&self, persisted: bool) -> Result<(), FmError> {
-        if !matches!(self.version, 1 | 2 | 3)
+        if !matches!(self.version, 1 | 2 | 3 | 4)
             || (persisted && !uuid(&self.revision))
             || self.records.len() > 501
             || self.pauses.len() > 500
@@ -250,9 +264,28 @@ impl Store {
             ));
         }
         let mut ids = HashSet::new();
+        self.validate_uploads()?;
         let mut active = 0;
         let mut counts = BTreeMap::new();
         for record in &self.records {
+            if record.multipart_cleanup_reviews
+                > record
+                    .execution
+                    .as_ref()
+                    .map_or(0, |counts| counts.multipart_files)
+                || (self.version < 4 && record.multipart_cleanup_reviews != 0)
+            {
+                return Err(error("Invalid external multipart cleanup review audit"));
+            }
+            if self.version < 4
+                && record.execution.as_ref().is_some_and(|counts| {
+                    counts.multipart_files != 0 || counts.selected_bytes > 128 * 5 * 1024 * 1024
+                })
+            {
+                return Err(error(
+                    "An older journal cannot contain multipart execution intent",
+                ));
+            }
             if self.version < 3
                 && record.execution.as_ref().is_some_and(|counts| {
                     counts.replacement_files != 0
@@ -374,6 +407,7 @@ impl Store {
                 !r.status.active()
                     && (per_job < 50 || r.job_id == incoming_job)
                     && !self.pauses.values().any(|pause| pause.run_id == r.run_id)
+                    && !self.uploads.iter().any(|upload| upload.run_id == r.run_id)
             });
             self.records.remove(remove.ok_or_else(||error("Job history is full of unresolved review records; acknowledge review before starting another attempt"))?);
         }
@@ -512,7 +546,7 @@ impl Storage {
         checkpoint: &impl Fn(&str) -> Result<(), FmError>,
     ) -> Result<(), FmError> {
         self.check_dir()?;
-        store.version = 3;
+        store.version = 4;
         store.revision = fresh_id();
         store.validate(true)?;
         let bytes = serde_json::to_vec(store).map_err(|_| unavailable())?;
@@ -771,6 +805,7 @@ pub(super) fn start(paths: &Paths, run: &str, job: &super::Job) -> Result<(), Fm
     store.prune(&job.id)?;
     let time = now();
     store.records.push(Record {
+        multipart_cleanup_reviews: 0,
         run_id: run.into(),
         job_id: job.id.clone(),
         job_revision: job.revision.clone(),
@@ -956,7 +991,11 @@ pub(super) fn review(
         ));
     }
     if clear_history {
-        if job_id.is_some() || store.storage_review_required || !store.pauses.is_empty() {
+        if job_id.is_some()
+            || store.storage_review_required
+            || !store.pauses.is_empty()
+            || !store.uploads.is_empty()
+        {
             return Err(error(
                 "Unresolved review pauses cannot be hidden by removing history",
             ));
