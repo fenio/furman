@@ -87,7 +87,7 @@ test('actual Sync controller requires explicit fresh complete comparison after p
     app: { syncExcludePatterns: '*.tmp', persistConfig: async () => {} },
     scan: async (...args) => { scans.push(args); }, cancel: async id => { cancellations.push(id); },
   };
-  const { harness: h, cleanup } = await scriptFixture('SyncDialog.svelte', fixture, `startScan, applyPreset, handleSync, handleKeydown,
+  const { harness: h, cleanup } = await scriptFixture('SyncDialog.svelte', fixture, `startScan, applyPreset, handleSync, handleKeydown, setJobPanelOpen(value) { jobPanelOpen = value; },
     get state() { return { scanning, scanComplete, outcome, compareMode, excludeText, entries: [...allEntries], selected: [...selectedPaths] }; }`);
   const entry = { type: 'Entry', relative_path: 'nested/file', status: 'new', source_size: 1, dest_size: 0 };
   try {
@@ -102,7 +102,8 @@ test('actual Sync controller requires explicit fresh complete comparison after p
     args[9](entry); args[9]({ type: 'ScanStopped', outcome: 'limited', message: 'Budget exhausted', progress: {} }); h.handleSync(); assert.equal(syncs.length, 0);
     h.startScan(); const finalEvent = scans[2][9]; finalEvent(entry); finalEvent({ type: 'Done', new_count: 1, modified: 0, deleted: 0 });
     const key = { key: 'Enter', target: { closest: () => true }, preventDefault() { throw new Error('Preset key must not trigger Sync'); } }; h.handleKeydown(key); assert.equal(syncs.length, 0);
-    h.handleSync(); assert.equal(syncs.length, 1); assert.equal(syncs[0][0].relative_path, 'nested/file');
+    h.setJobPanelOpen(true); h.handleSync(); assert.equal(syncs.length, 0); // Separate read-only job context cannot trigger ordinary Sync.
+    h.setJobPanelOpen(false); h.handleSync(); assert.equal(syncs.length, 1); assert.equal(syncs[0][0].relative_path, 'nested/file');
   } finally { cleanup(); }
 });
 
@@ -132,6 +133,7 @@ test('both actual dialogs render shared options-only presets and explicit roots'
   };
   const component = file => data(imports(compile(source(file), { generate: 'server', filename: file }).js.code, dependencies));
   dependencies['./ErrorNotice.svelte'] = component('ErrorNotice.svelte'); dependencies['./ComparisonPresets.svelte'] = component('ComparisonPresets.svelte'); dependencies['./ScanStatus.svelte'] = component('ScanStatus.svelte');
+  dependencies['./JobComparisonSession.svelte'] = data('export default ()=>{};'); // No definition is selected during SSR; tested independently.
   dependencies['./SavedSyncJobs.svelte'] = component('SavedSyncJobs.svelte');
   const { default: Compare } = await import(component('CompareDialog.svelte'));
   const comparison = render(Compare, { props: { leftPath: 's3://left/root/', rightPath: 's3://right/dest/', leftBackend: 's3', rightBackend: 's3', onCompare() {}, onClose() {} } }).body;

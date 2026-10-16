@@ -1,5 +1,5 @@
-//! Definition-only job foundation. No scanner, credential resolver or writer is
-//! callable here. Configuration pins are NOT authorization to execute a job.
+//! Job definitions and configured-identity tracking. Runtime read-only binding
+//! lives in job_runs; configuration pins are NOT authorization to execute a job.
 use crate::models::FmError;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -577,6 +577,9 @@ fn replace(path: &Path, bytes: &[u8]) -> Result<(), FmError> {
 }
 
 fn capture_local(path: &str) -> Result<SourcePin, FmError> {
+    Ok(open_local_root(path)?.1)
+}
+pub(crate) fn open_local_root(path: &str) -> Result<(File, SourcePin), FmError> {
     use nix::{
         fcntl::{open, openat, OFlag},
         sys::stat::Mode,
@@ -606,14 +609,15 @@ fn capture_local(path: &str) -> Result<SourcePin, FmError> {
         canonical.push(name);
     }
     let metadata = directory.metadata().map_err(io_error)?;
-    Ok(SourcePin::Local {
+    let pin = SourcePin::Local {
         path: canonical
             .to_str()
             .ok_or_else(|| error("Local source must be UTF-8"))?
             .into(),
         device: metadata.dev().to_string(),
         inode: metadata.ino().to_string(),
-    })
+    };
+    Ok((directory, pin))
 }
 fn reject_overlap(source: &S3Pin, destination: &S3Pin) -> Result<(), FmError> {
     if source.configuration.endpoint == destination.configuration.endpoint
@@ -700,7 +704,7 @@ fn report(config: BTreeMap<String, Value>, revision: String, store: Store) -> Re
     let jobs = store.jobs.iter().map(|job| {
         let valid_source = match &job.source { SourcePin::S3 { pin } => pin_matches(pin, &config, &store), SourcePin::Local { path, .. } => capture_local(path).is_ok_and(|value| value == job.source) };
         let valid = valid_source && pin_matches(&job.destination, &config, &store);
-        JobView { definition: job.clone(), status: if valid { "definition_valid" } else { "needs_rebind" }, reason: if valid { "Configuration pins match. Execution and live namespace/credential binding are not implemented." } else { "A profile, managed generation or local root changed/is unavailable. Review both roots and explicitly save a rebound definition." } }
+        JobView { definition: job.clone(), status: if valid { "definition_valid" } else { "needs_rebind" }, reason: if valid { "Configuration pins match. Explicit native read-only binding/comparison is available; job writes remain disabled." } else { "A profile, managed generation or local root changed/is unavailable. Review both roots and explicitly save a rebound definition." } }
     }).collect();
     Report {
         revision,
@@ -722,6 +726,55 @@ fn configuration_revision(config: &BTreeMap<String, Value>) -> String {
 pub fn list(paths: &Paths) -> Result<Report, FmError> {
     let (revision, store) = load(paths)?;
     Ok(report(profiles(paths)?, revision, store))
+}
+
+/// Re-resolve native persisted profiles under the same lock used by managed
+/// configuration/keychain edits. The callback is synchronous; no network await
+/// is allowed while holding this identity lock.
+pub(crate) fn with_binding_snapshot<T>(
+    paths: &Paths,
+    id: &str,
+    revision: &str,
+    read: impl FnOnce(&Job, &BTreeMap<String, Value>) -> Result<T, FmError>,
+) -> Result<T, FmError> {
+    let _lock = lock(paths)?;
+    let (_, store) = load(paths)?;
+    let job = store
+        .jobs
+        .iter()
+        .find(|job| job.id == id && job.revision == revision)
+        .ok_or_else(|| {
+            error(
+                "Job was changed or deleted. Refresh the definition and explicitly bind a new run.",
+            )
+        })?;
+    let config = profiles(paths)?;
+    if !pin_matches(&job.destination, &config, &store)
+        || matches!(&job.source, SourcePin::S3 { pin } if !pin_matches(pin, &config, &store))
+    {
+        return Err(error("Job profile configuration or managed secret generation changed. Explicitly rebind the definition before connecting or comparing."));
+    }
+    if let SourcePin::Local { path, .. } = &job.source {
+        if capture_local(path)? != job.source {
+            return Err(error(
+                "Local job root was replaced; explicitly rebind the definition",
+            ));
+        }
+    }
+    read(job, &config)
+}
+
+pub(crate) fn validate_binding(paths: &Paths, expected: &Job) -> Result<(), FmError> {
+    with_binding_snapshot(paths, &expected.id, &expected.revision, |job, _| {
+        // Exact definition equality also catches unsupported external edits that
+        // neglected to increment the definition revision.
+        if serde_json::to_vec(job).ok() != serde_json::to_vec(expected).ok() {
+            return Err(error(
+                "Job definition changed; discard the run and bind again",
+            ));
+        }
+        Ok(())
+    })
 }
 pub fn save(paths: &Paths, request: SaveRequest) -> Result<Report, FmError> {
     if !request.acknowledged {

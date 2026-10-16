@@ -3,8 +3,10 @@
   import { listSavedJobs, saveJobDefinition, deleteJobDefinition, type SavedJobsReport, type SavedJobDefinition } from '#lib/services/saved-jobs.js';
   import { parseComparisonExcludes } from '#lib/utils/comparison-options.js';
   import ErrorNotice from './ErrorNotice.svelte';
+  import JobComparisonSession from './JobComparisonSession.svelte';
 
-  let { defaultLocalPath = '' }: { defaultLocalPath?: string } = $props();
+  let { defaultLocalPath = '', onOpenChange = () => {} }: { defaultLocalPath?: string; onOpenChange?: (open: boolean) => void } = $props();
+  let detailsOpen = $state(false);
   let report = $state.raw<SavedJobsReport | null>(null);
   let selectedId = $state('');
   let name = $state('');
@@ -28,7 +30,7 @@
 
   onMount(() => {
     void refresh();
-    return () => { active = false; };
+    return () => { active = false; onOpenChange(false); };
   });
   function changed() { acknowledged = false; confirmDelete = false; status = ''; }
   function choose(id: string) {
@@ -72,7 +74,7 @@
   }
 </script>
 
-<details data-saved-jobs>
+<details data-saved-jobs bind:open={detailsOpen} ontoggle={(event) => onOpenChange(event.currentTarget.open)}>
   <summary>Saved job definitions — no execution{busy ? ' — working…' : failure ? ' — error (expand for details)' : ''}</summary>
   <fieldset disabled={busy}>
     <legend>Pinned definitions (foundation)</legend>
@@ -122,6 +124,13 @@
       <button type="button" onclick={remove} disabled={!ready || !confirmDelete}>Delete definition</button>
     {/if}
   </fieldset>
+  {#if selected && detailsOpen}
+    {#if selected.status === 'definition_valid'}
+      {#key selected.definition.id + ':' + selected.definition.revision}
+        <JobComparisonSession definition={selected.definition} />
+      {/key}
+    {:else}<p>Explicitly rebind the saved definition above before requesting native connection validation or comparison.</p>{/if}
+  {/if}
   {#if failure}<ErrorNotice error={failure} context="Saved job definitions" />{/if}
   {#if status}<p role="status">{status}</p>{/if}
 </details>

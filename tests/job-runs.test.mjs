@@ -1,0 +1,84 @@
+import assert from 'node:assert/strict';
+import test from 'node:test';
+import { readFileSync } from 'node:fs';
+import { stripTypeScriptTypes } from 'node:module';
+import { compile, compileModule } from 'svelte/compiler';
+import { render } from 'svelte/server';
+
+const data=code=>`data:text/javascript;base64,${Buffer.from(code).toString('base64')}`;
+const source=readFileSync(new URL('../src/lib/components/JobComparisonSession.svelte',import.meta.url),'utf8');
+const deferred=()=>{let resolve;let reject;const promise=new Promise((ok,fail)=>{resolve=ok;reject=fail;});return{promise,resolve,reject};};
+const definition={id:'job',revision:'3',name:'Saved job',source:{kind:'local',path:'/saved/source',device:'1',inode:'2'},destination:{profile_id:'saved-target',generation:'generation',configuration:{bucket:'bucket',region:'us-east-1',endpoint:'https://us-ord-1.linodeobjects.com/',provider:'linode',proxy_endpoint:null,proxy_auth:false,sse_customer_key_enabled:true,acceleration:false},prefix:'target//'},exclude_patterns:[],compare_mode:'sha256',operation:'copy_update_only'};
+const progress={scanned:2,matched:0,requests:2,bytes_read:3,s3_bytes_read:3,elapsed_ms:100};
+const bound=()=>({run_id:crypto.randomUUID(),job_id:'job',phase:'bound',expires_seconds:900,outcome:null,message:null,progress,summary:null,manifest_id:null,source_instance:null,destination_instance:crypto.randomUUID(),source_namespace:null,destination_namespace:'https://us-ord-1.linodeobjects.com/',limits:{max_objects:100000,max_requests:1000,max_seconds:300,max_results:1000},execution_available:false});
+const complete=status=>({...status,phase:'complete',outcome:'complete',summary:{new:1,modified:0,destination_only:0,same:2},manifest_id:crypto.randomUUID()});
+function imports(code,dependencies){return code.replace(/from (['"])([^'"]+)\1/g,(_,quote,name)=>{const resolved=dependencies[name]??(name.startsWith('svelte')?import.meta.resolve(name):null);assert.ok(resolved,`Unmapped job-run import ${name}`);return `from ${JSON.stringify(resolved)}`;});}
+let sequence=0;
+async function fixture(methods={}){
+  const key=`jobRunFixture${sequence++}`;const calls=[];const destroys=[];const initial=bound();
+  const context={props:{definition:structuredClone(definition)},destroys,calls,methods:{bind:async()=>initial,scan:async()=>complete(initial),page:async()=>[{id:'entry',relative_path:'nested/file',status:'new',source_size:3,destination_size:null}],release:async()=>{},status:async()=>initial,...methods}};
+  globalThis[key]=context;
+  const rpc=data(`const run=(name,...args)=>{const fixture=globalThis.${key};fixture.calls.push([name,...args]);return fixture.methods[name](...args);};export const bindJobSession=(...args)=>run('bind',...args);export const scanJobSession=(...args)=>run('scan',...args);export const releaseJobSession=(...args)=>run('release',...args);export const jobSessionStatus=(...args)=>run('status',...args);export const jobManifestPage=(...args)=>run('page',...args);`);
+  let script=source.match(/<script lang="ts">([\s\S]*?)<\/script>/)[1].replaceAll('$props()',`globalThis.${key}.props`).replace(/^\s*import \w+ from '\.\/[^']+\.svelte';/gm,'');
+  script+=`\nexport const harness={bind,compare,more,refresh,release,approve(){approved=true;},get state(){return{approved,session,progress,rows,busy,failure,status,opId};}};`;
+  const code=compileModule(stripTypeScriptTypes(script),{generate:'client',filename:'JobComparisonSession.svelte.js'}).js.code;
+  const {harness}=await import(data(imports(code,{'svelte':data(`export const onDestroy=callback=>globalThis.${key}.destroys.push(callback);`),'#lib/services/job-runs.js':rpc,'#lib/services/log.js':data('export const error=()=>{};')})));
+  return{h:harness,calls,context,close(){for(const destroy of destroys)destroy();},cleanup(){delete globalThis[key];}};
+}
+
+test('actual read-only controller requires separate binding/compare actions and pages only native complete handles',async()=>{
+  const f=await fixture();try{
+    assert.equal(f.calls.length,0);await f.h.bind();assert.equal(f.calls.length,0);await f.h.compare();assert.equal(f.calls.length,0);
+    f.h.approve();await f.h.bind();assert.deepEqual(f.calls.map(call=>call[0]),['bind']);assert.equal(f.calls[0][2],'job');assert.equal(f.calls[0][3],'3');assert.equal(f.calls[0][4],true);assert.equal(f.h.state.approved,false);
+    await f.h.compare();assert.deepEqual(f.calls.map(call=>call[0]),['bind','scan','page']);assert.equal(f.h.state.session.phase,'complete');assert.equal(f.h.state.rows[0].relative_path,'nested/file');assert.equal(f.calls[2][1],f.h.state.session.run_id);assert.equal(f.calls[2][2],f.h.state.session.manifest_id);assert.equal(f.calls[2][3],0);
+    assert.ok(!f.calls.some(call=>/execute|delete|upload|sync/i.test(call[0])));
+  }finally{f.close();await Promise.resolve();f.cleanup();}
+});
+
+test('cancelled scans discard late progress/completion and cannot fetch a manifest',async()=>{
+  const pending=deferred();let onProgress;const f=await fixture({scan:async(_id,notify)=>{onProgress=notify;return pending.promise;}});
+  try{
+    f.h.approve();await f.h.bind();const session=f.h.state.session;const scanning=f.h.compare();onProgress(progress);assert.equal(f.h.state.progress.bytes_read,3);
+    await f.h.release();onProgress({...progress,bytes_read:999});pending.resolve(complete(session));await scanning;
+    assert.equal(f.h.state.session,null);assert.equal(f.h.state.progress,null);assert.deepEqual(f.h.state.rows,[]);assert.ok(!f.calls.some(call=>call[0]==='page'));
+  }finally{f.close();await Promise.resolve();f.cleanup();}
+});
+
+test('closing while native binding is queued cancels the operation and releases a late bound run',async()=>{
+  const pending=deferred();const f=await fixture({bind:async()=>pending.promise});
+  try{
+    f.h.approve();const binding=f.h.bind();const operation=f.h.state.opId;f.close();const late=bound();pending.resolve(late);await binding;await Promise.resolve();
+    assert.ok(f.calls.some(call=>call[0]==='release'&&call[1]===operation));assert.ok(f.calls.some(call=>call[0]==='release'&&call[1]===late.run_id));assert.equal(f.h.state.session,null);assert.ok(!f.calls.some(call=>call[0]==='scan'));
+  }finally{f.cleanup();}
+});
+
+test('limited/failed native scans retain progress but never read rows or enable execution',async()=>{
+  const f=await fixture({scan:async()=>({...bound(),phase:'stopped',outcome:'limited',message:'Budget exhausted',progress,manifest_id:null})});
+  try{f.h.approve();await f.h.bind();await f.h.compare();assert.equal(f.h.state.session.phase,'stopped');assert.equal(f.h.state.progress.bytes_read,3);assert.ok(!f.calls.some(call=>call[0]==='page'));assert.equal(f.h.state.session.execution_available,false);}finally{f.close();await Promise.resolve();f.cleanup();}
+});
+
+test('expired/stale manifest responses clear rows rather than retaining usable comparison state',async()=>{
+  const f=await fixture({page:async()=>{throw new Error('Manifest expired or configuration changed');}});
+  try{f.h.approve();await f.h.bind();await f.h.compare();assert.equal(f.h.state.session,null);assert.deepEqual(f.h.state.rows,[]);assert.match(String(f.h.state.failure),/Manifest expired/);assert.ok(f.calls.some(call=>call[0]==='release'));}finally{f.close();await Promise.resolve();f.cleanup();}
+});
+
+test('read-only service sends no credentials or caller-selected rows and cannot bind without approval',async()=>{
+  const calls=[];globalThis.__jobRunRpc=(...args)=>{calls.push(args);return Promise.resolve(bound());};
+  try{
+    const script=stripTypeScriptTypes(readFileSync(new URL('../src/lib/services/job-runs.ts',import.meta.url),'utf8'));
+    const {bindJobSession,scanJobSession,jobManifestPage,releaseJobSession,jobSessionStatus}=await import(data(imports(script,{'@tauri-apps/api/core':data('export const invoke=(...args)=>globalThis.__jobRunRpc(...args);export class Channel{}')})));
+    await assert.rejects(bindJobSession('op','job','rev',false));assert.equal(calls.length,0);await bindJobSession('op','job','rev',true);
+    let progressSeen;await scanJobSession('native-run',event=>{progressSeen=event;});calls[1][1].channel.onmessage(progress);assert.equal(progressSeen.bytes_read,3);
+    await jobManifestPage('native-run','native-manifest',0);await jobSessionStatus('native-run');await releaseJobSession('native-run');
+    assert.deepEqual(calls.map(call=>call[0]),['saved_job_bind','saved_job_scan','saved_job_manifest_page','saved_job_status','saved_job_release']);
+    assert.deepEqual(calls[0][1],{opId:'op',jobId:'job',revision:'rev',approved:true});assert.deepEqual(calls[2][1],{runId:'native-run',manifestId:'native-manifest',offset:0});
+  }finally{delete globalThis.__jobRunRpc;}
+});
+
+test('actual session UI renders separate read-only approval and keeps comparison disabled before binding',async()=>{
+  const dependencies={'#lib/services/job-runs.js':data('export const bindJobSession=async()=>{throw new Error("No SSR binding");};export const scanJobSession=async()=>{};export const releaseJobSession=async()=>{};export const jobSessionStatus=async()=>{};export const jobManifestPage=async()=>{};'),'#lib/services/log.js':data('export const error=()=>{};'),'#lib/utils/error-report.js':new URL('../src/lib/utils/error-report.ts',import.meta.url).href,'#lib/utils/scan.js':new URL('../src/lib/utils/scan.ts',import.meta.url).href,'#lib/utils/format.js':new URL('../src/lib/utils/format.ts',import.meta.url).href};
+  const component=file=>data(imports(compile(readFileSync(new URL(`../src/lib/components/${file}`,import.meta.url),'utf8'),{generate:'server',filename:file}).js.code,dependencies));
+  dependencies['./ErrorNotice.svelte']=component('ErrorNotice.svelte');dependencies['./ScanStatus.svelte']=component('ScanStatus.svelte');
+  const {default:Component}=await import(data(imports(compile(source,{generate:'server',filename:'JobComparisonSession.svelte'}).js.code,dependencies)));
+  const html=render(Component,{props:{definition}}).body;assert.ok(html.includes('not unsaved editor fields'));assert.ok(html.includes('HeadBucket'));assert.match(html,/disabled[^>]*>Compare saved job/);assert.ok(html.includes('No job execution, history'));assert.ok(!html.includes('Upload now'));
+});

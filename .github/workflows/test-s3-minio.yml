@@ -67,7 +67,12 @@ jobs:
           S3_TEST_OTHER_ENDPOINT: http://localhost:9001
           MINIO_ACCESS_KEY: minioadmin
           MINIO_SECRET_KEY: minioadmin
-        run: cargo test --lib --test s3_integration --test s3_migration -- --test-threads=4
+          FURMAN_JOB_TEST_ENDPOINT: http://127.0.0.1:9000
+          FURMAN_JOB_TEST_ACCESS_KEY: minioadmin
+          FURMAN_JOB_TEST_SECRET_KEY: minioadmin
+        run: |
+          cargo test --lib --test s3_integration --test s3_migration -- --test-threads=4
+          cargo test --lib job_runs::tests::loopback_minio_native_binding_and_comparison_never_modify_payloads -- --ignored
 
       - name: Stop MinIO
         if: always()
