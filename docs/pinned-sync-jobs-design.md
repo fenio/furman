@@ -3,11 +3,14 @@
 **Status: design merged in [#362](https://github.com/fenio/furman/pull/362);
 definition-only foundation merged in [#363](https://github.com/fenio/furman/pull/363);
 read-only live binding/comparisons merged in [#364](https://github.com/fenio/furman/pull/364);
-checked non-executable previews/snapshots are the current implementation step.** See the
+checked non-executable previews/snapshots merged in [#365](https://github.com/fenio/furman/pull/365);
+the durable read-only journal/recovery foundation is the current implementation step.** See the
 [foundation contract](saved-job-foundation.md) for its exact scope and remaining
 live-binding gates, and the [read-only runtime contract](job-bound-comparisons.md).
 See [checked payload previews](job-checked-previews.md) for the implemented preparation boundary.
-The execution/journal guarantees below are still unimplemented.
+The [journal foundation](job-journal.md) implements read-only attempt durability,
+local recovery and review pauses. The executable intent/write-outcome guarantees
+below remain unimplemented.
 This document is the review gate between
 the [shipped options presets](comparison-presets.md) and runnable jobs. It adds
 no commands, execution paths, automatic connections, timers or migrations.

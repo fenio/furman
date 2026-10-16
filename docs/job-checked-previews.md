@@ -1,10 +1,12 @@
 # Checked, non-executable job previews
 
-This follow-up to [native comparisons](job-bound-comparisons.md) implements the
+Merged in [#365](https://github.com/fenio/furman/pull/365), this follow-up to [native comparisons](job-bound-comparisons.md) implements the
 manifest-to-preparation boundary and private payload snapshots. **No job writes,
-execution approval, journal/history, restart replay or scheduling are enabled.**
+execution approval, restart replay or scheduling are enabled.**
 The preview is not inserted into ordinary `WriteState` and cannot be consumed by
 ordinary Copy/Sync. All native job clients still reject payload mutation.
+The [journal follow-up](job-journal.md) now records read-only attempts and adds
+local restart reconciliation/review pauses; it does not add executable intents.
 
 ## Explicit manual flow
 
@@ -153,8 +155,9 @@ prepares replacement snapshots and verifies both original payloads unchanged.
 
 ## Next gate
 
-Still required before exposing execution: durable intent/outcome journal and
-restart reconciliation/review pauses, separately reviewed derivation of a guarded
+The read-only [journal foundation](job-journal.md) implements local attempt
+durability, reconciliation and review pauses. Still required before exposing
+execution: the executable-intent/outcome protocol and separately reviewed derivation of a guarded
 writer from native plan ownership, attribute/encryption preservation, explicit
 single-use execution approval, verified conditional writes, partial/uncertain
 outcomes and failure-injection/provider coverage. Scheduling remains separate.

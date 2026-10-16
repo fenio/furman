@@ -66,7 +66,7 @@ test('read-only service sends no credentials or caller-selected rows and cannot 
   const calls=[];globalThis.__jobRunRpc=(...args)=>{calls.push(args);return Promise.resolve(bound());};
   try{
     const script=stripTypeScriptTypes(readFileSync(new URL('../src/lib/services/job-runs.ts',import.meta.url),'utf8'));
-    const {bindJobSession,scanJobSession,jobManifestPage,releaseJobSession,jobSessionStatus}=await import(data(imports(script,{'@tauri-apps/api/core':data('export const invoke=(...args)=>globalThis.__jobRunRpc(...args);export class Channel{}')})));
+    const {bindJobSession,scanJobSession,jobManifestPage,releaseJobSession,jobSessionStatus}=await import(data(imports(script,{'@tauri-apps/api/core':data('export const invoke=(...args)=>globalThis.__jobRunRpc(...args);export class Channel{}'),'#lib/services/job-journal.js':data('export const noteJobJournalFailure=()=>{};')})));
     await assert.rejects(bindJobSession('op','job','rev',false));assert.equal(calls.length,0);await bindJobSession('op','job','rev',true);
     let progressSeen;await scanJobSession('native-run',event=>{progressSeen=event;});calls[1][1].channel.onmessage(progress);assert.equal(progressSeen.bytes_read,3);
     await jobManifestPage('native-run','native-manifest',0);await jobSessionStatus('native-run');await releaseJobSession('native-run');
@@ -80,7 +80,7 @@ test('actual session UI renders separate read-only approval and keeps comparison
   const component=file=>data(imports(compile(readFileSync(new URL(`../src/lib/components/${file}`,import.meta.url),'utf8'),{generate:'server',filename:file}).js.code,dependencies));
   dependencies['./ErrorNotice.svelte']=component('ErrorNotice.svelte');dependencies['./ScanStatus.svelte']=component('ScanStatus.svelte');
   const {default:Component}=await import(data(imports(compile(source,{generate:'server',filename:'JobComparisonSession.svelte'}).js.code,dependencies)));
-  const html=render(Component,{props:{definition}}).body;assert.ok(html.includes('not unsaved editor fields'));assert.ok(html.includes('HeadBucket'));assert.match(html,/disabled[^>]*>Compare saved job/);assert.ok(html.includes('No job execution, history'));assert.ok(!html.includes('Upload now'));
+  const html=render(Component,{props:{definition}}).body;assert.ok(html.includes('not unsaved editor fields'));assert.ok(html.includes('HeadBucket'));assert.match(html,/disabled[^>]*>Compare saved job/);assert.ok(html.includes('No job execution, automatic retry/resume or scheduling'));assert.ok(!html.includes('Upload now'));
 });
 
 test('checked preparation requires explicit loaded native entry selection and separate snapshot approval',async()=>{
@@ -114,7 +114,7 @@ test('snapshot service sends only native ownership handles, selected IDs and rev
   const calls=[];globalThis.__jobSnapshotRpc=(...args)=>{calls.push(args);return Promise.resolve(bound());};
   try{
     const script=stripTypeScriptTypes(readFileSync(new URL('../src/lib/services/job-runs.ts',import.meta.url),'utf8'));
-    const {prepareJobPreview}=await import(data(imports(script,{'@tauri-apps/api/core':data('export const invoke=(...args)=>globalThis.__jobSnapshotRpc(...args);export class Channel{}')})));
+    const {prepareJobPreview}=await import(data(imports(script,{'@tauri-apps/api/core':data('export const invoke=(...args)=>globalThis.__jobSnapshotRpc(...args);export class Channel{}'),'#lib/services/job-journal.js':data('export const noteJobJournalFailure=()=>{};')})));
     await assert.rejects(prepareJobPreview('run','manifest',['entry'],'create_only',100,false,()=>{}));assert.equal(calls.length,0);
     await prepareJobPreview('run','manifest',['entry'],'replace_unchanged',100,true,()=>{});
     assert.equal(calls[0][0],'saved_job_prepare');assert.deepEqual(calls[0][1].request,{run_id:'run',manifest_id:'manifest',entry_ids:['entry'],policy:'replace_unchanged',max_snapshot_bytes:100,approved:true});

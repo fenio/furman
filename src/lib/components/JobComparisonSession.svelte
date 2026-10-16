@@ -109,6 +109,7 @@
   <h3>Read-only comparison — saved revision {definition.revision}</h3>
   <p>This uses the saved definition above, not unsaved editor fields or the current Sync panes. Nothing connects or scans automatically. Only manual-key profiles are eligible; no SSO sign-in or credential-process command is run.</p>
   <p>Binding explicitly reads native keychain entries and sends at most two logical HeadBucket requests. Native clients are private, origin-guarded and read-only; shared AWS config/endpoint defaults are not silently adopted. AWS routing/custom-CA overrides and unsupported acceleration/Express settings fail closed.</p>
+  <p>Binding first records a durable local read-only attempt intent. Native history contains allowlisted IDs, revisions, times, policies and stage counters, not names, roots, credentials or approvals. Journal/storage failures and unresolved review pauses block new job work; ordinary workflows remain available.</p>
   <label><input type="checkbox" bind:checked={approved} disabled={!!busy || (!!session && session.phase !== 'stopped')} /> I reviewed the saved source → destination and approve keychain access plus read-only connection validation. This does not approve scanning, uploads or deletion.</label>
   <div class="actions">
     <button type="button" onclick={bind} disabled={!approved || !!busy || (!!session && session.phase !== 'stopped')}>Bind native read-only session</button>
@@ -122,7 +123,7 @@
     {#if session.phase === 'bound'}<p>Bucket validation used {session.progress.requests} logical S3 calls. Comparison budgets and counters start separately when you click Compare.</p>{/if}
     {#if session.limits}<p>Effective shared comparison budgets: {session.limits.max_objects.toLocaleString()} entries, {session.limits.max_requests.toLocaleString()} logical S3 calls, {session.limits.max_seconds}s. Job caps also bound metadata and differences. SDK reads may make one bounded retry, including the existing plain-object SSE-C fallback.</p>{/if}
   {/if}
-  <p>SHA-256 reads all included contents on both sides; S3 requests and download/egress charges may apply. Maximum one native session across cooperating processes, 100,000 scanned entries, 32 MiB estimated input metadata, 10,000 differences. A stopped scan establishes neither equality nor a usable manifest. No job execution, history, automatic retry/resume or scheduling is enabled.</p>
+  <p>SHA-256 reads all included contents on both sides; S3 requests and download/egress charges may apply. Maximum one native session across cooperating processes, 100,000 scanned entries, 32 MiB estimated input metadata, 10,000 differences. A stopped scan establishes neither equality nor a usable manifest. No job execution, automatic retry/resume or scheduling is enabled.</p>
   {#if progress}<ScanStatus {progress} outcome={busy === 'preparing' ? undefined : failure && !busy ? 'failed' : session?.outcome ?? undefined} message={session?.message ?? undefined} />{/if}
   {#if session?.summary}<p>New: {session.summary.new}; modified: {session.summary.modified}; destination only (informational): {session.summary.destination_only}; content matches: {session.summary.same}. Displayed {rows.length} of {differenceCount} differences.</p>{/if}
   {#if rows.length}
@@ -147,7 +148,7 @@
     <p>Saved job {session.preview.job_id}, revision {session.preview.revision}; policy {session.preview.policy}. {session.preview.files} payload snapshots, {session.preview.bytes.toLocaleString()} bytes; {session.preview.skipped} selected existing files skipped. Remaining lease at last check: {session.preview.expires_seconds}s. SHA-256 and verification cannot be disabled. Release the session to discard snapshots; native expiry also releases them.</p>
     <div class="rows"><table><thead><tr><th>Relative source</th><th>Exact destination key</th><th>Bytes</th><th>Condition</th></tr></thead><tbody>{#each session.preview.entries as entry (entry.entry_id)}<tr><td>{entry.relative_path}</td><td>{entry.destination_key}</td><td>{entry.size}</td><td>{entry.replaces ? 'Compared opaque ETag' : 'Must be missing'}</td></tr>{/each}</tbody></table></div>
     {#if session.preview.entries_truncated}<p>Showing the first 50 prepared mappings; all selected mappings remain native and must be reviewed again before any future execution feature.</p>{/if}
-    <p>These snapshots are not a transaction or metadata migration. Destination content may change after preparation. No execution API or approval token was created; durable intent/outcome journaling and guarded execution remain deferred.</p>
+    <p>These snapshots are not a transaction or metadata migration. Destination content may change after preparation. Read-only stages/outcomes are journaled, but no executable intent, execution API or approval token was created. Guarded execution remains deferred.</p>
   {/if}
   {#if failure}<ErrorNotice error={failure} context="Native job comparison" />{/if}
   {#if status}<p role="status">{status}</p>{/if}

@@ -1,6 +1,7 @@
 //! Explicit read-only job sessions. Private native clients and complete manifests
 //! are never inserted in legacy connection/transfer registries. No writer API.
 pub(crate) mod collect;
+pub(crate) mod journal;
 pub(crate) mod preview;
 #[cfg(test)]
 mod tests;
@@ -65,6 +66,7 @@ struct Binding {
     global_limits: ScanLimits,
     bind_progress: ScanProgress,
     _run_lock: Arc<RunLock>,
+    attempt: Arc<journal::Attempt>,
 }
 impl Binding {
     fn validate(&self) -> Result<(), FmError> {
@@ -111,6 +113,7 @@ struct Slot {
     binding: Option<Arc<Binding>>,
     manifest: Option<collect::Manifest>,
     preview: Option<preview::Plan>,
+    attempt: Option<Arc<journal::Attempt>>,
     outcome: Option<ScanOutcome>,
     message: Option<String>,
     progress: ScanProgress,
@@ -128,6 +131,7 @@ impl Drop for Slot {
 struct Inner {
     slot: Option<Slot>,
     used: VecDeque<String>,
+    journal_fault: Arc<AtomicBool>,
 }
 #[derive(Clone, Default)]
 pub struct JobRunState(Arc<Mutex<Inner>>);
@@ -233,16 +237,136 @@ struct TaskGuard {
 impl Drop for TaskGuard {
     fn drop(&mut self) {
         if !self.finished {
-            let _ = self.state.stop(
+            let _ = self.state.stop_as(
                 &self.id,
                 ScanOutcome::Cancelled,
                 "Job read-only task ended before completion; no manifest was retained".into(),
+                Some(journal::Status::Interrupted),
             );
         }
     }
 }
 
 impl JobRunState {
+    fn journal_fault(&self) -> Result<Arc<AtomicBool>, FmError> {
+        Ok(self
+            .0
+            .lock()
+            .map_err(|_| error("Job session state unavailable"))?
+            .journal_fault
+            .clone())
+    }
+    pub fn history(&self, paths: &Paths) -> Result<journal::Report, FmError> {
+        let fault = self.journal_fault()?;
+        let result = match run_lock(paths) {
+            Ok(_lease) => journal::recover(paths),
+            Err(_) => journal::read(paths).map(|mut report| {
+                report.reconciliation_deferred = true;
+                report
+            }),
+        };
+        match result {
+            Ok(mut report) => {
+                report.in_memory_storage_fault = fault.load(Ordering::Relaxed);
+                Ok(report)
+            }
+            Err(failure) => {
+                fault.store(true, Ordering::Relaxed);
+                let idle = {
+                    let mut inner = self
+                        .0
+                        .lock()
+                        .map_err(|_| error("Job session state unavailable"))?;
+                    inner.slot.as_mut().and_then(|slot| {
+                        if slot.phase == Phase::Stopped {
+                            return None;
+                        }
+                        slot.cancel.store(true, Ordering::Relaxed);
+                        slot.manifest = None;
+                        slot.preview = None;
+                        if matches!(slot.phase, Phase::Bound | Phase::Complete | Phase::Prepared) {
+                            Some(slot.id.clone())
+                        } else {
+                            None
+                        }
+                    })
+                };
+                if let Some(id) = idle {
+                    let _=self.stop(&id,ScanOutcome::Failed,"Journal history/storage failure invalidated this run; explicitly recover/review".into());
+                }
+                Err(failure)
+            }
+        }
+    }
+    pub fn review_history(
+        &self,
+        paths: &Paths,
+        revision: &str,
+        job_id: Option<&str>,
+        acknowledged: bool,
+        clear_history: bool,
+    ) -> Result<journal::Report, FmError> {
+        if !acknowledged {
+            return Err(error(
+                "Explicit acknowledgement is required for journal review/removal",
+            ));
+        }
+        if clear_history && job_id.is_some() {
+            return Err(error("History removal cannot also acknowledge a job pause"));
+        }
+        let _lease = run_lock(paths)?;
+        let fault = self.journal_fault()?;
+        let before = journal::read(paths).map_err(|failure| {
+            fault.store(true, Ordering::Relaxed);
+            failure
+        })?;
+        if before.revision != revision {
+            return Err(error(
+                "History changed; refresh before acknowledging review/removal",
+            ));
+        }
+        if job_id.is_some_and(|job| !before.pauses.contains_key(job)) {
+            return Err(error(
+                "Selected job no longer has this pause; refresh history",
+            ));
+        }
+        if clear_history
+            && (fault.load(Ordering::Relaxed)
+                || before.storage_review_required
+                || !before.pauses.is_empty())
+        {
+            return Err(error(
+                "Unresolved review/storage failures cannot be hidden by removing history",
+            ));
+        }
+        let mut report = journal::review(paths, revision, job_id, acknowledged, clear_history)
+            .map_err(|failure| {
+                fault.store(true, Ordering::Relaxed);
+                failure
+            })?;
+        if job_id.is_none() && !clear_history {
+            self.journal_fault()?.store(false, Ordering::Relaxed);
+        }
+        report.in_memory_storage_fault = self.journal_fault()?.load(Ordering::Relaxed);
+        Ok(report)
+    }
+    fn attach_attempt(&self, id: &str, attempt: Arc<journal::Attempt>) -> Result<(), FmError> {
+        let mut inner = self
+            .0
+            .lock()
+            .map_err(|_| error("Job session state unavailable"))?;
+        let slot = inner
+            .slot
+            .as_mut()
+            .filter(|slot| {
+                slot.id == id
+                    && slot.phase == Phase::Binding
+                    && !slot.cancel.load(Ordering::Relaxed)
+            })
+            .ok_or(FmError::ScanCancelled)?;
+        slot.attempt = Some(attempt);
+        Ok(())
+    }
     fn begin(&self, op_id: &str) -> Result<(String, Arc<AtomicBool>, TaskGuard), FmError> {
         let canonical_op = uuid::Uuid::parse_str(op_id)
             .map_err(|_| error("Invalid job binding operation ID"))?
@@ -252,6 +376,9 @@ impl JobRunState {
             .0
             .lock()
             .map_err(|_| error("Job session state unavailable"))?;
+        if inner.journal_fault.load(Ordering::Relaxed) {
+            return Err(error("[JOB_JOURNAL] Job journal requires explicit local recovery/review before another run. Ordinary workflows remain available."));
+        }
         if inner.used.iter().any(|id| id == op_id) {
             return Err(error("This job binding operation was already used or cancelled; explicitly start a new attempt"));
         }
@@ -279,6 +406,7 @@ impl JobRunState {
             binding: None,
             manifest: None,
             preview: None,
+            attempt: None,
             outcome: None,
             message: None,
             progress: ScanProgress::default(),
@@ -295,6 +423,15 @@ impl JobRunState {
         ))
     }
     fn stop(&self, id: &str, outcome: ScanOutcome, message: String) -> Result<RunStatus, FmError> {
+        self.stop_as(id, outcome, message, None)
+    }
+    fn stop_as(
+        &self,
+        id: &str,
+        outcome: ScanOutcome,
+        mut message: String,
+        terminal: Option<journal::Status>,
+    ) -> Result<RunStatus, FmError> {
         let mut inner = self
             .0
             .lock()
@@ -311,13 +448,32 @@ impl JobRunState {
             timer.abort();
         }
         slot.cancel.store(true, Ordering::Relaxed);
+        let mut journal_failure = None;
+        if let Some(attempt) = &slot.attempt {
+            let terminal = terminal.unwrap_or(match outcome {
+                ScanOutcome::Failed => journal::Status::Failed,
+                ScanOutcome::Limited => journal::Status::Limited,
+                _ => journal::Status::Cancelled,
+            });
+            if let Err(failure) = attempt.stage(terminal, slot.progress, None) {
+                message=format!("{message}\nOutcome could not be recorded. No payload writes are enabled; recover/review journal storage before new job work.\n{failure}");
+                journal_failure = Some(failure);
+            }
+        }
         slot.phase = Phase::Stopped;
         slot.manifest = None;
         slot.preview = None;
         slot.binding = None;
+        slot.attempt = None;
         slot.outcome = Some(outcome);
         slot.message = Some(message);
-        Ok(slot.view())
+        let view = slot.view();
+        if journal_failure.is_some() {
+            return Err(error(view.message.as_deref().unwrap_or(
+                "[JOB_JOURNAL] Job outcome could not be recorded; inspect local history",
+            )));
+        }
+        Ok(view)
     }
     pub fn release(&self, handle: &str) -> Result<(), FmError> {
         let canonical_handle = uuid::Uuid::parse_str(handle)
@@ -341,13 +497,21 @@ impl JobRunState {
                 if let Some(timer) = slot.expiry_abort.take() {
                     timer.abort();
                 }
-                slot.phase = Phase::Stopped;
-                slot.binding = None;
-                slot.outcome = Some(ScanOutcome::Cancelled);
-                slot.message = Some(
+                let id = slot.id.clone();
+                let terminal = if slot.phase == Phase::Bound {
+                    journal::Status::Cancelled
+                } else {
+                    journal::Status::Discarded
+                };
+                drop(inner);
+                self.stop_as(
+                    &id,
+                    ScanOutcome::Cancelled,
                     "Job session released; browser/SDK requests already sent cannot be recalled"
                         .into(),
-                );
+                    Some(terminal),
+                )?;
+                return Ok(());
             }
         } else {
             // Handle close/cancel IPC arriving before a queued bind command.
@@ -465,7 +629,7 @@ impl JobRunState {
     }
 }
 
-struct RunLock(File);
+pub(crate) struct RunLock(File);
 impl Drop for RunLock {
     fn drop(&mut self) {
         // Closing alone can leave a fork-inherited duplicate holding this lease
@@ -473,7 +637,7 @@ impl Drop for RunLock {
         let _ = self.0.unlock();
     }
 }
-fn run_lock(paths: &Paths) -> Result<RunLock, FmError> {
+pub(crate) fn run_lock(paths: &Paths) -> Result<RunLock, FmError> {
     let file = std::fs::OpenOptions::new()
         .read(true)
         .write(true)
@@ -803,7 +967,7 @@ async fn bind_with(
             .arm_expiry(state);
     }
     let binding_started = Instant::now();
-    let result = bind_inner(paths, job_id, revision, cancel.clone(), read, factory)
+    let result = bind_inner(state.clone(), id.clone(), paths, job_id, revision, cancel.clone(), read, factory)
         .await
         .and_then(|mut binding| {
             binding.validate()?;
@@ -811,6 +975,8 @@ async fn bind_with(
                 return Err(FmError::ScanLimited("Job binding exceeded its 60-second cooperative budget; no bound run was published".into()));
             }
             binding.bind_progress.elapsed_ms = binding_started.elapsed().as_millis() as u64;
+            binding.attempt.stage(journal::Status::Bound,binding.bind_progress,None)?;
+            if binding_started.elapsed() >= Duration::from_secs(60) {return Err(FmError::ScanLimited("Job binding exceeded its cooperative deadline while recording its stage; no bound handle was published".into()));}
             Ok(binding)
         });
     match result {
@@ -838,8 +1004,11 @@ async fn bind_with(
             Ok(view)
         }
         Err(failure) => {
-            let _ = state.stop(&id, outcome(&failure), failure.to_string());
+            let recorded = state.stop(&id, outcome(&failure), failure.to_string());
             guard.finished = true;
+            if let Err(journal_failure) = recorded {
+                return Err(journal_failure);
+            }
             Err(failure)
         }
     }
@@ -853,6 +1022,8 @@ fn outcome(failure: &FmError) -> ScanOutcome {
 }
 
 async fn bind_inner(
+    state: JobRunState,
+    run_id: String,
     paths: Paths,
     job_id: String,
     revision: String,
@@ -867,12 +1038,27 @@ async fn bind_inner(
     }));
     let global_limits = ScanBudget::new().limits;
     let run_lock = Arc::new(run_lock(&paths)?);
+    let fault = state.journal_fault()?;
+    let recovered = journal::recover(&paths).map_err(|failure| {
+        fault.store(true, Ordering::Relaxed);
+        failure
+    })?;
+    if recovered.storage_review_required {
+        return Err(error(
+            "[JOB_JOURNAL] Job journal needs explicit storage recovery review before binding",
+        ));
+    }
+    let progress_guard = BindingProgress {
+        state: state.clone(),
+        id: run_id.clone(),
+        budget: budget.clone(),
+    };
     let read_paths = paths.clone();
     let worker_cancel = cancel.clone();
     let worker_lock = run_lock.clone();
     let worker_budget = budget.clone();
     let inputs = tokio::task::spawn_blocking(move || {
-        let _lock = worker_lock;
+        let lease = worker_lock;
         jobs::with_binding_snapshot(&read_paths, &job_id, &revision, |job, profiles| {
             // Deterministic unsupported-routing/alias checks require no secrets.
             let destination_namespace = namespace(&job.destination.configuration)?;
@@ -882,6 +1068,19 @@ async fn bind_inner(
                     &namespace(&pin.configuration)?,
                     &destination_namespace,
                 )?;
+            }
+            journal::ensure_ready(&read_paths, &job.id)?;
+            let attempt = journal::Attempt::start(
+                read_paths.clone(),
+                run_id.clone(),
+                job,
+                lease.clone(),
+                fault.clone(),
+                worker_cancel.clone(),
+            )?;
+            if let Err(failure) = state.attach_attempt(&run_id, attempt.clone()) {
+                let _ = attempt.stage(journal::Status::Cancelled, ScanProgress::default(), None);
+                return Err(failure);
             }
             let destination = read_auth(
                 &job.destination,
@@ -910,7 +1109,7 @@ async fn bind_inner(
                 }
                 _ => None,
             };
-            Ok((job.clone(), source, destination, root))
+            Ok((job.clone(), source, destination, root, attempt))
         })
     })
     .await
@@ -920,7 +1119,7 @@ async fn bind_inner(
     if cancel.load(Ordering::Relaxed) {
         return Err(FmError::ScanCancelled);
     }
-    let (job, source_auth, destination_auth, root) = inputs;
+    let (job, source_auth, destination_auth, root, attempt) = inputs;
     jobs::validate_binding(&paths, &job)?;
     let destination = factory(destination_auth)?;
     let source = if let Some(auth) = source_auth {
@@ -954,6 +1153,7 @@ async fn bind_inner(
             })
             .await?;
     }
+    drop(progress_guard);
     Ok(Binding {
         paths,
         job,
@@ -967,7 +1167,27 @@ async fn bind_inner(
             ..global_limits
         },
         _run_lock: run_lock,
+        attempt,
     })
+}
+
+struct BindingProgress {
+    state: JobRunState,
+    id: String,
+    budget: Arc<ScanBudget>,
+}
+impl Drop for BindingProgress {
+    fn drop(&mut self) {
+        if let Ok(mut inner) = self.state.0.lock() {
+            if let Some(slot) = inner
+                .slot
+                .as_mut()
+                .filter(|slot| slot.id == self.id && slot.phase == Phase::Binding)
+            {
+                slot.progress = self.budget.progress();
+            }
+        }
+    }
 }
 
 pub async fn scan(
@@ -1007,6 +1227,9 @@ pub async fn scan(
         id: id.into(),
         finished: false,
     };
+    binding
+        .attempt
+        .stage(journal::Status::Scanning, ScanProgress::default(), None)?;
     let budget = Arc::new(ScanBudget::with_limits(binding.limits));
     let progress_state = state.clone();
     let progress_id = id.to_owned();
@@ -1027,6 +1250,21 @@ pub async fn scan(
     });
     match result {
         Ok(manifest) => {
+            let terminal = manifest.summary.new + manifest.summary.modified == 0;
+            binding.attempt.stage(
+                if terminal {
+                    journal::Status::NoChanges
+                } else {
+                    journal::Status::Compared
+                },
+                budget.progress(),
+                None,
+            )?;
+            if let Err(failure) = budget.check(&cancel) {
+                let result = state.stop(id, outcome(&failure), failure.to_string());
+                guard.finished = true;
+                return result;
+            }
             let mut inner = state
                 .0
                 .lock()

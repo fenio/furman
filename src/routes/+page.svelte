@@ -29,6 +29,7 @@
   import PropertiesDialog from '#lib/components/PropertiesDialog.svelte';
   import SyncDialog from '#lib/components/SyncDialog.svelte';
   import ConfigSaveNotice from '#lib/components/ConfigSaveNotice.svelte';
+  import JobJournalNotice from '#lib/components/JobJournalNotice.svelte';
   import CompareDialog from '#lib/components/CompareDialog.svelte';
   import FileDiffDialog from '#lib/components/FileDiffDialog.svelte';
   import { comparisonState } from '#lib/state/comparison.svelte.js';
@@ -237,6 +238,7 @@
 
 <div class="app-container">
   <ConfigSaveNotice />
+  <JobJournalNotice />
   <!-- Quake console overlay -->
   {#if terminalState.displayMode === 'quake'}
     <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->

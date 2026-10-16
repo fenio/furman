@@ -600,6 +600,11 @@ pub(crate) async fn prepare(
         finished: false,
     };
     let budget = Arc::new(ScanBudget::with_limits(binding.limits));
+    binding.attempt.stage(
+        super::journal::Status::Preparing,
+        ScanProgress::default(),
+        Some(request.policy),
+    )?;
     let progress_state = state.clone();
     let progress_id = request.run_id.clone();
     let progress: Arc<dyn Fn(ScanProgress) + Send + Sync> = Arc::new(move |event| {
@@ -713,6 +718,14 @@ pub(crate) async fn prepare(
     .await;
     match result {
         Ok(plan) => {
+            binding
+                .attempt
+                .stage(super::journal::Status::Prepared, budget.progress(), None)?;
+            if let Err(failure) = budget.check(&cancel) {
+                let result = state.stop(&request.run_id, outcome(&failure), failure.to_string());
+                guard.finished = true;
+                return result;
+            }
             let mut inner = state
                 .0
                 .lock()

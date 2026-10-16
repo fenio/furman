@@ -11,6 +11,49 @@ pub fn saved_jobs_list() -> Result<Report, FmError> {
 }
 
 #[tauri::command]
+pub async fn saved_job_history(
+    state: tauri::State<'_, crate::job_runs::JobRunState>,
+) -> Result<crate::job_runs::journal::Report, FmError> {
+    let state = state.inner().clone();
+    let paths = Paths::home()?;
+    tokio::task::spawn_blocking(move || state.history(&paths))
+        .await
+        .map_err(|_| {
+            FmError::Other(
+                "Local job journal recovery task failed; ordinary workflows remain available"
+                    .into(),
+            )
+        })?
+}
+#[tauri::command]
+pub async fn saved_job_history_review(
+    state: tauri::State<'_, crate::job_runs::JobRunState>,
+    expected_revision: String,
+    job_id: Option<String>,
+    acknowledged: bool,
+    clear_history: bool,
+) -> Result<crate::job_runs::journal::Report, FmError> {
+    let state = state.inner().clone();
+    let paths = Paths::home()?;
+    tokio::task::spawn_blocking(move || {
+        state.review_history(
+            &paths,
+            &expected_revision,
+            job_id.as_deref(),
+            acknowledged,
+            clear_history,
+        )
+    })
+    .await
+    .map_err(|_| {
+        FmError::Other(
+            "Local job journal review task failed; refresh and inspect history before retrying"
+                .into(),
+        )
+    })?
+}
+
+#[tauri::command]
 pub fn saved_jobs_save(request: SaveRequest) -> Result<Report, FmError> {
     jobs::save(&Paths::home()?, request)
 }
@@ -52,29 +95,40 @@ pub async fn saved_job_scan(
 }
 
 #[tauri::command]
-pub fn saved_job_release(
+pub async fn saved_job_release(
     state: tauri::State<'_, crate::job_runs::JobRunState>,
     handle: String,
 ) -> Result<(), FmError> {
-    state.release(&handle)
+    let state = state.inner().clone();
+    tokio::task::spawn_blocking(move||state.release(&handle)).await.map_err(|_|FmError::Other("Job release/journal task failed; inspect local history and allow native expiry cleanup".into()))?
 }
 
 #[tauri::command]
-pub fn saved_job_status(
+pub async fn saved_job_status(
     state: tauri::State<'_, crate::job_runs::JobRunState>,
     run_id: String,
 ) -> Result<crate::job_runs::RunStatus, FmError> {
-    state.status(&run_id)
+    let state = state.inner().clone();
+    tokio::task::spawn_blocking(move || state.status(&run_id))
+        .await
+        .map_err(|_| {
+            FmError::Other("Job status/journal task failed; refresh local history".into())
+        })?
 }
 
 #[tauri::command]
-pub fn saved_job_manifest_page(
+pub async fn saved_job_manifest_page(
     state: tauri::State<'_, crate::job_runs::JobRunState>,
     run_id: String,
     manifest_id: String,
     offset: u32,
 ) -> Result<Vec<crate::job_runs::collect::Row>, FmError> {
-    state.page(&run_id, &manifest_id, offset as usize)
+    let state = state.inner().clone();
+    tokio::task::spawn_blocking(move || state.page(&run_id, &manifest_id, offset as usize))
+        .await
+        .map_err(|_| {
+            FmError::Other("Job manifest/journal task failed; no execution is enabled".into())
+        })?
 }
 
 #[tauri::command]

@@ -134,6 +134,7 @@ test('both actual dialogs render shared options-only presets and explicit roots'
   const component = file => data(imports(compile(source(file), { generate: 'server', filename: file }).js.code, dependencies));
   dependencies['./ErrorNotice.svelte'] = component('ErrorNotice.svelte'); dependencies['./ComparisonPresets.svelte'] = component('ComparisonPresets.svelte'); dependencies['./ScanStatus.svelte'] = component('ScanStatus.svelte');
   dependencies['./JobComparisonSession.svelte'] = data('export default ()=>{};'); // No definition is selected during SSR; tested independently.
+  dependencies['./JobHistory.svelte'] = data('export default ()=>{};');
   dependencies['./SavedSyncJobs.svelte'] = component('SavedSyncJobs.svelte');
   const { default: Compare } = await import(component('CompareDialog.svelte'));
   const comparison = render(Compare, { props: { leftPath: 's3://left/root/', rightPath: 's3://right/dest/', leftBackend: 's3', rightBackend: 's3', onCompare() {}, onClose() {} } }).body;
