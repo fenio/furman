@@ -64,21 +64,24 @@ pub struct Preview {
     pub entries_truncated: bool,
     pub verification_required: bool,
     pub execution_available: bool,
+    pub can_review_execution: bool,
+    pub execution_blocker: Option<String>,
 }
 
-struct Snapshot {
-    file: File,
-    size: u64,
-    sha256: String,
+pub(super) struct Snapshot {
+    pub file: File,
+    pub size: u64,
+    pub sha256: String,
+    pub attributes: super::attributes::Attributes,
 }
-struct Item {
-    entry: Entry,
-    key: String,
-    expected: DestinationExpectation,
-    snapshot: Snapshot,
+pub(super) struct Item {
+    pub entry: Entry,
+    pub key: String,
+    pub expected: DestinationExpectation,
+    pub snapshot: Snapshot,
 }
 pub(super) struct Plan {
-    id: String,
+    pub id: String,
     run_id: String,
     manifest_id: String,
     job_id: String,
@@ -86,11 +89,12 @@ pub(super) struct Plan {
     source_instance: Option<String>,
     destination_instance: String,
     expires: Instant,
-    policy: Policy,
-    skipped: usize,
-    bytes: u64,
+    pub policy: Policy,
+    pub skipped: usize,
+    pub bytes: u64,
+    destination_sse: bool,
     max_snapshot_bytes: u64,
-    items: Vec<Item>,
+    pub items: Vec<Item>,
 }
 impl Plan {
     pub(super) fn view(&self, expires: Instant) -> Preview {
@@ -114,7 +118,6 @@ impl Plan {
             entries: self
                 .items
                 .iter()
-                .take(50)
                 .map(|item| PreviewEntry {
                     entry_id: item.entry.row.id.clone(),
                     relative_path: item.entry.row.relative_path.clone(),
@@ -123,10 +126,48 @@ impl Plan {
                     replaces: matches!(item.expected, DestinationExpectation::Match { .. }),
                 })
                 .collect(),
-            entries_truncated: self.items.len() > 50,
+            entries_truncated: false,
             verification_required: true,
             execution_available: false,
+            can_review_execution: self.execution_blocker().is_none(),
+            execution_blocker: self.execution_blocker(),
         }
+    }
+    pub fn execution_blocker(&self) -> Option<String> {
+        if self.source_instance.is_some() {
+            return Some("Initial job execution supports local-file sources only. S3 source ACL/tag/encryption/storage preservation needs separate review; this preview remains read-only.".into());
+        }
+        if self.policy == Policy::ReplaceUnchanged
+            || self
+                .items
+                .iter()
+                .any(|item| !matches!(item.expected, DestinationExpectation::Missing))
+        {
+            return Some("Initial job execution creates missing objects only. Replacements remain non-executable; prepare a new create-only/skip-existing session.".into());
+        }
+        for item in &self.items {
+            if item.snapshot.size > 5 * 1024 * 1024 {
+                return Some("Initial job execution supports files up to 5 MiB only. Multipart job execution remains deferred; no weaker fallback is used.".into());
+            }
+            if item
+                .key
+                .split('/')
+                .any(|segment| matches!(segment, "" | "." | ".."))
+                || item
+                    .key
+                    .chars()
+                    .any(|c| c == '%' || c == '\\' || c.is_control())
+            {
+                return Some("Initial job execution refuses leading/repeated slashes, dot segments, percent/backslash/control characters rather than normalizing destination keys.".into());
+            }
+            if let Some(reason) = &item.snapshot.attributes.unsupported {
+                return Some(reason.clone());
+            }
+            if item.snapshot.attributes.customer_encrypted && !self.destination_sse {
+                return Some("An SSE-C source requires an explicitly SSE-C-enabled job destination; no plaintext downgrade is authorized.".into());
+            }
+        }
+        None
     }
     pub(super) fn check_owner(
         &self,
@@ -152,7 +193,7 @@ impl Plan {
                 "Job preview ownership or expiry changed; bind, compare and prepare again",
             ));
         }
-        Ok(())
+        self.check_snapshots()
     }
     fn check_snapshots(&self) -> Result<(), FmError> {
         for item in &self.items {
@@ -161,13 +202,15 @@ impl Plan {
                 .source
                 .as_ref()
                 .ok_or_else(|| error("Prepared source expectation missing"))?;
-            if item
+            let metadata = item
                 .snapshot
                 .file
                 .metadata()
-                .map_err(|_| error("Cannot inspect retained job snapshot"))?
-                .len()
-                != source.size
+                .map_err(|_| error("Cannot inspect retained job snapshot"))?;
+            if !metadata.is_file()
+                || metadata.nlink() != 0
+                || metadata.mode() & 0o777 != 0o600
+                || metadata.len() != source.size
                 || item.snapshot.size != source.size
                 || item.snapshot.sha256 != source.sha256
             {
@@ -445,6 +488,7 @@ fn local_snapshot(
         file: output,
         size: bytes,
         sha256: digest,
+        attributes: super::attributes::Attributes::local(&input.key),
     })
 }
 
@@ -493,6 +537,7 @@ async fn s3_snapshot(
             "Source GET does not match the compared opaque ETag/size",
         ));
     }
+    let attributes = super::attributes::Attributes::capture(&response);
     let mut output = private_snapshot()?;
     let mut body = response.body;
     let mut hash = Sha256::new();
@@ -539,6 +584,7 @@ async fn s3_snapshot(
         file: output,
         size: bytes,
         sha256: digest,
+        attributes,
     })
 }
 
@@ -705,6 +751,11 @@ pub(crate) async fn prepare(
             destination_instance: binding.destination.instance.clone(),
             expires,
             policy: request.policy,
+            destination_sse: binding
+                .job
+                .destination
+                .configuration
+                .sse_customer_key_enabled,
             skipped,
             bytes,
             max_snapshot_bytes: request.max_snapshot_bytes,

@@ -91,14 +91,14 @@ test('job service allowlists definition requests and exposes no connect, scan, e
   } finally { delete globalThis.__savedJobRpc; }
 });
 
-test('actual job editor renders configuration-only warnings and permanently disabled execution', async () => {
+test('actual job editor renders configuration-only warnings without automatic execution', async () => {
   const errorSource = readFileSync(new URL('../src/lib/components/ErrorNotice.svelte', import.meta.url), 'utf8');
   const notice = data(imports(compile(errorSource, { generate: 'server', filename: 'ErrorNotice.svelte' }).js.code, { '#lib/utils/error-report.js': new URL('../src/lib/utils/error-report.ts', import.meta.url).href }));
   const code = compile(source, { generate: 'server', filename: 'SavedSyncJobs.svelte' }).js.code;
   const dependencies = { './ErrorNotice.svelte': notice, './JobComparisonSession.svelte': data('export default ()=>{};'), './JobHistory.svelte': data('export default ()=>{};'), '#lib/services/saved-jobs.js': data('export const listSavedJobs=async()=>{throw new Error("SSR must not access storage");};export const saveJobDefinition=async()=>{};export const deleteJobDefinition=async()=>{};'), '#lib/utils/comparison-options.js': new URL('../src/lib/utils/comparison-options.ts', import.meta.url).href };
   const { default: Component } = await import(data(imports(code, dependencies)));
   const html = render(Component, { props: { defaultLocalPath: '/current/source' } }).body;
-  assert.ok(html.includes('data-saved-jobs')); assert.ok(html.includes('separate from the current Sync operation')); assert.match(html, /disabled[^>]*>Run job — not implemented/);
+  assert.ok(html.includes('data-saved-jobs')); assert.ok(html.includes('separate from the current Sync operation')); assert.ok(html.includes('separate native execution review and approval')); assert.ok(!html.includes('Execute approved creates once'));
   assert.ok(html.includes('It does not read keychain secrets')); assert.ok(html.includes('private plaintext file')); assert.ok(html.includes('/current/source'));
 });
 

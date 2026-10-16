@@ -1,5 +1,5 @@
-//! Durable, allowlisted read-only attempt intents/outcomes. No executable intent
-//! or approval can be serialized by this version of the journal.
+//! Durable allowlisted attempts and bounded create-only execution intent/outcomes.
+//! Runtime approvals, object mappings and payloads are never serialized.
 use super::{fresh_id, preview::Policy, FmError, Paths, ScanProgress};
 use serde::{Deserialize, Serialize};
 #[cfg(target_os = "macos")]
@@ -22,10 +22,10 @@ fn error(message: &str) -> FmError {
     super::error(&format!("[JOB_JOURNAL] {message}"))
 }
 fn unavailable() -> FmError {
-    error("Saved-job journal storage/durability is unavailable. No payload writes are enabled. Refresh journal recovery after checking local permissions, free space and filesystem support; an update may already have committed. No file contents were included.")
+    error("Saved-job journal storage/durability is unavailable. No further job writes are authorized. Refresh recovery after checking local permissions, free space and filesystem support; an update or sent payload write may already have committed. Inspect destination/history before explicit review. No file contents were included.")
 }
 fn io_failure(failure: std::io::Error) -> FmError {
-    error(&format!("Saved-job journal storage/durability failed ({:?}). Check local permissions, free space and filesystem support, then refresh recovery/review. An update may already have committed; no payload writes are enabled and no file contents were included.",failure.kind()))
+    error(&format!("Saved-job journal storage/durability failed ({:?}). Check local permissions, free space and filesystem support, then refresh recovery/review. An update or sent payload write may already have committed; no further job writes are authorized and no file contents were included.",failure.kind()))
 }
 fn now() -> u64 {
     SystemTime::now()
@@ -47,6 +47,13 @@ pub enum Status {
     Compared,
     Preparing,
     Prepared,
+    Reviewing,
+    AwaitingApproval,
+    Executing,
+    Succeeded,
+    Skipped,
+    Partial,
+    Uncertain,
     NoChanges,
     Discarded,
     Cancelled,
@@ -64,10 +71,16 @@ impl Status {
                 | Self::Compared
                 | Self::Preparing
                 | Self::Prepared
+                | Self::Reviewing
+                | Self::AwaitingApproval
+                | Self::Executing
         )
     }
     fn pauses(self) -> bool {
-        matches!(self, Self::Failed | Self::Limited | Self::Interrupted)
+        matches!(
+            self,
+            Self::Failed | Self::Limited | Self::Interrupted | Self::Partial | Self::Uncertain
+        )
     }
 }
 #[derive(Clone, Default, Serialize, Deserialize)]
@@ -103,6 +116,46 @@ pub struct Record {
     pub comparison: Counters,
     pub preparation: Counters,
     pub policy: Option<Policy>,
+    #[serde(default)]
+    pub review: Counters,
+    #[serde(default)]
+    pub execution: Option<Execution>,
+}
+#[derive(Clone, Default, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Execution {
+    pub selected_files: u64,
+    pub skipped_files: u64,
+    pub selected_bytes: u64,
+    pub attempted_files: u64,
+    pub acknowledged_files: u64,
+    pub verified_files: u64,
+    pub verified_bytes: u64,
+    pub uncertain_files: u64,
+}
+impl Execution {
+    fn valid(&self) -> bool {
+        self.selected_files > 0
+            && self.selected_files <= 128
+            && self.skipped_files <= 10_000
+            && self.selected_bytes <= 128 * 5 * 1024 * 1024
+            && self.verified_files <= self.acknowledged_files
+            && self.acknowledged_files <= self.attempted_files
+            && self.attempted_files <= self.selected_files
+            && self.uncertain_files <= self.attempted_files.saturating_sub(self.verified_files)
+            && self.verified_bytes <= self.selected_bytes
+            && (self.verified_files != 0 || self.verified_bytes == 0)
+    }
+    fn follows(&self, old: &Self) -> bool {
+        self.selected_files == old.selected_files
+            && self.skipped_files == old.skipped_files
+            && self.selected_bytes == old.selected_bytes
+            && self.attempted_files >= old.attempted_files
+            && self.acknowledged_files >= old.acknowledged_files
+            && self.verified_files >= old.verified_files
+            && self.verified_bytes >= old.verified_bytes
+            && self.uncertain_files >= old.uncertain_files
+    }
 }
 #[derive(Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -122,7 +175,7 @@ struct Store {
 impl Default for Store {
     fn default() -> Self {
         Self {
-            version: 1,
+            version: 2,
             revision: "missing".into(),
             storage_review_required: false,
             pauses: BTreeMap::new(),
@@ -153,7 +206,7 @@ impl Store {
         }
     }
     fn validate(&self, persisted: bool) -> Result<(), FmError> {
-        if self.version != 1
+        if !matches!(self.version, 1 | 2)
             || (persisted && !uuid(&self.revision))
             || self.records.len() > 501
             || self.pauses.len() > 500
@@ -166,6 +219,49 @@ impl Store {
         let mut active = 0;
         let mut counts = BTreeMap::new();
         for record in &self.records {
+            if self.version == 1
+                && (record.execution.is_some()
+                    || matches!(
+                        record.status,
+                        Status::Reviewing
+                            | Status::AwaitingApproval
+                            | Status::Executing
+                            | Status::Succeeded
+                            | Status::Skipped
+                            | Status::Partial
+                            | Status::Uncertain
+                    ))
+            {
+                return Err(error("A v1 journal cannot contain executable intents"));
+            }
+            if record.execution.as_ref().is_some_and(|e| !e.valid())
+                || (record.execution.is_some()
+                    && !matches!(
+                        record.policy,
+                        Some(Policy::CreateOnly | Policy::SkipExisting)
+                    ))
+                || matches!(
+                    record.status,
+                    Status::Executing
+                        | Status::Succeeded
+                        | Status::Skipped
+                        | Status::Partial
+                        | Status::Uncertain
+                ) && record.execution.is_none()
+            {
+                return Err(error("Invalid executable journal counters/intent"));
+            }
+            if matches!(record.status, Status::Succeeded | Status::Skipped)
+                && record.execution.as_ref().is_none_or(|e| {
+                    e.verified_files != e.selected_files
+                        || e.verified_bytes != e.selected_bytes
+                        || e.uncertain_files != 0
+                        || (record.status == Status::Succeeded && e.skipped_files != 0)
+                        || (record.status == Status::Skipped && e.skipped_files == 0)
+                })
+            {
+                return Err(error("Incomplete writes cannot be recorded as successful"));
+            }
             if !uuid(&record.run_id)
                 || !uuid(&record.job_id)
                 || !ids.insert(&record.run_id)
@@ -174,9 +270,14 @@ impl Store {
                     revision > 0 && revision.to_string() == record.job_revision
                 })
                 || record.updated_ms < record.started_ms
-                || [&record.binding, &record.comparison, &record.preparation]
-                    .iter()
-                    .any(|c| c.s3_bytes_read > c.bytes_read)
+                || [
+                    &record.binding,
+                    &record.comparison,
+                    &record.preparation,
+                    &record.review,
+                ]
+                .iter()
+                .any(|c| c.s3_bytes_read > c.bytes_read)
             {
                 return Err(error(
                     "Invalid saved-job attempt record; journal was not replaced",
@@ -360,6 +461,7 @@ impl Storage {
         checkpoint: &impl Fn(&str) -> Result<(), FmError>,
     ) -> Result<(), FmError> {
         self.check_dir()?;
+        store.version = 2;
         store.revision = fresh_id();
         store.validate(true)?;
         let bytes = serde_json::to_vec(store).map_err(|_| unavailable())?;
@@ -467,6 +569,23 @@ impl Attempt {
         progress: ScanProgress,
         policy: Option<Policy>,
     ) -> Result<(), FmError> {
+        self.update(next, Some(progress), policy, None)
+    }
+    pub(super) fn execution(&self, next: Status, counts: Execution) -> Result<(), FmError> {
+        self.update(next, None, None, Some(counts))
+    }
+    pub(super) fn healthy(&self) -> bool {
+        !self.ended.load(Ordering::Relaxed)
+            && !self.broken.load(Ordering::Relaxed)
+            && !self.fault.load(Ordering::Relaxed)
+    }
+    fn update(
+        &self,
+        next: Status,
+        progress: Option<ScanProgress>,
+        policy: Option<Policy>,
+        execution: Option<Execution>,
+    ) -> Result<(), FmError> {
         let _serial = self.serial.lock().map_err(|_| unavailable())?;
         if self.broken.load(Ordering::Relaxed) {
             return Err(error("Job outcome could not be recorded; journal recovery/review is required before any new job work"));
@@ -491,9 +610,10 @@ impl Attempt {
             &self.paths,
             &self.run,
             next,
-            Some(progress),
+            progress,
             policy,
             self.fault.load(Ordering::Relaxed),
+            execution,
         ) {
             Ok(()) => {
                 if !next.active() {
@@ -521,6 +641,7 @@ impl Drop for Attempt {
                 None,
                 None,
                 self.fault.load(Ordering::Relaxed),
+                None,
             )
             .is_err()
             {
@@ -544,6 +665,11 @@ pub(super) fn recover(paths: &Paths) -> Result<Report, FmError> {
     for record in &mut store.records {
         if record.status.active() {
             record.status = Status::Interrupted;
+            if let Some(counts) = &mut record.execution {
+                counts.uncertain_files = counts
+                    .uncertain_files
+                    .max(counts.attempted_files - counts.verified_files);
+            }
             record.updated_ms = now().max(record.started_ms);
             store.pauses.insert(
                 record.job_id.clone(),
@@ -601,6 +727,8 @@ pub(super) fn start(paths: &Paths, run: &str, job: &super::Job) -> Result<(), Fm
         comparison: Counters::default(),
         preparation: Counters::default(),
         policy: None,
+        review: Counters::default(),
+        execution: None,
     });
     storage.commit(&mut store)
 }
@@ -612,7 +740,7 @@ pub(super) fn transition(
     progress: ScanProgress,
     policy: Option<Policy>,
 ) -> Result<(), FmError> {
-    transition_with(paths, run, next, Some(progress), policy, false)
+    transition_with(paths, run, next, Some(progress), policy, false, None)
 }
 fn transition_with(
     paths: &Paths,
@@ -621,6 +749,7 @@ fn transition_with(
     progress: Option<ScanProgress>,
     policy: Option<Policy>,
     storage_fault: bool,
+    execution: Option<Execution>,
 ) -> Result<(), FmError> {
     let storage = Storage::open(paths, false)?.ok_or_else(unavailable)?;
     let _lock = storage.lock()?;
@@ -649,6 +778,17 @@ fn transition_with(
             | (Status::Scanning, Status::Compared | Status::NoChanges)
             | (Status::Compared, Status::Preparing)
             | (Status::Preparing, Status::Prepared)
+            | (Status::Prepared, Status::Reviewing)
+            | (Status::Reviewing, Status::AwaitingApproval)
+            | (Status::AwaitingApproval, Status::Executing)
+            | (
+                Status::Executing,
+                Status::Executing
+                    | Status::Succeeded
+                    | Status::Skipped
+                    | Status::Partial
+                    | Status::Uncertain
+            )
     ) || matches!(
         next,
         Status::Discarded
@@ -660,12 +800,60 @@ fn transition_with(
     if !valid {
         return Err(error("Invalid native journal stage transition"));
     }
+    if let Some(counts) = execution {
+        if !counts.valid()
+            || record
+                .execution
+                .as_ref()
+                .is_some_and(|old| !counts.follows(old))
+            || (!matches!(
+                next,
+                Status::Executing
+                    | Status::Succeeded
+                    | Status::Skipped
+                    | Status::Partial
+                    | Status::Uncertain
+                    | Status::Failed
+                    | Status::Limited
+                    | Status::Cancelled
+                    | Status::Interrupted
+            ))
+            || record.policy == Some(Policy::ReplaceUnchanged)
+        {
+            return Err(error("Executable intent/counter ownership changed"));
+        }
+        if record.execution.is_none()
+            && !(record.status == Status::AwaitingApproval
+                && matches!(
+                    next,
+                    Status::Executing
+                        | Status::Failed
+                        | Status::Limited
+                        | Status::Cancelled
+                        | Status::Interrupted
+                )
+                && counts.attempted_files == 0)
+        {
+            return Err(error(
+                "Executable intent must be durably started before mutation attempts",
+            ));
+        }
+        record.execution = Some(counts);
+    }
+    if next == Status::Interrupted {
+        if let Some(counts) = &mut record.execution {
+            counts.uncertain_files = counts
+                .uncertain_files
+                .max(counts.attempted_files - counts.verified_files);
+        }
+    }
     let category = if next.active() { next } else { record.status };
     if let Some(progress) = progress {
         let counters = progress.into();
         match category {
             Status::Binding | Status::Bound => record.binding = counters,
             Status::Scanning | Status::Compared => record.comparison = counters,
+            Status::Reviewing | Status::AwaitingApproval => record.review = counters,
             _ => record.preparation = counters,
         }
     }

@@ -1,11 +1,13 @@
-# Durable read-only attempt journal and review pauses
+# Durable attempt journal and review pauses
 
-This step extends [checked native previews](job-checked-previews.md), merged in
-[#365](https://github.com/fenio/furman/pull/365). It records native **read-only**
-attempt intents, stages and outcomes, reconciles abandoned attempts and adds
-explicit review pauses. **No job execution, executable approval, payload write,
-automatic retry/resume or scheduling is enabled.** The v1 schema cannot even
-represent an `executing` or `succeeded` payload intent.
+The foundation merged in [#366](https://github.com/fenio/furman/pull/366) extends
+[checked native previews](job-checked-previews.md) with native attempt intents,
+stages/outcomes, abandoned-attempt reconciliation and explicit review pauses.
+Its v1 schema was read-only and could not represent payload intent. The
+[initial guarded-execution follow-up](job-guarded-execution.md) now introduces
+v2, retaining v1 read compatibility and adding executable intent/outcome counters
+for separately approved local → S3 creates up to 5 MiB/file only. **No history or
+recovery action approves execution. No retry/resume or scheduling is enabled.**
 
 ## Local-only startup and manual review
 
@@ -65,7 +67,8 @@ run lock through blocking work and outcome recording. Dropped tasks become
 interrupted conservatively; process crashes leave the last durable active intent
 for startup recovery. Mutexes are never held across network awaits.
 
-Failures, budget-limited attempts and interruptions pause the job. Journal
+Failures, budget-limited attempts, interruptions and partial/uncertain execution
+outcomes pause the job. Journal
 recording failures invalidate pending native manifests/previews, cancel further
 work and latch a storage-review requirement. An error after a journal write may
 mean its update already committed; no payload/read stage is replayed to repair
@@ -87,7 +90,7 @@ Storage is separate from definitions and preferences:
 
 ```text
 ~/.config/furman/job-runs/             owner-only directory
-  journal.json                      private bounded strict v1 schema
+  journal.json                      private bounded strict v2 schema (v1 readable)
   initialized                       fixed, non-secret initialization evidence
   dirty                             fixed recovery evidence during commit
   lock                              cooperating-process metadata lock
@@ -161,13 +164,12 @@ review, pre-keychain failures, read-only stage/discard recording failures,
 manifest/preview invalidation, surviving definition deletion, global notices,
 late replies and the absence of connection/execution calls during review.
 
-## Remaining execution gate
+## Initial execution and remaining gates
 
-This provides the read-only attempt/durability foundation, **not** the future
-executable-intent protocol. Before payload writes can be exposed, a separately
-reviewed native path must derive an attribute/encryption-preserving guarded
-writer from the owned manifest/snapshots, durably record executable policy/intent
-before the first mutation, require expiring single-use approval and verification,
-and track confirmed versus partial/uncertain writes and post-write journal faults.
-That schema/API and its failure-injection/provider tests remain unimplemented.
-Scheduling remains a separately authorized later proposal.
+[Initial guarded execution](job-guarded-execution.md) adds expiring single-use
+native approval, snapshot consumption, pre-mutation durable intent and mandatory
+SHA-256 verification with confirmed/partial/uncertain outcomes. The read-only
+sequence described above remains preparation only; see that companion for the
+executable v2 lifecycle, counter protocol and fault behavior. S3-source attribute/
+encryption/ACL/tag preservation, replacements and multipart job execution need
+separate review/testing. Scheduling remains a separately authorized later proposal.

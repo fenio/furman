@@ -177,8 +177,9 @@ needed by these tests.
 
 The [checked-preview follow-up](job-checked-previews.md) implements native
 manifest-to-preview ownership and checked payload snapshots without execution.
-The [journal foundation](job-journal.md) adds durable read-only attempt records,
-restart reconciliation and review pauses. Single-use execution approval and
-executable intent/outcome handling remain deferred. **No job write API or scheduling
+The [journal foundation](job-journal.md) adds durable attempt records,
+restart reconciliation and review pauses. [Initial local-create execution](job-guarded-execution.md)
+adds separate single-use execution approval and executable intent/outcome handling.
+**Comparison alone grants no job write API authority. No scheduling
 is included.** Ordinary Copy/Sync, Linode/Akamai endpoints/proxy/SSE-C behavior and
 the known Garage write gates are not reinterpreted by this read-only path.

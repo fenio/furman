@@ -76,10 +76,10 @@
 </script>
 
 <details data-saved-jobs bind:open={detailsOpen} ontoggle={(event) => onOpenChange(event.currentTarget.open)}>
-  <summary>Saved job definitions — no execution{busy ? ' — working…' : failure ? ' — error (expand for details)' : ''}</summary>
+  <summary>Saved job definitions — explicit manual workflow{busy ? ' — working…' : failure ? ' — error (expand for details)' : ''}</summary>
   <fieldset disabled={busy}>
     <legend>Pinned definitions (foundation)</legend>
-    <p>These fields are separate from the current Sync operation. Saving/rebinding inspects saved configuration and local directory metadata only. It does not read keychain secrets, connect, apply roots to this dialog, scan or transfer. Jobs cannot run yet.</p>
+    <p>These fields are separate from the current Sync operation. Saving/rebinding inspects saved configuration and local directory metadata only. It does not read keychain secrets, connect, apply roots to this dialog, scan or transfer. Select a valid saved revision for explicit binding/comparison/preparation below. Only eligible local → S3 creates can run after separate native execution review and approval; scheduling is disabled.</p>
     <label>Definition
       <select value={selectedId} disabled={!ready} onchange={(event) => choose(event.currentTarget.value)}>
         <option value="">New definition / choose explicitly</option>
@@ -118,7 +118,6 @@
     <div class="actions">
       <button type="button" onclick={() => save(true)} disabled={!ready || !acknowledged || !name.trim() || !destinationConfig || (sourceKind === 's3' && !sourceConfig)}>Save as new definition</button>
       <button type="button" onclick={() => save(false)} disabled={!ready || !selected || !acknowledged || !name.trim() || !destinationConfig || (sourceKind === 's3' && !sourceConfig)}>Save edits / explicitly rebind selected</button>
-      <button type="button" disabled>Run job — not implemented</button>
     </div>
     {#if selected}
       <label><input type="checkbox" bind:checked={confirmDelete} disabled={!ready} /> Confirm deleting “{selected.definition.name}” (definition only)</label>

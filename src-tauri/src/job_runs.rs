@@ -1,6 +1,8 @@
-//! Explicit read-only job sessions. Private native clients and complete manifests
-//! are never inserted in legacy connection/transfer registries. No writer API.
+//! Explicit native job sessions. Private read clients, manifests and scoped
+//! approved writers never enter legacy connection/transfer registries.
+mod attributes;
 pub(crate) mod collect;
+pub(crate) mod execute;
 pub(crate) mod journal;
 pub(crate) mod preview;
 #[cfg(test)]
@@ -101,6 +103,9 @@ enum Phase {
     Complete,
     Preparing,
     Prepared,
+    Reviewing,
+    AwaitingApproval,
+    Executing,
     Stopped,
 }
 
@@ -114,6 +119,8 @@ struct Slot {
     manifest: Option<collect::Manifest>,
     preview: Option<preview::Plan>,
     attempt: Option<Arc<journal::Attempt>>,
+    approval: Option<execute::Approval>,
+    execution: Option<execute::ExecutionResult>,
     outcome: Option<ScanOutcome>,
     message: Option<String>,
     progress: ScanProgress,
@@ -154,6 +161,8 @@ pub struct RunStatus {
     pub limits: Option<ScanLimits>,
     pub execution_available: bool,
     pub preview: Option<preview::Preview>,
+    pub execution_review: Option<execute::Review>,
+    pub execution: Option<execute::ExecutionResult>,
 }
 
 impl Slot {
@@ -183,6 +192,9 @@ impl Slot {
                 Phase::Complete => "complete",
                 Phase::Preparing => "preparing",
                 Phase::Prepared => "prepared",
+                Phase::Reviewing => "reviewing_execution",
+                Phase::AwaitingApproval => "awaiting_execution_approval",
+                Phase::Executing => "executing",
                 Phase::Stopped => "stopped",
             },
             expires_seconds: if self.phase == Phase::Stopped {
@@ -223,8 +235,20 @@ impl Slot {
                 .as_ref()
                 .map(|binding| binding.destination.namespace.clone()),
             limits: self.binding.as_ref().map(|binding| binding.limits),
-            execution_available: false,
+            execution_available: self.phase == Phase::AwaitingApproval
+                && self.approval.is_some()
+                && self
+                    .attempt
+                    .as_ref()
+                    .is_some_and(|attempt| attempt.healthy())
+                && !self.cancel.load(Ordering::Relaxed)
+                && self.expires > Instant::now(),
             preview: self.preview.as_ref().map(|plan| plan.view(self.expires)),
+            execution_review: self
+                .approval
+                .as_ref()
+                .map(|approval| approval.view(self.expires)),
+            execution: self.execution.clone(),
         }
     }
 }
@@ -284,7 +308,14 @@ impl JobRunState {
                         slot.cancel.store(true, Ordering::Relaxed);
                         slot.manifest = None;
                         slot.preview = None;
-                        if matches!(slot.phase, Phase::Bound | Phase::Complete | Phase::Prepared) {
+                        slot.approval = None;
+                        if matches!(
+                            slot.phase,
+                            Phase::Bound
+                                | Phase::Complete
+                                | Phase::Prepared
+                                | Phase::AwaitingApproval
+                        ) {
                             Some(slot.id.clone())
                         } else {
                             None
@@ -407,6 +438,8 @@ impl JobRunState {
             manifest: None,
             preview: None,
             attempt: None,
+            approval: None,
+            execution: None,
             outcome: None,
             message: None,
             progress: ScanProgress::default(),
@@ -444,6 +477,11 @@ impl JobRunState {
         if slot.phase == Phase::Stopped {
             return Ok(slot.view());
         }
+        if slot.phase == Phase::Executing {
+            slot.cancel.store(true, Ordering::Relaxed);
+            slot.message=Some(format!("Cancellation requested: {message}. Already-sent writes may have committed; the native task retains outcome ownership."));
+            return Ok(slot.view());
+        }
         if let Some(timer) = slot.expiry_abort.take() {
             timer.abort();
         }
@@ -456,13 +494,14 @@ impl JobRunState {
                 _ => journal::Status::Cancelled,
             });
             if let Err(failure) = attempt.stage(terminal, slot.progress, None) {
-                message=format!("{message}\nOutcome could not be recorded. No payload writes are enabled; recover/review journal storage before new job work.\n{failure}");
+                message=format!("{message}\nOutcome could not be recorded. No further job writes are authorized; recover/review journal storage before new job work.\n{failure}");
                 journal_failure = Some(failure);
             }
         }
         slot.phase = Phase::Stopped;
         slot.manifest = None;
         slot.preview = None;
+        slot.approval = None;
         slot.binding = None;
         slot.attempt = None;
         slot.outcome = Some(outcome);
@@ -492,8 +531,12 @@ impl JobRunState {
             slot.cancel.store(true, Ordering::Relaxed);
             slot.manifest = None;
             slot.preview = None;
+            slot.approval = None;
             // In-flight work owns its binding/run-lock until it actually stops.
-            if matches!(slot.phase, Phase::Bound | Phase::Complete | Phase::Prepared) {
+            if matches!(
+                slot.phase,
+                Phase::Bound | Phase::Complete | Phase::Prepared | Phase::AwaitingApproval
+            ) {
                 if let Some(timer) = slot.expiry_abort.take() {
                     timer.abort();
                 }
@@ -533,7 +576,7 @@ impl JobRunState {
                 .as_ref()
                 .filter(|slot| slot.id == id)
                 .ok_or_else(|| error("Unknown or replaced job session"))?;
-            if slot.expires <= Instant::now() {
+            if slot.expires <= Instant::now() && slot.phase != Phase::Executing {
                 drop(inner);
                 return self.stop(
                     id,
@@ -556,7 +599,7 @@ impl JobRunState {
             .slot
             .as_ref()
             .filter(|slot| slot.id == id)
-            .is_some_and(|slot| slot.expires <= Instant::now())
+            .is_some_and(|slot| slot.expires <= Instant::now() && slot.phase != Phase::Executing)
         {
             drop(inner);
             return self.stop(
@@ -842,7 +885,10 @@ where
             break;
         };
         let message = current.to_string();
-        for known in [NAMESPACE_ERROR, READ_ONLY_ERROR] {
+        for known in [NAMESPACE_ERROR, READ_ONLY_ERROR]
+            .into_iter()
+            .chain(execute::GUARD_ERRORS.iter().copied())
+        {
             if message.contains(known) {
                 return error(known);
             }

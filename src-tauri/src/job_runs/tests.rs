@@ -20,7 +20,7 @@ fn fixture_at(local: bool, sse: bool, endpoint: &str) -> (tempfile::TempDir, Pat
         "dest//",
     )
 }
-fn fixture_with_names(
+pub(super) fn fixture_with_names(
     local: bool,
     sse: bool,
     endpoint: &str,

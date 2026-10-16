@@ -73,6 +73,7 @@ jobs:
         run: |
           cargo test --lib --test s3_integration --test s3_migration -- --test-threads=4
           cargo test --lib job_runs::tests::loopback_minio_native_binding_and_comparison_never_modify_payloads -- --ignored
+          cargo test --lib job_runs::execute::tests::loopback_minio_local_create_execution_and_conflict_never_overwrite_existing -- --ignored
 
       - name: Stop MinIO
         if: always()

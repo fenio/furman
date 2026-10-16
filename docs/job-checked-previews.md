@@ -2,11 +2,13 @@
 
 Merged in [#365](https://github.com/fenio/furman/pull/365), this follow-up to [native comparisons](job-bound-comparisons.md) implements the
 manifest-to-preparation boundary and private payload snapshots. **No job writes,
-execution approval, restart replay or scheduling are enabled.**
+execution approval, restart replay or scheduling are enabled by preparation.**
 The preview is not inserted into ordinary `WriteState` and cannot be consumed by
 ordinary Copy/Sync. All native job clients still reject payload mutation.
-The [journal follow-up](job-journal.md) now records read-only attempts and adds
-local restart reconciliation/review pauses; it does not add executable intents.
+The [journal follow-up](job-journal.md) records attempts and adds local restart
+reconciliation/review pauses. [Initial guarded execution](job-guarded-execution.md)
+now separately derives single-use approval and executable intents for eligible
+local creates only. Preparation remains non-executable by itself.
 
 ## Explicit manual flow
 
@@ -116,10 +118,11 @@ through dropped futures. Snapshot data/digests/ETags/credentials are not seriali
 into reports, configuration, definitions, activity exports or a new journal.
 
 This is not snapshot isolation: destinations can change after their checks, and
-the comparison is not a globally atomic listing. A future executable writer must
-recheck native ownership/expectations, rewind and verify snapshot consumption,
-preserve supported source attributes/encryption semantics and enforce conditional
-PUT/multipart completion. These payload-only previews do not claim complete
+the comparison is not a globally atomic listing. The [initial executable writer](job-guarded-execution.md)
+rechecks native ownership/expectations, verifies capability consumption, preserves
+inferred local MIME and configured destination SSE-C, and enforces conditional
+create-only PUT. Richer attributes/replacement/multipart support is deferred.
+These payload-only previews do not claim complete
 metadata/ACL/tag/retention/version migration.
 
 ## Budgets and diagnostics
@@ -153,11 +156,12 @@ cancel/expiry/generation/client invalidation, no payload mutations, UI late
 responses and separate approval. The disposable loopback MinIO test now also
 prepares replacement snapshots and verifies both original payloads unchanged.
 
-## Next gate
+## Execution follow-up and remaining gates
 
-The read-only [journal foundation](job-journal.md) implements local attempt
-durability, reconciliation and review pauses. Still required before exposing
-execution: the executable-intent/outcome protocol and separately reviewed derivation of a guarded
-writer from native plan ownership, attribute/encryption preservation, explicit
-single-use execution approval, verified conditional writes, partial/uncertain
-outcomes and failure-injection/provider coverage. Scheduling remains separate.
+The [journal foundation](job-journal.md) implements local attempt durability,
+reconciliation and review pauses. [Initial execution](job-guarded-execution.md)
+adds explicit single-use approval, guarded native snapshot consumption, executable
+intent/outcomes and verification for small local → S3 creates only. S3-source
+attribute/encryption/ACL/tag preservation, conditional replacements and multipart
+execution need separate acceptance/failure-injection/provider coverage.
+Scheduling remains separate.
