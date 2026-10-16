@@ -4,6 +4,7 @@ pub use commands::comparison::{read_s3_file, DiffContent};
 #[cfg(feature = "mcp")]
 pub mod mcp;
 pub mod local;
+pub mod jobs;
 pub mod model_inspector;
 pub mod models;
 pub mod oidc;
@@ -288,6 +289,9 @@ pub fn run() {
             commands::aws::aws_sso_cancel,
             commands::comparison_presets::comparison_presets_load,
             commands::comparison_presets::comparison_presets_save,
+            commands::saved_jobs::saved_jobs_list,
+            commands::saved_jobs::saved_jobs_save,
+            commands::saved_jobs::saved_jobs_delete,
             commands::s3::s3_activity_snapshot,
             commands::s3::s3_activity_clear,
             commands::s3::s3_connect,

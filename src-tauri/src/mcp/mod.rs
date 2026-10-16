@@ -66,13 +66,12 @@ impl FurmanMcp {
         .map_err(err)?;
 
         let conn_id = uuid::Uuid::new_v4().to_string();
-        let conn = crate::s3::S3Connection {
+        let conn = crate::s3::S3Connection::new(
             client,
-            bucket: params.bucket.clone(),
-            region: params.region,
+            params.bucket.clone(),
+            params.region,
             sdk_config,
-            account_id: None,
-        };
+        );
 
         self.state
             .s3_connections

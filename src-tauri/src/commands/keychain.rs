@@ -30,10 +30,12 @@ fn entry_for(profile_id: &str) -> Result<Entry, FmError> {
 
 #[tauri::command]
 pub fn keychain_set(profile_id: String, secret: String) -> Result<(), FmError> {
-    let entry = entry_for(&profile_id)?;
-    entry
-        .set_password(&secret)
-        .map_err(|e| FmError::Other(format!("keychain set: {e}")))
+    crate::jobs::secret_edit(&crate::jobs::Paths::home()?, &profile_id, || {
+        let entry = entry_for(&profile_id)?;
+        entry
+            .set_password(&secret)
+            .map_err(|e| FmError::Other(format!("keychain set: {e}")))
+    })
 }
 
 #[tauri::command]
@@ -59,10 +61,12 @@ pub fn keychain_get(profile_id: String) -> Result<Option<String>, FmError> {
 
 #[tauri::command]
 pub fn keychain_delete(profile_id: String) -> Result<(), FmError> {
-    let entry = entry_for(&profile_id)?;
-    match entry.delete_credential() {
-        Ok(()) => Ok(()),
-        Err(keyring_core::Error::NoEntry) => Ok(()),
-        Err(e) => Err(FmError::Other(format!("keychain delete: {e}"))),
-    }
+    crate::jobs::secret_edit(&crate::jobs::Paths::home()?, &profile_id, || {
+        let entry = entry_for(&profile_id)?;
+        match entry.delete_credential() {
+            Ok(()) => Ok(()),
+            Err(keyring_core::Error::NoEntry) => Ok(()),
+            Err(e) => Err(FmError::Other(format!("keychain delete: {e}"))),
+        }
+    })
 }

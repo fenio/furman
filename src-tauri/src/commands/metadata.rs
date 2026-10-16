@@ -22,6 +22,11 @@ pub fn read_file_text(path: String) -> Result<String, FmError> {
 #[tauri::command]
 pub fn write_file_text(path: String, content: String) -> Result<(), FmError> {
     let p = PathBuf::from(&path);
+    if let Ok(job_paths) = crate::jobs::Paths::home() {
+        if p == job_paths.config {
+            return crate::jobs::write_config(&job_paths, &content);
+        }
+    }
     // Ensure parent directories exist.
     if let Some(parent) = p.parent() {
         if !parent.exists() {

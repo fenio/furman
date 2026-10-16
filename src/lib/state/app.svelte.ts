@@ -14,6 +14,7 @@ import type { ScanLimits } from '#lib/types/index.js';
 import { DEFAULT_SCAN_LIMITS, scanLimitsFromConfig, validScanLimits } from '#lib/utils/scan.js';
 import type { ViewMode } from '#lib/types/index.js';
 import type { S3ConnectCallback } from '#lib/types/index.js';
+import { errorText } from '#lib/utils/error-report.js';
 
 export function canSyncBackends(source: string, destination: string): boolean {
   const supported = (backend: string) => backend === 'local' || backend === 's3';
@@ -21,6 +22,8 @@ export function canSyncBackends(source: string, destination: string): boolean {
 }
 
 class AppState {
+  configSaveError = $state('');
+  private configSaveAttempt = 0;
   theme = $state<'dark' | 'light'>('dark');
   layoutMode = $state<'dual' | 'single'>('dual');
   modal = $state<ModalType>('none');
@@ -442,7 +445,8 @@ class AppState {
   }
 
   persistConfig() {
-    return saveConfig({
+    const attempt = ++this.configSaveAttempt;
+    const pending = saveConfig({
       theme: this.theme,
       layoutMode: this.layoutMode,
       iconSize: this.iconSize,
@@ -480,6 +484,13 @@ class AppState {
       terminalShellPath: this.terminalShellPath,
       terminalScrollback: this.terminalScrollback,
     });
+    // Preferences and some legacy callers deliberately do not await saves.
+    // Observe failures without swallowing rejection for Save & Connect callers.
+    void pending.then(
+      () => { if (attempt === this.configSaveAttempt) this.configSaveError = ''; },
+      error => { if (attempt === this.configSaveAttempt) this.configSaveError = errorText(error); },
+    );
+    return pending;
   }
 
   closeModal() {

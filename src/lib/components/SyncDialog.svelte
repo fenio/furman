@@ -9,6 +9,7 @@
   import { errorText } from '#lib/utils/error-report.js';
   import ScanStatus from './ScanStatus.svelte';
   import ComparisonPresets from './ComparisonPresets.svelte';
+  import SavedSyncJobs from './SavedSyncJobs.svelte';
   import type { ComparisonMode } from '#lib/utils/comparison-options.js';
   import ErrorNotice from './ErrorNotice.svelte';
 
@@ -227,7 +228,7 @@
   function handleKeydown(e: KeyboardEvent) {
     // Preset controls own their keyboard interaction. Enter/Space must never
     // bubble into execution or alter the scan selection.
-    if ((e.target as HTMLElement | null)?.closest('[data-comparison-presets]')) {
+    if ((e.target as HTMLElement | null)?.closest('[data-comparison-presets], [data-saved-jobs]')) {
       if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); onClose(); }
       return;
     }
@@ -353,6 +354,7 @@
     <div class="dialog-body">
       <div class="sync-roots"><strong>Source:</strong> {sourcePath} ({sourceBackend})<br /><strong>Destination:</strong> {destPath} ({destBackend})</div>
       <ComparisonPresets mode={compareMode} {excludeText} onApply={applyPreset} />
+      <SavedSyncJobs defaultLocalPath={sourceBackend === 'local' ? sourcePath : ''} />
       <p class="hint">Review source → destination and options, then Compare. Opening this dialog or applying a preset does not start a scan. Only a complete fresh comparison can enable Sync; existing write previews and approvals still apply.</p>
       {#if optionsSaveError}<ErrorNotice error={optionsSaveError} context="Could not save default Sync exclusions; this scan still uses the displayed options" />{/if}
       <!-- Options row -->

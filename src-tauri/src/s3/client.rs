@@ -11,11 +11,36 @@ use crate::models::FmError;
 pub struct S3State(pub Mutex<HashMap<String, S3Connection>>);
 
 pub struct S3Connection {
+    /// Native, immutable per-client-instance generation. Never persisted in a
+    /// definition or treated as evidence of a saved profile/principal binding.
+    instance_id: String,
     pub client: S3Client,
     pub bucket: String,
     pub region: String,
     pub sdk_config: aws_config::SdkConfig,
     pub account_id: Option<String>,
+}
+
+impl S3Connection {
+    pub fn new(
+        client: S3Client,
+        bucket: String,
+        region: String,
+        sdk_config: aws_config::SdkConfig,
+    ) -> Self {
+        Self {
+            instance_id: uuid::Uuid::new_v4().to_string(),
+            client,
+            bucket,
+            region,
+            sdk_config,
+            account_id: None,
+        }
+    }
+
+    pub fn instance_id(&self) -> &str {
+        &self.instance_id
+    }
 }
 
 // ── Client Builder ──────────────────────────────────────────────────────────

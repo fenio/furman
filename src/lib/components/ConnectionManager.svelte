@@ -57,12 +57,13 @@
         } else if (profile.type === 'sftp' && profile.authMethod === 'password') {
           await connectionsState.deleteSecret(profile.id);
         }
+        if (profile.type === 's3' && profile.sseCustomerKeyEnabled) {
+          await connectionsState.deleteSecret(profile.id + ':sse-c');
+        }
       } catch (err: unknown) {
         error(String(err));
-      }
-      if (profile.type === 's3' && profile.sseCustomerKeyEnabled) {
-        try { await connectionsState.deleteSecret(profile.id + ':sse-c'); }
-        catch { error('Could not remove the SSE-C key from the keychain'); }
+        appState.showAlert('Connection was not removed because credential cleanup failed. Some keychain entries may already have been removed; review the saved connection before retrying.\n' + errorText(err));
+        return;
       }
       connectionsState.removeProfile(profile.id);
       appState.showConnectionManager();
