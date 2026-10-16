@@ -1,5 +1,10 @@
 # Guided Sync and Compare handoff
 
+For the staged extension beyond local/S3, see [all-backend comparison and transfer](all-backend-sync.md).
+Read-only pane comparison now includes SFTP and archives; their Sync handoffs are
+not enabled until the mapped writers are implemented. This guide's write cohorts
+and native saved-job contract remain unchanged.
+
 ⌘Y / **Sync** opens a three-step setup rather than the old flat pane comparison
 plus unrelated job editor. This is a UI follow-up to [guarded multipart jobs](job-guarded-multipart.md),
 not a new write cohort, scheduling feature or release.

@@ -60,7 +60,7 @@ class ComparisonState {
   ) {
     // Check supported backends
     if (!canComparePanes(leftBackend, rightBackend)) {
-      statusState.setMessage('Comparison not supported for SFTP/archive panels');
+      statusState.setMessage('Unknown comparison backend');
       return;
     }
 
@@ -171,6 +171,9 @@ class ComparisonState {
   syncSetup(side: ComparisonSide) {
     if (!this.active || this.scanning || this.outcome !== 'complete' || !this.lastComparison) return null;
     const [leftPath, leftBackend, leftS3Id, rightPath, rightBackend, rightS3Id] = this.lastComparison;
+    // Read-only comparison support is not mutation authority. Remote mapped
+    // transfers and archive extraction enter the guide in a separate step.
+    if (![leftBackend, rightBackend].every(backend => backend === 'local' || backend === 's3')) return null;
     const left = { path: leftPath, backend: leftBackend, s3Id: leftS3Id };
     const right = { path: rightPath, backend: rightBackend, s3Id: rightS3Id };
     return { source: side === 'left' ? left : right, destination: side === 'left' ? right : left,
@@ -249,6 +252,7 @@ class ComparisonState {
   diffForEntry(side: ComparisonSide, panelPath: string, entry: FileEntry | null): DiffPair | null {
     if (!entry || entry.is_dir || this.scanning || !this.lastComparison
         || this.statusForEntry(side, panelPath, entry) !== 'modified') return null;
+    if (![this.lastComparison[1], this.lastComparison[4]].every(backend => backend === 'local' || backend === 's3')) return null;
     const relative = this.entryRelativePath(side, panelPath, entry.name);
     return relative === null ? null : comparisonDiffPair(this.lastComparison, relative);
   }
@@ -314,6 +318,10 @@ class ComparisonState {
   }
 
   private normalizePath(path: string) {
+    if (path.startsWith('archive://')) {
+      const separator = path.lastIndexOf('#');
+      if (separator >= 0) path = path.slice(0, separator + 1) + '/' + path.slice(separator + 1).replace(/^\/+/, '');
+    }
     return path.length > 1 ? path.replace(/\/+$/, '') : path;
   }
 }

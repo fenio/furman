@@ -32,7 +32,7 @@
     <span class="badge yellow">{counts.modified}</span>
     <span class="badge red">{counts.deleted}</span>
     <span class="bar-label">{comparisonState.mode === 'sha256' ? 'SHA-256' : 'Metadata only'}</span>
-    <button class="filter-btn" disabled={!syncSetup || counts.new + counts.modified === 0} title={syncSetup ? `${syncSetup.source.path} → ${syncSetup.destination.path}. Uses the original compared folders, not current navigation. A fresh comparison/review is required; nothing transfers automatically.` : 'A complete comparison is required'} onclick={() => comparisonState.openSync(side)}>Sync from this side…</button>
+    <button class="filter-btn" disabled={!syncSetup || counts.new + counts.modified === 0} title={syncSetup ? `${syncSetup.source.path} → ${syncSetup.destination.path}. Uses the original compared folders, not current navigation. A fresh comparison/review is required; nothing transfers automatically.` : 'A complete local/S3 comparison is required. SFTP/archive comparison is read-only; mapped transfer support is not enabled yet.'} onclick={() => comparisonState.openSync(side)}>Sync from this side…</button>
     <button class="filter-btn" disabled={!canDiff} title="Read and diff the focused modified file against its counterpart; S3 download charges may apply" onclick={() => comparisonState.showDiff(side, panel.path, panel.currentEntry)}>Show diff</button>
     <button class="filter-btn" title="Read all object contents on both sides; S3 download charges may apply" onclick={() => comparisonState.verifyContents()}>Verify SHA-256</button>
     {#each filters as f (f.id)}

@@ -65,7 +65,10 @@ jobs:
           SFTP_TEST_PORT: 2222
           SFTP_TEST_USER: testuser
           SFTP_TEST_PASS: testpass
-        run: cargo test --test sftp_integration -- --test-threads=4
+          FURMAN_COMPARE_SFTP_TEST_PORT: 2222
+        run: |
+          cargo test --test sftp_integration -- --test-threads=4
+          cargo test --locked --lib loopback_sftp_native_comparison -- --ignored
 
       - name: Stop SFTP server
         if: always()

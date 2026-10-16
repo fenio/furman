@@ -29,7 +29,7 @@ separate PR, with provider-specific behavior and safety tested explicitly.
 6. **AWS SSO usability — merged in [#360](https://github.com/fenio/furman/pull/360).** Profile discovery, clear expired-session states, and an
     explicit AWS CLI v2 sign-in action without storing SSO tokens ourselves.
     See [the SSO usability contract](s3-aws-sso.md).
-7. **Saved jobs, then opt-in scheduling — options presets merged in [#361](https://github.com/fenio/furman/pull/361); design merged in [#362](https://github.com/fenio/furman/pull/362); definition foundation merged in [#363](https://github.com/fenio/furman/pull/363); read-only native binding/comparisons merged in [#364](https://github.com/fenio/furman/pull/364); checked previews/snapshots merged in [#365](https://github.com/fenio/furman/pull/365); durable journal/recovery/review pauses merged in [#366](https://github.com/fenio/furman/pull/366); guarded local creates merged in [#367](https://github.com/fenio/furman/pull/367); S3 creates merged in [#368](https://github.com/fenio/furman/pull/368); checked replacements merged in [#369](https://github.com/fenio/furman/pull/369); guarded bounded multipart merged in [#371](https://github.com/fenio/furman/pull/371); guided Sync usability in the current PR.** Start with reusable comparison/sync
+7. **Saved jobs, then opt-in scheduling — options presets merged in [#361](https://github.com/fenio/furman/pull/361); design merged in [#362](https://github.com/fenio/furman/pull/362); definition foundation merged in [#363](https://github.com/fenio/furman/pull/363); read-only native binding/comparisons merged in [#364](https://github.com/fenio/furman/pull/364); checked previews/snapshots merged in [#365](https://github.com/fenio/furman/pull/365); durable journal/recovery/review pauses merged in [#366](https://github.com/fenio/furman/pull/366); guarded local creates merged in [#367](https://github.com/fenio/furman/pull/367); S3 creates merged in [#368](https://github.com/fenio/furman/pull/368); checked replacements merged in [#369](https://github.com/fenio/furman/pull/369); guarded bounded multipart merged in [#371](https://github.com/fenio/furman/pull/371); guided Sync usability merged in [#373](https://github.com/fenio/furman/pull/373).** Start with reusable comparison/sync
    presets (method and explicit exclusions only; no stored identities or approval).
    See [the options-preset contract](comparison-presets.md).
    See [the configured-identity and definition foundation](saved-job-foundation.md).
@@ -49,10 +49,17 @@ separate PR, with provider-specific behavior and safety tested explicitly.
    Scheduling remains a separate future proposal; never
    silently schedule uploads.
 
-   The [guided Sync / Compare handoff](guided-sync.md) is the current usability
-   follow-up: source → destination → review, optional reusable setup, and an
+   The [guided Sync / Compare handoff](guided-sync.md), merged in [#373](https://github.com/fenio/furman/pull/373), provides
+   source → destination → review, optional reusable setup, and an
    explicit direction-aware “Sync from this side…” action after complete Compare.
    It adds no backend mutation authority, deletion, resume or scheduling.
+
+8. **All-backend workflows — read-only comparison in the current PR.**
+   Compare any local/S3/SFTP/archive pair with shared budgets, exclusions and
+   content verification. Follow [the staged all-backend plan](all-backend-sync.md)
+   for native exact-path local destinations, SFTP copy/update and archive-source
+   transfers next. Read-only comparison does not enable the unfinished writers;
+   archives remain read-only destinations and saved-job authority is unchanged.
 
 Retain Svelte, the dual-pane workflow, SHA-256 verification, SSE-C support, and
 keychain-backed secrets. Do not copy Brows3's plaintext secret-storage fallback

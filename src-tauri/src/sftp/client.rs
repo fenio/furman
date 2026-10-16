@@ -21,7 +21,7 @@ impl Default for SftpState {
 
 pub struct SftpConnection {
     pub session: Arc<SftpSession>,
-    pub ssh_handle: client::Handle<SshHandler>,
+    pub ssh_handle: Arc<client::Handle<SshHandler>>,
     pub host: String,
     pub port: u16,
     pub username: String,
@@ -196,7 +196,7 @@ pub async fn build_sftp_client(
 
     Ok(SftpConnection {
         session: Arc::new(sftp),
-        ssh_handle: handle,
+        ssh_handle: Arc::new(handle),
         host: host.to_string(),
         port,
         username: username.to_string(),

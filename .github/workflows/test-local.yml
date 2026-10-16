@@ -35,3 +35,17 @@ jobs:
       - name: Run local filesystem integration tests
         working-directory: src-tauri
         run: cargo test --test local_integration -- --test-threads=4
+
+      - name: Install 7zip (macOS)
+        if: runner.os == 'macOS'
+        run: brew install sevenzip
+
+      - name: Install 7zip (Linux)
+        if: runner.os == 'Linux'
+        run: sudo apt-get install -y 7zip
+
+      - name: Run all-backend comparison tests and disposable archive fixture
+        working-directory: src-tauri
+        run: |
+          cargo test --locked --lib commands::sync
+          cargo test --locked --lib real_archive_comparison_is_literal_read_only_and_exclusion_aware -- --ignored

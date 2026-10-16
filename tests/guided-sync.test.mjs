@@ -88,6 +88,43 @@ async function comparisonFixture(){
   const {comparisonState:state}=await import(data(imports(code,dependencies)));return{...f,state,cleanup(){state.stopComparison();delete globalThis[key];}};
 }
 
+test('all-backend Compare retains exact SFTP connection IDs through retry/content verification without granting Sync or text-diff authority', async () => {
+  for (const remote of ['sftp', 'archive']) {
+    const f = await comparisonFixture();
+    try {
+      const path = remote === 'sftp' ? 'sftp://original:22/folder/' : 'archive:///fixture.zip#folder';
+      await f.state.startComparison(path, remote, remote === 'sftp' ? 'original-session' : '', '/local', 'local', '', 'size_mtime', ['*.tmp']);
+      assert.equal(f.scans.length, 1); assert.equal(f.scans[0][1], remote); assert.equal(f.scans[0][2], path);
+      assert.equal(f.scans[0][3], remote === 'sftp' ? 'original-session' : '');
+      const event = f.scans[0][9];
+      event({ type: 'Entry', relative_path: 'nested/file', status: 'modified' });
+      event({ type: 'Done', new_count: 0, modified: 1, deleted: 0 });
+      const child = remote === 'archive' ? 'archive:///fixture.zip#folder/nested' : 'sftp://original:22/folder/nested/';
+      const entry = { name: 'file', is_dir: false };
+      assert.equal(f.state.statusForEntry('left', child, entry), 'modified');
+      assert.equal(f.state.syncSetup('left'), null); assert.equal(f.state.syncSetup('right'), null);
+      assert.equal(f.state.diffForEntry('left', child, entry), null);
+      f.state.openSync('left'); assert.equal(f.calls.length, 0);
+      await f.state.verifyContents(); assert.equal(f.scans[1][8], 'sha256');
+      assert.equal(f.scans[1][2], path); assert.equal(f.scans[1][3], f.scans[0][3]);
+      await f.state.retryComparison(); assert.deepEqual(f.scans[2].slice(1, 9), f.scans[1].slice(1, 9));
+      event({ type: 'Done', new_count: 9, modified: 9, deleted: 9 });
+      assert.equal(f.state.scanning, true); assert.equal(f.state.outcome, undefined);
+    } finally { f.cleanup(); }
+  }
+});
+
+test('archive root and nested comparison colours follow the archive URI boundary, not filesystem slash rules', async () => {
+  const f = await comparisonFixture();
+  try {
+    await f.state.startComparison('archive:///fixture.zip#', 'archive', '', '/local', 'local', '');
+    f.scans[0][9]({ type: 'Entry', relative_path: 'folder/file', status: 'new' });
+    f.scans[0][9]({ type: 'Done', new_count: 1, modified: 0, deleted: 0 });
+    assert.equal(f.state.statusForEntry('left', 'archive:///fixture.zip#folder', { name: 'file', is_dir: false }), 'new');
+    assert.equal(f.state.statusForEntry('left', 'archive:///other.zip#folder', { name: 'file', is_dir: false }), undefined);
+  } finally { f.cleanup(); }
+});
+
 test('Compare only offers setup after complete results and hands off exact original roots/IDs/options in either direction, never rows or approvals',async()=>{
   for(const side of ['left','right']){const f=await comparisonFixture();try{
     await f.state.startComparison('/original','local','','s3://bucket/dest/','s3','old-connection','sha256',['secret/**']);assert.equal(f.state.syncSetup(side),null);f.state.openSync(side);assert.equal(f.calls.length,0);
@@ -113,4 +150,16 @@ test('actual page dispatches the reviewed edited roots, not stale pane/modal val
   const handle=new Function('appState','window','CustomEvent',stripTypeScriptTypes(script)+';return handleSyncExecute;')(app,{dispatchEvent:event=>dispatched.push(event)},class{constructor(type,options){this.type=type;this.detail=options.detail;}});
   handle([{relative_path:'file',status:'new'}],local('/chosen-source'),remote('s3://bucket/chosen/'));
   assert.equal(dispatched[0].type,'sync-execute');assert.equal(dispatched[0].detail.sourcePath,'/chosen-source');assert.equal(dispatched[0].detail.destPath,'s3://bucket/chosen/');assert.equal(dispatched[0].detail.destS3Id,'connection');
+});
+
+test('actual Compare page callback uses SFTP IDs only for SFTP and never stale remote IDs for local/archive panes', () => {
+  const body = file('routes/+page.svelte').match(/onCompare=\{\(mode, excludes\) => \{([\s\S]*?)\n {6}\}\}/)[1];
+  const compare = new Function('panels', 'appState', 'comparisonState', 'mode', 'excludes', body);
+  for (const backend of ['local', 's3', 'sftp', 'archive']) {
+    const calls = [];
+    const panel = { path: '/original', backend, s3Connection: { connectionId: 's3-only' }, sftpConnection: { connectionId: 'sftp-only' } };
+    compare({ left: panel, right: panel }, { closeModal() {} }, { startComparison(...args) { calls.push(args); } }, 'sha256', ['*.tmp']);
+    const expected = backend === 'sftp' ? 'sftp-only' : backend === 's3' ? 's3-only' : '';
+    assert.equal(calls[0][2], expected); assert.equal(calls[0][5], expected); assert.deepEqual(calls[0].slice(6), ['sha256', ['*.tmp']]);
+  }
 });

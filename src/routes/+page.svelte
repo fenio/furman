@@ -333,8 +333,8 @@
       onCompare={(mode, excludes) => {
         appState.closeModal();
         comparisonState.startComparison(
-          panels.left.path, panels.left.backend, panels.left.s3Connection?.connectionId ?? '',
-          panels.right.path, panels.right.backend, panels.right.s3Connection?.connectionId ?? '',
+          panels.left.path, panels.left.backend, panels.left.backend === 'sftp' ? panels.left.sftpConnection?.connectionId ?? '' : panels.left.backend === 's3' ? panels.left.s3Connection?.connectionId ?? '' : '',
+          panels.right.path, panels.right.backend, panels.right.backend === 'sftp' ? panels.right.sftpConnection?.connectionId ?? '' : panels.right.backend === 's3' ? panels.right.s3Connection?.connectionId ?? '' : '',
           mode, excludes,
         );
       }}

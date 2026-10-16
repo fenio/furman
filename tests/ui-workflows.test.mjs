@@ -259,12 +259,14 @@ test('any S3 pane defaults to content verification', () => {
   assert.equal(defaultComparisonMode('s3', 'local'), 'sha256');
   assert.equal(defaultComparisonMode('local', 's3'), 'sha256');
   assert.equal(defaultComparisonMode('local', 'local'), 'size_mtime');
+  assert.equal(defaultComparisonMode('sftp', 'local'), 'sha256');
+  assert.equal(defaultComparisonMode('archive', 'sftp'), 'sha256');
 });
 
 test('only supported pane backend pairs can start comparison', () => {
   for (const left of ['local', 's3', 'sftp', 'archive']) {
     for (const right of ['local', 's3', 'sftp', 'archive']) {
-      assert.equal(canComparePanes(left, right), ['local', 's3'].includes(left) && ['local', 's3'].includes(right));
+      assert.equal(canComparePanes(left, right), true);
     }
   }
 });

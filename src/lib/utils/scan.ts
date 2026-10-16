@@ -17,7 +17,7 @@ export function scanLimitsFromConfig(value: unknown): ScanLimits {
 }
 export function scanSummary(progress: ScanProgress, outcome?: ScanOutcome, showMatches = true): string {
   const state = outcome === 'complete' ? 'Complete' : outcome ? `Incomplete — ${outcome}` : 'Scanning';
-  return `${state}: ${progress.scanned.toLocaleString()} scanned${showMatches ? ` · ${progress.matched.toLocaleString()} matched` : ''} · ${progress.requests.toLocaleString()} API calls · ${Math.floor(progress.elapsed_ms / 1000)}s`;
+  return `${state}: ${progress.scanned.toLocaleString()} scanned${showMatches ? ` · ${progress.matched.toLocaleString()} matched` : ''} · ${progress.requests.toLocaleString()} remote operations · ${Math.floor(progress.elapsed_ms / 1000)}s`;
 }
 export function canUseScan(outcome: ScanOutcome | null, scanning: boolean): boolean {
   return outcome === 'complete' && !scanning;
