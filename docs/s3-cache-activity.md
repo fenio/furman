@@ -27,8 +27,15 @@ and show a freshness warning rather than silently changing selection.
 
 The pane status sits below the file view and above the selection/free-space footer,
 outside the scrolling rows in list, icon and column views. Listing statistics,
-Refresh/Cancel/Retry/Continue and Activity/cache controls, freshness notices and
-incomplete/error diagnostics stay together there rather than above the first row.
+Refresh/Cancel/Retry/Continue controls, freshness notices and incomplete/error
+diagnostics stay there rather than above the first row. Routine counts, LIST/page
+statistics, timing, cache-age/fetch explanations and Activity/cache access are
+hidden by default behind **Diagnostics**. Each pane has an independent disclosure
+button with expanded/collapsed state; opening or closing it does not refresh,
+scan, change selection, alter the cache or persist a preference. Refresh, compact
+loading/incomplete/stale status, partial-selection warnings and errors remain
+visible without expanding it; long error details remain separately collapsed and
+copyable. A healthy complete listing has no routine status text outside Diagnostics.
 It distinguishes cache hits from network listings, displays age,
 and shows invalidation/expiry. Cached visits make no S3 LIST requests. Same-path
 reloads, including the pane Refresh button and keyboard refresh, always invalidate
