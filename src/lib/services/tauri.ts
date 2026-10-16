@@ -213,6 +213,8 @@ export async function cancelSearch(id: string): Promise<void> {
   await invoke('cancel_search', { id });
 }
 
+// The legacy *S3Id parameters also carry SFTP connection IDs for read-only
+// comparison. Archive roots use their existing archive://file#folder URI.
 export async function syncDiff(
   id: string,
   sourceBackend: string,

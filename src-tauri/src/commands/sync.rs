@@ -1,6 +1,7 @@
 use crate::models::{FmError, SyncEntry, SyncEvent};
 use crate::s3::scan::{self, ScanBudget, ScanProgress};
 use crate::s3::S3State;
+use crate::sftp::SftpState;
 use glob_match::glob_match;
 use sha2::{Digest, Sha256};
 use std::collections::HashMap;
@@ -20,6 +21,9 @@ pub struct SyncState(pub Mutex<HashMap<String, Arc<AtomicBool>>>);
 /// File info: (size, modified_ms, optional SHA-256 of actual contents).
 type FileInfo = (u64, i64, Option<String>);
 
+mod archive_compare;
+mod sftp_compare;
+
 // ── Commands ────────────────────────────────────────────────────────────
 
 fn comparison_budget(limits: Option<scan::ScanLimits>) -> Result<ScanBudget, FmError> {
@@ -35,9 +39,9 @@ fn comparison_budget(limits: Option<scan::ScanLimits>) -> Result<ScanBudget, FmE
 #[tauri::command]
 pub async fn sync_diff(
     id: String,
-    source_backend: String, // "local" | "s3"
-    source_path: String,    // local dir path or s3://bucket/prefix
-    source_s3_id: String,   // "" for local
+    source_backend: String, // "local" | "s3" | "sftp" | "archive"
+    source_path: String,    // local directory or backend URI
+    source_s3_id: String,   // legacy field: selected S3/SFTP connection ID; empty for local/archive
     dest_backend: String,
     dest_path: String,
     dest_s3_id: String,
@@ -46,6 +50,7 @@ pub async fn sync_diff(
     scan_limits: Option<scan::ScanLimits>,
     channel: Channel<SyncEvent>,
     s3_state: State<'_, S3State>,
+    sftp_state: State<'_, SftpState>,
     sync_state: State<'_, SyncState>,
 ) -> Result<(), FmError> {
     // Overrides belong to this comparison, never the process-wide defaults.
@@ -86,6 +91,7 @@ pub async fn sync_diff(
             &source_s3_id,
             use_checksum,
             &s3_state,
+            &sftp_state,
             &cancel_flag,
             &exclude_patterns,
             &budget,
@@ -102,6 +108,7 @@ pub async fn sync_diff(
             &dest_s3_id,
             use_checksum,
             &s3_state,
+            &sftp_state,
             &cancel_flag,
             &exclude_patterns,
             &budget,
@@ -317,6 +324,7 @@ async fn collect_files(
     s3_id: &str,
     use_checksum: bool,
     s3_state: &State<'_, S3State>,
+    sftp_state: &State<'_, SftpState>,
     cancel: &Arc<AtomicBool>,
     exclude_patterns: &[String],
     budget: &Arc<ScanBudget>,
@@ -348,6 +356,49 @@ async fn collect_files(
                 path,
                 use_checksum,
                 s3_state,
+                cancel,
+                exclude_patterns,
+                budget,
+                on_progress.as_ref(),
+            )
+            .await
+        }
+        "sftp" => {
+            let (ssh, host, port) = {
+                let connections = sftp_state
+                    .0
+                    .lock()
+                    .map_err(|e| FmError::Sftp(e.to_string()))?;
+                let connection = connections.get(s3_id).ok_or_else(|| {
+                    FmError::Sftp(
+                        "SFTP connection no longer available; reconnect and compare again".into(),
+                    )
+                })?;
+                (
+                    connection.ssh_handle.clone(),
+                    connection.host.clone(),
+                    connection.port,
+                )
+            };
+            // A separate SFTP subsystem on the existing authenticated SSH
+            // connection makes enumeration page-bounded and cancellation able
+            // to close all comparison handles without disturbing pane browsing.
+            let service = sftp_compare::Session::from_ssh(&ssh, host, port, cancel, budget).await?;
+            sftp_compare::collect(
+                &service,
+                path,
+                use_checksum,
+                cancel,
+                exclude_patterns,
+                budget,
+                on_progress.as_ref(),
+            )
+            .await
+        }
+        "archive" => {
+            archive_compare::collect(
+                path,
+                use_checksum,
                 cancel,
                 exclude_patterns,
                 budget,
@@ -567,14 +618,15 @@ async fn collect_s3_files(
         bucket_owned = conn.bucket.clone();
     }
 
-    let actual_bucket = if bucket.is_empty() {
-        &bucket_owned
-    } else {
-        &bucket
-    };
+    if bucket != bucket_owned {
+        return Err(FmError::S3(
+            "Comparison path does not belong to its S3 connection".into(),
+        ));
+    }
+    let actual_bucket = &bucket_owned;
 
     // Prefixes are directories here: "foo" must not include "foobar".
-    let prefix = if prefix.is_empty() {
+    let prefix = if prefix.is_empty() || prefix.ends_with('/') {
         prefix
     } else {
         format!("{prefix}/")
@@ -591,11 +643,12 @@ async fn collect_s3_files(
             modified,
             etag,
         } = object;
+        let rel = relative_s3_key(&key, &prefix)?;
         // Skip "directory" markers
         if key.ends_with('/') {
             continue;
         }
-        if is_excluded(key.strip_prefix(&prefix).unwrap_or(&key), exclude_patterns) {
+        if is_excluded(&rel, exclude_patterns) {
             continue;
         }
         // Strip prefix to get relative path
@@ -615,16 +668,6 @@ async fn collect_s3_files(
         } else {
             None
         };
-        let rel = if !prefix.is_empty() && key.starts_with(&prefix) {
-            let r = &key[prefix.len()..];
-            if r.starts_with('/') {
-                r[1..].to_string()
-            } else {
-                r.to_string()
-            }
-        } else {
-            key
-        };
         if !rel.is_empty() {
             result.insert(rel, (size, modified, checksum));
         }
@@ -633,26 +676,56 @@ async fn collect_s3_files(
     Ok(result)
 }
 
+/// Preserve literal key separators; never accept an out-of-scope listing item.
+fn relative_s3_key(key: &str, prefix: &str) -> Result<String, FmError> {
+    key.strip_prefix(prefix).map(str::to_owned).ok_or_else(|| {
+        FmError::S3("Comparison listing returned an object outside the requested prefix".into())
+    })
+}
+
 /// Parse an s3://bucket/prefix path into (bucket, prefix).
 fn parse_s3_path(path: &str) -> Result<(String, String), FmError> {
     if let Some(rest) = path.strip_prefix("s3://") {
         let slash = rest.find('/').unwrap_or(rest.len());
         let bucket = rest[..slash].to_string();
+        if bucket.is_empty() {
+            return Err(FmError::S3(
+                "Comparison requires a non-empty S3 bucket".into(),
+            ));
+        }
         let prefix = if slash < rest.len() {
-            rest[slash + 1..].trim_end_matches('/').to_string()
+            rest[slash + 1..].to_string()
         } else {
             String::new()
         };
         Ok((bucket, prefix))
     } else {
-        // Not an S3 path — treat as prefix only
-        Ok((String::new(), path.trim_end_matches('/').to_string()))
+        Err(FmError::S3(
+            "Comparison requires an s3://bucket/folder path".into(),
+        ))
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn s3_comparison_paths_preserve_literal_prefixes() {
+        assert_eq!(
+            parse_s3_path("s3://bucket/literal%20folder//").unwrap(),
+            ("bucket".into(), "literal%20folder//".into())
+        );
+        assert_eq!(
+            parse_s3_path("s3://bucket/").unwrap(),
+            ("bucket".into(), String::new())
+        );
+        assert!(parse_s3_path("s3:///folder").is_err());
+        assert!(parse_s3_path("bare-prefix").is_err());
+        assert_eq!(relative_s3_key("folder//file", "folder/").unwrap(), "/file");
+        assert_eq!(relative_s3_key("/file", "").unwrap(), "/file");
+        assert!(relative_s3_key("other/file", "folder/").is_err());
+    }
 
     #[test]
     fn comparison_limits_are_validated_and_operation_scoped() {

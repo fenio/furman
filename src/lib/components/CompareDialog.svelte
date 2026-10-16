@@ -32,14 +32,17 @@
       if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); onClose(); }
     }}>
     <h2 id="compare-title">Compare panes</h2>
-    <p>First inspect differences without changing either side. After a complete comparison, choose “Sync from this side…” above either pane to set up a reviewed transfer.</p>
+    <p>Inspect differences across local, S3, SFTP and archive folders without changing either side.</p>
+    {#if leftBackend === 'sftp' || rightBackend === 'sftp' || leftBackend === 'archive' || rightBackend === 'archive'}
+      <p>Read-only comparison is available now. Sync setup and built-in text diff for SFTP/archive combinations are not enabled yet; ordinary Copy/Extract remains separate. Archives are always read-only.</p>
+    {:else}<p>After a complete comparison, choose “Sync from this side…” above either pane to set up a reviewed transfer.</p>{/if}
     <form onsubmit={(event) => { event.preventDefault(); compare(); }}>
       <dl>
         <dt>Left pane</dt><dd>{leftPath} ({leftBackend})</dd>
         <dt>Right pane</dt><dd>{rightPath} ({rightBackend})</dd>
       </dl>
       {#if !supported}
-        <p role="alert">Comparison currently supports local folders and S3 buckets/prefixes, not SFTP or archives.</p>
+        <p role="alert">Unknown comparison backend.</p>
       {/if}
       <ComparisonPresets {mode} {excludeText} onApply={(nextMode, exclusions) => { mode = nextMode; excludeText = exclusions.join(', '); }} />
       <fieldset>
@@ -52,7 +55,9 @@
       <label for="compare-excludes">Exclude patterns (optional, comma-separated)</label>
       <input id="compare-excludes" type="text" bind:value={excludeText} placeholder=".DS_Store, *.tmp, node_modules/**" />
       <p>Compares the current pane roots recursively. No exclusions unless specified; current file contents only, not version history. Neither side is modified.</p>
-      <p>Scan budgets: {appState.s3ScanLimits.max_objects.toLocaleString()} entries, {appState.s3ScanLimits.max_requests.toLocaleString()} S3 API calls, {appState.s3ScanLimits.max_seconds}s across both sides. Configure in Preferences → Network. A stopped scan cannot establish equality.</p>
+      <p>Scan budgets: {appState.s3ScanLimits.max_objects.toLocaleString()} entries, {appState.s3ScanLimits.max_requests.toLocaleString()} remote operations, {appState.s3ScanLimits.max_seconds}s across both sides. Configure in Preferences → Network. A stopped scan cannot establish equality.</p>
+      {#if leftBackend === 'sftp' || rightBackend === 'sftp'}<p>SFTP opens a read-only comparison subsystem on the existing SSH connection; it does not reconnect or run remote shell commands. Directory pages and file reads share the remote-request budget. Keep folders stable: checks are not an atomic snapshot and SFTP modification times may have one-second precision. Links and special files require explicit exclusions.</p>{/if}
+      {#if leftBackend === 'archive' || rightBackend === 'archive'}<p>Archive comparison requires 7zip. SHA-256 streams expanded member contents without extracting files to disk. Encrypted, damaged, ambiguous or unsafe archives fail the comparison; no password prompt is opened. Listing output is limited to 16 MiB.</p>{/if}
       {#if mode === 'sha256' && (leftBackend === 's3' || rightBackend === 's3')}
         <p>S3 contents are downloaded for hashing; download/egress charges may apply. Keep both sides stable during verification.</p>
       {/if}
