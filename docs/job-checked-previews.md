@@ -161,7 +161,7 @@ prepares replacement snapshots and verifies both original payloads unchanged.
 The [journal foundation](job-journal.md) implements local attempt durability,
 reconciliation and review pauses. [Initial execution](job-guarded-execution.md)
 adds explicit single-use approval, guarded native snapshot consumption, executable
-intent/outcomes and verification for small local → S3 creates only. S3-source
-attribute/encryption/ACL/tag preservation, conditional replacements and multipart
-execution need separate acceptance/failure-injection/provider coverage.
+intent/outcomes and verification for small creates. The [S3 extension](job-s3-create-execution.md)
+implements the supported attribute/encryption/tag/ACL subset. Richer source
+attributes, conditional replacements and multipart execution need separate coverage.
 Scheduling remains separate.

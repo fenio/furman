@@ -79,6 +79,7 @@ pub(super) struct Item {
     pub key: String,
     pub expected: DestinationExpectation,
     pub snapshot: Snapshot,
+    pub controls: Option<super::controls::Controls>,
 }
 pub(super) struct Plan {
     pub id: String,
@@ -134,9 +135,6 @@ impl Plan {
         }
     }
     pub fn execution_blocker(&self) -> Option<String> {
-        if self.source_instance.is_some() {
-            return Some("Initial job execution supports local-file sources only. S3 source ACL/tag/encryption/storage preservation needs separate review; this preview remains read-only.".into());
-        }
         if self.policy == Policy::ReplaceUnchanged
             || self
                 .items
@@ -162,6 +160,12 @@ impl Plan {
             }
             if let Some(reason) = &item.snapshot.attributes.unsupported {
                 return Some(reason.clone());
+            }
+            if self.source_instance.is_some() && item.snapshot.attributes.content_type.is_none() {
+                return Some(
+                    "S3 source Content-Type is missing; job execution cannot silently invent one."
+                        .into(),
+                );
             }
             if item.snapshot.attributes.customer_encrypted && !self.destination_sse {
                 return Some("An SSE-C source requires an explicitly SSE-C-enabled job destination; no plaintext downgrade is authorized.".into());
@@ -729,6 +733,7 @@ pub(crate) async fn prepare(
                 }
             };
             items.push(Item {
+                controls: None,
                 entry: input.entry,
                 key: input.key,
                 expected: input.expected,

@@ -68,7 +68,9 @@ ordinary pane comparison; returning to Sync is an explicit context switch.
   binding. Standard OS/native TLS trust is used; this is not certificate pinning.
 - A native interceptor validates the **resolved request URI** before signing and
   transmission against the pinned scheme, host and effective port. It also
-  permits only `HeadBucket`, `HeadObject` (added for checked previews), `ListObjectsV2` and `GetObject` operations and only
+  permits `HeadBucket`, `HeadObject` (added for checked previews), `ListObjectsV2`,
+  `GetObject` and the S3-execution review/verification reads `GetObjectAcl`,
+  `GetObjectTagging`, `GetObjectLockConfiguration`; only
   HEAD/GET HTTP methods. Namespace changes and mutation attempts fail before
   transmission. A stored endpoint string alone is not considered binding proof.
 - Effective namespace overlap is checked again after resolution, so an implicit
@@ -180,6 +182,7 @@ manifest-to-preview ownership and checked payload snapshots without execution.
 The [journal foundation](job-journal.md) adds durable attempt records,
 restart reconciliation and review pauses. [Initial local-create execution](job-guarded-execution.md)
 adds separate single-use execution approval and executable intent/outcome handling.
+The [S3-source extension](job-s3-create-execution.md) adds supported attribute-preserving creates.
 **Comparison alone grants no job write API authority. No scheduling
 is included.** Ordinary Copy/Sync, Linode/Akamai endpoints/proxy/SSE-C behavior and
 the known Garage write gates are not reinterpreted by this read-only path.

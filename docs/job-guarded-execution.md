@@ -1,14 +1,17 @@
 # Initial manually approved job execution
 
-This follow-up to [checked previews](job-checked-previews.md) and the
+Merged in [#367](https://github.com/fenio/furman/pull/367), this follow-up to [checked previews](job-checked-previews.md) and the
 [#366 journal foundation](https://github.com/fenio/furman/pull/366) enables a
 deliberately narrow first executable cohort. **Definitions, comparisons,
 preparation, startup/recovery and history review are never execution approval.**
 This is source/PR functionality; it does not create a new tagged release.
+The [S3-source follow-up](job-s3-create-execution.md) extends the same guarded
+cohort to supported S3 metadata/headers/tags/encryption with explicit ACL/lock gates.
 
 ## Supported cohort and explicit exclusions
 
-- Saved manual-key **local → S3** jobs only; SHA-256 is mandatory.
+- Saved manual-key **local → S3**, plus [eligible S3 → S3](job-s3-create-execution.md)
+  jobs; SHA-256 is mandatory.
 - Explicit native selected files, at most 128 actionable snapshots, each **up to
   5 MiB**. No folder expansion or silently included unloaded entries at execution.
 - `create_only` or `skip_existing`: every actionable destination must still be
@@ -34,10 +37,10 @@ Managed credential edits invalidate generations before mutation; external keycha
 edits and editors ignoring locks remain outside that tracking.
 
 **Not enabled:** replacements (including `replace_unchanged` previews), multipart
-job writes, S3-source execution, deletion/move/rename, local destinations,
+job writes, unsupported S3 source attributes, deletion/move/rename, local destinations,
 unguarded overwrite, dynamic AWS profile/SSO execution, retry/resume, headless/MCP
-execution or scheduling. S3-source ACL/tag/storage/retention/encryption preservation
-needs separate review, not a payload-only downgrade. Larger files and richer
+execution or scheduling. Custom source ACLs, KMS/retention and non-STANDARD source
+storage remain refused, never a payload-only downgrade. Larger files and richer
 policies visibly remain read-only. Ordinary guarded Copy/Sync is unchanged.
 
 ## Manual flow and native ownership
@@ -163,6 +166,7 @@ real create and a destination appearing after review without overwriting it;
 provider CI retains existing MinIO/SeaweedFS/Garage/SSE-C regression checks.
 No production credentials, keychain entries or buckets are used for validation.
 
-Future expansion requires separate review for S3 attribute/encryption/ACL/tag
-preservation, conditional replacement, multipart ambiguity/cleanup and their
+The [S3 extension](job-s3-create-execution.md) implements the supported preservation
+subset. Future expansion requires separate review for custom grants, KMS/retention,
+conditional replacement, multipart ambiguity/cleanup and their
 failure-injection/provider matrix. Scheduling remains separately authorized.

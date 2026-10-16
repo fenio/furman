@@ -25,7 +25,7 @@ export interface JobRunStatus {
   execution_review: JobExecutionReview | null;
   execution: JobExecutionResult | null;
 }
-export interface JobExecutionReview { approval_id: string; preview: JobCheckedPreview; source: string; destination: string; exclusions: string[]; destination_sse_c: boolean }
+export interface JobExecutionReview { approval_id: string; preview: JobCheckedPreview; source: string; destination: string; exclusions: string[]; destination_sse_c: boolean; s3_source: boolean; preserved_tag_count: number; source_aes256_files: number; source_sse_c_files: number }
 export interface JobExecutionResult { status: JobAttemptStatus; counts: JobExecutionCounts; outcome_recorded: boolean; message: string | null }
 export type JobPreviewPolicy = 'create_only' | 'skip_existing' | 'replace_unchanged';
 export interface JobCheckedPreview {
