@@ -2,10 +2,12 @@
 
 **Status: design merged in [#362](https://github.com/fenio/furman/pull/362);
 definition-only foundation merged in [#363](https://github.com/fenio/furman/pull/363);
-read-only live binding/comparisons are the current implementation step.** See the
+read-only live binding/comparisons merged in [#364](https://github.com/fenio/furman/pull/364);
+checked non-executable previews/snapshots are the current implementation step.** See the
 [foundation contract](saved-job-foundation.md) for its exact scope and remaining
 live-binding gates, and the [read-only runtime contract](job-bound-comparisons.md).
-The write-preview/execution/journal guarantees below are still unimplemented.
+See [checked payload previews](job-checked-previews.md) for the implemented preparation boundary.
+The execution/journal guarantees below are still unimplemented.
 This document is the review gate between
 the [shipped options presets](comparison-presets.md) and runnable jobs. It adds
 no commands, execution paths, automatic connections, timers or migrations.

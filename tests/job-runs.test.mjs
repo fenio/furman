@@ -18,9 +18,9 @@ async function fixture(methods={}){
   const key=`jobRunFixture${sequence++}`;const calls=[];const destroys=[];const initial=bound();
   const context={props:{definition:structuredClone(definition)},destroys,calls,methods:{bind:async()=>initial,scan:async()=>complete(initial),page:async()=>[{id:'entry',relative_path:'nested/file',status:'new',source_size:3,destination_size:null}],release:async()=>{},status:async()=>initial,...methods}};
   globalThis[key]=context;
-  const rpc=data(`const run=(name,...args)=>{const fixture=globalThis.${key};fixture.calls.push([name,...args]);return fixture.methods[name](...args);};export const bindJobSession=(...args)=>run('bind',...args);export const scanJobSession=(...args)=>run('scan',...args);export const releaseJobSession=(...args)=>run('release',...args);export const jobSessionStatus=(...args)=>run('status',...args);export const jobManifestPage=(...args)=>run('page',...args);`);
+  const rpc=data(`const run=(name,...args)=>{const fixture=globalThis.${key};fixture.calls.push([name,...args]);return fixture.methods[name](...args);};export const bindJobSession=(...args)=>run('bind',...args);export const scanJobSession=(...args)=>run('scan',...args);export const releaseJobSession=(...args)=>run('release',...args);export const jobSessionStatus=(...args)=>run('status',...args);export const jobManifestPage=(...args)=>run('page',...args);export const prepareJobPreview=(...args)=>run('prepare',...args);`);
   let script=source.match(/<script lang="ts">([\s\S]*?)<\/script>/)[1].replaceAll('$props()',`globalThis.${key}.props`).replace(/^\s*import \w+ from '\.\/[^']+\.svelte';/gm,'');
-  script+=`\nexport const harness={bind,compare,more,refresh,release,approve(){approved=true;},get state(){return{approved,session,progress,rows,busy,failure,status,opId};}};`;
+  script+=`\nexport const harness={bind,compare,more,refresh,release,prepare,toggleEntry,approve(){approved=true;},approveSnapshots(){snapshotApproved=true;},setBudget(value){snapshotMiB=value;},get state(){return{approved,session,progress,rows,busy,failure,status,opId,selectedIds,snapshotApproved};}};`;
   const code=compileModule(stripTypeScriptTypes(script),{generate:'client',filename:'JobComparisonSession.svelte.js'}).js.code;
   const {harness}=await import(data(imports(code,{'svelte':data(`export const onDestroy=callback=>globalThis.${key}.destroys.push(callback);`),'#lib/services/job-runs.js':rpc,'#lib/services/log.js':data('export const error=()=>{};')})));
   return{h:harness,calls,context,close(){for(const destroy of destroys)destroy();},cleanup(){delete globalThis[key];}};
@@ -76,9 +76,48 @@ test('read-only service sends no credentials or caller-selected rows and cannot 
 });
 
 test('actual session UI renders separate read-only approval and keeps comparison disabled before binding',async()=>{
-  const dependencies={'#lib/services/job-runs.js':data('export const bindJobSession=async()=>{throw new Error("No SSR binding");};export const scanJobSession=async()=>{};export const releaseJobSession=async()=>{};export const jobSessionStatus=async()=>{};export const jobManifestPage=async()=>{};'),'#lib/services/log.js':data('export const error=()=>{};'),'#lib/utils/error-report.js':new URL('../src/lib/utils/error-report.ts',import.meta.url).href,'#lib/utils/scan.js':new URL('../src/lib/utils/scan.ts',import.meta.url).href,'#lib/utils/format.js':new URL('../src/lib/utils/format.ts',import.meta.url).href};
+  const dependencies={'#lib/services/job-runs.js':data('export const bindJobSession=async()=>{throw new Error("No SSR binding");};export const scanJobSession=async()=>{};export const releaseJobSession=async()=>{};export const jobSessionStatus=async()=>{};export const jobManifestPage=async()=>{};export const prepareJobPreview=async()=>{};'),'#lib/services/log.js':data('export const error=()=>{};'),'#lib/utils/error-report.js':new URL('../src/lib/utils/error-report.ts',import.meta.url).href,'#lib/utils/scan.js':new URL('../src/lib/utils/scan.ts',import.meta.url).href,'#lib/utils/format.js':new URL('../src/lib/utils/format.ts',import.meta.url).href};
   const component=file=>data(imports(compile(readFileSync(new URL(`../src/lib/components/${file}`,import.meta.url),'utf8'),{generate:'server',filename:file}).js.code,dependencies));
   dependencies['./ErrorNotice.svelte']=component('ErrorNotice.svelte');dependencies['./ScanStatus.svelte']=component('ScanStatus.svelte');
   const {default:Component}=await import(data(imports(compile(source,{generate:'server',filename:'JobComparisonSession.svelte'}).js.code,dependencies)));
   const html=render(Component,{props:{definition}}).body;assert.ok(html.includes('not unsaved editor fields'));assert.ok(html.includes('HeadBucket'));assert.match(html,/disabled[^>]*>Compare saved job/);assert.ok(html.includes('No job execution, history'));assert.ok(!html.includes('Upload now'));
+});
+
+test('checked preparation requires explicit loaded native entry selection and separate snapshot approval',async()=>{
+  const f=await fixture({prepare:async(run,manifest)=>({...complete(bound()),run_id:run,manifest_id:manifest,phase:'prepared',preview:{id:'native-preview',execution_available:false}})});
+  try{
+    await f.h.prepare();assert.equal(f.calls.length,0);
+    f.h.approve();await f.h.bind();await f.h.compare();assert.ok(!f.calls.some(call=>call[0]==='prepare'));
+    f.h.toggleEntry('synthetic');assert.equal(f.h.state.selectedIds.size,0);f.h.toggleEntry('entry');await f.h.prepare();assert.ok(!f.calls.some(call=>call[0]==='prepare'));
+    f.h.approveSnapshots();await f.h.prepare();const call=f.calls.find(call=>call[0]==='prepare');assert.deepEqual(call[3],['entry']);assert.equal(call[4],'create_only');assert.equal(call[5],1024*1024*1024);assert.equal(call[6],true);
+    assert.equal(f.h.state.snapshotApproved,false);assert.equal(f.h.state.session.phase,'prepared');assert.equal(f.h.state.session.execution_available,false);
+    await f.h.prepare();assert.equal(f.calls.filter(call=>call[0]==='prepare').length,1);assert.ok(!f.calls.some(call=>/execute|upload|delete/.test(call[0])));
+  }finally{f.close();await Promise.resolve();f.cleanup();}
+});
+
+test('selection changes reset snapshot approval and invalid disk budgets never reach native preparation',async()=>{
+  const f=await fixture();try{
+    f.h.approve();await f.h.bind();await f.h.compare();f.h.toggleEntry('entry');f.h.approveSnapshots();f.h.toggleEntry('entry');assert.equal(f.h.state.snapshotApproved,false);f.h.toggleEntry('entry');f.h.approveSnapshots();f.h.setBudget(1.5);await f.h.prepare();assert.match(String(f.h.state.failure),/whole snapshot disk budget/);assert.ok(!f.calls.some(call=>call[0]==='prepare'));
+  }finally{f.close();await Promise.resolve();f.cleanup();}
+});
+
+test('cancelled snapshot preparation ignores late progress and cannot restore a prepared handle',async()=>{
+  const pending=deferred();let notify;const f=await fixture({prepare:async(_run,_manifest,_ids,_policy,_bytes,_approved,onProgress)=>{notify=onProgress;return pending.promise;}});
+  try{
+    f.h.approve();await f.h.bind();await f.h.compare();f.h.toggleEntry('entry');f.h.approveSnapshots();const preparing=f.h.prepare();assert.equal(f.h.state.busy,'preparing');
+    await f.h.release();notify(progress);pending.resolve({...complete(bound()),phase:'prepared',preview:{id:'late-preview'}});await preparing;
+    assert.equal(f.h.state.session,null);assert.equal(f.h.state.progress,null);assert.equal(f.h.state.selectedIds.size,0);assert.equal(f.h.state.snapshotApproved,false);
+  }finally{f.close();await Promise.resolve();f.cleanup();}
+});
+
+test('snapshot service sends only native ownership handles, selected IDs and reviewed limits/policy',async()=>{
+  const calls=[];globalThis.__jobSnapshotRpc=(...args)=>{calls.push(args);return Promise.resolve(bound());};
+  try{
+    const script=stripTypeScriptTypes(readFileSync(new URL('../src/lib/services/job-runs.ts',import.meta.url),'utf8'));
+    const {prepareJobPreview}=await import(data(imports(script,{'@tauri-apps/api/core':data('export const invoke=(...args)=>globalThis.__jobSnapshotRpc(...args);export class Channel{}')})));
+    await assert.rejects(prepareJobPreview('run','manifest',['entry'],'create_only',100,false,()=>{}));assert.equal(calls.length,0);
+    await prepareJobPreview('run','manifest',['entry'],'replace_unchanged',100,true,()=>{});
+    assert.equal(calls[0][0],'saved_job_prepare');assert.deepEqual(calls[0][1].request,{run_id:'run',manifest_id:'manifest',entry_ids:['entry'],policy:'replace_unchanged',max_snapshot_bytes:100,approved:true});
+    const encoded=JSON.stringify(calls);assert.ok(!encoded.includes('expected_sha256'));assert.ok(!encoded.includes('source_path'));assert.ok(!encoded.includes('credential'));assert.ok(!encoded.includes('overwrite'));
+  }finally{delete globalThis.__jobSnapshotRpc;}
 });

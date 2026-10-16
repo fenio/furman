@@ -1,6 +1,7 @@
 //! Explicit read-only job sessions. Private native clients and complete manifests
 //! are never inserted in legacy connection/transfer registries. No writer API.
 pub(crate) mod collect;
+pub(crate) mod preview;
 #[cfg(test)]
 mod tests;
 
@@ -63,7 +64,7 @@ struct Binding {
     limits: ScanLimits,
     global_limits: ScanLimits,
     bind_progress: ScanProgress,
-    _run_lock: Arc<File>,
+    _run_lock: Arc<RunLock>,
 }
 impl Binding {
     fn validate(&self) -> Result<(), FmError> {
@@ -96,6 +97,8 @@ enum Phase {
     Bound,
     Scanning,
     Complete,
+    Preparing,
+    Prepared,
     Stopped,
 }
 
@@ -107,6 +110,7 @@ struct Slot {
     expires: Instant,
     binding: Option<Arc<Binding>>,
     manifest: Option<collect::Manifest>,
+    preview: Option<preview::Plan>,
     outcome: Option<ScanOutcome>,
     message: Option<String>,
     progress: ScanProgress,
@@ -145,6 +149,7 @@ pub struct RunStatus {
     pub destination_namespace: Option<String>,
     pub limits: Option<ScanLimits>,
     pub execution_available: bool,
+    pub preview: Option<preview::Preview>,
 }
 
 impl Slot {
@@ -172,6 +177,8 @@ impl Slot {
                 Phase::Bound => "bound",
                 Phase::Scanning => "scanning",
                 Phase::Complete => "complete",
+                Phase::Preparing => "preparing",
+                Phase::Prepared => "prepared",
                 Phase::Stopped => "stopped",
             },
             expires_seconds: if self.phase == Phase::Stopped {
@@ -213,6 +220,7 @@ impl Slot {
                 .map(|binding| binding.destination.namespace.clone()),
             limits: self.binding.as_ref().map(|binding| binding.limits),
             execution_available: false,
+            preview: self.preview.as_ref().map(|plan| plan.view(self.expires)),
         }
     }
 }
@@ -270,6 +278,7 @@ impl JobRunState {
             expires: Instant::now() + TTL,
             binding: None,
             manifest: None,
+            preview: None,
             outcome: None,
             message: None,
             progress: ScanProgress::default(),
@@ -304,6 +313,7 @@ impl JobRunState {
         slot.cancel.store(true, Ordering::Relaxed);
         slot.phase = Phase::Stopped;
         slot.manifest = None;
+        slot.preview = None;
         slot.binding = None;
         slot.outcome = Some(outcome);
         slot.message = Some(message);
@@ -325,8 +335,9 @@ impl JobRunState {
         {
             slot.cancel.store(true, Ordering::Relaxed);
             slot.manifest = None;
+            slot.preview = None;
             // In-flight work owns its binding/run-lock until it actually stops.
-            if matches!(slot.phase, Phase::Bound | Phase::Complete) {
+            if matches!(slot.phase, Phase::Bound | Phase::Complete | Phase::Prepared) {
                 if let Some(timer) = slot.expiry_abort.take() {
                     timer.abort();
                 }
@@ -390,12 +401,26 @@ impl JobRunState {
                 "Job session expired during validation; bind and compare again".into(),
             );
         }
-        Ok(inner
+        let slot = inner
             .slot
             .as_ref()
             .filter(|slot| slot.id == id)
-            .ok_or_else(|| error("Job session replaced"))?
-            .view())
+            .ok_or_else(|| error("Job session replaced"))?;
+        if let Some(plan) = &slot.preview {
+            let valid = slot
+                .binding
+                .as_ref()
+                .zip(slot.manifest.as_ref())
+                .ok_or_else(|| error("Prepared job ownership is unavailable"))
+                .and_then(|(binding, manifest)| {
+                    plan.check_owner(binding, id, &manifest.id, slot.expires)
+                });
+            if let Err(failure) = valid {
+                drop(inner);
+                return self.stop(id, ScanOutcome::Failed, failure.to_string());
+            }
+        }
+        Ok(slot.view())
     }
     pub fn page(
         &self,
@@ -404,10 +429,12 @@ impl JobRunState {
         offset: usize,
     ) -> Result<Vec<collect::Row>, FmError> {
         let status = self.status(id)?;
-        if status.phase != "complete" || status.manifest_id.as_deref() != Some(manifest_id) {
-            return Err(error(
+        if !matches!(status.phase, "complete" | "prepared")
+            || status.manifest_id.as_deref() != Some(manifest_id)
+        {
+            return Err(error(status.message.as_deref().unwrap_or(
                 "A matching, fresh native complete manifest is required",
-            ));
+            )));
         }
         let inner = self
             .0
@@ -418,7 +445,7 @@ impl JobRunState {
             .as_ref()
             .filter(|slot| {
                 slot.id == id
-                    && slot.phase == Phase::Complete
+                    && matches!(slot.phase, Phase::Complete | Phase::Prepared)
                     && slot.expires > Instant::now()
                     && !slot.cancel.load(Ordering::Relaxed)
             })
@@ -438,7 +465,15 @@ impl JobRunState {
     }
 }
 
-fn run_lock(paths: &Paths) -> Result<File, FmError> {
+struct RunLock(File);
+impl Drop for RunLock {
+    fn drop(&mut self) {
+        // Closing alone can leave a fork-inherited duplicate holding this lease
+        // until the child execs. Only the final Arc owner unlocks the lease.
+        let _ = self.0.unlock();
+    }
+}
+fn run_lock(paths: &Paths) -> Result<RunLock, FmError> {
     let file = std::fs::OpenOptions::new()
         .read(true)
         .write(true)
@@ -459,7 +494,7 @@ fn run_lock(paths: &Paths) -> Result<File, FmError> {
     }
     file.try_lock()
         .map_err(|_| error("Another cooperating process/job task still owns the job run lock"))?;
-    Ok(file)
+    Ok(RunLock(file))
 }
 
 struct Auth {
@@ -599,7 +634,10 @@ impl aws_sdk_s3::config::Intercept for ReadNamespaceGuard {
             .load::<aws_smithy_runtime_api::client::orchestrator::Metadata>()
             .map(aws_smithy_runtime_api::client::orchestrator::Metadata::name)
             .unwrap_or("");
-        if !matches!(operation, "HeadBucket" | "ListObjectsV2" | "GetObject") {
+        if !matches!(
+            operation,
+            "HeadBucket" | "HeadObject" | "ListObjectsV2" | "GetObject"
+        ) {
             return Err(READ_ONLY_ERROR.into());
         }
         self.validate(context.request().uri())

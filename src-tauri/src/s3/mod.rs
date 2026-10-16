@@ -11,7 +11,7 @@ pub mod service;
 pub mod sse_c;
 pub mod verification;
 pub mod writes;
-mod write_local;
+pub(crate) mod write_local;
 
 #[cfg(test)]
 mod listing_tests;

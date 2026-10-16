@@ -1,9 +1,11 @@
 # Native read-only job binding and complete comparisons
 
-This step extends the [definition foundation](saved-job-foundation.md) with
+Merged in [#364](https://github.com/fenio/furman/pull/364), this step extends the [definition foundation](saved-job-foundation.md) with
 **explicit live binding and read-only SHA-256 comparisons**. Payload execution,
 write previews, deletion, run history, restart replay and scheduling remain
-disabled. A complete manifest is not an approval to write.
+disabled in that step. The [checked-preview follow-up](job-checked-previews.md)
+now adds non-executable preparation and private snapshots. A complete manifest
+is not an approval to write.
 
 ## Manual workflow
 
@@ -66,7 +68,7 @@ ordinary pane comparison; returning to Sync is an explicit context switch.
   binding. Standard OS/native TLS trust is used; this is not certificate pinning.
 - A native interceptor validates the **resolved request URI** before signing and
   transmission against the pinned scheme, host and effective port. It also
-  permits only `HeadBucket`, `ListObjectsV2` and `GetObject` operations and only
+  permits only `HeadBucket`, `HeadObject` (added for checked previews), `ListObjectsV2` and `GetObject` operations and only
   HEAD/GET HTTP methods. Namespace changes and mutation attempts fail before
   transmission. A stored endpoint string alone is not considered binding proof.
 - Effective namespace overlap is checked again after resolution, so an implicit
@@ -173,8 +175,9 @@ provider-supported fixture names; mocked protocol tests separately cover
 literal repeated slashes. No real keychain entries or production buckets are
 needed by these tests.
 
-The next gate is native manifest-to-guarded-preview ownership, checked payload
-snapshots, single-use execution approval, durable intent/outcome journaling and
-restart/review-pause semantics. **No job write API or scheduling is included in
-this step.** Ordinary Copy/Sync, Linode/Akamai endpoints/proxy/SSE-C behavior and
+The [checked-preview follow-up](job-checked-previews.md) implements native
+manifest-to-preview ownership and checked payload snapshots without execution.
+Single-use execution approval, durable intent/outcome journaling and
+restart/review-pause semantics remain deferred. **No job write API or scheduling
+is included.** Ordinary Copy/Sync, Linode/Akamai endpoints/proxy/SSE-C behavior and
 the known Garage write gates are not reinterpreted by this read-only path.

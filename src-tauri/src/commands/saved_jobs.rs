@@ -4,7 +4,7 @@ use crate::{
 };
 
 // Read-only binding/scanning is isolated from all ordinary transfer registries.
-// No job prepare/execute command exists.
+// Preparation retains read-only snapshots; no job execute command exists.
 #[tauri::command]
 pub fn saved_jobs_list() -> Result<Report, FmError> {
     jobs::list(&Paths::home()?)
@@ -75,4 +75,20 @@ pub fn saved_job_manifest_page(
     offset: u32,
 ) -> Result<Vec<crate::job_runs::collect::Row>, FmError> {
     state.page(&run_id, &manifest_id, offset as usize)
+}
+
+#[tauri::command]
+pub async fn saved_job_prepare(
+    state: tauri::State<'_, crate::job_runs::JobRunState>,
+    request: crate::job_runs::preview::Request,
+    channel: tauri::ipc::Channel<crate::s3::scan::ScanProgress>,
+) -> Result<crate::job_runs::RunStatus, FmError> {
+    crate::job_runs::preview::prepare(
+        &state,
+        request,
+        std::sync::Arc::new(move |progress| {
+            let _ = channel.send(progress);
+        }),
+    )
+    .await
 }

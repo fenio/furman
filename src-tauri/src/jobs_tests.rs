@@ -69,6 +69,17 @@ fn definitions_roundtrip_exact_pins_without_credentials_resolution_or_execution(
 }
 
 #[test]
+fn identity_lock_drop_releases_a_fork_inherited_duplicate_without_unlocking_early() {
+    let (_root, paths) = fixture();
+    let owner = lock(&paths).unwrap();
+    let inherited = owner.0.try_clone().unwrap();
+    assert!(lock(&paths).is_err());
+    drop(owner);
+    assert!(lock(&paths).is_ok());
+    drop(inherited);
+}
+
+#[test]
 fn managed_secret_changes_invalidate_before_mutation_and_fail_closed_on_failure() {
     let (_root, paths) = fixture();
     save(&paths, request(&paths, None)).unwrap();
