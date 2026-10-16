@@ -84,7 +84,15 @@ fn read_bytes(path: &Path, limit: u64) -> Result<Option<Vec<u8>>, FmError> {
     Ok(Some(bytes))
 }
 
-fn lock(paths: &Paths) -> Result<File, FmError> {
+struct IdentityLock(File);
+impl Drop for IdentityLock {
+    fn drop(&mut self) {
+        // Release explicitly: a concurrently spawned child may briefly retain
+        // a fork-inherited descriptor until exec, even with close-on-exec set.
+        let _ = self.0.unlock();
+    }
+}
+fn lock(paths: &Paths) -> Result<IdentityLock, FmError> {
     fs::create_dir_all(
         paths
             .store
@@ -105,7 +113,7 @@ fn lock(paths: &Paths) -> Result<File, FmError> {
         return Err(error("Saved-job lock must be a regular file"));
     }
     file.try_lock().map_err(|_| error("Saved-job identity storage is busy in another operation. Retry after it finishes; no edit was started."))?;
-    Ok(file)
+    Ok(IdentityLock(file))
 }
 
 #[derive(Clone, Serialize, Deserialize)]

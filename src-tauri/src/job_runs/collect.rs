@@ -26,6 +26,7 @@ pub struct Row {
     pub source_size: Option<u64>,
     pub destination_size: Option<u64>,
 }
+#[derive(Clone)]
 pub(super) struct Entry {
     pub row: Row,
     pub source: Option<FileInfo>,

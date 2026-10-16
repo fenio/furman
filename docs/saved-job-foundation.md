@@ -4,7 +4,8 @@ This is the definition foundation merged in [#363](https://github.com/fenio/furm
 the first implementation step of the [pinned manual-job design](pinned-sync-jobs-design.md).
 The [subsequent read-only binding/comparison contract](job-bound-comparisons.md)
 extends its runtime capabilities. **Job writes still cannot run.** There are no
-job preview, execute, retry, history or scheduling commands. `execution_available`
+job execute, retry, history or scheduling commands. The [checked-preview follow-up](job-checked-previews.md)
+adds non-executable snapshot preparation. `execution_available`
 is always false, and the UI's Run control remains permanently disabled.
 
 ## Using definitions
@@ -57,8 +58,8 @@ overrides through credential resolution, or makes discovery/probe requests.
 
 The read-only companion now implements native saved-profile/keychain binding,
 effective origin/transport checks, native run ownership, retained local-root
-descriptors and complete manifests. Guarded approvals and payload snapshots
-remain future work.
+descriptors and complete manifests. The checked-preview follow-up adds payload
+snapshots using those same descriptors; guarded execution approvals remain future work.
 Reopening a path separately for comparison/upload or matching a display label
 must not be treated as having completed those gates. Local descriptors in this
 foundation live only for the metadata inspection; file IDs can be reused.
@@ -147,7 +148,7 @@ explicitly warns about partial cleanup.
 
 ## Explicitly deferred
 
-Source descriptors shared across scanning and future snapshotting, execution policies,
+Executable writer derivation from shared source descriptors/snapshots, execution policies,
 post-write verification, durable attempt history, review pauses, restart
 reconciliation and scheduling remain follow-up work. No definition created by
 this step authorizes a later writer; the remaining design acceptance tests are

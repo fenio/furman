@@ -28,7 +28,7 @@ fn error(error: nix::errno::Errno) -> FmError {
     FmError::Io(std::io::Error::from_raw_os_error(error as i32))
 }
 
-fn relative_open(root: &File, path: &Path, directory: bool) -> Result<File, FmError> {
+pub(crate) fn relative_open(root: &File, path: &Path, directory: bool) -> Result<File, FmError> {
     let mut fd = root.try_clone()?;
     let parts: Vec<_> = path.components().collect();
     for (index, component) in parts.iter().enumerate() {

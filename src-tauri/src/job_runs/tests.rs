@@ -5,7 +5,7 @@ use base64::Engine;
 use std::{collections::BTreeMap, fs, path::Path, sync::atomic::AtomicU64};
 use tauri::http::{Request, Response};
 
-fn fixture(local: bool, sse: bool) -> (tempfile::TempDir, Paths, Job) {
+pub(super) fn fixture(local: bool, sse: bool) -> (tempfile::TempDir, Paths, Job) {
     fixture_at(local, sse, "https://job.test")
 }
 fn fixture_at(local: bool, sse: bool, endpoint: &str) -> (tempfile::TempDir, Paths, Job) {
@@ -68,7 +68,7 @@ fn fixture_with_names(
     .unwrap();
     (root, paths, saved.jobs[0].definition.clone())
 }
-fn replay(responses: Vec<Response<SdkBody>>) -> StaticReplayClient {
+pub(super) fn replay(responses: Vec<Response<SdkBody>>) -> StaticReplayClient {
     StaticReplayClient::new(
         responses
             .into_iter()
@@ -84,13 +84,13 @@ fn replay(responses: Vec<Response<SdkBody>>) -> StaticReplayClient {
             .collect(),
     )
 }
-fn empty() -> Response<SdkBody> {
+pub(super) fn empty() -> Response<SdkBody> {
     Response::builder()
         .status(200)
         .body(SdkBody::empty())
         .unwrap()
 }
-fn listing(prefix: &str, value: Option<(&str, u64, &str)>) -> Response<SdkBody> {
+pub(super) fn listing(prefix: &str, value: Option<(&str, u64, &str)>) -> Response<SdkBody> {
     let contents = value.map(|(suffix,size,etag)| format!("<Contents><Key>{prefix}{suffix}</Key><Size>{size}</Size><ETag>{etag}</ETag></Contents>")).unwrap_or_default();
     Response::builder()
         .status(200)
@@ -99,7 +99,7 @@ fn listing(prefix: &str, value: Option<(&str, u64, &str)>) -> Response<SdkBody> 
         )))
         .unwrap()
 }
-fn payload(bytes: &str, etag: &str) -> Response<SdkBody> {
+pub(super) fn payload(bytes: &str, etag: &str) -> Response<SdkBody> {
     Response::builder()
         .status(200)
         .header("content-length", bytes.len())
@@ -114,7 +114,9 @@ fn key(id: &str) -> String {
         [2u8; 32]
     })
 }
-fn dependencies(http: StaticReplayClient) -> (KeyReader, EndpointFactory, Arc<Mutex<Vec<String>>>) {
+pub(super) fn dependencies(
+    http: StaticReplayClient,
+) -> (KeyReader, EndpointFactory, Arc<Mutex<Vec<String>>>) {
     let reads = Arc::new(Mutex::new(vec![]));
     let recorded = reads.clone();
     let reader: KeyReader = Arc::new(move |id| {
@@ -162,7 +164,7 @@ fn dependencies(http: StaticReplayClient) -> (KeyReader, EndpointFactory, Arc<Mu
     });
     (reader, factory, reads)
 }
-async fn bind_fixture(
+pub(super) async fn bind_fixture(
     state: &JobRunState,
     paths: &Paths,
     job: &Job,
@@ -1124,6 +1126,8 @@ async fn loopback_minio_native_binding_and_comparison_never_modify_payloads() {
             .send()
             .await
             .map_err(|failure| job_sdk_error("Fixture source payload", &failure))?;
+        setup.put_object().bucket(&source_bucket).key("src/new").body(aws_sdk_s3::primitives::ByteStream::from_static(b"new"))
+            .send().await.map_err(|failure| job_sdk_error("Fixture new source payload", &failure))?;
         setup
             .put_object()
             .bucket(&destination_bucket)
@@ -1149,7 +1153,7 @@ async fn loopback_minio_native_binding_and_comparison_never_modify_payloads() {
             || result
                 .summary
                 .as_ref()
-                .is_none_or(|summary| summary.modified != 1)
+                .is_none_or(|summary| summary.modified != 1 || summary.new != 1)
             || result.manifest_id.is_none()
         {
             return Err(error(
@@ -1157,14 +1161,23 @@ async fn loopback_minio_native_binding_and_comparison_never_modify_payloads() {
             ));
         }
         let rows = state.page(&bound.run_id, result.manifest_id.as_deref().unwrap(), 0)?;
-        if rows.len() != 1 || rows[0].relative_path != "nested/file" {
+        if rows.len() != 2 || !rows.iter().any(|row| row.relative_path == "nested/file") || !rows.iter().any(|row| row.relative_path == "new") {
             return Err(error(
                 "Loopback comparison altered the exact source/destination prefix mapping",
             ));
         }
+        let prepared = preview::prepare(&state, preview::Request {
+            run_id: bound.run_id.clone(), manifest_id: result.manifest_id.clone().unwrap(),
+            entry_ids: rows.iter().map(|row| row.id.clone()).collect(), policy: preview::Policy::ReplaceUnchanged,
+            max_snapshot_bytes: 1024 * 1024, approved: true,
+        }, Arc::new(|_| {})).await?;
+        if prepared.phase != "prepared" || prepared.preview.as_ref().is_none_or(|preview| preview.bytes != 6 || preview.files != 2 || preview.execution_available) {
+            return Err(error("Loopback native snapshot preparation did not retain a checked non-executable preview"));
+        }
         state.release(&bound.run_id)?;
         for (bucket, key, expected) in [
             (&source_bucket, "src/nested/file", b"abc"),
+            (&source_bucket, "src/new", b"new"),
             (&destination_bucket, "dest/nested/file", b"abd"),
         ] {
             let read = setup
@@ -1186,6 +1199,10 @@ async fn loopback_minio_native_binding_and_comparison_never_modify_payloads() {
                 ));
             }
         }
+        match setup.head_object().bucket(&destination_bucket).key("dest/new").send().await {
+            Err(failure) if failure.raw_response().is_some_and(|response| response.status().as_u16() == 404) => {},
+            _ => return Err(error("Read-only preparation did not preserve the missing destination")),
+        }
         Ok(())
     }
     .await;
@@ -1204,9 +1221,13 @@ async fn loopback_minio_native_binding_and_comparison_never_modify_payloads() {
     let mut cleanup_failed = false;
     for (bucket, key) in [
         (&source_bucket, "src/nested/file"),
+        (&source_bucket, "src/new"),
         (&destination_bucket, "dest/nested/file"),
+        (&destination_bucket, "dest/new"),
     ] {
         let _ = setup.delete_object().bucket(bucket).key(key).send().await;
+    }
+    for bucket in [&source_bucket, &destination_bucket] {
         if setup.delete_bucket().bucket(bucket).send().await.is_err() {
             cleanup_failed = true;
         }
