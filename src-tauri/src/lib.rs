@@ -5,6 +5,7 @@ pub use commands::comparison::{read_s3_file, DiffContent};
 pub mod mcp;
 pub mod local;
 pub mod jobs;
+mod job_runs;
 pub mod model_inspector;
 pub mod models;
 pub mod oidc;
@@ -70,6 +71,7 @@ pub fn run() {
         .manage(S3State(Mutex::new(HashMap::new())))
         .manage(commands::aws::AwsSsoState::default())
         .manage(commands::comparison_presets::ComparisonPresetState::default())
+        .manage(job_runs::JobRunState::default())
         .manage(s3::writes::WriteState::default())
         .manage(SftpState::default())
         .manage(SearchState(Mutex::new(HashMap::new())))
@@ -292,6 +294,11 @@ pub fn run() {
             commands::saved_jobs::saved_jobs_list,
             commands::saved_jobs::saved_jobs_save,
             commands::saved_jobs::saved_jobs_delete,
+            commands::saved_jobs::saved_job_bind,
+            commands::saved_jobs::saved_job_scan,
+            commands::saved_jobs::saved_job_release,
+            commands::saved_jobs::saved_job_status,
+            commands::saved_jobs::saved_job_manifest_page,
             commands::s3::s3_activity_snapshot,
             commands::s3::s3_activity_clear,
             commands::s3::s3_connect,

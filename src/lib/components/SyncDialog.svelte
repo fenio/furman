@@ -40,6 +40,7 @@
   let scanComplete = $state(false);
   let scanError = $state('');
   let optionsSaveError = $state<unknown>(null);
+  let jobPanelOpen = $state(false);
   let outcome = $state<ScanOutcome | null>(null);
   let scanProgress = $state<ScanProgress | null>(null);
   let pendingEntries: SyncEntry[] = [];
@@ -214,7 +215,7 @@
   }
 
   function handleSync() {
-    if (!scanComplete || !canUseScan(outcome, scanning)) return;
+    if (jobPanelOpen || !scanComplete || !canUseScan(outcome, scanning)) return;
     const selected = allEntries.filter((e) => selectedPaths.has(e.relative_path));
     onSync(selected);
   }
@@ -354,7 +355,8 @@
     <div class="dialog-body">
       <div class="sync-roots"><strong>Source:</strong> {sourcePath} ({sourceBackend})<br /><strong>Destination:</strong> {destPath} ({destBackend})</div>
       <ComparisonPresets mode={compareMode} {excludeText} onApply={applyPreset} />
-      <SavedSyncJobs defaultLocalPath={sourceBackend === 'local' ? sourcePath : ''} />
+      <SavedSyncJobs defaultLocalPath={sourceBackend === 'local' ? sourcePath : ''} onOpenChange={(open) => { jobPanelOpen = open; }} />
+      {#if jobPanelOpen}<p class="hint">Ordinary Sync is disabled while the separate saved-job controls are open. Close that section to return to the current pane operation; closing it also releases/cancels its read-only native session.</p>{/if}
       <p class="hint">Review source → destination and options, then Compare. Opening this dialog or applying a preset does not start a scan. Only a complete fresh comparison can enable Sync; existing write previews and approvals still apply.</p>
       {#if optionsSaveError}<ErrorNotice error={optionsSaveError} context="Could not save default Sync exclusions; this scan still uses the displayed options" />{/if}
       <!-- Options row -->
@@ -475,7 +477,7 @@
         <button class="dialog-btn" onclick={onClose}>Cancel</button>
         <button
           class="dialog-btn sync-btn"
-          disabled={selectedPaths.size === 0 || !canUseScan(outcome, scanning) || !scanComplete}
+          disabled={jobPanelOpen || selectedPaths.size === 0 || !canUseScan(outcome, scanning) || !scanComplete}
           onclick={handleSync}
         >Sync ({selectedPaths.size})</button>
       </div>

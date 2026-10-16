@@ -310,6 +310,41 @@ async fn multipart_completion_carries_condition_and_conflicts_abort() {
     }
 }
 
+#[tokio::test]
+async fn multipart_cleanup_retries_only_abort_and_reports_permanent_failures() {
+    for transient in [true, false] {
+        let mut responses = vec![
+            (404, &[][..], ""),
+            (200, &[][..], "<InitiateMultipartUploadResult><UploadId>cleanup-id</UploadId></InitiateMultipartUploadResult>"),
+            (200, &[("etag", "\"part1\"")][..], ""),
+            (200, &[("etag", "\"part2\"")][..], ""),
+            // Even a retryable completion failure must remain single-shot.
+            (503, &[][..], "<Error><Code>ServiceUnavailable</Code></Error>"),
+        ];
+        if transient {
+            responses.extend([(503, &[][..], "<Error><Code>ServiceUnavailable</Code></Error>"), (204, &[][..], "")]);
+        } else {
+            responses.push((403, &[][..], "<Error><Code>AccessDenied</Code></Error>"));
+        }
+        let (endpoint, http) = endpoint(&responses);
+        let (plan, _dir) = local_plan(endpoint, 9 * 1024 * 1024).await;
+        let failure = execute(plan, WritePolicy::CreateOnly, false).await.err().unwrap().to_string();
+        assert!(failure.contains("CompleteMultipartUpload"));
+        assert_eq!(failure.contains("Could not confirm multipart cleanup"), !transient);
+        if !transient {
+            assert!(failure.contains("AbortMultipartUpload (guarded cleanup)"));
+            assert!(failure.contains("AccessDenied"));
+        }
+        let requests: Vec<_> = http.actual_requests().collect();
+        assert_eq!(requests.len(), if transient { 7 } else { 6 });
+        assert_eq!(requests[4].headers().get("if-none-match").unwrap(), "*");
+        for request in &requests[5..] {
+            assert_eq!(request.method(), "DELETE");
+            assert!(request.uri().to_string().contains("uploadId=cleanup-id"));
+        }
+    }
+}
+
 #[test]
 fn pinned_roots_survive_rename_and_reject_symlink_substitution() {
     use std::os::unix::fs::symlink;

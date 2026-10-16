@@ -29,12 +29,12 @@ separate PR, with provider-specific behavior and safety tested explicitly.
 6. **AWS SSO usability — merged in [#360](https://github.com/fenio/furman/pull/360).** Profile discovery, clear expired-session states, and an
     explicit AWS CLI v2 sign-in action without storing SSO tokens ourselves.
     See [the SSO usability contract](s3-aws-sso.md).
-7. **Saved jobs, then opt-in scheduling — options presets merged in [#361](https://github.com/fenio/furman/pull/361); design merged in [#362](https://github.com/fenio/furman/pull/362); definition-only foundation in the current PR.** Start with reusable comparison/sync
+7. **Saved jobs, then opt-in scheduling — options presets merged in [#361](https://github.com/fenio/furman/pull/361); design merged in [#362](https://github.com/fenio/furman/pull/362); definition foundation merged in [#363](https://github.com/fenio/furman/pull/363); read-only native binding/comparisons in the current PR.** Start with reusable comparison/sync
    presets (method and explicit exclusions only; no stored identities or approval).
    See [the options-preset contract](comparison-presets.md).
    See [the configured-identity and definition foundation](saved-job-foundation.md).
-   Follow [the pinned manual-job design](pinned-sync-jobs-design.md) for verified
-   live identity binding, fresh comparison ownership, guarded execution,
+   See [the read-only native binding/comparison contract](job-bound-comparisons.md).
+   Follow [the pinned manual-job design](pinned-sync-jobs-design.md) for guarded execution,
    persistent outcomes and review pauses. Runnable jobs are not implemented yet.
    Scheduling remains a separate future proposal; never
    silently schedule uploads.

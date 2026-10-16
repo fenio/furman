@@ -74,11 +74,21 @@ async fn guarded_multipart_conflicts_do_not_replace_current_payloads() {
             expected_source_etag: None, expected_destination: None, expected_destination_sha256: None,
         }], "".into(), Arc::new(AtomicBool::new(false)), Arc::new(|_| {})).await.unwrap();
         ctx.put_object("large", if policy == WritePolicy::CreateOnly { b"concurrent-create" } else { b"concurrent-replace" }).await;
-        assert!(plan.execute(policy, true, false, "multipart-conflict", Arc::new(AtomicBool::new(false)), &|_| {}).await.is_err());
+        let failure = plan.execute(policy, true, false, "multipart-conflict", Arc::new(AtomicBool::new(false)), &|_| {}).await.err().expect("Concurrent destination changes must reject multipart completion");
+        assert!(!failure.to_string().contains("Could not confirm multipart cleanup"), "{failure}");
         let payload = ctx.client.get_object().bucket(&ctx.bucket).key("large").send().await.unwrap().body.collect().await.unwrap().into_bytes();
         assert_eq!(&payload[..], if policy == WritePolicy::CreateOnly { b"concurrent-create".as_slice() } else { b"concurrent-replace".as_slice() });
-        let uploads = ctx.client.list_multipart_uploads().bucket(&ctx.bucket).send().await.unwrap();
-        assert!(uploads.uploads().is_empty());
+        // MinIO can briefly list an upload after acknowledging its abort.
+        // Retry only this read-only observation, never execution or cleanup;
+        // persistent staged uploads and list errors must still fail the test.
+        let cleanup_visible = tokio::time::timeout(std::time::Duration::from_secs(5), async {
+            loop {
+                let uploads = ctx.client.list_multipart_uploads().bucket(&ctx.bucket).send().await.unwrap();
+                if uploads.uploads().is_empty() { break; }
+                tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+            }
+        }).await;
+        assert!(cleanup_visible.is_ok(), "Aborted multipart uploads remained visible beyond the cleanup observation deadline");
     }
     ctx.cleanup().await;
 }

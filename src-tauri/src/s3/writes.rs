@@ -671,21 +671,29 @@ async fn commit_file(
     if result.is_err() {
         // Never complete without the selected condition after a conflict. Abort
         // staged parts, including completion failures, without hiding the cause.
-        let abort = client
+        // Aborting this exact upload ID cannot commit/overwrite a payload.
+        // Give cleanup its own bounded transport retries without ever replaying
+        // an UploadPart or CompleteMultipartUpload after an uncertain outcome.
+        let cleanup_client = Client::from_conf(client.config().to_builder()
+            .retry_config(aws_sdk_s3::config::retry::RetryConfig::standard().with_max_attempts(3))
+            .build());
+        let abort = cleanup_client
             .abort_multipart_upload()
             .bucket(&endpoint.bucket)
             .key(key)
             .upload_id(&upload_id)
             .send();
-        if !matches!(
-            tokio::time::timeout(Duration::from_secs(30), abort).await,
-            Ok(Ok(_))
-        ) {
+        let cleanup_failure = match tokio::time::timeout(Duration::from_secs(30), abort).await {
+            Ok(Ok(_)) => None,
+            Ok(Err(failure)) => Some(s3_sdk_error("AbortMultipartUpload (guarded cleanup)", &failure).to_string()),
+            Err(_) => Some("AbortMultipartUpload cleanup timed out after 30 seconds".into()),
+        };
+        if let Some(cleanup_failure) = cleanup_failure {
             log::warn!(
                 "Guarded multipart cleanup failed; inspect incomplete uploads at the destination"
             );
             if let Err(error) = result {
-                result = Err(invalid(format!("{error}\nCould not confirm multipart cleanup. Inspect incomplete uploads at the destination; staged parts may continue to incur storage charges.")));
+                result = Err(invalid(format!("{error}\nCould not confirm multipart cleanup. Inspect incomplete uploads at the destination; staged parts may continue to incur storage charges.\n{cleanup_failure}")));
             }
         }
     }

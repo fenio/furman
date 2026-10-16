@@ -1,10 +1,12 @@
 # Pinned, manually launched sync jobs — design proposal
 
 **Status: design merged in [#362](https://github.com/fenio/furman/pull/362);
-definition-only foundation is now being implemented.** See the
+definition-only foundation merged in [#363](https://github.com/fenio/furman/pull/363);
+read-only live binding/comparisons are the current implementation step.** See the
 [foundation contract](saved-job-foundation.md) for its exact scope and remaining
-live-binding gates. The run protocol and execution guarantees below are still
-unimplemented. This document is the review gate between
+live-binding gates, and the [read-only runtime contract](job-bound-comparisons.md).
+The write-preview/execution/journal guarantees below are still unimplemented.
+This document is the review gate between
 the [shipped options presets](comparison-presets.md) and runnable jobs. It adds
 no commands, execution paths, automatic connections, timers or migrations.
 Merging this document does not enable runnable jobs or scheduling.
