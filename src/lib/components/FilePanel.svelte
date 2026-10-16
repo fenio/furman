@@ -850,16 +850,6 @@
   </div>
   {/if}
 
-  {#if isS3 && panel.s3ListingProgress}
-    <S3ListingStatus
-      progress={panel.s3ListingProgress}
-      onCancel={() => panel.cancelS3Listing()}
-      onRetry={() => panel.retryS3Listing()}
-      onRefresh={() => { void panel.loadDirectory(panel.path); }}
-      onActivity={() => { appState.modal = 's3-activity'; }}
-    />
-  {/if}
-
   <!-- File list -->
   <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
   {#if panel.viewMode === 'column'}
@@ -959,6 +949,17 @@
       ></div>
     {/if}
   </div>
+  {/if}
+
+  <!-- Listing diagnostics stay below every file view, outside its scroll area. -->
+  {#if isS3 && panel.s3ListingProgress}
+    <S3ListingStatus
+      progress={panel.s3ListingProgress}
+      onCancel={() => panel.cancelS3Listing()}
+      onRetry={() => panel.retryS3Listing()}
+      onRefresh={() => { void panel.loadDirectory(panel.path); }}
+      onActivity={() => { appState.modal = 's3-activity'; }}
+    />
   {/if}
 
   <!-- Footer: selection info, git status, free space -->

@@ -25,7 +25,11 @@ cache bucket discovery, or implement globally sorted scans. Expired entries are
 pruned on the next cache access/statistics read; already-open views remain visible
 and show a freshness warning rather than silently changing selection.
 
-The pane status distinguishes cache hits from network listings, displays age,
+The pane status sits below the file view and above the selection/free-space footer,
+outside the scrolling rows in list, icon and column views. Listing statistics,
+Refresh/Cancel/Retry/Continue and Activity/cache controls, freshness notices and
+incomplete/error diagnostics stay together there rather than above the first row.
+It distinguishes cache hits from network listings, displays age,
 and shows invalidation/expiry. Cached visits make no S3 LIST requests. Same-path
 reloads, including the pane Refresh button and keyboard refresh, always invalidate
 and fetch from the network. Cached complete results are still point-in-time
