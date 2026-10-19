@@ -1,5 +1,56 @@
 # Changelog
 
+## [0.4.0] - 2026-10-19
+
+### Added
+
+- feat: progressively load S3 listings with cancel and retry
+- feat: bound recursive scans and reject incomplete preflights
+- feat(s3): add explicit guarded content-write previews
+- feat(s3): add bounded navigation cache and safe activity inspector
+- feat(s3): preserve metadata attributes and harden provider compatibility
+- feat(s3): discover AWS profiles and offer explicit CLI SSO sign-in
+- feat: save reusable comparison and sync option presets
+- feat: add native saved-job definition and identity foundation
+- feat(jobs): bind private read-only clients and retain native comparisons
+- feat(jobs): retain manifest-owned checked payload previews without execution
+- feat(jobs): journal read-only attempts with durable recovery and review pauses
+- feat(jobs): execute approved local creates with durable intent and verification
+- feat(jobs): preserve supported S3 attributes in guarded create execution
+- feat(jobs): execute checked small-object replacements with explicit approval
+- feat(jobs): add guarded multipart execution and durable cleanup evidence
+- feat(sync): add three-step setup and Compare-to-Sync handoff
+- feat(compare): add bounded SFTP and archive comparison
+- feat(viewer): improve JSON syntax colours and language selection
+
+### Fixed
+
+- fix: show actionable errors with expandable diagnostics
+- fix: bound scan future frames and update provider search assertions
+- fix(s3): fail closed when Garage ignores destination conditions
+- fix(s3): retry multipart abort cleanup without replaying writes
+- fix(jobs): enforce owner-only unnamed snapshot permissions on Linux
+- fix(sync): offer real folder browsing and explicit pane shortcuts
+- fix(sync): allow per-comparison scan limit editing
+- fix(panes): move listing diagnostics below the file view
+- fix(panes): hide routine listing diagnostics by default
+
+### Changed
+
+- Update CHANGELOG.md for v0.3.20
+
+### Dependencies
+
+- 2 dependency update(s) via Renovate
+
+### Other
+
+- chore: ignore Python bytecode caches
+- test(s3): exercise guarded conflicts in provider matrices
+- docs: design pinned manual sync jobs and native execution gates
+- chore(deps): update dependency svelte-check to v4.7.7
+- chore(deps): update dependency eslint to v10.13.0
+
 ## [0.3.20] - 2026-10-14
 
 ### Added
