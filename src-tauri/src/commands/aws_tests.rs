@@ -3,8 +3,18 @@ use std::os::unix::fs::PermissionsExt;
 
 fn script(body: &str) -> (tempfile::TempDir, PathBuf, ProfilePaths) {
     let root = tempfile::tempdir().unwrap();
+    let source = root.path().join("aws.src");
+    std::fs::write(&source, format!("#!/bin/sh\n{body}\n")).unwrap();
+    // Copy in a child process so this test process never holds a writable fd
+    // to the executable: a concurrent test's fork could inherit it and make
+    // exec fail with ETXTBSY.
     let program = root.path().join("aws");
-    std::fs::write(&program, format!("#!/bin/sh\n{body}\n")).unwrap();
+    assert!(std::process::Command::new("cp")
+        .arg(&source)
+        .arg(&program)
+        .status()
+        .unwrap()
+        .success());
     std::fs::set_permissions(&program, std::fs::Permissions::from_mode(0o700)).unwrap();
     let paths = ProfilePaths {
         config: root.path().join("config"),
