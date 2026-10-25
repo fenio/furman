@@ -180,7 +180,7 @@ async fn version(
         return Err(error("AWS SSO sign-in cancelled before launch"));
     }
     let mut child = command(program, paths).arg("--version").stdout(Stdio::piped()).stderr(Stdio::piped())
-        .spawn().map_err(|_| error("Could not start AWS CLI version check. Verify the CLI installation and executable permissions; no sign-in was started."))?;
+        .spawn().map_err(|failure| error(&format!("Could not start AWS CLI version check ({:?}). Verify the CLI installation and executable permissions; no sign-in was started.", failure.kind())))?;
     let stdout = child
         .stdout
         .take()
@@ -230,8 +230,11 @@ async fn login(
         .stdout(Stdio::null())
         .stderr(Stdio::null())
         .spawn()
-        .map_err(|_| {
-            error("Could not start AWS CLI SSO login. Verify the CLI installation and permissions.")
+        .map_err(|failure| {
+            error(&format!(
+                "Could not start AWS CLI SSO login ({:?}). Verify the CLI installation and permissions.",
+                failure.kind()
+            ))
         })?;
     let result = tokio::select! {
         status = child.wait() => match status {

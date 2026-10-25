@@ -148,6 +148,18 @@ fn oversized_symlink_directory_and_fifo_storage_fail_closed_without_blocking() {
     assert!(load(&path).is_err());
 }
 
+/// A child forked by a concurrent test can briefly inherit a lock fd and keep
+/// the lock held until it execs, so contention is retried instead of failing.
+fn retry_while_locked<T, E>(mut attempt: impl FnMut() -> Result<T, E>) -> Result<T, E> {
+    for _ in 0..50 {
+        if let Ok(value) = attempt() {
+            return Ok(value);
+        }
+        std::thread::sleep(std::time::Duration::from_millis(20));
+    }
+    attempt()
+}
+
 #[test]
 fn cooperating_process_lock_prevents_write_and_revision_races() {
     let root = tempfile::tempdir().unwrap();
@@ -159,7 +171,7 @@ fn cooperating_process_lock_prevents_write_and_revision_races() {
         .write(true)
         .open(path.with_extension("lock"))
         .unwrap();
-    lock.try_lock().unwrap();
+    retry_while_locked(|| lock.try_lock()).unwrap();
     assert!(save(&path, &initial.revision, vec![])
         .err()
         .unwrap()
@@ -167,7 +179,7 @@ fn cooperating_process_lock_prevents_write_and_revision_races() {
         .contains("Another process"));
     assert_eq!(fs::read(&path).unwrap(), before);
     drop(lock);
-    save(&path, &initial.revision, vec![]).unwrap();
+    retry_while_locked(|| save(&path, &initial.revision, vec![])).unwrap();
 }
 
 #[test]
