@@ -112,7 +112,9 @@ fn lock(paths: &Paths) -> Result<IdentityLock, FmError> {
     if !file.metadata().map_err(io_error)?.is_file() {
         return Err(error("Saved-job lock must be a regular file"));
     }
-    file.try_lock().map_err(|_| error("Saved-job identity storage is busy in another operation. Retry after it finishes; no edit was started."))?;
+    if !crate::local::try_lock_briefly(&file) {
+        return Err(error("Saved-job identity storage is busy in another operation. Retry after it finishes; no edit was started."));
+    }
     Ok(IdentityLock(file))
 }
 

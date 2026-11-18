@@ -347,12 +347,7 @@ async fn failed_parts_never_complete_and_known_upload_cleanup_is_bounded_with_pe
         let reviewed = reviewed(&state, &prepared).await;
         start(&state, request(&reviewed)).await.unwrap();
         let result = wait(&state, &reviewed.run_id).await.execution.unwrap();
-        assert_eq!(
-            result.status,
-            Status::Uncertain,
-            "{:?}",
-            result.message
-        );
+        assert_eq!(result.status, Status::Uncertain, "{:?}", result.message);
         assert!(result.outcome_recorded);
         assert_eq!(result.counts.verified_files, 0);
         let requests: Vec<_> = http.actual_requests().collect();
@@ -759,7 +754,10 @@ async fn every_multipart_stage_has_durable_intent_and_postresponse_journal_fault
                     .count(),
                 1
             );
-            assert_eq!(state.history(&paths).unwrap().pending_uploads.len(),usize::from(mode==4));
+            assert_eq!(
+                state.history(&paths).unwrap().pending_uploads.len(),
+                usize::from(mode == 4)
+            );
         }
     }
 }

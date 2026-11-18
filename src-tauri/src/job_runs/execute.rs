@@ -849,7 +849,10 @@ pub async fn start(state: &JobRunState, request: ExecuteRequest) -> Result<RunSt
             status: Status::Executing,
             counts,
             outcome_recorded: false,
-            message: Some("Native execution admitted; intent must commit before any payload/staging mutation".into()),
+            message: Some(
+                "Native execution admitted; intent must commit before any payload/staging mutation"
+                    .into(),
+            ),
         });
         (approval, slot.cancel.clone())
     };

@@ -720,8 +720,11 @@ pub(crate) fn run_lock(paths: &Paths) -> Result<RunLock, FmError> {
     {
         return Err(error("Job run lock must be a regular file"));
     }
-    file.try_lock()
-        .map_err(|_| error("Another cooperating process/job task still owns the job run lock"))?;
+    if !crate::local::try_lock_briefly(&file) {
+        return Err(error(
+            "Another cooperating process/job task still owns the job run lock",
+        ));
+    }
     Ok(RunLock(file))
 }
 

@@ -437,3 +437,21 @@ pub use crate::commands::directory::{create_directory, get_directory_size, list_
 pub use crate::commands::file::{
     check_conflicts, delete_files, delete_files_undoable, rename_file, restore_from_trash,
 };
+
+/// Take an advisory lock, waiting up to 250 ms while it is held. A child
+/// spawned elsewhere can hold an inherited lock fd until it execs; a stalled
+/// owner is still refused after the bounded wait.
+pub(crate) fn try_lock_briefly(file: &fs::File) -> bool {
+    let started = Instant::now();
+    loop {
+        match file.try_lock() {
+            Ok(()) => return true,
+            Err(fs::TryLockError::WouldBlock)
+                if started.elapsed() < std::time::Duration::from_millis(250) =>
+            {
+                std::thread::sleep(std::time::Duration::from_millis(5));
+            }
+            Err(_) => return false,
+        }
+    }
+}
