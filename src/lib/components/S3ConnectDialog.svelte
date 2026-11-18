@@ -5,7 +5,8 @@
   import { errorText } from '#lib/utils/error-report.js';
   import { onMount, untrack } from 'svelte';
   import { revealSecret } from '#lib/utils/reveal-secret.js';
-  import { s3CheckCredentials, s3ListBuckets, s3CreateBucket, s3DeleteBucket, oidcStartAuth } from '#lib/services/s3.js';
+  import { s3CheckCredentials, s3ListBuckets, s3CreateBucket, s3DeleteBucket, s3EmptyBucket, oidcStartAuth } from '#lib/services/s3.js';
+  import { cancelFileOperation } from '#lib/services/tauri.js';
   import { connectionsState } from '#lib/state/connections.svelte.js';
   import { saveThenConnect } from '#lib/utils/connection-flow.js';
   import { normalizeSseCustomerKey, type SseKeyFormat } from '#lib/utils/sse-c.js';
@@ -94,6 +95,10 @@
   let creatingBucket = $state(false);
   let createError = $state('');
   let deletingBucket = $state<string | null>(null);
+  let emptyOpId = $state('');
+  let emptyProgress = $state('');
+  let bucketNotice = $state('');
+  let emptyError = $state('');
 
   // Provider search combobox
   let providerQuery = $state('');
@@ -470,19 +475,38 @@
   }
 
   async function handleDeleteBucket(bucketName: string) {
-    if (!confirm(`Delete bucket "${bucketName}"? The bucket must be empty.`)) return;
+    if (!confirm(
+      `Delete bucket "${bucketName}"?\n\n`
+      + 'Furman first permanently deletes EVERYTHING in it: all objects, old versions, delete markers and incomplete uploads. '
+      + 'Then it tries to delete the bucket itself. This cannot be undone.'
+    )) return;
     deletingBucket = bucketName;
-    browseError = '';
+    emptyError = '';
+    bucketNotice = '';
+    const id = `empty-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
     try {
       const r = region.trim() || 'us-east-1';
       const [ep, prof, ak, sk, rArn, extId, sName, sDur, wit, pUrl, pUser, pPass] = currentCredArgs();
-      await s3DeleteBucket(r, bucketName, ep, prof, ak, sk, rArn, extId, sName, sDur, wit, pUrl, pUser, pPass);
+      emptyOpId = id;
+      emptyProgress = 'Emptying bucket...';
+      await s3EmptyBucket(id, (p) => { emptyProgress = p.current_file; }, r, bucketName, ep, prof, ak, sk, rArn, extId, sName, sDur, wit, pUrl, pUser, pPass);
+      emptyOpId = '';
+      emptyProgress = 'Deleting bucket...';
+      try {
+        await s3DeleteBucket(r, bucketName, ep, prof, ak, sk, rArn, extId, sName, sDur, wit, pUrl, pUser, pPass);
+      } catch (e: unknown) {
+        // Some providers only remove buckets via their console/API; an emptied bucket is still a success.
+        bucketNotice = errorText(e);
+        return;
+      }
       buckets = buckets.filter(b => b.name !== bucketName);
       if (bucket === bucketName) bucket = '';
     } catch (e: unknown) {
-      browseError = errorText(e);
+      emptyError = errorText(e);
     } finally {
       deletingBucket = null;
+      emptyOpId = '';
+      emptyProgress = '';
     }
   }
 
@@ -645,6 +669,20 @@
               + Create Bucket
             </button>
           {/if}
+        {/if}
+        {#if emptyProgress}
+          <div class="empty-progress" role="status">
+            <span class="field-hint">{emptyProgress}</span>
+            {#if emptyOpId}
+              <button class="dialog-btn" onclick={() => cancelFileOperation(emptyOpId)}>Cancel</button>
+            {/if}
+          </div>
+        {/if}
+        {#if emptyError}
+          <div class="browse-error"><ErrorNotice error={emptyError} context="Could not empty bucket. Items deleted so far stay deleted" /></div>
+        {/if}
+        {#if bucketNotice}
+          <div class="browse-error"><ErrorNotice error={bucketNotice} context="Bucket emptied, but the provider refused to delete the bucket itself. Delete it in the provider's console or API" /></div>
         {/if}
         {#if browseError}
           <div class="browse-error"><ErrorNotice error={browseError} context="Could not list buckets" /></div>
@@ -1272,6 +1310,12 @@
   .browse-error {
     font-size: 11px;
     color: var(--warning-color);
+  }
+
+  .empty-progress {
+    display: flex;
+    align-items: center;
+    gap: 8px;
   }
 
   .bucket-item-row {

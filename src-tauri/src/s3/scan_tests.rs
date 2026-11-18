@@ -531,3 +531,118 @@ async fn cancellation_during_enumeration_prevents_followup_pages() {
     assert_eq!(outcome(&result), ScanOutcome::Cancelled);
     assert_eq!(http.actual_requests().count(), 1);
 }
+
+async fn empty(pages: &[&str], cancelled: bool) -> (Result<(), FmError>, Vec<String>, Vec<String>) {
+    let (svc, http) = service(pages);
+    let events = Mutex::new(Vec::new());
+    let result = super::service::empty_bucket(
+        &svc.client,
+        &svc.bucket,
+        "op",
+        &AtomicBool::new(cancelled),
+        &|e| {
+            events.lock().unwrap().push(e.current_file);
+        },
+    )
+    .await;
+    let requests = http
+        .actual_requests()
+        .map(|r| {
+            format!(
+                "{} {}",
+                r.uri(),
+                String::from_utf8_lossy(r.body().bytes().unwrap_or_default())
+            )
+        })
+        .collect();
+    (result, requests, events.into_inner().unwrap())
+}
+
+#[tokio::test]
+async fn empty_bucket_deletes_exact_versions_page_by_page_then_aborts_uploads() {
+    let (result, requests, events) = empty(&[
+        "<ListVersionsResult><IsTruncated>true</IsTruncated><NextKeyMarker>a</NextKeyMarker><NextVersionIdMarker>v2</NextVersionIdMarker><Version><Key>a</Key><VersionId>v1</VersionId></Version><DeleteMarker><Key>a</Key><VersionId>v2</VersionId></DeleteMarker></ListVersionsResult>",
+        "<DeleteResult/>",
+        "<ListVersionsResult><IsTruncated>false</IsTruncated><Version><Key>b</Key><VersionId>v3</VersionId></Version></ListVersionsResult>",
+        "<DeleteResult/>",
+        "<ListMultipartUploadsResult><IsTruncated>false</IsTruncated><Upload><Key>c</Key><UploadId>u1</UploadId></Upload></ListMultipartUploadsResult>",
+        "",
+        "<ListVersionsResult><IsTruncated>false</IsTruncated></ListVersionsResult>",
+        "<ListMultipartUploadsResult><IsTruncated>false</IsTruncated></ListMultipartUploadsResult>",
+    ], false).await;
+    result.unwrap();
+    assert_eq!(requests.len(), 8);
+    assert!(
+        !requests[6].contains("marker"),
+        "verification pass restarts from the top: {}",
+        requests[6]
+    );
+    assert!(
+        requests[1].contains("<Key>a</Key><VersionId>v1</VersionId>")
+            && requests[1].contains("<Key>a</Key><VersionId>v2</VersionId>"),
+        "{}",
+        requests[1]
+    );
+    assert!(requests[1].contains("<Quiet>true</Quiet>"));
+    assert!(
+        requests[2].contains("key-marker=a") && requests[2].contains("version-id-marker=v2"),
+        "{}",
+        requests[2]
+    );
+    assert!(requests[3].contains("<VersionId>v3</VersionId>"));
+    assert!(requests[5].contains("uploadId=u1"), "{}", requests[5]);
+    assert_eq!(
+        events,
+        [
+            "Deleted 2 object versions",
+            "Deleted 3 object versions",
+            "Aborted 1 incomplete uploads",
+            "Verifying the bucket is empty",
+            "Bucket is empty"
+        ]
+    );
+}
+
+#[tokio::test]
+async fn empty_bucket_stops_on_per_version_errors_and_repeated_markers() {
+    let (result, requests, _) = empty(&[
+        "<ListVersionsResult><IsTruncated>false</IsTruncated><Version><Key>a</Key><VersionId>v1</VersionId></Version></ListVersionsResult>",
+        "<DeleteResult><Error><Key>a</Key><VersionId>v1</VersionId><Code>AccessDenied</Code><Message>retention</Message></Error></DeleteResult>",
+    ], false).await;
+    let message = result.unwrap_err().to_string();
+    assert!(
+        message.contains("AccessDenied") && message.contains("v1"),
+        "{message}"
+    );
+    assert_eq!(requests.len(), 2);
+
+    let page = "<ListVersionsResult><IsTruncated>true</IsTruncated><NextKeyMarker>a</NextKeyMarker></ListVersionsResult>";
+    let (result, requests, _) = empty(&[page, page, page], false).await;
+    assert!(result.unwrap_err().to_string().contains("repeated marker"));
+    assert_eq!(requests.len(), 2);
+
+    let (result, requests, _) = empty(&[page], true).await;
+    assert!(result.is_err());
+    assert!(requests.is_empty());
+}
+
+#[tokio::test]
+async fn empty_bucket_is_one_clean_pass_when_already_empty_and_gives_up_on_refills() {
+    let (result, requests, events) = empty(&["<ListVersionsResult><IsTruncated>false</IsTruncated></ListVersionsResult>", "<ListMultipartUploadsResult><IsTruncated>false</IsTruncated></ListMultipartUploadsResult>"], false).await;
+    result.unwrap();
+    assert_eq!(requests.len(), 2);
+    assert_eq!(events, ["Bucket is empty"]);
+
+    let refill = "<ListVersionsResult><IsTruncated>false</IsTruncated><Version><Key>a</Key><VersionId>v1</VersionId></Version></ListVersionsResult>";
+    let pass = [
+        refill,
+        "<DeleteResult/>",
+        "<ListMultipartUploadsResult><IsTruncated>false</IsTruncated></ListMultipartUploadsResult>",
+    ];
+    let (result, requests, _) = empty(&pass.repeat(3), false).await;
+    assert!(result
+        .unwrap_err()
+        .to_string()
+        .contains("after 3 full passes"));
+    assert_eq!(requests.len(), 9);
+}

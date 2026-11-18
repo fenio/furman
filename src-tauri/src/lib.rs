@@ -336,6 +336,7 @@ pub fn run() {
             commands::s3::s3_delete_version,
             commands::s3::s3_create_bucket,
             commands::s3::s3_delete_bucket,
+            commands::s3::s3_empty_bucket,
             commands::s3::s3_get_bucket_versioning,
             commands::s3::s3_put_bucket_versioning,
             commands::s3::s3_get_bucket_encryption,

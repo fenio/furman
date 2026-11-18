@@ -113,6 +113,265 @@ pub async fn delete_bucket(client: &S3Client, name: &str) -> Result<(), FmError>
     Ok(())
 }
 
+/// Full sweeps allowed before giving up on a bucket that keeps refilling.
+const EMPTY_BUCKET_PASSES: usize = 3;
+
+/// Permanently delete every object version, delete marker and incomplete
+/// multipart upload, then sweep again until a complete pass finds nothing,
+/// so the bucket is verified clean even where listings lag behind deletes.
+pub async fn empty_bucket(
+    client: &S3Client,
+    bucket: &str,
+    op_id: &str,
+    cancel: &AtomicBool,
+    on_progress: &(dyn Fn(ProgressEvent) + Send + Sync),
+) -> Result<(), FmError> {
+    for pass in 0..EMPTY_BUCKET_PASSES {
+        if pass > 0 {
+            on_progress(empty_progress(
+                op_id,
+                "Verifying the bucket is empty".into(),
+                0,
+            ));
+        }
+        if empty_pass(client, bucket, op_id, cancel, on_progress).await? == 0 {
+            on_progress(empty_progress(op_id, "Bucket is empty".into(), 0));
+            return Ok(());
+        }
+    }
+    Err(s3err(format!(
+        "Bucket still contained items after {EMPTY_BUCKET_PASSES} full passes. Something may still be writing to it; nothing was skipped."
+    )))
+}
+
+fn empty_progress(op_id: &str, current_file: String, done: u64) -> ProgressEvent {
+    ProgressEvent {
+        id: op_id.into(),
+        bytes_done: 0,
+        bytes_total: 0,
+        current_file,
+        files_done: u32::try_from(done).unwrap_or(u32::MAX),
+        files_total: 0,
+    }
+}
+
+/// One sweep: delete every listed version and delete marker, then abort every
+/// incomplete upload. Works one listing page at a time, so memory stays flat
+/// even for billions of versions. Returns how many items it removed.
+async fn empty_pass(
+    client: &S3Client,
+    bucket: &str,
+    op_id: &str,
+    cancel: &AtomicBool,
+    on_progress: &(dyn Fn(ProgressEvent) + Send + Sync),
+) -> Result<u64, FmError> {
+    use aws_sdk_s3::operation::abort_multipart_upload::AbortMultipartUploadError;
+    use aws_sdk_s3::types::ObjectIdentifier;
+    let report =
+        |current_file: String, done: u64| on_progress(empty_progress(op_id, current_file, done));
+    let identifier = |key: Option<&str>, version: Option<&str>| {
+        ObjectIdentifier::builder()
+            .key(key.unwrap_or_default())
+            .set_version_id(version.map(str::to_owned))
+            .build()
+            .map_err(|e| s3err(e.to_string()))
+    };
+
+    let mut deleted: u64 = 0;
+    let mut cursor: Option<(String, Option<String>)> = None;
+    let mut versions_supported = true;
+    loop {
+        super::verification::check_cancelled(cancel)?;
+        let (ids, next) = if versions_supported {
+            let mut req = client.list_object_versions().bucket(bucket);
+            if let Some((key, version)) = &cursor {
+                req = req.key_marker(key).set_version_id_marker(version.clone());
+            }
+            match req.send().await {
+                Ok(page) => {
+                    let ids = page
+                        .versions()
+                        .iter()
+                        .map(|v| identifier(v.key(), v.version_id()))
+                        .chain(
+                            page.delete_markers()
+                                .iter()
+                                .map(|m| identifier(m.key(), m.version_id())),
+                        )
+                        .collect::<Result<Vec<_>, _>>()?;
+                    let next = (page.is_truncated() == Some(true)).then(|| {
+                        (
+                            page.next_key_marker().map(str::to_owned),
+                            page.next_version_id_marker().map(str::to_owned),
+                        )
+                    });
+                    (ids, next)
+                }
+                // Providers without versioning cannot hold old versions; page plain keys instead.
+                Err(error) if cursor.is_none() && super::compat::unsupported(&error) => {
+                    versions_supported = false;
+                    continue;
+                }
+                Err(error) => {
+                    return Err(s3_sdk_error(
+                        &format!("List object versions ({deleted} deleted so far)"),
+                        &error,
+                    ))
+                }
+            }
+        } else {
+            let page = client
+                .list_objects_v2()
+                .bucket(bucket)
+                .set_continuation_token(cursor.as_ref().map(|(token, _)| token.clone()))
+                .send()
+                .await
+                .map_err(|e| {
+                    s3_sdk_error(&format!("List objects ({deleted} deleted so far)"), &e)
+                })?;
+            let ids = page
+                .contents()
+                .iter()
+                .map(|o| identifier(o.key(), None))
+                .collect::<Result<Vec<_>, _>>()?;
+            let next = (page.is_truncated() == Some(true))
+                .then(|| (page.next_continuation_token().map(str::to_owned), None));
+            (ids, next)
+        };
+
+        if !ids.is_empty() {
+            let count = ids.len() as u64;
+            delete_identified(client, bucket, ids, cancel)
+                .await
+                .map_err(|e| s3err(format!("{e} ({deleted} deleted before this batch)")))?;
+            deleted += count;
+            report(format!("Deleted {deleted} object versions"), deleted);
+        }
+        let Some((key, version)) = next else { break };
+        let next = (
+            key.filter(|k| !k.is_empty())
+                .ok_or_else(|| s3err("Incomplete listing: missing key marker"))?,
+            version.filter(|v| !v.is_empty()),
+        );
+        if cursor.as_ref() == Some(&next) {
+            return Err(s3err("Incomplete listing: repeated marker"));
+        }
+        cursor = Some(next);
+    }
+
+    let mut aborted: u64 = 0;
+    let mut cursor: Option<(String, Option<String>)> = None;
+    loop {
+        super::verification::check_cancelled(cancel)?;
+        let mut req = client.list_multipart_uploads().bucket(bucket);
+        if let Some((key, upload)) = &cursor {
+            req = req.key_marker(key).set_upload_id_marker(upload.clone());
+        }
+        let page = req.send().await.map_err(|e| {
+            s3_sdk_error(
+                &format!("List multipart uploads ({aborted} aborted so far)"),
+                &e,
+            )
+        })?;
+        for upload in page.uploads() {
+            super::verification::check_cancelled(cancel)?;
+            let result = client
+                .abort_multipart_upload()
+                .bucket(bucket)
+                .key(upload.key().unwrap_or_default())
+                .upload_id(upload.upload_id().unwrap_or_default())
+                .send()
+                .await;
+            match result {
+                Ok(_) => {}
+                // Completed or aborted elsewhere since listing: already gone.
+                Err(error)
+                    if error
+                        .as_service_error()
+                        .is_some_and(AbortMultipartUploadError::is_no_such_upload) => {}
+                Err(error) => {
+                    return Err(s3_sdk_error(
+                        &format!("Abort multipart upload ({aborted} aborted so far)"),
+                        &error,
+                    ))
+                }
+            }
+            aborted += 1;
+            report(
+                format!("Aborted {aborted} incomplete uploads"),
+                deleted + aborted,
+            );
+        }
+        if page.is_truncated() != Some(true) {
+            break;
+        }
+        let next = (
+            page.next_key_marker()
+                .filter(|k| !k.is_empty())
+                .ok_or_else(|| s3err("Incomplete listing: missing key marker"))?
+                .to_owned(),
+            page.next_upload_id_marker()
+                .filter(|u| !u.is_empty())
+                .map(str::to_owned),
+        );
+        if cursor.as_ref() == Some(&next) {
+            return Err(s3err("Incomplete listing: repeated marker"));
+        }
+        cursor = Some(next);
+    }
+    Ok(deleted + aborted)
+}
+
+/// Delete exact object versions (or unversioned keys). Every identifier names a
+/// specific version, so retries and the single-delete fallback cannot create
+/// extra delete markers.
+async fn delete_identified(
+    client: &S3Client,
+    bucket: &str,
+    ids: Vec<aws_sdk_s3::types::ObjectIdentifier>,
+    cancel: &AtomicBool,
+) -> Result<(), FmError> {
+    let delete = aws_sdk_s3::types::Delete::builder()
+        .set_objects(Some(ids.clone()))
+        .quiet(true)
+        .build()
+        .map_err(|e| s3err(e.to_string()))?;
+    match client
+        .delete_objects()
+        .bucket(bucket)
+        .delete(delete)
+        .send()
+        .await
+    {
+        Ok(resp) => match resp.errors() {
+            [] => Ok(()),
+            [first, ..] => Err(s3err(format!(
+                "Failed to delete {} item(s), first {} (version {}): {}: {}",
+                resp.errors().len(),
+                first.key().unwrap_or("?"),
+                first.version_id().unwrap_or("none"),
+                first.code().unwrap_or("Unknown"),
+                first.message().unwrap_or("unknown error")
+            ))),
+        },
+        Err(error) if super::compat::unsupported(&error) => {
+            for id in &ids {
+                super::verification::check_cancelled(cancel)?;
+                client
+                    .delete_object()
+                    .bucket(bucket)
+                    .key(id.key())
+                    .set_version_id(id.version_id().map(str::to_owned))
+                    .send()
+                    .await
+                    .map_err(|e| s3_sdk_error("Single-delete compatibility fallback", &e))?;
+            }
+            Ok(())
+        }
+        Err(error) => Err(s3_sdk_error("DeleteObjects", &error)),
+    }
+}
+
 // ── S3Service ───────────────────────────────────────────────────────────────
 
 pub struct S3Service {
