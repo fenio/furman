@@ -113,9 +113,12 @@ pub async fn delete_bucket(client: &S3Client, name: &str) -> Result<(), FmError>
     Ok(())
 }
 
+/// Full sweeps allowed before giving up on a bucket that keeps refilling.
+const EMPTY_BUCKET_PASSES: usize = 3;
+
 /// Permanently delete every object version, delete marker and incomplete
-/// multipart upload so `delete_bucket` can succeed. Works one listing page at
-/// a time, so memory stays flat even for buckets with billions of versions.
+/// multipart upload, then sweep again until a complete pass finds nothing,
+/// so the bucket is verified clean even where listings lag behind deletes.
 pub async fn empty_bucket(
     client: &S3Client,
     bucket: &str,
@@ -123,17 +126,49 @@ pub async fn empty_bucket(
     cancel: &AtomicBool,
     on_progress: &(dyn Fn(ProgressEvent) + Send + Sync),
 ) -> Result<(), FmError> {
+    for pass in 0..EMPTY_BUCKET_PASSES {
+        if pass > 0 {
+            on_progress(empty_progress(
+                op_id,
+                "Verifying the bucket is empty".into(),
+                0,
+            ));
+        }
+        if empty_pass(client, bucket, op_id, cancel, on_progress).await? == 0 {
+            on_progress(empty_progress(op_id, "Bucket is empty".into(), 0));
+            return Ok(());
+        }
+    }
+    Err(s3err(format!(
+        "Bucket still contained items after {EMPTY_BUCKET_PASSES} full passes. Something may still be writing to it; nothing was skipped."
+    )))
+}
+
+fn empty_progress(op_id: &str, current_file: String, done: u64) -> ProgressEvent {
+    ProgressEvent {
+        id: op_id.into(),
+        bytes_done: 0,
+        bytes_total: 0,
+        current_file,
+        files_done: u32::try_from(done).unwrap_or(u32::MAX),
+        files_total: 0,
+    }
+}
+
+/// One sweep: delete every listed version and delete marker, then abort every
+/// incomplete upload. Works one listing page at a time, so memory stays flat
+/// even for billions of versions. Returns how many items it removed.
+async fn empty_pass(
+    client: &S3Client,
+    bucket: &str,
+    op_id: &str,
+    cancel: &AtomicBool,
+    on_progress: &(dyn Fn(ProgressEvent) + Send + Sync),
+) -> Result<u64, FmError> {
+    use aws_sdk_s3::operation::abort_multipart_upload::AbortMultipartUploadError;
     use aws_sdk_s3::types::ObjectIdentifier;
-    let report = |current_file: String, done: u64| {
-        on_progress(ProgressEvent {
-            id: op_id.into(),
-            bytes_done: 0,
-            bytes_total: 0,
-            current_file,
-            files_done: u32::try_from(done).unwrap_or(u32::MAX),
-            files_total: 0,
-        });
-    };
+    let report =
+        |current_file: String, done: u64| on_progress(empty_progress(op_id, current_file, done));
     let identifier = |key: Option<&str>, version: Option<&str>| {
         ObjectIdentifier::builder()
             .key(key.unwrap_or_default())
@@ -250,9 +285,15 @@ pub async fn empty_bucket(
             match result {
                 Ok(_) => {}
                 // Completed or aborted elsewhere since listing: already gone.
-                Err(error) if error.as_service_error().is_some_and(aws_sdk_s3::operation::abort_multipart_upload::AbortMultipartUploadError::is_no_such_upload) => {}
+                Err(error)
+                    if error
+                        .as_service_error()
+                        .is_some_and(AbortMultipartUploadError::is_no_such_upload) => {}
                 Err(error) => {
-                    return Err(s3_sdk_error(&format!("Abort multipart upload ({aborted} aborted so far)"), &error))
+                    return Err(s3_sdk_error(
+                        &format!("Abort multipart upload ({aborted} aborted so far)"),
+                        &error,
+                    ))
                 }
             }
             aborted += 1;
@@ -278,7 +319,7 @@ pub async fn empty_bucket(
         }
         cursor = Some(next);
     }
-    Ok(())
+    Ok(deleted + aborted)
 }
 
 /// Delete exact object versions (or unversioned keys). Every identifier names a

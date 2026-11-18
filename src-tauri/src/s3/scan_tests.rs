@@ -567,9 +567,16 @@ async fn empty_bucket_deletes_exact_versions_page_by_page_then_aborts_uploads() 
         "<DeleteResult/>",
         "<ListMultipartUploadsResult><IsTruncated>false</IsTruncated><Upload><Key>c</Key><UploadId>u1</UploadId></Upload></ListMultipartUploadsResult>",
         "",
+        "<ListVersionsResult><IsTruncated>false</IsTruncated></ListVersionsResult>",
+        "<ListMultipartUploadsResult><IsTruncated>false</IsTruncated></ListMultipartUploadsResult>",
     ], false).await;
     result.unwrap();
-    assert_eq!(requests.len(), 6);
+    assert_eq!(requests.len(), 8);
+    assert!(
+        !requests[6].contains("marker"),
+        "verification pass restarts from the top: {}",
+        requests[6]
+    );
     assert!(
         requests[1].contains("<Key>a</Key><VersionId>v1</VersionId>")
             && requests[1].contains("<Key>a</Key><VersionId>v2</VersionId>"),
@@ -589,7 +596,9 @@ async fn empty_bucket_deletes_exact_versions_page_by_page_then_aborts_uploads() 
         [
             "Deleted 2 object versions",
             "Deleted 3 object versions",
-            "Aborted 1 incomplete uploads"
+            "Aborted 1 incomplete uploads",
+            "Verifying the bucket is empty",
+            "Bucket is empty"
         ]
     );
 }
@@ -615,4 +624,25 @@ async fn empty_bucket_stops_on_per_version_errors_and_repeated_markers() {
     let (result, requests, _) = empty(&[page], true).await;
     assert!(result.is_err());
     assert!(requests.is_empty());
+}
+
+#[tokio::test]
+async fn empty_bucket_is_one_clean_pass_when_already_empty_and_gives_up_on_refills() {
+    let (result, requests, events) = empty(&["<ListVersionsResult><IsTruncated>false</IsTruncated></ListVersionsResult>", "<ListMultipartUploadsResult><IsTruncated>false</IsTruncated></ListMultipartUploadsResult>"], false).await;
+    result.unwrap();
+    assert_eq!(requests.len(), 2);
+    assert_eq!(events, ["Bucket is empty"]);
+
+    let refill = "<ListVersionsResult><IsTruncated>false</IsTruncated><Version><Key>a</Key><VersionId>v1</VersionId></Version></ListVersionsResult>";
+    let pass = [
+        refill,
+        "<DeleteResult/>",
+        "<ListMultipartUploadsResult><IsTruncated>false</IsTruncated></ListMultipartUploadsResult>",
+    ];
+    let (result, requests, _) = empty(&pass.repeat(3), false).await;
+    assert!(result
+        .unwrap_err()
+        .to_string()
+        .contains("after 3 full passes"));
+    assert_eq!(requests.len(), 9);
 }

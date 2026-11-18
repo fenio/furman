@@ -88,7 +88,8 @@ test('actual connection form leaves Linode keys visible and does not render AWS 
     '#lib/utils/connection-flow.js': new URL('../src/lib/utils/connection-flow.ts', import.meta.url).href,
     '#lib/utils/sse-c.js': new URL('../src/lib/utils/sse-c.ts', import.meta.url).href,
     '#lib/state/connections.svelte.js': data('export const connectionsState={};'),
-    '#lib/services/s3.js': data('export const s3CheckCredentials=async()=>false;export const s3ListBuckets=async()=>[];export const s3CreateBucket=async()=>{};export const s3DeleteBucket=async()=>{};export const oidcStartAuth=async()=>{};'),
+    '#lib/services/s3.js': data('export const s3CheckCredentials=async()=>false;export const s3ListBuckets=async()=>[];export const s3CreateBucket=async()=>{};export const s3DeleteBucket=async()=>{};export const s3EmptyBucket=async()=>{};export const oidcStartAuth=async()=>{};'),
+    '#lib/services/tauri.js': data('export const cancelFileOperation=async()=>{};'),
     '#lib/data/s3-providers.js': data('export const S3_PROVIDERS=[];export const getProvider=id=>({id,name:id,icon:"",regions:[],capabilities:{listBuckets:true}});export const inferProviderFromEndpoint=()=>"linode";'),
   };
   const { default: Dialog } = await import(component('S3ConnectDialog.svelte', dependencies));

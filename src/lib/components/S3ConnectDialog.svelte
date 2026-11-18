@@ -97,6 +97,8 @@
   let deletingBucket = $state<string | null>(null);
   let emptyOpId = $state('');
   let emptyProgress = $state('');
+  let bucketNotice = $state('');
+  let emptyError = $state('');
 
   // Provider search combobox
   let providerQuery = $state('');
@@ -473,31 +475,34 @@
   }
 
   async function handleDeleteBucket(bucketName: string) {
-    if (!confirm(`Delete bucket "${bucketName}"? The bucket must be empty.`)) return;
+    if (!confirm(
+      `Delete bucket "${bucketName}"?\n\n`
+      + 'Furman first permanently deletes EVERYTHING in it: all objects, old versions, delete markers and incomplete uploads. '
+      + 'Then it tries to delete the bucket itself. This cannot be undone.'
+    )) return;
     deletingBucket = bucketName;
-    browseError = '';
+    emptyError = '';
+    bucketNotice = '';
+    const id = `empty-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
     try {
       const r = region.trim() || 'us-east-1';
       const [ep, prof, ak, sk, rArn, extId, sName, sDur, wit, pUrl, pUser, pPass] = currentCredArgs();
+      emptyOpId = id;
+      emptyProgress = 'Emptying bucket...';
+      await s3EmptyBucket(id, (p) => { emptyProgress = p.current_file; }, r, bucketName, ep, prof, ak, sk, rArn, extId, sName, sDur, wit, pUrl, pUser, pPass);
+      emptyOpId = '';
+      emptyProgress = 'Deleting bucket...';
       try {
         await s3DeleteBucket(r, bucketName, ep, prof, ak, sk, rArn, extId, sName, sDur, wit, pUrl, pUser, pPass);
       } catch (e: unknown) {
-        if (!errorText(e).includes('BucketNotEmpty')) throw e;
-        if (!confirm(
-          `Bucket "${bucketName}" is not empty. It may hold old object versions, delete markers or incomplete uploads that file listings don't show.\n\n`
-          + `Permanently delete EVERYTHING in it, including all versions, and then delete the bucket? This cannot be undone.`
-        )) return;
-        const id = `empty-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-        emptyOpId = id;
-        emptyProgress = 'Emptying bucket...';
-        await s3EmptyBucket(id, (p) => { emptyProgress = p.current_file; }, r, bucketName, ep, prof, ak, sk, rArn, extId, sName, sDur, wit, pUrl, pUser, pPass);
-        emptyProgress = 'Deleting bucket...';
-        await s3DeleteBucket(r, bucketName, ep, prof, ak, sk, rArn, extId, sName, sDur, wit, pUrl, pUser, pPass);
+        // Some providers only remove buckets via their console/API; an emptied bucket is still a success.
+        bucketNotice = errorText(e);
+        return;
       }
       buckets = buckets.filter(b => b.name !== bucketName);
       if (bucket === bucketName) bucket = '';
     } catch (e: unknown) {
-      browseError = errorText(e);
+      emptyError = errorText(e);
     } finally {
       deletingBucket = null;
       emptyOpId = '';
@@ -672,6 +677,12 @@
               <button class="dialog-btn" onclick={() => cancelFileOperation(emptyOpId)}>Cancel</button>
             {/if}
           </div>
+        {/if}
+        {#if emptyError}
+          <div class="browse-error"><ErrorNotice error={emptyError} context="Could not empty bucket. Items deleted so far stay deleted" /></div>
+        {/if}
+        {#if bucketNotice}
+          <div class="browse-error"><ErrorNotice error={bucketNotice} context="Bucket emptied, but the provider refused to delete the bucket itself. Delete it in the provider's console or API" /></div>
         {/if}
         {#if browseError}
           <div class="browse-error"><ErrorNotice error={browseError} context="Could not list buckets" /></div>

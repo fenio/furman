@@ -642,6 +642,9 @@ async fn empty_bucket_falls_back_to_plain_keys_and_single_deletes_when_unsupport
         (204, &[], ""),
         (204, &[], ""),
         (200, &[], "<ListMultipartUploadsResult><IsTruncated>false</IsTruncated></ListMultipartUploadsResult>"),
+        (501, &[], not_implemented),
+        (200, &[], "<ListBucketResult><IsTruncated>false</IsTruncated></ListBucketResult>"),
+        (200, &[], "<ListMultipartUploadsResult><IsTruncated>false</IsTruncated></ListMultipartUploadsResult>"),
     ]);
     super::service::empty_bucket(
         &service.client,
@@ -656,7 +659,7 @@ async fn empty_bucket_falls_back_to_plain_keys_and_single_deletes_when_unsupport
         .actual_requests()
         .map(|r| r.uri().to_string())
         .collect();
-    assert_eq!(uris.len(), 6);
+    assert_eq!(uris.len(), 9);
     assert!(uris[1].contains("list-type=2"), "{}", uris[1]);
     assert!(
         uris[3].contains("/a?") && uris[4].contains("/b?") && !uris[3].contains("versionId"),
