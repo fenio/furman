@@ -157,8 +157,9 @@ fn save(
         .ok_or_else(|| error("Comparison preset storage directory unavailable"))?;
     fs::create_dir_all(parent)
         .map_err(|failure| io_error("create storage directory for", failure))?;
-    // Cooperating Furman processes share an advisory lock. Never wait for a
-    // stalled process, and re-read the revision only after acquiring the lock.
+    // Cooperating Furman processes share an advisory lock. Wait only briefly:
+    // a child spawned elsewhere can hold an inherited lock fd until it execs,
+    // but a stalled process is still refused. Re-read the revision after locking.
     let lock = fs::OpenOptions::new()
         .read(true)
         .write(true)
@@ -177,7 +178,14 @@ fn save(
             "Comparison preset storage lock must be a regular file",
         ));
     }
-    lock.try_lock().map_err(|_| error("Another process is saving comparison presets, or storage locking is unavailable. Retry after it finishes; no changes were written."))?;
+    let started = std::time::Instant::now();
+    loop {
+        match lock.try_lock() {
+            Ok(()) => break,
+            Err(fs::TryLockError::WouldBlock) if started.elapsed() < std::time::Duration::from_millis(250) => std::thread::sleep(std::time::Duration::from_millis(5)),
+            Err(_) => return Err(error("Another process is saving comparison presets, or storage locking is unavailable. Retry after it finishes; no changes were written.")),
+        }
+    }
     let current = load(path)?;
     if current.revision != expected_revision {
         return Err(error("Comparison presets changed since loading. Refresh presets and review the current list before saving again; no changes were written."));
