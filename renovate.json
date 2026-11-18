@@ -7,5 +7,8 @@
       "matchPackageNames": ["typescript"],
       "allowedVersions": "<7"
     }
-  ]
+  ],
+  "lockFileMaintenance": {
+    "enabled": true
+  }
 }
