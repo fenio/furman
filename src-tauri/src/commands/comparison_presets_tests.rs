@@ -179,7 +179,7 @@ fn cooperating_process_lock_prevents_write_and_revision_races() {
         .contains("Another process"));
     assert_eq!(fs::read(&path).unwrap(), before);
     drop(lock);
-    retry_while_locked(|| save(&path, &initial.revision, vec![])).unwrap();
+    save(&path, &initial.revision, vec![]).unwrap();
 }
 
 #[test]
