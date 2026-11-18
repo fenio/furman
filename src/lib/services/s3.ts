@@ -369,6 +369,47 @@ export async function s3DeleteBucket(
   });
 }
 
+/** Permanently delete every version, delete marker and incomplete upload in a bucket. */
+export async function s3EmptyBucket(
+  opId: string,
+  onProgress: (e: ProgressEvent) => void,
+  region: string,
+  bucketName: string,
+  endpoint?: string,
+  profile?: string,
+  accessKey?: string,
+  secretKey?: string,
+  roleArn?: string,
+  externalId?: string,
+  sessionName?: string,
+  sessionDurationSecs?: number,
+  webIdentityToken?: string,
+  proxyUrl?: string,
+  proxyUsername?: string,
+  proxyPassword?: string,
+): Promise<void> {
+  const channel = new Channel<ProgressEvent>();
+  channel.onmessage = onProgress;
+  await invoke('s3_empty_bucket', {
+    opId,
+    channel,
+    region,
+    bucketName,
+    endpoint: endpoint || null,
+    profile: profile || null,
+    accessKey: accessKey || null,
+    secretKey: secretKey || null,
+    roleArn: roleArn || null,
+    externalId: externalId || null,
+    sessionName: sessionName || null,
+    sessionDurationSecs: sessionDurationSecs ?? null,
+    webIdentityToken: webIdentityToken || null,
+    proxyUrl: proxyUrl || null,
+    proxyUsername: proxyUsername || null,
+    proxyPassword: proxyPassword || null,
+  });
+}
+
 export async function s3GetBucketVersioning(id: string): Promise<S3BucketVersioning> {
   return await invoke<S3BucketVersioning>('s3_get_bucket_versioning', { id });
 }

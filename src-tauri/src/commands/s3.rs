@@ -763,6 +763,69 @@ pub async fn s3_delete_bucket(
 }
 
 #[tauri::command]
+pub async fn s3_empty_bucket(
+    file_op_state: State<'_, FileOpState>,
+    op_id: String,
+    channel: Channel<ProgressEvent>,
+    region: String,
+    bucket_name: String,
+    endpoint: Option<String>,
+    profile: Option<String>,
+    access_key: Option<String>,
+    secret_key: Option<String>,
+    role_arn: Option<String>,
+    external_id: Option<String>,
+    session_name: Option<String>,
+    session_duration_secs: Option<i32>,
+    web_identity_token: Option<String>,
+    proxy_url: Option<String>,
+    proxy_username: Option<String>,
+    proxy_password: Option<String>,
+) -> Result<(), FmError> {
+    let (client, _) = build_s3_client(
+        &region,
+        endpoint.as_deref(),
+        profile.as_deref(),
+        access_key.as_deref(),
+        secret_key.as_deref(),
+        role_arn.as_deref(),
+        external_id.as_deref(),
+        session_name.as_deref(),
+        session_duration_secs,
+        None,
+        None,
+        web_identity_token.as_deref(),
+        proxy_url.as_deref(),
+        proxy_username.as_deref(),
+        proxy_password.as_deref(),
+    )
+    .await?;
+
+    let flags = Arc::new(crate::commands::file::OpFlags {
+        cancel: AtomicBool::new(false),
+        pause: AtomicBool::new(false),
+    });
+    {
+        let mut map = file_op_state
+            .0
+            .lock()
+            .map_err(|e| FmError::Other(e.to_string()))?;
+        map.insert(op_id.clone(), flags.clone());
+    }
+
+    let result = s3::service::empty_bucket(&client, &bucket_name, &op_id, &flags.cancel, &|evt| {
+        let _ = channel.send(evt);
+    })
+    .await;
+
+    if let Ok(mut map) = file_op_state.0.lock() {
+        map.remove(&op_id);
+    }
+
+    result
+}
+
+#[tauri::command]
 pub async fn s3_get_bucket_versioning(
     state: State<'_, S3State>,
     id: String,

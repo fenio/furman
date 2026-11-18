@@ -631,3 +631,35 @@ fn garage_key_format_gate_is_conservative_and_does_not_capture_values() {
         compat::configure_conditions(service.client, None, Some("GK0123456789abcdef01234567"));
     assert!(!compat::conditional_writes_supported(&client));
 }
+
+#[tokio::test]
+async fn empty_bucket_falls_back_to_plain_keys_and_single_deletes_when_unsupported() {
+    let not_implemented = "<Error><Code>NotImplemented</Code></Error>";
+    let (service, http) = service(&[
+        (501, &[], not_implemented),
+        (200, &[], "<ListBucketResult><IsTruncated>false</IsTruncated><Contents><Key>a</Key></Contents><Contents><Key>b</Key></Contents></ListBucketResult>"),
+        (501, &[], not_implemented),
+        (204, &[], ""),
+        (204, &[], ""),
+        (200, &[], "<ListMultipartUploadsResult><IsTruncated>false</IsTruncated></ListMultipartUploadsResult>"),
+    ]);
+    super::service::empty_bucket(
+        &service.client,
+        &service.bucket,
+        "op",
+        &AtomicBool::new(false),
+        &|_| {},
+    )
+    .await
+    .unwrap();
+    let uris: Vec<String> = http
+        .actual_requests()
+        .map(|r| r.uri().to_string())
+        .collect();
+    assert_eq!(uris.len(), 6);
+    assert!(uris[1].contains("list-type=2"), "{}", uris[1]);
+    assert!(
+        uris[3].contains("/a?") && uris[4].contains("/b?") && !uris[3].contains("versionId"),
+        "{uris:?}"
+    );
+}
