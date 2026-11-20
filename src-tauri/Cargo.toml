@@ -105,3 +105,10 @@ objc2-foundation = { version = "0.3", features = ["NSData", "NSFileManager", "NS
 
 [target.'cfg(target_os = "linux")'.dependencies]
 dbus-secret-service-keyring-store = { version = "1", features = ["crypto-rust", "vendored"] }
+
+# Full debug info made target/ grow by gigabytes per dependency bump; line tables keep backtraces usable.
+[profile.dev]
+debug = "line-tables-only"
+
+[profile.dev.package."*"]
+debug = false
