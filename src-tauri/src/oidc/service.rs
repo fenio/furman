@@ -9,9 +9,9 @@ use crate::models::FmError;
 // ── Discovery ────────────────────────────────────────────────────────────────
 
 #[derive(Deserialize)]
-struct OidcDiscovery {
-    authorization_endpoint: String,
-    token_endpoint: String,
+pub struct OidcDiscovery {
+    pub authorization_endpoint: String,
+    pub token_endpoint: String,
 }
 
 pub struct OidcTokens {
@@ -19,17 +19,67 @@ pub struct OidcTokens {
     pub refresh_token: Option<String>,
 }
 
-async fn discover(issuer_url: &str) -> Result<OidcDiscovery, FmError> {
+/// HTTPS only; plain HTTP is allowed for loopback hosts so a local test IdP still works.
+fn is_secure(url: &url::Url) -> bool {
+    match url.scheme() {
+        "https" => true,
+        "http" => match url.host() {
+            Some(url::Host::Domain(host)) => host.eq_ignore_ascii_case("localhost"),
+            Some(url::Host::Ipv4(ip)) => ip.is_loopback(),
+            Some(url::Host::Ipv6(ip)) => ip.is_loopback(),
+            None => false,
+        },
+        _ => false,
+    }
+}
+
+fn secure_url(raw: &str, what: &str) -> Result<url::Url, FmError> {
+    let url = url::Url::parse(raw)
+        .map_err(|e| FmError::Other(format!("Invalid OIDC {what} URL: {e}")))?;
+    if is_secure(&url) {
+        Ok(url)
+    } else {
+        Err(FmError::Other(format!(
+            "OIDC {what} URL must use HTTPS: {raw}"
+        )))
+    }
+}
+
+/// Client that refuses to follow a redirect to an insecure URL.
+fn client() -> Result<reqwest::Client, FmError> {
+    reqwest::Client::builder()
+        .redirect(reqwest::redirect::Policy::custom(|attempt| {
+            if !is_secure(attempt.url()) {
+                let target = attempt.url().to_string();
+                attempt.error(format!("refused redirect to insecure URL {target}"))
+            } else if attempt.previous().len() >= 10 {
+                attempt.error("too many redirects")
+            } else {
+                attempt.follow()
+            }
+        }))
+        .build()
+        .map_err(|e| FmError::Other(format!("Failed to build HTTP client: {e}")))
+}
+
+pub async fn discover(issuer_url: &str) -> Result<OidcDiscovery, FmError> {
+    let issuer = secure_url(issuer_url.trim_end_matches('/'), "issuer")?;
     let url = format!(
         "{}/.well-known/openid-configuration",
-        issuer_url.trim_end_matches('/')
+        issuer.as_str().trim_end_matches('/')
     );
-    let resp = reqwest::get(&url)
+    let resp = client()?
+        .get(&url)
+        .send()
         .await
         .map_err(|e| FmError::Other(format!("OIDC discovery failed: {e}")))?;
-    resp.json::<OidcDiscovery>()
+    let discovery = resp
+        .json::<OidcDiscovery>()
         .await
-        .map_err(|e| FmError::Other(format!("OIDC discovery parse failed: {e}")))
+        .map_err(|e| FmError::Other(format!("OIDC discovery parse failed: {e}")))?;
+    secure_url(&discovery.authorization_endpoint, "authorization endpoint")?;
+    secure_url(&discovery.token_endpoint, "token endpoint")?;
+    Ok(discovery)
 }
 
 // ── PKCE ─────────────────────────────────────────────────────────────────────
@@ -176,7 +226,8 @@ pub async fn exchange_code(
     verifier: &str,
     redirect_uri: &str,
 ) -> Result<OidcTokens, FmError> {
-    let client = reqwest::Client::new();
+    secure_url(token_endpoint, "token endpoint")?;
+    let client = client()?;
     let resp = client
         .post(token_endpoint)
         .form(&[
@@ -215,7 +266,8 @@ pub async fn refresh_tokens(
     refresh_token: &str,
     client_id: &str,
 ) -> Result<OidcTokens, FmError> {
-    let client = reqwest::Client::new();
+    secure_url(token_endpoint, "token endpoint")?;
+    let client = client()?;
     let resp = client
         .post(token_endpoint)
         .form(&[
@@ -246,3 +298,7 @@ pub async fn refresh_tokens(
         refresh_token: tokens.refresh_token,
     })
 }
+
+#[cfg(test)]
+#[path = "service_tests.rs"]
+mod tests;
