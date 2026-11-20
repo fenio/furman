@@ -47,23 +47,7 @@ pub async fn oidc_refresh(
     client_id: String,
     refresh_token: String,
 ) -> Result<OidcAuthResult, FmError> {
-    let discovery_url = format!(
-        "{}/.well-known/openid-configuration",
-        issuer_url.trim_end_matches('/')
-    );
-    let resp = reqwest::get(&discovery_url)
-        .await
-        .map_err(|e| FmError::Other(format!("OIDC discovery failed: {e}")))?;
-
-    #[derive(serde::Deserialize)]
-    struct Disc {
-        token_endpoint: String,
-    }
-    let disc: Disc = resp
-        .json()
-        .await
-        .map_err(|e| FmError::Other(format!("OIDC discovery parse failed: {e}")))?;
-
+    let disc = oidc::discover(&issuer_url).await?;
     let tokens = oidc::refresh_tokens(&disc.token_endpoint, &refresh_token, &client_id).await?;
 
     Ok(OidcAuthResult {
