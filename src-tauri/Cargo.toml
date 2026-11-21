@@ -23,7 +23,7 @@ tauri = { version = "2.10.2", features = ["protocol-asset"] }
 tauri-plugin-log = "2.8.0"
 tauri-plugin-drag = "2"
 thiserror = "2"
-notify = "8"
+notify = "9"
 trash = "5"
 
 portable-pty = "0.9"
