@@ -1,5 +1,105 @@
 # Changelog
 
+## [0.4.1] - 2026-11-20
+
+### Added
+
+- feat(s3): empty a non-empty bucket before deleting it
+- feat(s3): Delete bucket always empties and verifies before deleting
+
+### Fixed
+
+- fix(tests): avoid fork-inheritance races in AWS CLI and preset lock tests
+- fix(deps): update rust crate russh to 0.65.0
+- fix(deps): update rust crate nix to 0.32
+- fix(presets): wait briefly for the preset storage lock
+- fix(oidc): require HTTPS for issuer, endpoints and redirects
+
+### Changed
+
+- Update CHANGELOG.md for v0.4.0
+
+### Other
+
+- chore(deps): update dependency typescript-eslint to v8.72.0
+- chore(deps): update aws-sdk-rust monorepo to v1.5.1
+- chore(deps): update rust crate tokio to v1.54.0
+- chore(deps): update rust crate rmcp to v3.6.0
+- chore(deps): update aws-sdk-rust monorepo to v1.13.0
+- chore(deps): update dependency vite to v8.3.5
+- chore(deps): update tauri monorepo
+- chore(deps): update aws-sdk-rust monorepo to v1.138.0
+- chore(deps): update rust crate tokio to v1.54.1
+- chore(deps): update dependency chart.js to v4.6.1
+- chore(deps): update rust crate rmcp to v3.7.0
+- chore(deps): update aws-sdk-rust monorepo to v1.139.0
+- chore(deps): update rust crate uuid to v1.29.0
+- chore(deps): update rust crate notify to v8.2.1
+- chore(deps): update rust crate rmcp to v3.8.0
+- chore(deps): update dependency svelte to v5.57.3
+- chore(deps): update rust crate aws-sdk-kms to v1.127.0
+- chore(deps): update dependency typescript-eslint to v8.72.1
+- chore(deps): update aws-sdk-rust monorepo to v1.5.2
+- chore(deps): update aws-sdk-rust monorepo to v1.140.0
+- chore(deps): update dependency @types/node to v26.6.6
+- chore(deps): update dependency @sveltejs/adapter-static to v4.0.1
+- chore(deps): update dependency @sveltejs/kit to v3.1.1
+- chore(deps): update dependency solid-js to v1.9.18
+- chore(deps): update dependency vite-plugin-solid to v2.11.15
+- chore(deps): update dependency eslint to v10.14.0
+- chore(deps): update rust crate log to v0.4.35
+- chore(deps): update aws-sdk-rust monorepo to v1.141.0
+- chore(deps): update dependency svelte-check to v4.7.8
+- chore(deps): update dependency vite to v8.3.6
+- chore(deps): update rust crate crc32c to v0.6.9
+- chore(deps): update rust crate notify to v8.2.2
+- chore(deps): update rust crate russh to v0.65.1
+- chore(deps): update rust crate uuid to v1.29.2
+- chore(deps): update aws-sdk-rust monorepo to v1.20.0
+- chore(deps): update rust crate rmcp to v3.9.0
+- chore(deps): update dependency eslint-plugin-svelte to v3.24.1
+- chore(deps): update dependency globals to v17.14.0
+- chore(deps): update dependency vite to v8.3.7
+- chore(deps): update rust crate trash to v5.3.0
+- chore(deps): update dependency typescript-eslint to v8.72.2
+- chore(deps): update aws-sdk-rust monorepo to v1.13.1
+- chore(deps): update dependency @tauri-apps/plugin-log to v2.10.2
+- chore(deps): update rust crate tauri-plugin-log to v2.10.2
+- chore(deps): update dependency @sveltejs/kit to v3.2.0
+- chore(deps): update aws-sdk-rust monorepo to v1.13.2
+- chore(deps): update dependency solid-js to v1.9.19
+- chore(deps): update dependency vite to v8.3.8
+- chore(deps): update dependency vite-plugin-solid to v2.11.16
+- chore(deps): update rust crate rmcp to v3.10.0
+- chore(deps): update dependency eslint to v10.15.0
+- chore(deps): update rust crate rand to v0.10.4
+- chore(deps): update rust crate russh to v0.65.2
+- chore(deps): update tauri monorepo
+- chore(deps): update rust crate uuid to v1.29.3
+- chore(deps): update aws-sdk-rust monorepo to v1.13.3
+- chore(deps): update dependency typescript-eslint to v8.73.0
+- chore(deps): update rust crate zeroize to v1.9.2
+- chore(deps): update dependency @sveltejs/kit to v3.3.0
+- chore(deps): update rust crate rmcp to v3.11.0
+- chore(deps): update rust crate trash to v5.4.0
+- chore(deps): update aws-sdk-rust monorepo to v1.133.0
+- chore(deps): update dependency @sveltejs/kit to v3.3.1
+- chore: refresh Rust lockfile and enable Renovate lock file maintenance
+- chore(deps): update rust crate regex to v1.13.2
+- chore(deps): update dependency svelte to v5.58.0
+- chore(deps): update tauri monorepo
+- chore(deps): update dependency vite-plugin-solid to v2.11.17
+- chore(deps): update dependency @sveltejs/kit to v3.4.0
+- chore(deps): update rust crate aws-sdk-s3 to v1.161.0
+- docs: add security policy with private reporting channel
+- chore(deps): update dependency solid-js to v1.9.20
+- chore(deps): update aws-sdk-rust monorepo to v1.145.0
+- chore(build): keep only line tables in dev builds to shrink target/
+- chore(deps): update dependency svelte to v5.58.1
+- chore(deps): update dependency svelte to v5.59.1
+- chore(deps): update rust crate keyring-core to v1.1.0
+- chore(deps): update rust crate aws-sdk-cloudfront to v1.146.0
+
 ## [0.4.0] - 2026-10-19
 
 ### Added
