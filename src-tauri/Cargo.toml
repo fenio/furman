@@ -32,15 +32,16 @@ nix = { version = "0.32", features = ["fs", "user", "dir"] }
 chrono = { version = "0.4", features = ["serde"] }
 dirs = "7"
 
+# AWS crates skip their default `rustls` feature: it only adds the unused legacy hyper 0.14 / rustls 0.21 stack.
 aws-config = { version = "1", features = ["behavior-version-latest"] }
 aws-runtime = "1"
 aws-types = "1"
-aws-sdk-s3 = "1"
-aws-sdk-sts = "1"
+aws-sdk-s3 = { version = "1", default-features = false, features = ["sigv4a", "http-1x", "default-https-client", "rt-tokio"] }
+aws-sdk-sts = { version = "1", default-features = false, features = ["sigv4a", "default-https-client", "rt-tokio"] }
 aws-sdk-sso = { version = "1", default-features = false }
-aws-sdk-kms = "1"
-aws-sdk-cloudfront = "1"
-aws-sdk-s3control = "1"
+aws-sdk-kms = { version = "1", default-features = false, features = ["default-https-client", "rt-tokio"] }
+aws-sdk-cloudfront = { version = "1", default-features = false, features = ["default-https-client", "rt-tokio"] }
+aws-sdk-s3control = { version = "1", default-features = false, features = ["default-https-client", "rt-tokio"] }
 aws-credential-types = "1"
 md5 = "0.8"
 crc32c = "0.6"
