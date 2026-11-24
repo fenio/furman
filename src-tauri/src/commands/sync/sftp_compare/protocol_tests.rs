@@ -1,7 +1,9 @@
 //! Actual SFTP protocol over private duplex streams: no credentials, SSH trust
 //! changes, external server, filesystem writes or production connections.
 use super::*;
-use russh_sftp::protocol::{Attrs, Data, File, Handle, Name, OpenFlags, Status, StatusCode};
+use russh_sftp::protocol::{
+    Attrs, Data, File, Handle, Name, OpenFlags, SftpHandle, Status, StatusCode,
+};
 use std::sync::{Arc, Mutex};
 
 struct Server {
@@ -43,9 +45,13 @@ impl russh_sftp::server::Handler for Server {
     async fn opendir(&mut self, id: u32, path: String) -> Result<Handle, Self::Error> {
         self.calls.lock().unwrap().push(format!("opendir:{path}"));
         self.listed.remove(&path);
-        Ok(Handle { id, handle: path })
+        Ok(Handle {
+            id,
+            handle: path.into(),
+        })
     }
-    async fn readdir(&mut self, id: u32, handle: String) -> Result<Name, Self::Error> {
+    async fn readdir(&mut self, id: u32, handle: SftpHandle) -> Result<Name, Self::Error> {
+        let handle = String::from_utf8_lossy(handle.as_bytes()).into_owned();
         if self.mode == "stall" {
             std::future::pending::<()>().await;
         }
@@ -84,10 +90,10 @@ impl russh_sftp::server::Handler for Server {
             .push(format!("open-read:{filename}"));
         Ok(Handle {
             id,
-            handle: filename,
+            handle: filename.into(),
         })
     }
-    async fn fstat(&mut self, id: u32, _handle: String) -> Result<Attrs, Self::Error> {
+    async fn fstat(&mut self, id: u32, _handle: SftpHandle) -> Result<Attrs, Self::Error> {
         self.fstats += 1;
         let mut attrs = attr(false);
         if self.mode == "drift" && self.fstats > 1 {
@@ -98,7 +104,7 @@ impl russh_sftp::server::Handler for Server {
     async fn read(
         &mut self,
         id: u32,
-        _handle: String,
+        _handle: SftpHandle,
         offset: u64,
         len: u32,
     ) -> Result<Data, Self::Error> {
@@ -117,7 +123,7 @@ impl russh_sftp::server::Handler for Server {
             data: contents[start..contents.len().min(start + len as usize)].to_vec(),
         })
     }
-    async fn close(&mut self, id: u32, _handle: String) -> Result<Status, Self::Error> {
+    async fn close(&mut self, id: u32, _handle: SftpHandle) -> Result<Status, Self::Error> {
         Ok(Status {
             id,
             status_code: StatusCode::Ok,
