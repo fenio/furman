@@ -359,7 +359,7 @@ dependencies = [
  "lru",
  "percent-encoding",
  "regex-lite",
- "sha2 0.11.1",
+ "sha2 0.11.2",
  "tracing",
  "url",
 ]
@@ -485,7 +485,7 @@ dependencies = [
  "http 1.5.0",
  "p256",
  "percent-encoding",
- "sha2 0.11.1",
+ "sha2 0.11.2",
  "subtle",
  "time",
  "tracing",
@@ -520,7 +520,7 @@ dependencies = [
  "md-5",
  "pin-project-lite",
  "sha1 0.11.0",
- "sha2 0.11.1",
+ "sha2 0.11.2",
  "tracing",
 ]
 
@@ -799,7 +799,7 @@ checksum = "144e573728da132683b9488acd528274c790e07fc06ff81ee29f9d8f8b1041e0"
 dependencies = [
  "blowfish",
  "pbkdf2",
- "sha2 0.11.1",
+ "sha2 0.11.2",
 ]
 
 [[package]]
@@ -1918,7 +1918,7 @@ dependencies = [
  "ed25519",
  "rand_core",
  "serde",
- "sha2 0.11.1",
+ "sha2 0.11.2",
  "signature",
  "subtle",
  "zeroize",
@@ -2214,7 +2214,7 @@ dependencies = [
  "schemars 1.2.3",
  "serde",
  "serde_json",
- "sha2 0.11.1",
+ "sha2 0.11.2",
  "tauri",
  "tauri-build",
  "tauri-plugin-drag",
@@ -4263,7 +4263,7 @@ dependencies = [
  "elliptic-curve",
  "primefield",
  "primeorder",
- "sha2 0.11.1",
+ "sha2 0.11.2",
 ]
 
 [[package]]
@@ -4277,7 +4277,7 @@ dependencies = [
  "fiat-crypto",
  "primefield",
  "primeorder",
- "sha2 0.11.1",
+ "sha2 0.11.2",
 ]
 
 [[package]]
@@ -4291,7 +4291,7 @@ dependencies = [
  "elliptic-curve",
  "primefield",
  "primeorder",
- "sha2 0.11.1",
+ "sha2 0.11.2",
 ]
 
 [[package]]
@@ -4307,7 +4307,7 @@ dependencies = [
  "futures",
  "log",
  "rand",
- "sha2 0.11.1",
+ "sha2 0.11.2",
  "thiserror 2.0.21",
  "tokio",
  "windows 0.62.2",
@@ -4549,7 +4549,7 @@ dependencies = [
  "pbkdf2",
  "rand_core",
  "scrypt",
- "sha2 0.11.1",
+ "sha2 0.11.2",
  "spki",
 ]
 
@@ -5052,7 +5052,7 @@ dependencies = [
  "schemars 1.2.3",
  "serde",
  "serde_json",
- "sha2 0.11.1",
+ "sha2 0.11.2",
  "thiserror 2.0.21",
  "tokio",
  "tokio-util",
@@ -5099,7 +5099,7 @@ dependencies = [
  "pkcs1",
  "pkcs8",
  "rand_core",
- "sha2 0.11.1",
+ "sha2 0.11.2",
  "signature",
  "spki",
  "zeroize",
@@ -5161,7 +5161,7 @@ dependencies = [
  "scrypt",
  "sec1",
  "sha1 0.11.0",
- "sha2 0.11.1",
+ "sha2 0.11.2",
  "sha3",
  "signature",
  "spki",
@@ -5442,7 +5442,7 @@ dependencies = [
  "cfg-if",
  "pbkdf2",
  "salsa20",
- "sha2 0.11.1",
+ "sha2 0.11.2",
 ]
 
 [[package]]
@@ -5794,9 +5794,9 @@ dependencies = [
 
 [[package]]
 name = "sha2"
-version = "0.11.1"
+version = "0.11.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "47d7069beb7d6ac7b9acd1039986e73443f24234f41074da099d6f994ac9ad19"
+checksum = "5b0e5c7d67bc53f435386b2130fdc900488c5703770f6d8a4633060e34288a27"
 dependencies = [
  "cfg-if",
  "cpufeatures 0.3.1",
@@ -6058,7 +6058,7 @@ dependencies = [
  "rsa",
  "sec1",
  "sha1 0.11.0",
- "sha2 0.11.1",
+ "sha2 0.11.2",
  "signature",
  "ssh-cipher",
  "ssh-encoding",
@@ -6362,7 +6362,7 @@ dependencies = [
  "semver",
  "serde",
  "serde_json",
- "sha2 0.11.1",
+ "sha2 0.11.2",
  "syn 2.0.119",
  "tauri-utils",
  "thiserror 2.0.21",
